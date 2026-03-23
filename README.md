@@ -1,6 +1,6 @@
 # workflow-kit
 
-Tool-agnostic batch TODO processing for AI coding assistants.
+Each TODO gets its own full interactive AI coding session -- not a sub-task, not a function call, but a complete session with its own context window, tool access, and the full capabilities of whichever harness you use. You can switch into any worker session to steer it, give feedback, or iterate on a PR, while the orchestrator handles the pipeline: launching, monitoring CI, dispatching review feedback, rebasing, and merging.
 
 ```mermaid
 graph TD
