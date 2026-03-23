@@ -144,4 +144,49 @@ Key files: \`lib/shared.ex\`, \`lib/unique_b.ex\`
 
     expect(output).toContain("Usage");
   });
+
+  it("does not flag false positives from description-mentioned paths", () => {
+    const repo = setupTempRepo();
+    const todosFile = join(repo, "TODOS.md");
+    const worktreeDir = join(repo, ".worktrees");
+
+    // Two items that mention the same file in description but NOT in Key files
+    writeFileSync(
+      todosFile,
+      `# TODOS
+
+## Features
+
+### Feat: Item A (H-FE-1)
+
+**Priority:** High
+**Depends on:** None
+
+This invokes \`lib/shared.ex\` internally.
+
+Key files: \`lib/unique_a.ex\`
+
+---
+
+### Feat: Item B (H-FE-2)
+
+**Priority:** High
+**Depends on:** None
+
+Also references \`lib/shared.ex\` in description.
+
+Key files: \`lib/unique_b.ex\`
+
+---
+`,
+    );
+
+    const output = captureOutput(() =>
+      cmdConflicts(["H-FE-1", "H-FE-2"], todosFile, worktreeDir),
+    );
+
+    // Should NOT flag a CONFLICT for lib/shared.ex since it's only in descriptions
+    expect(output).not.toContain("CONFLICT");
+    expect(output).not.toContain("lib/shared.ex");
+  });
 });

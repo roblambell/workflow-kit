@@ -54,6 +54,8 @@ export function normalizeDomain(
 
 /**
  * Extract file paths from a TodoItem's rawText.
+ * Only scans lines starting with "Key files:" to avoid false positives
+ * from paths mentioned incidentally in description or acceptance text.
  * Matches:
  * 1. Backtick-quoted paths with code extensions (e.g., `path/to/file.ex`)
  * 2. file:line patterns (e.g., file.ex:123)
@@ -64,6 +66,9 @@ export function extractFilePaths(item: TodoItem): string[] {
   const text = item.rawText;
 
   for (const line of text.split("\n")) {
+    // Only extract paths from Key files: lines
+    if (!line.startsWith("Key files:")) continue;
+
     // 1. Backtick-quoted paths with known extensions
     const backtickExtRegex = /`([a-zA-Z_.][a-zA-Z0-9_/.-]*\.(ex|exs|ts|tsx|js|jsx|md|yml|yaml|json|conf|sh|py|go|rs|rb|java|kt|swift))`/g;
     let match: RegExpExecArray | null;
