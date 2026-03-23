@@ -3,14 +3,14 @@
 # Clones ninthwave and runs setup in the current project.
 #
 # Global install (recommended):
-#   bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/ninthwave/main/remote-install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/remote-install.sh)
 #
 # Per-project install:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/ninthwave/main/remote-install.sh) --local
+#   bash <(curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/remote-install.sh) --local
 
 set -euo pipefail
 
-REPO="https://github.com/roblambell/ninthwave.git"
+REPO="https://github.com/ninthwave-sh/ninthwave.git"
 INSTALL_TYPE="global"
 
 # Parse args
@@ -58,9 +58,9 @@ else
     TMPDIR="$(mktemp -d)"
     trap 'rm -rf "$TMPDIR"' EXIT
     if command -v gh &>/dev/null; then
-      gh api "repos/roblambell/ninthwave/tarball/main" > "$TMPDIR/archive.tar.gz" 2>/dev/null
+      gh api "repos/ninthwave-sh/ninthwave/tarball/main" > "$TMPDIR/archive.tar.gz" 2>/dev/null
     else
-      curl -fsSL "https://api.github.com/repos/roblambell/ninthwave/tarball/main" \
+      curl -fsSL "https://api.github.com/repos/ninthwave-sh/ninthwave/tarball/main" \
         -H "Accept: application/vnd.github+json" \
         -o "$TMPDIR/archive.tar.gz"
     fi
@@ -71,9 +71,9 @@ else
     TMPDIR="$(mktemp -d)"
     trap 'rm -rf "$TMPDIR"' EXIT
     if command -v gh &>/dev/null; then
-      gh api "repos/roblambell/ninthwave/tarball/main" > "$TMPDIR/archive.tar.gz" 2>/dev/null
+      gh api "repos/ninthwave-sh/ninthwave/tarball/main" > "$TMPDIR/archive.tar.gz" 2>/dev/null
     else
-      curl -fsSL "https://api.github.com/repos/roblambell/ninthwave/tarball/main" \
+      curl -fsSL "https://api.github.com/repos/ninthwave-sh/ninthwave/tarball/main" \
         -H "Accept: application/vnd.github+json" \
         -o "$TMPDIR/archive.tar.gz"
     fi

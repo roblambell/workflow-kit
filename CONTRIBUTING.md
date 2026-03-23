@@ -5,7 +5,7 @@
 Clone the repo and link it as a global install for dogfooding:
 
 ```bash
-git clone git@github.com:roblambell/ninthwave.git ~/code/ninthwave
+git clone git@github.com:ninthwave-sh/ninthwave.git ~/code/ninthwave
 ```
 
 ### Dogfooding (developing ninthwave with ninthwave)

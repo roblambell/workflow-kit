@@ -69,7 +69,7 @@ git pull --ff-only origin main
 Tell the user to re-download:
 ```
 To upgrade a vendored install, re-download from GitHub:
-  curl -fsSL https://github.com/roblambell/ninthwave/archive/main.tar.gz | \
+  curl -fsSL https://github.com/ninthwave-sh/ninthwave/archive/main.tar.gz | \
     tar -xz --strip-components=1 -C "$NINTHWAVE_DIR"
 ```
 

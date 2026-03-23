@@ -62,7 +62,7 @@ Works with Claude Code, OpenCode, Copilot CLI, and any tool supporting the [Agen
 **Global install** (recommended — shared across projects):
 
 ```bash
-git clone https://github.com/roblambell/ninthwave.git ~/.claude/skills/ninthwave
+git clone https://github.com/ninthwave-sh/ninthwave.git ~/.claude/skills/ninthwave
 cd /path/to/your/project
 ~/.claude/skills/ninthwave/setup
 ```
@@ -71,7 +71,7 @@ cd /path/to/your/project
 
 ```bash
 cd /path/to/your/project
-bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/ninthwave/main/remote-install.sh) --local
+bash <(curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/remote-install.sh) --local
 ```
 
 One developer runs setup; the rest get the project-level files via `git pull`. Review with `git diff`, then commit.
@@ -172,7 +172,7 @@ cd ~/.claude/skills/ninthwave && git pull
 ~/.claude/skills/ninthwave/setup --project-dir /path/to/your/project
 
 # Per-project install (re-download)
-bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/ninthwave/main/remote-install.sh) --local
+bash <(curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/remote-install.sh) --local
 ```
 
 Project-specific config (`TODOS.md`, `.ninthwave/config`, `domains.conf`) is preserved.
