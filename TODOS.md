@@ -4,33 +4,6 @@
 
 ## CLI Migration (TypeScript migration completion, 2026-03-23)
 
-### Feat: Wire remaining 13 commands in CLI dispatcher (H-MIG-1)
-
-**Priority:** High
-**Source:** Migration plan 2026-03-23
-**Depends on:** None
-
-The CLI dispatcher in `core/cli.ts` has 13 commands that hit `die("not yet implemented")` even though their TypeScript implementations exist in `core/commands/`. Add imports for all unwired commands and replace each `die()` placeholder with the actual function call. Handle async commands (`cmdAutopilotWatch`, `cmdPrWatch`) with top-level await. Update the `needsTodos` exclusion list to include commands that don't require TODOS.md: `clean`, `clean-single`, `merged-ids`, `watch-ready`, `autopilot-watch`, `pr-watch`, `ci-failures`, `pr-activity`, `version-bump`. For `close-workspace`, pass `args[0] ?? ""` as `targetId`.
-
-Acceptance: All 20 commands dispatch to their TypeScript implementations (no "not yet implemented" errors). `bun test` passes. `bun run core/cli.ts start` shows usage error from `cmdStart`, not from `die()`.
-
-Key files: `core/cli.ts`, `core/commands/start.ts`, `core/commands/clean.ts`, `core/commands/mark-done.ts`, `core/commands/watch.ts`, `core/commands/ci.ts`, `core/commands/version-bump.ts`
-
----
-
-### Feat: Update .ninthwave/work shim to use TypeScript CLI (H-MIG-2)
-
-**Priority:** High
-**Source:** Migration plan 2026-03-23
-**Depends on:** None
-
-The committed `.ninthwave/work` shim hardcodes bash: `exec "$(cat "$(dirname "$0")/dir")/core/batch-todos.sh" "$@"`. The `setup` script already generates a dual-mode shim (TypeScript default, bash fallback via `NINTHWAVE_LEGACY=1`) at lines 70-77. Update the committed shim to match what `setup` generates so dogfooding uses the TypeScript CLI.
-
-Acceptance: `.ninthwave/work list` invokes `core/cli.ts` (not `core/batch-todos.sh`). `NINTHWAVE_LEGACY=1 .ninthwave/work list` falls back to bash.
-
-Key files: `.ninthwave/work`
-
----
 
 ### Refactor: Remove legacy bash script and test infrastructure (H-MIG-3)
 
