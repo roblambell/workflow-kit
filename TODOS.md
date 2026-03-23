@@ -2,37 +2,9 @@
 
 <!-- Format guide: see $(cat .ninthwave/dir)/core/docs/todos-format.md -->
 
-## Parser Fixes (dogfood friction, 2026-03-23)
-
-### Fix: Strip parenthetical annotations from domain slugs (M-FIX-1)
-
-**Priority:** Medium
-**Source:** Dogfood friction log #4
-**Depends on:** None
-
-`normalizeDomain` produces excessively long slugs when section headers contain parenthetical content like `## CLI Migration (TypeScript migration completion, 2026-03-23)` → `cli-migration-typescript-migration-completion-2026-03-23`. The parser already strips `(from ...)` at the caller (parser.ts line 218) but not generic parentheticals. Fix: strip all `(...)` content from the section name before passing to `normalizeDomain`, or inside `normalizeDomain` itself. Subsumes the existing `(from ...)` special case.
-
-Acceptance: `normalizeDomain("CLI Migration (TypeScript migration completion, 2026-03-23)")` returns `"cli-migration"`. `normalizeDomain("API Service (v2 rewrite)")` returns `"api-service"`. Existing tests pass. New test cases for parenthetical stripping added.
-
-Key files: `core/parser.ts:18`, `core/parser.ts:216`, `test/parser.test.ts`
-
----
-
-### Fix: Restrict file path extraction to Key files lines (M-FIX-2)
-
-**Priority:** Medium
-**Source:** Dogfood friction log #5
-**Depends on:** None
-
-`extractFilePaths` in `core/parser.ts` scans the entire `rawText` of a TODO item for file paths. This causes false positives in `conflicts` when description or acceptance text mentions paths incidentally (e.g., "invokes `core/cli.ts`"). The `Key files:` convention already exists — restrict path extraction to only lines starting with `Key files:` so that description-mentioned paths don't pollute conflict detection.
-
-Acceptance: A TODO with `core/cli.ts` mentioned only in description (not in `Key files:`) does NOT include it in `filePaths`. A TODO with paths in its `Key files:` line still extracts them correctly. The `conflicts` command no longer flags false positives from description text. All existing tests pass. New test cases added for both scenarios.
-
-Key files: `core/parser.ts:59`, `test/parser.test.ts`, `test/conflicts.test.ts`
-
----
-
 ## Brew Distribution (brew install pivot, 2026-03-23)
+
+
 
 ### Feat: Add bundle directory resolution module (H-BREW-1)
 
@@ -121,6 +93,8 @@ Key files: `README.md`, `CONTRIBUTING.md`, `setup` (delete), `remote-install.sh`
 
 ## Event-Driven Orchestrator (orchestrator pivot, 2026-03-23)
 
+
+
 ### Refactor: Export internal watch functions for orchestrator reuse (H-ORCH-1)
 
 **Priority:** High
@@ -174,20 +148,6 @@ Extract the per-item launch logic from `cmdStart` into a standalone `launchSingl
 Acceptance: `launchSingleItem` creates a worktree and launches a session for a single item. `cmdStart` produces identical behavior to before. All existing start tests pass. New tests cover single-item launch.
 
 Key files: `core/commands/start.ts`, `test/start.test.ts`
-
----
-
-### Refactor: Extract cleanSingleWorktree from clean command (H-ORCH-5)
-
-**Priority:** High
-**Source:** Orchestrator pivot
-**Depends on:** None
-
-Extract the core cleanup logic from `cmdCleanSingle` into a `cleanSingleWorktree(id, worktreeDir, projectRoot)` function that removes the worktree, deletes local/remote branches, releases the partition, and removes cross-repo index entries. Returns boolean success. Separate from workspace closing (the orchestrator handles workspace lifecycle independently). The command becomes a thin wrapper.
-
-Acceptance: `cleanSingleWorktree` removes a single worktree and its associated resources. `cmdCleanSingle` behavior unchanged. Existing clean tests pass. New tests cover the extracted function.
-
-Key files: `core/commands/clean.ts`, `test/clean.test.ts`
 
 ---
 
@@ -262,6 +222,8 @@ Key files: `agents/todo-worker.md`
 ---
 
 ## Vision (recurring, 2026-03-23)
+
+
 
 ### Feat: Explore vision, scope next iteration, and decompose into TODOs (L-VIS-1)
 
