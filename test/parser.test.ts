@@ -325,6 +325,28 @@ describe("normalizeDomain", () => {
   it("strips leading/trailing hyphens", () => {
     expect(normalizeDomain(" -test- ")).toBe("test");
   });
+
+  it("strips parenthetical annotations from section headers", () => {
+    expect(
+      normalizeDomain(
+        "CLI Migration (TypeScript migration completion, 2026-03-23)",
+      ),
+    ).toBe("cli-migration");
+  });
+
+  it("strips parenthetical annotations — v2 rewrite", () => {
+    expect(normalizeDomain("API Service (v2 rewrite)")).toBe("api-service");
+  });
+
+  it("strips multiple parenthetical groups", () => {
+    expect(normalizeDomain("Core (a) Utils (b)")).toBe("core-utils");
+  });
+
+  it("strips (from ...) parentheticals (subsumes old special case)", () => {
+    expect(normalizeDomain("Infrastructure (from old-repo)")).toBe(
+      "infrastructure",
+    );
+  });
 });
 
 describe("extractFilePaths", () => {

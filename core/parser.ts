@@ -19,7 +19,10 @@ export function normalizeDomain(
   section: string,
   domainsFile?: string,
 ): string {
-  const lower = section.toLowerCase();
+  // Strip all parenthetical annotations before normalizing
+  // e.g. "CLI Migration (TypeScript migration completion, 2026-03-23)" → "CLI Migration"
+  const stripped = section.replace(/\s*\([^)]*\)/g, "").trim();
+  const lower = stripped.toLowerCase();
 
   // Check domain mappings if provided
   if (domainsFile) {
@@ -213,9 +216,8 @@ export function parseTodos(
       inItem = false;
       rawLines = [];
 
-      let sectionName = line.slice(3); // strip "## "
-      // Strip " (from ...)" suffix
-      sectionName = sectionName.replace(/ \(from .*/, "");
+      const sectionName = line.slice(3); // strip "## "
+      // Parenthetical stripping is handled inside normalizeDomain
 
       if (line.includes("In Progress")) {
         currentDomain = "in-progress-section";
