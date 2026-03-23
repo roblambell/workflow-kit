@@ -1,6 +1,2 @@
 #!/usr/bin/env bash
-if [[ "${NINTHWAVE_LEGACY:-}" == "1" ]]; then
-  exec bash "$(cat "$(dirname "$0")/dir")/core/batch-todos.sh" "$@"
-else
-  exec bun run "$(cat "$(dirname "$0")/dir")/core/cli.ts" "$@"
-fi
+exec bun run "$(cat "$(dirname "$0")/dir")/core/cli.ts" "$@"

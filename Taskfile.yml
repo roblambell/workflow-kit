@@ -9,4 +9,3 @@ tasks:
     desc: Run all tests
     cmds:
       - bun test
-      - bash test/run_all.sh

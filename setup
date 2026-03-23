@@ -69,11 +69,7 @@ rm -f "$PROJECT_DIR/.ninthwave/nw"
 
 cat > "$PROJECT_DIR/.ninthwave/work" << 'SHIM'
 #!/usr/bin/env bash
-if [[ "${NINTHWAVE_LEGACY:-}" == "1" ]]; then
-  exec bash "$(cat "$(dirname "$0")/dir")/core/batch-todos.sh" "$@"
-else
-  exec bun run "$(cat "$(dirname "$0")/dir")/core/cli.ts" "$@"
-fi
+exec bun run "$(cat "$(dirname "$0")/dir")/core/cli.ts" "$@"
 SHIM
 chmod +x "$PROJECT_DIR/.ninthwave/work"
 echo "  .ninthwave/work"
