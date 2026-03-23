@@ -19,7 +19,15 @@ vi.mock("../core/gh.ts", () => ({
 import * as gh from "../core/gh.ts";
 
 // Import after mocks
-import { cmdWatchReady, cmdAutopilotWatch, cmdPrWatch } from "../core/commands/watch.ts";
+import {
+  cmdWatchReady,
+  cmdAutopilotWatch,
+  cmdPrWatch,
+  checkPrStatus,
+  getWatchReadyState,
+  findTransitions,
+  findGoneItems,
+} from "../core/commands/watch.ts";
 
 function captureOutput(fn: () => void): string {
   const lines: string[] = [];
@@ -161,6 +169,54 @@ describe("cmdWatchReady", () => {
 
     const result = cmdWatchReady(worktreeDir, repo);
     expect(result).toContain("ready");
+    // Ensure it's not ci-passed (which also contains "passed")
+    expect(result).not.toContain("ci-passed");
+  });
+
+  it("classifies passing CI without approval as ci-passed", () => {
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".worktrees");
+    mkdirSync(join(worktreeDir, "todo-H-CI-2"), { recursive: true });
+
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({
+      reviewDecision: "",
+      mergeable: "MERGEABLE",
+    });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "SUCCESS", name: "test", url: "" },
+    ]);
+
+    const result = cmdWatchReady(worktreeDir, repo);
+    expect(result).toContain("ci-passed");
+  });
+
+  it("classifies passing CI with non-mergeable as ci-passed", () => {
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".worktrees");
+    mkdirSync(join(worktreeDir, "todo-H-CI-2"), { recursive: true });
+
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({
+      reviewDecision: "APPROVED",
+      mergeable: "CONFLICTING",
+    });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "SUCCESS", name: "test", url: "" },
+    ]);
+
+    const result = cmdWatchReady(worktreeDir, repo);
+    expect(result).toContain("ci-passed");
   });
 
   it("classifies pending CI as pending", () => {
@@ -250,5 +306,259 @@ describe("cmdPrWatch", () => {
 
     expect(output).toContain("activity");
     expect(output).toContain("42");
+  });
+});
+
+// =============================================================================
+// Direct tests for exported helper functions
+// =============================================================================
+
+describe("checkPrStatus", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (gh.isAvailable as Mock).mockReturnValue(true);
+  });
+
+  it("returns merged status when PR is merged", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [];
+        if (state === "merged") return [{ number: 99 }];
+        return [];
+      },
+    );
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t99\tmerged");
+  });
+
+  it("returns no-pr when no PR exists", () => {
+    (gh.prList as Mock).mockReturnValue([]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t\tno-pr");
+  });
+
+  it("returns empty string when gh is not available", () => {
+    (gh.isAvailable as Mock).mockReturnValue(false);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("");
+  });
+
+  it("returns ready when CI passes and PR is approved and mergeable", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({
+      reviewDecision: "APPROVED",
+      mergeable: "MERGEABLE",
+    });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "SUCCESS", name: "test", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tready");
+  });
+
+  it("returns ci-passed when CI passes but not approved", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({
+      reviewDecision: "",
+      mergeable: "MERGEABLE",
+    });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "SUCCESS", name: "test", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tci-passed");
+  });
+
+  it("returns ci-passed when CI passes but not mergeable", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({
+      reviewDecision: "APPROVED",
+      mergeable: "CONFLICTING",
+    });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "SUCCESS", name: "test", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tci-passed");
+  });
+
+  it("returns failing when CI fails", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({
+      reviewDecision: "",
+      mergeable: "MERGEABLE",
+    });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "FAILURE", name: "test", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tfailing");
+  });
+
+  it("returns pending when CI is pending", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({
+      reviewDecision: "",
+      mergeable: "MERGEABLE",
+    });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "PENDING", name: "build", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tpending");
+  });
+});
+
+describe("getWatchReadyState", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (gh.isAvailable as Mock).mockReturnValue(true);
+  });
+  afterEach(() => cleanupTempRepos());
+
+  it("returns empty string when worktree dir does not exist", () => {
+    const result = getWatchReadyState("/nonexistent/path", "/fake/repo");
+    expect(result).toBe("");
+  });
+
+  it("returns status lines for worktrees", () => {
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".worktrees");
+    mkdirSync(join(worktreeDir, "todo-A-1-1"), { recursive: true });
+    mkdirSync(join(worktreeDir, "todo-B-2-1"), { recursive: true });
+
+    (gh.prList as Mock).mockReturnValue([]);
+
+    const result = getWatchReadyState(worktreeDir, repo);
+    expect(result).toContain("A-1-1");
+    expect(result).toContain("B-2-1");
+    expect(result).toContain("no-pr");
+  });
+
+  it("skips non-todo entries", () => {
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".worktrees");
+    mkdirSync(join(worktreeDir, "todo-A-1-1"), { recursive: true });
+    mkdirSync(join(worktreeDir, "other-dir"), { recursive: true });
+
+    (gh.prList as Mock).mockReturnValue([]);
+
+    const result = getWatchReadyState(worktreeDir, repo);
+    expect(result).toContain("A-1-1");
+    expect(result).not.toContain("other-dir");
+  });
+});
+
+describe("findTransitions", () => {
+  it("detects status change from pending to ready", () => {
+    const prev = "H-1-1\t10\tpending";
+    const curr = "H-1-1\t10\tready";
+
+    const result = findTransitions(curr, prev);
+    expect(result).toBe("H-1-1\t10\tpending\tready\n");
+  });
+
+  it("detects status change from pending to ci-passed", () => {
+    const prev = "H-1-1\t10\tpending";
+    const curr = "H-1-1\t10\tci-passed";
+
+    const result = findTransitions(curr, prev);
+    expect(result).toBe("H-1-1\t10\tpending\tci-passed\n");
+  });
+
+  it("detects status change from ci-passed to ready", () => {
+    const prev = "H-1-1\t10\tci-passed";
+    const curr = "H-1-1\t10\tready";
+
+    const result = findTransitions(curr, prev);
+    expect(result).toBe("H-1-1\t10\tci-passed\tready\n");
+  });
+
+  it("returns empty string when no transitions", () => {
+    const state = "H-1-1\t10\tpending";
+    const result = findTransitions(state, state);
+    expect(result).toBe("");
+  });
+
+  it("handles new items not in previous state", () => {
+    const prev = "";
+    const curr = "H-1-1\t10\tpending";
+
+    const result = findTransitions(curr, prev);
+    // New item: prevStatus defaults to "no-pr", current is "pending"
+    expect(result).toBe("H-1-1\t10\tno-pr\tpending\n");
+  });
+
+  it("handles multiple items with mixed transitions", () => {
+    const prev = "A-1-1\t10\tpending\nB-2-1\t20\tfailing";
+    const curr = "A-1-1\t10\tci-passed\nB-2-1\t20\tfailing";
+
+    const result = findTransitions(curr, prev);
+    expect(result).toContain("A-1-1\t10\tpending\tci-passed\n");
+    expect(result).not.toContain("B-2-1");
+  });
+});
+
+describe("findGoneItems", () => {
+  it("detects items that disappeared", () => {
+    const prev = "H-1-1\t10\tready\nH-2-1\t20\tpending";
+    const curr = "H-1-1\t10\tready";
+
+    const result = findGoneItems(curr, prev);
+    expect(result).toBe("H-2-1\t20\tpending\tgone\n");
+  });
+
+  it("returns empty string when no items disappeared", () => {
+    const state = "H-1-1\t10\tready";
+    const result = findGoneItems(state, state);
+    expect(result).toBe("");
+  });
+
+  it("returns empty string when no previous state", () => {
+    const result = findGoneItems("H-1-1\t10\tready", "");
+    expect(result).toBe("");
+  });
+
+  it("detects multiple gone items", () => {
+    const prev = "A-1-1\t10\tready\nB-2-1\t20\tpending\nC-3-1\t30\tfailing";
+    const curr = "B-2-1\t20\tpending";
+
+    const result = findGoneItems(curr, prev);
+    expect(result).toContain("A-1-1\t10\tready\tgone\n");
+    expect(result).toContain("C-3-1\t30\tfailing\tgone\n");
+    expect(result).not.toContain("B-2-1");
   });
 });

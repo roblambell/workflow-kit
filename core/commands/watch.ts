@@ -41,7 +41,7 @@ export function cmdWatchReady(
   return output;
 }
 
-function checkPrStatus(id: string, repoRoot: string): string {
+export function checkPrStatus(id: string, repoRoot: string): string {
   const branch = `todo/${id}`;
 
   if (!gh.isAvailable()) return "";
@@ -83,11 +83,11 @@ function checkPrStatus(id: string, repoRoot: string): string {
   let status = "pending";
   if (ciStatus === "fail") {
     status = "failing";
-  } else if (ciStatus === "pass" && isMergeable === "MERGEABLE") {
-    if (reviewDecision === "APPROVED") {
+  } else if (ciStatus === "pass") {
+    if (isMergeable === "MERGEABLE" && reviewDecision === "APPROVED") {
       status = "ready";
     } else {
-      status = "pending";
+      status = "ci-passed";
     }
   } else if (ciStatus === "pending") {
     status = "pending";
@@ -182,7 +182,7 @@ export async function cmdAutopilotWatch(
 }
 
 /** Get watch-ready state without printing to console. */
-function getWatchReadyState(
+export function getWatchReadyState(
   worktreeDir: string,
   projectRoot: string,
 ): string {
@@ -205,7 +205,7 @@ function getWatchReadyState(
   return results.join("\n");
 }
 
-function findTransitions(currentState: string, prevState: string): string {
+export function findTransitions(currentState: string, prevState: string): string {
   let transitions = "";
   for (const line of currentState.split("\n")) {
     if (!line) continue;
@@ -230,7 +230,7 @@ function findTransitions(currentState: string, prevState: string): string {
   return transitions;
 }
 
-function findGoneItems(currentState: string, prevState: string): string {
+export function findGoneItems(currentState: string, prevState: string): string {
   if (!prevState) return "";
   let transitions = "";
   const currentIds = new Set(
