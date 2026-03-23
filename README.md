@@ -74,18 +74,21 @@ Everything workflow-kit installs is **project-level** -- committed to git and sh
 | An AI coding tool | Runs the sessions | Claude Code, OpenCode, Copilot CLI, etc. |
 | [gh](https://cli.github.com/) | GitHub CLI for PR operations | `brew install gh` |
 | [cmux](https://cmux.com/) | Terminal multiplexer for parallel sessions | See cmux.com |
-| [gstack](https://github.com/garrytan/gstack) | Provides `/review`, `/qa`, `/design-review` | See repo |
 
 These are user-level tools, not project files. Each team member installs them on their own machine.
 
-### From gstack (user-level dependency)
+### Expected skills (bring your own)
 
-| Skill | Used By | When |
-|-------|---------|------|
-| `/review` | todo-worker | Always -- pre-landing code review |
-| `/design-review` | todo-worker | UI/visual changes |
-| `/qa` | todo-worker | Bug fixes with UI impact |
-| `/plan-eng-review` | `/decompose` | Optional architecture validation |
+The orchestrator and workers reference these skill names during execution. If a skill is available, it's used; if not, the worker falls back to a built-in self-review.
+
+| Skill | Used By | When | Fallback |
+|-------|---------|------|----------|
+| `/review` | todo-worker | Pre-landing code review | Self-review of the diff |
+| `/design-review` | todo-worker | UI/visual changes | Skipped |
+| `/qa` | todo-worker | Bug fixes with UI impact | Skipped |
+| `/plan-eng-review` | `/decompose` | Optional architecture validation | Skipped |
+
+[gstack](https://github.com/garrytan/gstack) provides all four out of the box. Or bring your own -- any skill with the matching name and the [SKILL.md standard](https://agentskills.io) will work.
 
 ## How It Works
 

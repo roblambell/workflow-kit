@@ -179,5 +179,7 @@ echo
 echo "Per-user dependencies (each team member installs once):"
 command -v gh &>/dev/null      && echo "  gh:     installed" || echo "  gh:     https://cli.github.com/"
 command -v cmux &>/dev/null    && echo "  cmux:   installed" || echo "  cmux:   https://cmux.com/"
-[[ -d "$HOME/.claude/skills/gstack" ]] || [[ -d "$HOME/.agents/skills/gstack" ]] || [[ -d "$HOME/.codex/skills/gstack" ]] \
-  && echo "  gstack: installed" || echo "  gstack: https://github.com/garrytan/gstack"
+echo
+echo "Optional: install gstack for /review, /qa, /design-review skills"
+echo "  https://github.com/garrytan/gstack"
+echo "  Or bring your own -- any SKILL.md with matching names will work."

@@ -98,7 +98,14 @@ cmux set-status "todo-YOUR_TODO_ID" "Testing ✓" --icon "checkmark.circle" --co
 
 ## 7. Quality Review
 
-Run `/review` for a pre-landing code review if available. Fix any issues it raises.
+**If `/review` skill is available:** Run it for a pre-landing code review. Fix any issues it raises.
+
+**If `/review` is not available:** Self-review the diff before creating the PR:
+1. Run `git diff origin/main` to see all changes
+2. Check for: scope drift (changes beyond the TODO), missing error handling at boundaries, untested code paths, hardcoded values, and security issues (injection, exposed secrets)
+3. Fix any issues found
+
+For UI/visual changes, run `/design-review` if available. For bug fixes with UI impact, run `/qa` if available. These are optional -- skip if not installed.
 
 ### Set Status: Reviewed
 
