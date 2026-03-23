@@ -1,13 +1,13 @@
-# Contributing to workflow-kit
+# Contributing to ninthwave
 
 ## Development Setup
 
 Clone the repo and install into a test project from your local copy:
 
 ```bash
-git clone git@github.com:roblambell/workflow-kit.git ~/code/workflow-kit
+git clone git@github.com:roblambell/ninthwave.git ~/code/ninthwave
 cd /path/to/your/project
-~/code/workflow-kit/install.sh
+~/code/ninthwave/install.sh
 ```
 
 After making changes, re-run `install.sh` and review the diff in the target project.
@@ -15,7 +15,7 @@ After making changes, re-run `install.sh` and review the diff in the target proj
 ## Architecture
 
 ```
-workflow-kit/
+ninthwave/
 ├── core/
 │   ├── batch-todos.sh          # Universal CLI (auto-detects AI tool)
 │   └── docs/todos-format.md    # TODOS.md format reference
@@ -32,7 +32,7 @@ workflow-kit/
 
 ### Design Principles
 
-- **Project-specific context lives in the project**, not in workflow-kit. The worker reads the project's instruction file (`CLAUDE.md`, `AGENTS.md`, etc.) for coding conventions, test commands, and architecture docs.
+- **Project-specific context lives in the project**, not in ninthwave. The worker reads the project's instruction file (`CLAUDE.md`, `AGENTS.md`, etc.) for coding conventions, test commands, and architecture docs.
 - **Skills use `.agents/skills/`** -- the cross-tool standard from [agentskills.io](https://agentskills.io). One copy, discovered by all tools.
 - **Agents are installed to all tool directories unconditionally** -- `.claude/agents/`, `.opencode/agents/`, `.github/agents/`. Any team member works regardless of tool.
 - **Expected skills are soft dependencies** -- `/review`, `/qa`, etc. are used if available, with built-in fallbacks when they're not.

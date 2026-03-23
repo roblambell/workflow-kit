@@ -43,17 +43,17 @@ PARTITION_DIR="$WORKTREE_DIR/.partitions"
 FS=$'\x1c'
 
 # --- Project configuration ---
-# Load optional project config from .workflow-kit/config
+# Load optional project config from .ninthwave/config
 # Only accepts KEY=VALUE lines (no command execution).
-WK_CONFIG="$PROJECT_ROOT/.workflow-kit/config"
-if [[ -f "$WK_CONFIG" ]]; then
+NW_CONFIG="$PROJECT_ROOT/.ninthwave/config"
+if [[ -f "$NW_CONFIG" ]]; then
   while IFS='=' read -r key value; do
     key="$(echo "$key" | tr -d '[:space:]')"
     [[ -z "$key" || "$key" =~ ^# ]] && continue
     # Strip surrounding quotes from value
     value="$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed 's/^["'"'"']//;s/["'"'"']$//')"
     export "$key=$value" 2>/dev/null || true
-  done < "$WK_CONFIG"
+  done < "$NW_CONFIG"
 fi
 
 # Configurable file extensions for LOC counting (space-separated glob patterns)
@@ -93,9 +93,9 @@ info() {
 # The same tool is used to launch worker sessions.
 
 detect_ai_tool() {
-  # 1. Explicit override via environment variable
-  if [[ -n "${WK_AI_TOOL:-}" ]]; then
-    echo "$WK_AI_TOOL"
+  # 1. Explicit override via environment variable (undocumented escape hatch)
+  if [[ -n "${NINTHWAVE_AI_TOOL:-}" ]]; then
+    echo "$NINTHWAVE_AI_TOOL"
     return
   fi
 
@@ -161,7 +161,7 @@ launch_ai_session() {
       initial_prompt="$(cat "$prompt_file")\n\nStart implementing this TODO now."
       ;;
     *)
-      die "Unknown AI tool: $tool. Set WK_AI_TOOL=claude|opencode|copilot to override detection."
+      die "Unknown AI tool: $tool. Ensure claude, opencode, or copilot is in your PATH."
       ;;
   esac
 
@@ -250,7 +250,7 @@ _DOMAIN_CACHE_LOADED=false
 _load_domain_cache() {
   if $_DOMAIN_CACHE_LOADED; then return; fi
   _DOMAIN_CACHE_LOADED=true
-  local domains_file="${DOMAINS_FILE:-$PROJECT_ROOT/.workflow-kit/domains.conf}"
+  local domains_file="${DOMAINS_FILE:-$PROJECT_ROOT/.ninthwave/domains.conf}"
   if [[ -f "$domains_file" ]]; then
     _DOMAIN_CACHE="$(cat "$domains_file")"
   fi
@@ -927,7 +927,7 @@ cmd_start() {
   local ai_tool
   ai_tool="$(detect_ai_tool)"
   if [[ "$ai_tool" == "unknown" ]]; then
-    die "Could not detect AI tool. Set WK_AI_TOOL=claude|opencode|copilot"
+    die "Could not detect AI tool. Ensure claude, opencode, or copilot is in your PATH."
   fi
   info "Detected AI tool: $ai_tool"
 

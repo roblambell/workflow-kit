@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Remote installer for workflow-kit.
+# Remote installer for ninthwave.
 # Downloads the latest files and runs the install without cloning the repo.
 #
-# Usage: bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/workflow-kit/main/remote-install.sh)
+# Usage: bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/ninthwave/main/remote-install.sh)
 
 set -euo pipefail
 
-REPO="roblambell/workflow-kit"
+REPO="roblambell/ninthwave"
 BRANCH="main"
 BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH"
 PROJECT_DIR="$(pwd)"
@@ -17,7 +17,7 @@ if [[ ! -d "$PROJECT_DIR/.git" ]]; then
   exit 1
 fi
 
-echo "workflow-kit remote install"
+echo "ninthwave remote install"
 echo "Project: $PROJECT_DIR"
 echo
 
@@ -25,7 +25,7 @@ echo
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "Downloading workflow-kit..."
+echo "Downloading ninthwave..."
 
 # Download the full repo as a tarball (much faster than individual files)
 if command -v gh &>/dev/null; then

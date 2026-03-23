@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install workflow-kit into a project directory.
+# Install ninthwave into a project directory.
 #
 # Usage: ./install.sh [--project-dir /path/to/project]
 #
@@ -26,7 +26,7 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       echo "Usage: $0 [--project-dir /path/to/project]"
       echo
-      echo "Installs workflow-kit into the project. All files are project-level"
+      echo "Installs ninthwave into the project. All files are project-level"
       echo "(committed to git) so every team member gets them automatically."
       exit 0
       ;;
@@ -43,7 +43,7 @@ if [[ ! -d "$PROJECT_DIR/.git" ]]; then
   exit 1
 fi
 
-echo "Installing workflow-kit into: $PROJECT_DIR"
+echo "Installing ninthwave into: $PROJECT_DIR"
 echo
 
 # --- Core files ---
@@ -76,26 +76,26 @@ echo
 
 echo "Config..."
 
-mkdir -p "$PROJECT_DIR/.workflow-kit"
+mkdir -p "$PROJECT_DIR/.ninthwave"
 
-if [[ ! -f "$PROJECT_DIR/.workflow-kit/config" ]]; then
-  cat > "$PROJECT_DIR/.workflow-kit/config" << 'CONF'
-# workflow-kit project configuration
+if [[ ! -f "$PROJECT_DIR/.ninthwave/config" ]]; then
+  cat > "$PROJECT_DIR/.ninthwave/config" << 'CONF'
+# ninthwave project configuration
 # All settings are optional -- sensible defaults are used.
 
 # File extensions for LOC counting in version-bump (space-separated glob patterns)
 # LOC_EXTENSIONS="*.ts *.tsx *.js *.jsx *.py *.go"
 
 # Path to domain mapping file (optional)
-# DOMAINS_FILE=.workflow-kit/domains.conf
+# DOMAINS_FILE=.ninthwave/domains.conf
 CONF
-  echo "  .workflow-kit/config (created)"
+  echo "  .ninthwave/config (created)"
 else
-  echo "  .workflow-kit/config (exists, skipped)"
+  echo "  .ninthwave/config (exists, skipped)"
 fi
 
-if [[ ! -f "$PROJECT_DIR/.workflow-kit/domains.conf" ]]; then
-  cat > "$PROJECT_DIR/.workflow-kit/domains.conf" << 'DOMAINS'
+if [[ ! -f "$PROJECT_DIR/.ninthwave/domains.conf" ]]; then
+  cat > "$PROJECT_DIR/.ninthwave/domains.conf" << 'DOMAINS'
 # Domain mappings for batch-todos.sh
 # Format: pattern=domain_key
 # Patterns are matched case-insensitively against section headers in TODOS.md.
@@ -107,22 +107,22 @@ if [[ ! -f "$PROJECT_DIR/.workflow-kit/domains.conf" ]]; then
 # frontend=frontend
 # database=db
 DOMAINS
-  echo "  .workflow-kit/domains.conf (created)"
+  echo "  .ninthwave/domains.conf (created)"
 else
-  echo "  .workflow-kit/domains.conf (exists, skipped)"
+  echo "  .ninthwave/domains.conf (exists, skipped)"
 fi
 
 # Ensure .gitignore has worktree entries
 if [[ -f "$PROJECT_DIR/.gitignore" ]]; then
   if ! grep -q "^\.worktrees/" "$PROJECT_DIR/.gitignore" 2>/dev/null; then
     echo "" >> "$PROJECT_DIR/.gitignore"
-    echo "# workflow-kit worktrees" >> "$PROJECT_DIR/.gitignore"
+    echo "# ninthwave worktrees" >> "$PROJECT_DIR/.gitignore"
     echo ".worktrees/" >> "$PROJECT_DIR/.gitignore"
     echo "  .gitignore (added .worktrees/)"
   fi
 else
   cat > "$PROJECT_DIR/.gitignore" << 'GITIGNORE'
-# workflow-kit worktrees
+# ninthwave worktrees
 .worktrees/
 GITIGNORE
   echo "  .gitignore (created)"
@@ -165,7 +165,7 @@ echo
 # --- Version tracking ---
 
 local_version="$(cd "$SCRIPT_DIR" && git describe --tags --always 2>/dev/null || echo "unknown")"
-echo "$local_version" > "$PROJECT_DIR/.workflow-kit/version"
+echo "$local_version" > "$PROJECT_DIR/.ninthwave/version"
 
 # --- Summary ---
 
@@ -173,7 +173,7 @@ echo "Done! All files are project-level (commit to git)."
 echo
 echo "Next steps:"
 echo "  1. Review: git diff"
-echo "  2. Commit: git add -A && git commit -m 'chore: install workflow-kit'"
+echo "  2. Commit: git add -A && git commit -m 'chore: install ninthwave'"
 echo "  3. Add work items to TODOS.md and run /work"
 echo
 echo "Per-user dependencies (each team member installs once):"
