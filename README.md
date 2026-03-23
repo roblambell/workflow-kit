@@ -7,13 +7,17 @@ Ship features through parallel AI sessions. Each work item gets a full interacti
 ```mermaid
 graph LR
     subgraph Plan
-        S[Feature spec] --> D[Work items]
-        D --- B1[TODOS.md]
-        D --- B2[Linear / Jira / ClickUp]
+        C[PRDs · specs · transcripts] --> A[Plan artifacts]
+        A -.->|optional| DC[/decompose]
+        A & DC --> WI
+        subgraph WI[Work items]
+            T[TODOS.md]
+            L[Linear / Jira / ClickUp]
+        end
     end
 
     subgraph Deliver
-        D -->|/work| O[Orchestrator]
+        WI -->|/work| O[Orchestrator]
         O --> W1[Session 1]
         O --> W2[Session 2]
         O --> W3[Session N]
