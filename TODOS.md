@@ -5,19 +5,6 @@
 ## CLI Migration (TypeScript migration completion, 2026-03-23)
 
 
-### Refactor: Remove legacy bash script and test infrastructure (H-MIG-3)
-
-**Priority:** High
-**Source:** Migration plan 2026-03-23
-**Depends on:** H-MIG-1, H-MIG-2
-
-Delete `core/batch-todos.sh` (2243 lines). Delete bash test files: `test/test_batch_order.sh`, `test/test_mark_done.sh`, `test/test_parse_todos.sh`, `test/test_version_bump.sh`, `test/test_cross_repo.sh`, `test/helpers.sh`, `test/run_all.sh`. Remove or simplify `test/parity.test.ts` (currently skipped). Remove `NINTHWAVE_LEGACY` branch from the shim template in `setup` (make it always use bun). Also remove the legacy branch from `.ninthwave/work`.
-
-Acceptance: `bun test` passes. No references to `batch-todos.sh` in any `.ts` file. `setup` generates a bun-only shim. `core/batch-todos.sh` no longer exists.
-
-Key files: `core/batch-todos.sh`, `test/test_batch_order.sh`, `test/test_mark_done.sh`, `test/test_parse_todos.sh`, `test/test_version_bump.sh`, `test/test_cross_repo.sh`, `test/helpers.sh`, `test/run_all.sh`, `test/parity.test.ts`, `setup`, `.ninthwave/work`
-
----
 
 ### Docs: Update documentation to reflect TypeScript CLI (M-MIG-4)
 
