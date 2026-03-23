@@ -8,7 +8,7 @@ Ship features through parallel AI sessions. Each work item gets a full interacti
 graph LR
     subgraph Plan
         C[PRDs · specs · transcripts] --> A[Plan artifacts]
-        A -.->|optional| DC[/decompose]
+        A -.->|optional| DC["/decompose"]
         A & DC --> WI
         subgraph WI[Work items]
             T[TODOS.md]
@@ -17,7 +17,7 @@ graph LR
     end
 
     subgraph Deliver
-        WI -->|/work| O[Orchestrator]
+        WI -->|"/work"| O[Orchestrator]
         O --> W1[Session 1]
         O --> W2[Session 2]
         O --> W3[Session N]
