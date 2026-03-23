@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8fafc;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f1f5f9;stop-opacity:1" />
+    </linearGradient>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="400" rx="12" fill="url(#bg2)" />
+
+  <!-- === LEFT: Work Item Sources === -->
+
+  <!-- Section label -->
+  <text x="110" y="40" text-anchor="middle" fill="#475569" font-family="sans-serif" font-size="13" font-weight="bold">WORK ITEMS</text>
+
+  <!-- TODOS.md -->
+  <rect x="40" y="60" width="140" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="56" y="74" width="16" height="16" rx="3" fill="#334155" />
+  <text x="88" y="88" fill="#334155" font-family="sans-serif" font-size="13" font-weight="600">TODOS.md</text>
+
+  <!-- Linear -->
+  <rect x="40" y="114" width="140" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="56" y="128" width="16" height="16" rx="3" fill="#5e6ad2" />
+  <text x="88" y="142" fill="#334155" font-family="sans-serif" font-size="13" font-weight="600">Linear</text>
+
+  <!-- ClickUp -->
+  <rect x="40" y="168" width="140" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="56" y="182" width="16" height="16" rx="3" fill="#7b68ee" />
+  <text x="88" y="196" fill="#334155" font-family="sans-serif" font-size="13" font-weight="600">ClickUp</text>
+
+  <!-- GitHub Issues -->
+  <rect x="40" y="222" width="140" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+  <rect x="56" y="236" width="16" height="16" rx="3" fill="#24292f" />
+  <text x="88" y="250" fill="#334155" font-family="sans-serif" font-size="13" font-weight="600">GH Issues</text>
+
+  <!-- Arrow: Work Items -> Parallel Sessions -->
+  <line x1="190" y1="190" x2="258" y2="190" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)" />
+
+  <!-- === CENTER: cmux + Sessions === -->
+
+  <!-- Section label -->
+  <text x="400" y="40" text-anchor="middle" fill="#475569" font-family="sans-serif" font-size="13" font-weight="bold">PARALLEL SESSIONS</text>
+
+  <!-- cmux window frame -->
+  <rect x="270" y="56" width="260" height="288" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="2" />
+
+  <!-- Mini title bar -->
+  <rect x="270" y="56" width="260" height="24" rx="10" fill="#161b22" />
+  <circle cx="286" cy="68" r="4" fill="#ff5f56" />
+  <circle cx="298" cy="68" r="4" fill="#ffbd2e" />
+  <circle cx="310" cy="68" r="4" fill="#27c93f" />
+  <text x="400" y="72" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="9">cmux</text>
+
+  <!-- Orchestrator row -->
+  <rect x="280" y="86" width="240" height="28" rx="4" fill="#1c2333" stroke="#58a6ff" stroke-width="1" />
+  <text x="296" y="104" fill="#58a6ff" font-family="monospace" font-size="10" font-weight="bold">Orchestrator</text>
+  <text x="500" y="104" text-anchor="end" fill="#8b949e" font-family="monospace" font-size="9">main</text>
+
+  <!-- Worker 1 -->
+  <rect x="280" y="120" width="240" height="28" rx="4" fill="#1c2333" />
+  <circle cx="292" cy="134" r="4" fill="#3fb950" />
+  <text x="304" y="138" fill="#c9d1d9" font-family="monospace" font-size="10">C-UO-1  Welcome email</text>
+  <text x="500" y="138" text-anchor="end" fill="#3fb950" font-family="monospace" font-size="9">Merged</text>
+
+  <!-- Worker 2 -->
+  <rect x="280" y="154" width="240" height="28" rx="4" fill="#1c2333" />
+  <circle cx="292" cy="168" r="4" fill="#3fb950" />
+  <text x="304" y="172" fill="#c9d1d9" font-family="monospace" font-size="10">H-UO-2  Onboarding ctx</text>
+  <text x="500" y="172" text-anchor="end" fill="#3fb950" font-family="monospace" font-size="9">Merged</text>
+
+  <!-- Worker 3 -->
+  <rect x="280" y="188" width="240" height="28" rx="4" fill="#1c2333" />
+  <circle cx="292" cy="202" r="4" fill="#d29922" />
+  <text x="304" y="206" fill="#c9d1d9" font-family="monospace" font-size="10">H-UO-3  Checklist</text>
+  <text x="500" y="206" text-anchor="end" fill="#d29922" font-family="monospace" font-size="9">PR #44</text>
+
+  <!-- Worker 4 -->
+  <rect x="280" y="222" width="240" height="28" rx="4" fill="#1c2333" />
+  <circle cx="292" cy="236" r="4" fill="#58a6ff" />
+  <text x="304" y="240" fill="#c9d1d9" font-family="monospace" font-size="10">H-UO-4  Profile flow</text>
+  <text x="500" y="240" text-anchor="end" fill="#58a6ff" font-family="monospace" font-size="9">Building</text>
+
+  <!-- Worker 5 -->
+  <rect x="280" y="256" width="240" height="28" rx="4" fill="#1c2333" />
+  <circle cx="292" cy="270" r="4" fill="#8b949e" />
+  <text x="304" y="274" fill="#8b949e" font-family="monospace" font-size="10">M-UO-5  Analytics</text>
+  <text x="500" y="274" text-anchor="end" fill="#8b949e" font-family="monospace" font-size="9">Queued</text>
+
+  <!-- Status legend -->
+  <circle cx="290" cy="310" r="4" fill="#3fb950" />
+  <text x="300" y="314" fill="#8b949e" font-family="monospace" font-size="8">Merged</text>
+  <circle cx="348" cy="310" r="4" fill="#d29922" />
+  <text x="358" y="314" fill="#8b949e" font-family="monospace" font-size="8">PR Open</text>
+  <circle cx="414" cy="310" r="4" fill="#58a6ff" />
+  <text x="424" y="314" fill="#8b949e" font-family="monospace" font-size="8">Building</text>
+  <circle cx="482" cy="310" r="4" fill="#8b949e" />
+  <text x="492" y="314" fill="#8b949e" font-family="monospace" font-size="8">Queued</text>
+
+  <!-- Arrow: Parallel Sessions -> Pull Requests -->
+  <line x1="542" y1="190" x2="568" y2="190" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)" />
+
+  <!-- === RIGHT: PRs === -->
+
+  <!-- Section label -->
+  <text x="670" y="40" text-anchor="middle" fill="#475569" font-family="sans-serif" font-size="13" font-weight="bold">PULL REQUESTS</text>
+
+  <!-- PR 1 - Merged -->
+  <rect x="580" y="60" width="200" height="52" rx="8" fill="#ffffff" stroke="#3fb950" stroke-width="1.5" />
+  <text x="596" y="80" fill="#334155" font-family="sans-serif" font-size="12" font-weight="600">PR #42</text>
+  <text x="596" y="96" fill="#57606a" font-family="sans-serif" font-size="10">feat: Add welcome email</text>
+  <text x="760" y="80" text-anchor="end" fill="#3fb950" font-family="sans-serif" font-size="11" font-weight="bold">Merged</text>
+
+  <!-- PR 2 - Merged -->
+  <rect x="580" y="122" width="200" height="52" rx="8" fill="#ffffff" stroke="#3fb950" stroke-width="1.5" />
+  <text x="596" y="142" fill="#334155" font-family="sans-serif" font-size="12" font-weight="600">PR #43</text>
+  <text x="596" y="158" fill="#57606a" font-family="sans-serif" font-size="10">feat: Onboarding context</text>
+  <text x="760" y="142" text-anchor="end" fill="#3fb950" font-family="sans-serif" font-size="11" font-weight="bold">Merged</text>
+
+  <!-- PR 3 - Open -->
+  <rect x="580" y="184" width="200" height="52" rx="8" fill="#ffffff" stroke="#d29922" stroke-width="1.5" />
+  <text x="596" y="204" fill="#334155" font-family="sans-serif" font-size="12" font-weight="600">PR #44</text>
+  <text x="596" y="220" fill="#57606a" font-family="sans-serif" font-size="10">feat: Dashboard checklist</text>
+  <text x="760" y="204" text-anchor="end" fill="#d29922" font-family="sans-serif" font-size="11" font-weight="bold">Open</text>
+
+  <!-- PR 4 - Pending -->
+  <rect x="580" y="246" width="200" height="52" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="4,3" />
+  <text x="596" y="266" fill="#94a3b8" font-family="sans-serif" font-size="12" font-weight="600">PR #45</text>
+  <text x="596" y="282" fill="#94a3b8" font-family="sans-serif" font-size="10">feat: Profile completion</text>
+  <text x="760" y="266" text-anchor="end" fill="#94a3b8" font-family="sans-serif" font-size="11">Pending</text>
+
+  <!-- Bottom label -->
+  <rect x="200" y="360" width="400" height="28" rx="6" fill="#f1f5f9" stroke="#e2e8f0" stroke-width="1" />
+  <text x="400" y="379" text-anchor="middle" fill="#64748b" font-family="sans-serif" font-size="12">REPLACE: Composite with real cmux screenshot + actual PR screenshots</text>
+</svg>

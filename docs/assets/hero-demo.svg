@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="500" rx="12" fill="url(#bg)" />
+
+  <!-- cmux window chrome -->
+  <rect x="20" y="20" width="760" height="460" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1" />
+
+  <!-- Title bar -->
+  <rect x="20" y="20" width="760" height="32" rx="8" fill="#161b22" />
+  <circle cx="40" cy="36" r="6" fill="#ff5f56" />
+  <circle cx="58" cy="36" r="6" fill="#ffbd2e" />
+  <circle cx="76" cy="36" r="6" fill="#27c93f" />
+  <text x="400" y="40" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="12">ninthwave / Batch Processing</text>
+
+  <!-- Sidebar -->
+  <rect x="20" y="52" width="180" height="428" fill="#0d1117" stroke="#30363d" stroke-width="1" />
+
+  <!-- Sidebar: Orchestrator -->
+  <rect x="28" y="60" width="164" height="36" rx="4" fill="#1c2333" stroke="#58a6ff" stroke-width="1" />
+  <text x="40" y="78" fill="#58a6ff" font-family="monospace" font-size="11" font-weight="bold">Orchestrator</text>
+  <text x="40" y="90" fill="#8b949e" font-family="monospace" font-size="9">main</text>
+
+  <!-- Sidebar: Worker 1 - Merged -->
+  <rect x="28" y="104" width="164" height="48" rx="4" fill="#1c2333" />
+  <circle cx="40" cy="120" r="5" fill="#3fb950" />
+  <text x="52" y="124" fill="#c9d1d9" font-family="monospace" font-size="11">C-UO-1</text>
+  <text x="52" y="138" fill="#8b949e" font-family="monospace" font-size="9">Welcome email</text>
+  <text x="52" y="148" fill="#3fb950" font-family="monospace" font-size="9">Merged</text>
+
+  <!-- Sidebar: Worker 2 - Merged -->
+  <rect x="28" y="160" width="164" height="48" rx="4" fill="#1c2333" />
+  <circle cx="40" cy="176" r="5" fill="#3fb950" />
+  <text x="52" y="180" fill="#c9d1d9" font-family="monospace" font-size="11">H-UO-2</text>
+  <text x="52" y="194" fill="#8b949e" font-family="monospace" font-size="9">Onboarding context</text>
+  <text x="52" y="204" fill="#3fb950" font-family="monospace" font-size="9">Merged</text>
+
+  <!-- Sidebar: Worker 3 - PR Created -->
+  <rect x="28" y="216" width="164" height="48" rx="4" fill="#1c2333" stroke="#d29922" stroke-width="1" />
+  <circle cx="40" cy="232" r="5" fill="#d29922" />
+  <text x="52" y="236" fill="#c9d1d9" font-family="monospace" font-size="11">H-UO-3</text>
+  <text x="52" y="250" fill="#8b949e" font-family="monospace" font-size="9">Dashboard checklist</text>
+  <text x="52" y="260" fill="#d29922" font-family="monospace" font-size="9">PR #44 - CI passing</text>
+
+  <!-- Sidebar: Worker 4 - Implementing -->
+  <rect x="28" y="272" width="164" height="48" rx="4" fill="#1c2333" />
+  <circle cx="40" cy="288" r="5" fill="#58a6ff" />
+  <text x="52" y="292" fill="#c9d1d9" font-family="monospace" font-size="11">H-UO-4</text>
+  <text x="52" y="306" fill="#8b949e" font-family="monospace" font-size="9">Profile completion</text>
+  <text x="52" y="316" fill="#58a6ff" font-family="monospace" font-size="9">Implementing...</text>
+
+  <!-- Main terminal area -->
+  <rect x="200" y="52" width="580" height="428" fill="#0d1117" />
+
+  <!-- Terminal output -->
+  <text x="216" y="80" fill="#8b949e" font-family="monospace" font-size="12">Batch 1 complete. Launching batch 2...</text>
+  <text x="216" y="104" fill="#3fb950" font-family="monospace" font-size="12">  todo/H-UO-3 -> Dashboard checklist     [started]</text>
+  <text x="216" y="122" fill="#3fb950" font-family="monospace" font-size="12">  todo/H-UO-4 -> Profile completion      [started]</text>
+  <text x="216" y="154" fill="#8b949e" font-family="monospace" font-size="12">Monitoring... (switch into any session)</text>
+  <text x="216" y="186" fill="#c9d1d9" font-family="monospace" font-size="12">  C-UO-1  Implementing -> Testing -> PR #42</text>
+  <text x="216" y="204" fill="#c9d1d9" font-family="monospace" font-size="12">          -> CI passing -> Approved</text>
+  <text x="216" y="222" fill="#3fb950" font-family="monospace" font-size="12" font-weight="bold">          -> Merged</text>
+
+  <text x="216" y="254" fill="#c9d1d9" font-family="monospace" font-size="12">  H-UO-2  Implementing -> Testing -> PR #43</text>
+  <text x="216" y="272" fill="#c9d1d9" font-family="monospace" font-size="12">          -> CI passing -> Approved</text>
+  <text x="216" y="290" fill="#3fb950" font-family="monospace" font-size="12" font-weight="bold">          -> Merged</text>
+
+  <text x="216" y="322" fill="#d29922" font-family="monospace" font-size="12">  H-UO-3  Implementing -> PR #44</text>
+  <text x="216" y="340" fill="#d29922" font-family="monospace" font-size="12">          -> CI passing... awaiting review</text>
+
+  <text x="216" y="372" fill="#58a6ff" font-family="monospace" font-size="12">  H-UO-4  Implementing...</text>
+
+  <!-- Cursor blink -->
+  <rect x="216" y="400" width="8" height="16" fill="#58a6ff" opacity="0.8" />
+
+  <!-- REPLACE WITH label -->
+  <rect x="250" y="430" width="300" height="30" rx="6" fill="#1c2333" stroke="#30363d" stroke-width="1" />
+  <text x="400" y="450" text-anchor="middle" fill="#8b949e" font-family="sans-serif" font-size="12">REPLACE: Screen recording of /work in cmux</text>
+</svg>

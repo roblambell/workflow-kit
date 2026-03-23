@@ -1,2 +1,5 @@
 # ninthwave worktrees
 .worktrees/
+
+# Machine-specific bundle location (created by setup)
+.ninthwave/dir
