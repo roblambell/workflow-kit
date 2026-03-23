@@ -93,60 +93,39 @@ detect_ai_tool() {
     return
   fi
 
-  # 2. Claude Code: check for characteristic env vars or process
+  # 2. OpenCode: sets OPENCODE=1 in child processes (merged Aug 2025)
+  if [[ "${OPENCODE:-}" == "1" ]]; then
+    echo "opencode"
+    return
+  fi
+
+  # 3. Claude Code: check for session env vars
   if [[ -n "${CLAUDE_CODE_SESSION:-}" ]] || [[ -n "${CLAUDE_SESSION_ID:-}" ]]; then
     echo "claude"
     return
   fi
-  # Check if we're running inside a claude process
-  if ps -o command= -p "$PPID" 2>/dev/null | grep -qi "claude"; then
-    echo "claude"
-    return
-  fi
 
-  # 3. OpenCode: check for characteristic env vars or process
-  # TODO: verify actual env vars when testing with OpenCode
-  if [[ -n "${OPENCODE_SESSION:-}" ]] || [[ -n "${OPENCODE:-}" ]]; then
-    echo "opencode"
-    return
-  fi
-  if ps -o command= -p "$PPID" 2>/dev/null | grep -qi "opencode"; then
-    echo "opencode"
-    return
-  fi
-
-  # 4. GitHub Copilot CLI: check for characteristic env vars or process
-  # TODO: verify actual env vars when testing with Copilot CLI
-  if [[ -n "${GITHUB_COPILOT_SESSION:-}" ]] || [[ -n "${COPILOT_CLI:-}" ]]; then
-    echo "copilot"
-    return
-  fi
-  if ps -o command= -p "$PPID" 2>/dev/null | grep -qi "copilot"; then
-    echo "copilot"
-    return
-  fi
-
-  # 5. Walk up the process tree looking for known tool names
+  # 4. Walk up the process tree looking for known tool names
   local pid="$$"
   local depth=0
   while [[ "$pid" -gt 1 ]] && [[ $depth -lt 10 ]]; do
     local cmd
     cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
     case "$cmd" in
-      *claude*)   echo "claude"; return ;;
       *opencode*) echo "opencode"; return ;;
+      *claude*)   echo "claude"; return ;;
       *copilot*)  echo "copilot"; return ;;
     esac
     pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || echo 1)"
     depth=$((depth + 1))
   done
 
-  # 6. Fallback: check if any tool binary is available
+  # 5. Fallback: check if any tool binary is available
   if command -v claude &>/dev/null; then
     echo "claude"
   elif command -v opencode &>/dev/null; then
     echo "opencode"
-  elif command -v gh &>/dev/null && gh copilot --version &>/dev/null 2>&1; then
+  elif command -v copilot &>/dev/null; then
     echo "copilot"
   else
     echo "unknown"
@@ -161,13 +140,14 @@ launch_ai_session() {
   case "$tool" in
     claude)
       # Claude Code via cmux with the todo-worker agent
+      # --agent todo-worker: loads .claude/agents/todo-worker.md
+      # --append-system-prompt: injects TODO details into agent context
       local ws_output
       ws_output=$(cmux new-workspace \
         --cwd "$worktree_path" \
         --command "claude --name 'TODO ${id}: ${safe_title}' --permission-mode bypassPermissions --agent todo-worker --append-system-prompt \"\$(cat '${prompt_file}')\"" \
         2>/dev/null) || { warn "cmux launch failed for $id -- is cmux running?"; return 1; }
 
-      # Extract workspace ref and send initial prompt
       local ws_ref
       ws_ref=$(echo "$ws_output" | grep -o 'workspace:[0-9]*')
       if [[ -n "$ws_ref" ]]; then
@@ -178,39 +158,41 @@ launch_ai_session() {
       ;;
 
     opencode)
-      # OpenCode via cmux
-      # TODO: verify OpenCode CLI flags for non-interactive mode, system prompt injection,
-      # and agent/worker configuration. The flags below are placeholders.
+      # OpenCode via cmux with the todo-worker agent
+      # --agent todo-worker: loads .opencode/agents/todo-worker.md
+      # Uses 'opencode run' for non-interactive execution, but we launch
+      # interactive mode via cmux so the worker stays alive for feedback.
       local ws_output
       ws_output=$(cmux new-workspace \
         --cwd "$worktree_path" \
-        --command "opencode --name 'TODO ${id}: ${safe_title}' --system-prompt \"\$(cat '${prompt_file}')\"" \
+        --command "opencode --agent todo-worker --title 'TODO ${id}: ${safe_title}'" \
         2>/dev/null) || { warn "cmux launch failed for $id -- is cmux running?"; return 1; }
 
       local ws_ref
       ws_ref=$(echo "$ws_output" | grep -o 'workspace:[0-9]*')
       if [[ -n "$ws_ref" ]]; then
         sleep 2
-        cmux send --workspace "$ws_ref" "Start implementing the TODO described in the system prompt.\n" 2>/dev/null \
+        # Send the TODO context as the initial message
+        cmux send --workspace "$ws_ref" "$(cat "$prompt_file")\n\nStart implementing this TODO now.\n" 2>/dev/null \
           || warn "Failed to send initial prompt to $ws_ref for $id"
       fi
       ;;
 
     copilot)
-      # GitHub Copilot CLI via cmux
-      # TODO: verify Copilot CLI flags for non-interactive mode, system prompt injection.
-      # Copilot CLI may need a different approach (e.g., piping the prompt via stdin).
+      # GitHub Copilot CLI via cmux with the todo-worker agent
+      # --agent=todo-worker: loads .github/agents/todo-worker.agent.md
+      # --allow-all-tools: pre-approve tool usage for autonomous operation
       local ws_output
       ws_output=$(cmux new-workspace \
         --cwd "$worktree_path" \
-        --command "gh copilot suggest --name 'TODO ${id}: ${safe_title}'" \
+        --command "copilot --agent=todo-worker --allow-all-tools --allow-all-paths" \
         2>/dev/null) || { warn "cmux launch failed for $id -- is cmux running?"; return 1; }
 
       local ws_ref
       ws_ref=$(echo "$ws_output" | grep -o 'workspace:[0-9]*')
       if [[ -n "$ws_ref" ]]; then
         sleep 2
-        # Send the full prompt as the initial message
+        # Send the TODO context as the initial message
         cmux send --workspace "$ws_ref" "$(cat "$prompt_file")\n\nStart implementing this TODO now.\n" 2>/dev/null \
           || warn "Failed to send initial prompt to $ws_ref for $id"
       fi

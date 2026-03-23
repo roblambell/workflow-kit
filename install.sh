@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Install workflow-kit into a project directory.
 #
-# Usage: ./install.sh [--project-dir /path/to/project] [--adapter claude|opencode|copilot]
+# Usage: ./install.sh [--project-dir /path/to/project]
 #
-# Copies core files and adapter-specific files into the target project.
-# Files are committed to the project repo so teammates get them via git pull.
+# Auto-detects installed AI tools and places skills + agents in the
+# right directories. All tools that support the SKILL.md standard
+# (Claude Code, OpenCode, Copilot CLI, Codex, Gemini CLI, Cursor, etc.)
+# discover skills from .agents/skills/ -- the cross-tool convention.
+#
+# Dependencies: gstack (for /review, /qa, /design-review)
 
 set -euo pipefail
 
@@ -12,19 +16,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Defaults
 PROJECT_DIR=""
-ADAPTER=""
 
 # Parse args
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-dir) PROJECT_DIR="$2"; shift 2 ;;
-    --adapter)     ADAPTER="$2"; shift 2 ;;
     -h|--help)
-      echo "Usage: $0 [--project-dir /path/to/project] [--adapter claude|opencode|copilot]"
+      echo "Usage: $0 [--project-dir /path/to/project]"
       echo
-      echo "Options:"
-      echo "  --project-dir   Target project directory (default: current directory)"
-      echo "  --adapter       AI tool adapter to install (default: auto-detect or ask)"
+      echo "Auto-detects installed AI tools and places files accordingly."
+      echo "Skills use the cross-tool .agents/skills/ convention."
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1 ;;
@@ -41,6 +42,54 @@ if [[ ! -d "$PROJECT_DIR/.git" ]]; then
 fi
 
 echo "Installing workflow-kit into: $PROJECT_DIR"
+echo
+
+# --- Detect installed AI tools ---
+
+echo "Detecting AI tools..."
+TOOLS_FOUND=()
+
+if command -v claude &>/dev/null; then
+  TOOLS_FOUND+=("claude")
+  echo "  Claude Code: found"
+fi
+
+if command -v opencode &>/dev/null; then
+  TOOLS_FOUND+=("opencode")
+  echo "  OpenCode: found"
+fi
+
+if command -v copilot &>/dev/null; then
+  TOOLS_FOUND+=("copilot")
+  echo "  Copilot CLI: found"
+fi
+
+if command -v codex &>/dev/null; then
+  TOOLS_FOUND+=("codex")
+  echo "  Codex: found"
+fi
+
+if [[ ${#TOOLS_FOUND[@]} -eq 0 ]]; then
+  echo "  No AI tools detected (will install files anyway)"
+fi
+echo
+
+# --- Check gstack dependency ---
+
+echo "Checking dependencies..."
+GSTACK_FOUND=false
+if [[ -d "$HOME/.claude/skills/gstack" ]] || [[ -d "$HOME/.agents/skills/gstack" ]] || [[ -d "$HOME/.codex/skills/gstack" ]]; then
+  GSTACK_FOUND=true
+  echo "  gstack: found"
+else
+  echo "  gstack: NOT FOUND"
+  echo
+  echo "  workflow-kit depends on gstack for /review, /qa, and /design-review."
+  echo "  Install gstack: https://garryslist.org"
+  echo "  Continuing without gstack -- core TODO workflow will work,"
+  echo "  but workers won't have code review capabilities."
+fi
+echo
 
 # --- Core files ---
 
@@ -108,8 +157,7 @@ else
   echo "  .workflow-kit/domains.conf (already exists, skipped)"
 fi
 
-# --- Ensure .gitignore has worktree entries ---
-
+# Ensure .gitignore has worktree entries
 if [[ -f "$PROJECT_DIR/.gitignore" ]]; then
   if ! grep -q "^\.worktrees/" "$PROJECT_DIR/.gitignore" 2>/dev/null; then
     echo "" >> "$PROJECT_DIR/.gitignore"
@@ -125,69 +173,78 @@ GITIGNORE
   echo "  .gitignore (created with .worktrees/)"
 fi
 
-# --- Adapter files ---
+echo
 
-if [[ -z "$ADAPTER" ]]; then
-  echo
-  echo "Which AI tool adapter should be installed?"
-  echo "  1) claude    -- Claude Code (.claude/skills/ and .claude/agents/)"
-  echo "  2) opencode  -- OpenCode (placeholder -- not yet implemented)"
-  echo "  3) copilot   -- GitHub Copilot CLI (placeholder -- not yet implemented)"
-  echo "  4) skip      -- Install core only, add adapter later"
-  read -rp "Choice [1/2/3/4]: " choice
-  case "$choice" in
-    1) ADAPTER="claude" ;;
-    2) ADAPTER="opencode" ;;
-    3) ADAPTER="copilot" ;;
-    4) ADAPTER="" ;;
-    *) echo "Invalid choice"; exit 1 ;;
-  esac
+# --- Skills (cross-tool via .agents/skills/) ---
+
+echo "Installing skills..."
+
+# .agents/skills/ is the cross-tool convention discovered by:
+# Claude Code, OpenCode, Copilot CLI, Codex, Gemini CLI, Cursor, Kiro, and others
+for skill in todos decompose todo-preview; do
+  mkdir -p "$PROJECT_DIR/.agents/skills/$skill"
+  cp "$SCRIPT_DIR/skills/$skill/SKILL.md" "$PROJECT_DIR/.agents/skills/$skill/SKILL.md"
+  echo "  .agents/skills/$skill/SKILL.md"
+done
+
+echo
+
+# --- Agent (tool-specific directories) ---
+
+echo "Installing todo-worker agent..."
+
+# Place agent in each detected tool's agent directory.
+# The content is identical -- only the path differs.
+AGENT_INSTALLED=false
+
+# Claude Code
+if [[ " ${TOOLS_FOUND[*]:-} " == *" claude "* ]] || [[ -d "$PROJECT_DIR/.claude" ]]; then
+  mkdir -p "$PROJECT_DIR/.claude/agents"
+  cp "$SCRIPT_DIR/agents/todo-worker.md" "$PROJECT_DIR/.claude/agents/todo-worker.md"
+  echo "  .claude/agents/todo-worker.md"
+  AGENT_INSTALLED=true
 fi
 
-if [[ -n "$ADAPTER" ]]; then
-  echo
-  echo "Installing $ADAPTER adapter..."
-
-  case "$ADAPTER" in
-    claude)
-      # Skills
-      mkdir -p "$PROJECT_DIR/.claude/skills/todos"
-      mkdir -p "$PROJECT_DIR/.claude/skills/decompose"
-      mkdir -p "$PROJECT_DIR/.claude/skills/todo-preview"
-      cp "$SCRIPT_DIR/adapters/claude/skills/todos/SKILL.md" "$PROJECT_DIR/.claude/skills/todos/SKILL.md"
-      cp "$SCRIPT_DIR/adapters/claude/skills/decompose/SKILL.md" "$PROJECT_DIR/.claude/skills/decompose/SKILL.md"
-      cp "$SCRIPT_DIR/adapters/claude/skills/todo-preview/SKILL.md" "$PROJECT_DIR/.claude/skills/todo-preview/SKILL.md"
-      echo "  .claude/skills/todos/SKILL.md"
-      echo "  .claude/skills/decompose/SKILL.md"
-      echo "  .claude/skills/todo-preview/SKILL.md"
-
-      # Agent
-      mkdir -p "$PROJECT_DIR/.claude/agents"
-      cp "$SCRIPT_DIR/adapters/claude/agents/todo-worker.md" "$PROJECT_DIR/.claude/agents/todo-worker.md"
-      echo "  .claude/agents/todo-worker.md"
-      ;;
-
-    opencode)
-      echo "  OpenCode adapter is a placeholder. See adapters/opencode/README.md for TODO items."
-      ;;
-
-    copilot)
-      echo "  Copilot CLI adapter is a placeholder. See adapters/copilot/README.md for TODO items."
-      ;;
-  esac
+# OpenCode
+if [[ " ${TOOLS_FOUND[*]:-} " == *" opencode "* ]] || [[ -d "$PROJECT_DIR/.opencode" ]]; then
+  mkdir -p "$PROJECT_DIR/.opencode/agents"
+  cp "$SCRIPT_DIR/agents/todo-worker.md" "$PROJECT_DIR/.opencode/agents/todo-worker.md"
+  echo "  .opencode/agents/todo-worker.md"
+  AGENT_INSTALLED=true
 fi
+
+# Copilot CLI
+if [[ " ${TOOLS_FOUND[*]:-} " == *" copilot "* ]] || [[ -d "$PROJECT_DIR/.github/agents" ]]; then
+  mkdir -p "$PROJECT_DIR/.github/agents"
+  # Copilot uses .agent.md suffix
+  cp "$SCRIPT_DIR/agents/todo-worker.md" "$PROJECT_DIR/.github/agents/todo-worker.agent.md"
+  echo "  .github/agents/todo-worker.agent.md"
+  AGENT_INSTALLED=true
+fi
+
+# Fallback: if no tools detected, install to .agents/ (cross-tool) and .claude/ (most common)
+if ! $AGENT_INSTALLED; then
+  mkdir -p "$PROJECT_DIR/.claude/agents"
+  cp "$SCRIPT_DIR/agents/todo-worker.md" "$PROJECT_DIR/.claude/agents/todo-worker.md"
+  echo "  .claude/agents/todo-worker.md (default)"
+fi
+
+echo
 
 # --- Version tracking ---
 
-# Record which version of workflow-kit was installed
 local_version="$(cd "$SCRIPT_DIR" && git describe --tags --always 2>/dev/null || echo "unknown")"
 echo "$local_version" > "$PROJECT_DIR/.workflow-kit/version"
 echo "  .workflow-kit/version ($local_version)"
 
 echo
 echo "Done! Next steps:"
-echo "  1. Review the installed files with: git diff"
-echo "  2. Commit them to your project: git add -A && git commit -m 'chore: install workflow-kit'"
-echo "  3. Create a TODOS.md section and run /todos (or scripts/batch-todos.sh) to start processing"
+echo "  1. Review the installed files: git diff"
+echo "  2. Commit: git add -A && git commit -m 'chore: install workflow-kit'"
+echo "  3. Add TODOs to TODOS.md and run /todos to start processing"
+if ! $GSTACK_FOUND; then
+  echo
+  echo "  Install gstack for /review, /qa, /design-review: https://garryslist.org"
+fi
 echo
 echo "To update later, re-run this install script and review the diff."
