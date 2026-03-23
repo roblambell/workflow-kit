@@ -12,7 +12,7 @@ graph LR
         P3[PRDs]
     end
 
-    subgraph Work items
+    subgraph WorkItems[Work items]
         W1[TODOS.md]
         W2[Linear]
         W3[ClickUp]
@@ -30,8 +30,8 @@ graph LR
         S2[Autofix]
     end
 
-    Plan -->|"/decompose"| Work items
-    Work items -->|"/work"| Deliver
+    Plan -->|"/decompose"| WorkItems
+    WorkItems -->|"/work"| Deliver
     Deliver -->|PRs| Ship
     Ship --> M[main]
 ```
