@@ -15,14 +15,6 @@ Works with any tool that supports the [Agent Skills standard](https://agentskill
 
 The tool is auto-detected from the orchestrator's environment. Workers launch with the same tool. Override with `WK_AI_TOOL=claude|opencode|copilot`.
 
-## Dependencies
-
-- **git** -- worktree management
-- **[gh](https://cli.github.com/)** -- GitHub CLI for PR operations
-- **[cmux](https://cmux.com/)** -- terminal multiplexer for parallel sessions
-- **[gstack](https://github.com/garrytan/gstack)** -- provides `/review`, `/qa`, `/design-review`
-- An AI coding tool (Claude Code, OpenCode, Copilot CLI, etc.)
-
 ## Quick Start
 
 From your project directory:
@@ -31,54 +23,44 @@ From your project directory:
 bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/workflow-kit/main/remote-install.sh)
 ```
 
-This downloads and runs the installer without cloning the repo. It fetches the latest files, auto-detects your AI tools, and places everything in the right directories. Review with `git diff`, then commit.
-
-## Development / Contributing
-
-If you want to iterate on workflow-kit itself (modify skills, update the script, test changes across projects):
-
-```bash
-# Clone the repo
-git clone git@github.com:roblambell/workflow-kit.git ~/code/workflow-kit
-
-# Install from your local clone
-cd /path/to/your/project
-~/code/workflow-kit/install.sh
-
-# After making changes to workflow-kit, re-install and review
-~/code/workflow-kit/install.sh --project-dir /path/to/your/project
-git diff
-```
+This downloads the latest files and installs them. One developer runs it once; the rest get the files via `git pull`. Review with `git diff`, then commit.
 
 ## What Gets Installed
 
-### Core
+Everything workflow-kit installs is **project-level** -- committed to git and shared by the whole team. No per-user project setup is needed.
 
-| File | Purpose |
+### Project artifacts (committed to git)
+
+| Path | Purpose |
 |------|---------|
-| `scripts/batch-todos.sh` | CLI for parsing TODOS.md, managing worktrees, launching sessions, monitoring PRs |
-| `docs/guides/todos-format.md` | Format reference for TODOS.md |
-| `TODOS.md` | Work item file (created if missing) |
-| `.workflow-kit/config` | Project-specific settings |
-| `.workflow-kit/domains.conf` | Custom domain slug mappings |
+| `scripts/batch-todos.sh` | CLI for TODO parsing, worktree management, session launching, PR monitoring |
+| `TODOS.md` | Work items (created if missing) |
+| `docs/guides/todos-format.md` | TODOS.md format reference |
+| `.workflow-kit/config` | Project settings (LOC extensions, domain mappings) |
+| `.workflow-kit/domains.conf` | Custom domain slug mappings for section headers |
+| `.agents/skills/todos/SKILL.md` | `/todos` -- batch orchestration |
+| `.agents/skills/decompose/SKILL.md` | `/decompose` -- feature breakdown |
+| `.agents/skills/todo-preview/SKILL.md` | `/todo-preview` -- dev servers |
+| `.claude/agents/todo-worker.md` | Worker agent (Claude Code) |
+| `.opencode/agents/todo-worker.md` | Worker agent (OpenCode) |
+| `.github/agents/todo-worker.agent.md` | Worker agent (Copilot CLI) |
 
-### Skills (cross-tool, via `.agents/skills/`)
+**Skills** use `.agents/skills/` -- the cross-tool standard. One copy, discovered by all tools.
 
-| Skill | Purpose |
-|-------|---------|
-| `/todos` | Interactive batch orchestration -- select, launch, monitor, merge, finalize |
-| `/decompose` | Break a feature spec into TODO items with dependency batches |
-| `/todo-preview` | Port-isolated dev servers for worktree testing |
+**Agents** are installed to all three tool directories unconditionally. The file is small and identical -- this means any team member works regardless of which AI tool they use, with no per-user install step.
 
-### Agent
+### Per-user dependencies (each developer installs once)
 
-| File | Purpose |
-|------|---------|
-| `todo-worker` | Worker agent that implements a single TODO: read, implement, test, review, PR |
+| Dependency | Purpose | Install |
+|------------|---------|---------|
+| An AI coding tool | Runs the sessions | Claude Code, OpenCode, Copilot CLI, etc. |
+| [gh](https://cli.github.com/) | GitHub CLI for PR operations | `brew install gh` |
+| [cmux](https://cmux.com/) | Terminal multiplexer for parallel sessions | See cmux.com |
+| [gstack](https://github.com/garrytan/gstack) | Provides `/review`, `/qa`, `/design-review` | See repo |
 
-Installed to each detected tool's agent directory (`.claude/agents/`, `.opencode/agents/`, `.github/agents/`).
+These are user-level tools, not project files. Each team member installs them on their own machine.
 
-### From gstack (dependency)
+### From gstack (user-level dependency)
 
 | Skill | Used By | When |
 |-------|---------|------|
@@ -139,6 +121,18 @@ infrastructure=infra
 frontend=frontend
 ```
 
+## Development / Contributing
+
+If you want to iterate on workflow-kit itself:
+
+```bash
+git clone git@github.com:roblambell/workflow-kit.git ~/code/workflow-kit
+cd /path/to/your/project
+~/code/workflow-kit/install.sh
+```
+
+After making changes to workflow-kit, re-run `install.sh` and review the diff.
+
 ## Architecture
 
 ```
@@ -151,8 +145,9 @@ workflow-kit/
 │   ├── decompose/SKILL.md
 │   └── todo-preview/SKILL.md
 ├── agents/
-│   └── todo-worker.md          # Worker agent (installed to tool-specific dirs)
-├── install.sh                  # Auto-detect tools, place files
+│   └── todo-worker.md          # Installed to all tool agent directories
+├── install.sh                  # Project installer
+├── remote-install.sh           # One-liner remote installer
 └── README.md
 ```
 
@@ -160,10 +155,10 @@ workflow-kit/
 
 ## Updating
 
-Re-run the same command you used to install. Core files are overwritten; project-specific config (`.workflow-kit/config`, `domains.conf`, `TODOS.md`) is preserved.
+Re-run the same command you used to install. Core files are overwritten; project-specific config (`TODOS.md`, `.workflow-kit/config`, `domains.conf`) is preserved.
 
 ```bash
-# Remote install (teammates)
+# Remote (teammates)
 bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/workflow-kit/main/remote-install.sh)
 
 # Local clone (contributors)
