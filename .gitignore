@@ -7,5 +7,5 @@
 # Node/Bun dependencies
 node_modules/
 
-# Bun auto-generated files
-CLAUDE.md
+# Build artifacts
+dist/
