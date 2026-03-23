@@ -350,7 +350,7 @@ describe("normalizeDomain", () => {
 });
 
 describe("extractFilePaths", () => {
-  it("extracts backtick-quoted paths with extensions", () => {
+  it("extracts backtick-quoted paths with extensions from Key files line", () => {
     const item = fakeItem(
       "Key files: `lib/gateway/rate_limiter.ex`, `config/test.exs`",
     );
@@ -359,26 +359,52 @@ describe("extractFilePaths", () => {
     expect(paths).toContain("config/test.exs");
   });
 
-  it("extracts file:line patterns", () => {
-    const item = fakeItem("See lib/foo.ex:123 and lib/bar.py:45-67");
+  it("extracts file:line patterns from Key files line", () => {
+    const item = fakeItem("Key files: lib/foo.ex:123, lib/bar.py:45-67");
     const paths = extractFilePaths(item);
     expect(paths).toContain("lib/foo.ex");
     expect(paths).toContain("lib/bar.py");
   });
 
-  it("extracts directory paths in backticks", () => {
-    const item = fakeItem("Look at `src/components/Onboarding`");
+  it("extracts directory paths in backticks from Key files line", () => {
+    const item = fakeItem("Key files: `src/components/Onboarding`");
     const paths = extractFilePaths(item);
     expect(paths).toContain("src/components/Onboarding");
   });
 
   it("deduplicates paths", () => {
     const item = fakeItem(
-      "`lib/foo.ex` and `lib/foo.ex` mentioned twice",
+      "Key files: `lib/foo.ex` and `lib/foo.ex` mentioned twice",
     );
     const paths = extractFilePaths(item);
     const fooCount = paths.filter((p) => p === "lib/foo.ex").length;
     expect(fooCount).toBe(1);
+  });
+
+  it("ignores paths mentioned only in description text", () => {
+    const item = fakeItem(
+      "### Fix: Something (X-TEST-1)\n\nThis invokes `core/cli.ts` internally.\n\nKey files: `lib/other.ts`",
+    );
+    const paths = extractFilePaths(item);
+    expect(paths).not.toContain("core/cli.ts");
+    expect(paths).toContain("lib/other.ts");
+  });
+
+  it("ignores paths in acceptance text", () => {
+    const item = fakeItem(
+      "### Fix: Something (X-TEST-1)\n\nAcceptance: Changes to `core/parser.ts` should not break.\n\nKey files: `lib/handler.ex`",
+    );
+    const paths = extractFilePaths(item);
+    expect(paths).not.toContain("core/parser.ts");
+    expect(paths).toContain("lib/handler.ex");
+  });
+
+  it("returns empty when no Key files line exists", () => {
+    const item = fakeItem(
+      "### Fix: Something (X-TEST-1)\n\nDescription mentions `core/cli.ts` but no Key files line.",
+    );
+    const paths = extractFilePaths(item);
+    expect(paths).toHaveLength(0);
   });
 });
 
