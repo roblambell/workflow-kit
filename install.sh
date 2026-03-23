@@ -134,7 +134,7 @@ echo
 
 echo "Skills (cross-tool, .agents/skills/)..."
 
-for skill in todos decompose todo-preview; do
+for skill in work decompose todo-preview; do
   mkdir -p "$PROJECT_DIR/.agents/skills/$skill"
   cp "$SCRIPT_DIR/skills/$skill/SKILL.md" "$PROJECT_DIR/.agents/skills/$skill/SKILL.md"
   echo "  .agents/skills/$skill/SKILL.md"
@@ -174,7 +174,7 @@ echo
 echo "Next steps:"
 echo "  1. Review: git diff"
 echo "  2. Commit: git add -A && git commit -m 'chore: install workflow-kit'"
-echo "  3. Add TODOs to TODOS.md and run /todos"
+echo "  3. Add work items to TODOS.md and run /work"
 echo
 echo "Per-user dependencies (each team member installs once):"
 command -v gh &>/dev/null      && echo "  gh:     installed" || echo "  gh:     https://cli.github.com/"

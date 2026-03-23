@@ -1,9 +1,9 @@
 ---
-name: todos
+name: work
 description: |
-  Batch-process engineering TODOs through parallel AI coding sessions via cmux.
-  Interactively select, launch, monitor, merge, and finalize TODO work items.
-  Use when asked to "process todos", "batch todos", "work on todos", or "run todos".
+  Batch-process work items through parallel AI coding sessions via cmux.
+  Interactively select, launch, monitor, merge, and finalize work items.
+  Use when asked to "process work items", "batch work", "run work", or "start work".
 allowed-tools:
   - Bash
   - Read

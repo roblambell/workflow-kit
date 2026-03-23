@@ -9,7 +9,7 @@ Bring your own AI tool, coding conventions, and feature specs. workflow-kit is t
 ```mermaid
 graph TD
     A[Feature spec]:::external -->|/decompose| B[TODOS.md]
-    B -->|/todos| C[Orchestrator]
+    B -->|/work| C[Orchestrator]
     C -->|launch via cmux| W[Workers]
     W -->|open PRs| G[GitHub]
     C -.->|"CI fixes · review feedback · rebases"| W
@@ -46,7 +46,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/workflow-kit/main
 
 Everything is **project-level** -- committed to git, shared by the whole team. No per-user project setup needed.
 
-The installer adds: three skills (`/todos`, `/decompose`, `/todo-preview`) via the cross-tool `.agents/skills/` directory, a worker agent installed to all tool-specific agent directories, a CLI script (`scripts/batch-todos.sh`), and project config.
+The installer adds: three skills (`/work`, `/decompose`, `/todo-preview`) via the cross-tool `.agents/skills/` directory, a worker agent installed to all tool-specific agent directories, a CLI script (`scripts/batch-todos.sh`), and project config.
 
 <details>
 <summary>Full file inventory</summary>
@@ -58,7 +58,7 @@ The installer adds: three skills (`/todos`, `/decompose`, `/todo-preview`) via t
 | `docs/guides/todos-format.md` | TODOS.md format reference |
 | `.workflow-kit/config` | Project settings (LOC extensions, domain mappings) |
 | `.workflow-kit/domains.conf` | Custom domain slug mappings for section headers |
-| `.agents/skills/todos/SKILL.md` | `/todos` -- batch orchestration |
+| `.agents/skills/work/SKILL.md` | `/work` -- batch orchestration |
 | `.agents/skills/decompose/SKILL.md` | `/decompose` -- feature breakdown |
 | `.agents/skills/todo-preview/SKILL.md` | `/todo-preview` -- dev servers |
 | `.claude/agents/todo-worker.md` | Worker agent (Claude Code) |
@@ -111,7 +111,7 @@ Or write them directly to `TODOS.md` following `docs/guides/todos-format.md`.
 Launch parallel AI sessions to implement the work items:
 
 ```
-/todos
+/work
 ```
 
 This orchestrates: SELECT items, LAUNCH parallel sessions, MONITOR for PRs/CI/reviews, MERGE in order, FINALIZE with version bump.
@@ -146,37 +146,9 @@ infrastructure=infra
 frontend=frontend
 ```
 
-## Development / Contributing
+## Contributing
 
-If you want to iterate on workflow-kit itself:
-
-```bash
-git clone git@github.com:roblambell/workflow-kit.git ~/code/workflow-kit
-cd /path/to/your/project
-~/code/workflow-kit/install.sh
-```
-
-After making changes to workflow-kit, re-run `install.sh` and review the diff.
-
-## Architecture
-
-```
-workflow-kit/
-├── core/
-│   ├── batch-todos.sh          # Universal CLI (auto-detects AI tool)
-│   └── docs/todos-format.md
-├── skills/                     # Cross-tool SKILL.md files
-│   ├── todos/SKILL.md
-│   ├── decompose/SKILL.md
-│   └── todo-preview/SKILL.md
-├── agents/
-│   └── todo-worker.md          # Installed to all tool agent directories
-├── install.sh                  # Project installer
-├── remote-install.sh           # One-liner remote installer
-└── README.md
-```
-
-**Design principle:** Project-specific context lives in the project's instruction file (`CLAUDE.md`, `AGENTS.md`, etc.), not in workflow-kit. The worker reads the project's instructions for coding conventions, test commands, and architecture docs.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, architecture, and how the pieces fit together.
 
 ## Updating
 

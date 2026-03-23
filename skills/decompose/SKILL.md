@@ -1,7 +1,7 @@
 ---
 name: decompose
 description: |
-  Decompose a feature spec into TODO items for batch processing via /todos.
+  Decompose a feature spec into work items for batch processing via /work.
   Takes a PRD, phase doc, or verbal description and breaks it into human-reviewable
   PR-sized work items with dependencies mapped into batches.
   Use when asked to "decompose", "break down this feature", "create todos for",
@@ -35,7 +35,7 @@ This skill is highly interactive. You MUST use your interactive question tool to
 
 ## Instructions
 
-This skill decomposes a feature spec into TODO items sized for individual human-reviewable PRs. The TODOs are written to `TODOS.md` in a format compatible with `scripts/batch-todos.sh`, ready for processing via `/todos`.
+This skill decomposes a feature spec into work items sized for individual human-reviewable PRs. The items are written to `TODOS.md` in a format compatible with `scripts/batch-todos.sh`, ready for processing via `/work`.
 
 **Prerequisites:** `scripts/batch-todos.sh` must exist and be executable. `TODOS.md` must exist at the project root.
 
@@ -153,7 +153,7 @@ Show totals and ask for approval. Options: looks good, adjust, re-decompose.
 
 ### Phase 7: HANDOFF
 
-Present summary and connect to `/todos` for processing.
+Present summary and connect to `/work` for processing.
 
 ---
 
