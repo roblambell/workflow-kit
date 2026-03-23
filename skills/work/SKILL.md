@@ -32,7 +32,7 @@ This skill is highly interactive. You MUST use your interactive question tool to
 
 ## Instructions
 
-This skill orchestrates batch processing of engineering TODOs through 5 interactive phases. The utility script `.ninthwave/nw` must exist and be executable. All implementation work happens on worktree branches, never directly on main. VERSION and CHANGELOG.md are ONLY modified during Phase 5 (version-bump), never on feature branches.
+This skill orchestrates batch processing of engineering TODOs through 5 interactive phases. The utility script `.ninthwave/work` must exist and be executable. All implementation work happens on worktree branches, never directly on main. VERSION and CHANGELOG.md are ONLY modified during Phase 5 (version-bump), never on feature branches.
 
 ---
 
@@ -40,7 +40,7 @@ This skill orchestrates batch processing of engineering TODOs through 5 interact
 
 **Goal:** Help the user choose which TODO items to work on in this batch.
 
-1. Run `.ninthwave/nw list --ready` to get all available items.
+1. Run `.ninthwave/work list --ready` to get all available items.
 2. Parse the output and present a summary table to the user showing: ID, priority, domain, title, and estimated complexity.
 
 3. AskUserQuestion -- "How do you want to select items?"
@@ -54,7 +54,7 @@ This skill orchestrates batch processing of engineering TODOs through 5 interact
    **If user picks A (feature code):**
    - List the distinct feature codes found.
    - AskUserQuestion to pick a feature code.
-   - Run `.ninthwave/nw list --feature <code>`.
+   - Run `.ninthwave/work list --feature <code>`.
 
    **If user picks B (priority):**
    - AskUserQuestion -- "Which priority level?"
@@ -64,12 +64,12 @@ This skill orchestrates batch processing of engineering TODOs through 5 interact
    - AskUserQuestion -- "Which domain?"
    - Filter items by chosen domain.
 
-4. **Dependency analysis:** Run `.ninthwave/nw batch-order <selected-IDs>` to check for dependency chains.
+4. **Dependency analysis:** Run `.ninthwave/work batch-order <selected-IDs>` to check for dependency chains.
 
    - **If all items are in Batch 1** (no dependencies): proceed to conflict check and launch.
    - **If items span multiple batches**: present the batch plan. Start with Batch 1, process remaining after merge.
 
-5. Run `.ninthwave/nw conflicts <batch-IDs>` to check for file overlaps.
+5. Run `.ninthwave/work conflicts <batch-IDs>` to check for file overlaps.
 
 6. Present the conflict analysis. If conflicts, suggest splitting into sub-batches.
 
@@ -104,7 +104,7 @@ This skill orchestrates batch processing of engineering TODOs through 5 interact
 
 **Goal:** Create worktrees and launch parallel AI coding sessions.
 
-1. Run `.ninthwave/nw start <IDs>`.
+1. Run `.ninthwave/work start <IDs>`.
 2. Display summary: item ID, title, branch, worktree path, session name.
 3. Tell the user sessions are running. Proceed to Phase 3.
 
@@ -126,7 +126,7 @@ Maintain four sets: **queued**, **implementing** (counts against WIP), **pr_open
 
 #### Watch loop
 
-Use `.ninthwave/nw autopilot-watch --interval 120 --state-file /tmp/autopilot-state.tsv` as a background task.
+Use `.ninthwave/work autopilot-watch --interval 120 --state-file /tmp/autopilot-state.tsv` as a background task.
 
 **CRITICAL: Check-then-watch pattern.** Before each watch, run `watch-ready` first and process actionable items.
 
@@ -174,9 +174,9 @@ Wait for user to confirm sessions completed, then verify PR status.
 
 **Goal:** Bump version, clean up, mark done.
 
-1. `.ninthwave/nw version-bump`
-2. `.ninthwave/nw clean`
-3. `.ninthwave/nw mark-done <IDs>` for all merged items
+1. `.ninthwave/work version-bump`
+2. `.ninthwave/work clean`
+3. `.ninthwave/work mark-done <IDs>` for all merged items
 4. Commit TODOS.md changes
 5. Present completion summary
 6. Check for remaining dependency batches -- offer to continue
@@ -198,7 +198,7 @@ Workers prefix with `**[Worker: TODO-ID]**`.
 
 ## Important Rules
 
-- **Script dependency:** `.ninthwave/nw` must exist and be executable
+- **Script dependency:** `.ninthwave/work` must exist and be executable
 - **Branch safety:** All implementation on `todo/*` worktree branches, main only during Phase 5
 - **VERSION/CHANGELOG discipline:** Only modified during Phase 5
 - **Conflict handling:** Always check before launching

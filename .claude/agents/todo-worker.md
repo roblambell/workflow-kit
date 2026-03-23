@@ -205,7 +205,7 @@ When you receive a message, it will be one of these categories:
 
 #### Stop Request
 
-Clean up and exit: `${PROJECT_ROOT}/.ninthwave/nw clean-single YOUR_TODO_ID` (PROJECT_ROOT is provided in the system prompt above)
+Clean up and exit: `${PROJECT_ROOT}/.ninthwave/work clean-single YOUR_TODO_ID` (PROJECT_ROOT is provided in the system prompt above)
 
 ## PR Comment Conventions
 

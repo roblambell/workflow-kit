@@ -4,7 +4,7 @@
 # Tool-agnostic: auto-detects the AI tool (Claude Code, OpenCode, Copilot CLI)
 # from the orchestrator's environment and launches workers with the same tool.
 #
-# Usage: .ninthwave/nw <command> [options]
+# Usage: .ninthwave/work <command> [options]
 #
 # Commands:
 #   list [--priority P] [--domain D] [--feature F] [--ready]

@@ -5,17 +5,24 @@ Ship features through parallel AI sessions. Each work item gets a full interacti
 <!-- TODO: Add demo GIF/video here showing parallel sessions in action -->
 
 ```mermaid
-graph TD
-    A[Feature spec]:::external -->|Plan| B[Work items]
-    B -->|/work| C[Orchestrator]
-    C -->|launch via cmux/tmux| W[Workers]
-    W -->|open PRs| G[GitHub]
-    C -.->|"CI fixes · review feedback · rebases"| W
-    C -->|squash merge| G
-    G --> M[main]
-    M -->|reconcile| R["Update tasks · version bump · changelog"]
+graph LR
+    subgraph Plan
+        S[Feature spec] --> D[Work items]
+        D --- B1[TODOS.md]
+        D --- B2[Linear / Jira / ClickUp]
+    end
 
-    classDef external fill:#f5f5f5,stroke:#999,stroke-dasharray: 5 5,color:#666
+    subgraph Deliver
+        D -->|/work| O[Orchestrator]
+        O --> W1[Session 1]
+        O --> W2[Session 2]
+        O --> W3[Session N]
+    end
+
+    subgraph Ship
+        W1 & W2 & W3 -->|PRs| CI[CI + Review]
+        CI -->|merge| M[main]
+    end
 ```
 
 ## How It Works
@@ -36,27 +43,12 @@ Run `/work`. ninthwave launches parallel AI coding sessions, monitors CI and rev
 - **Merge strategies** — merge after approval + CI passes, auto-merge as soon as CI passes, or confirm each merge manually
 - **WIP limits** — rate-limit concurrent sessions (e.g., 5 at a time); auto-start next when a PR opens, keeping the pipeline flowing
 
-## Design Principles
-
-**ninthwave doesn't wrap your AI tool.** It orchestrates around it. Each session is a full native instance of your coding tool — you can switch into any session, steer it mid-flight, give feedback, or iterate on a PR. The AI tool runs exactly as it would if you started it yourself.
-
-**Bring your own everything.** Your AI tool, your CI, your task management, your coding conventions. ninthwave is the orchestration layer that connects them.
-
-**Cost-conscious.** One orchestrator session + one agent per work item. No agent swarm, no redundant LLM calls.
-
-## Work Item Backends
-
-| Backend | When to use |
-|---------|-------------|
-| `TODOS.md` (built-in) | Solo devs, quick projects, no external dependencies |
-| ClickUp, Linear, Jira (adapters) | Teams and organizations with existing task management |
-
 ## Prerequisites
 
 | Dependency | Purpose | Install |
 |------------|---------|---------|
 | An AI coding tool | Runs the sessions | Claude Code, OpenCode, Copilot CLI, etc. |
-| A terminal multiplexer | Parallel session management | [cmux](https://cmux.com/) (recommended) or tmux |
+| [cmux](https://cmux.com/) | Workspace management, message passing, status updates | `brew install cmux` |
 | [gh](https://cli.github.com/) | GitHub CLI for PR operations | `brew install gh` |
 
 Works with Claude Code, OpenCode, Copilot CLI, and any tool supporting the [Agent Skills standard](https://agentskills.io). The tool is auto-detected from the orchestrator's environment.
@@ -80,6 +72,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/roblambell/ninthwave/main/re
 
 One developer runs setup; the rest get the project-level files via `git pull`. Review with `git diff`, then commit.
 
+## Design Principles
+
+**Your tool, multiplied.** Each session is a full native instance of the AI coding tool you already use — same interface, same capabilities. Switch into any session, steer it mid-flight, or iterate on a PR. ninthwave handles the coordination; you stay in control.
+
+**Bring your own everything.** Your AI tool, your CI, your task management, your coding conventions. ninthwave is the orchestration layer that connects them.
+
+**Cost-conscious.** One orchestrator session + one agent per work item. No agent swarm, no redundant LLM calls.
+
 ## What Gets Installed
 
 ninthwave is a **self-contained bundle** — all skills, agents, and the CLI live inside the ninthwave directory. The `setup` script creates minimal project-level config.
@@ -94,7 +94,7 @@ ninthwave is a **self-contained bundle** — all skills, agents, and the CLI liv
 
 | Path | Purpose |
 |------|---------|
-| `.ninthwave/nw` | CLI shim — calls the bundle's `core/batch-todos.sh` |
+| `.ninthwave/work` | CLI shim — calls the bundle's `core/batch-todos.sh` |
 | `.ninthwave/dir` | Points to the ninthwave bundle location |
 | `.ninthwave/config` | Project settings (LOC extensions, domain mappings) |
 | `.ninthwave/domains.conf` | Custom domain slug mappings |
@@ -120,13 +120,20 @@ Workers reference these skill names during execution. If available, they're used
 ## Standalone CLI
 
 ```bash
-.ninthwave/nw list --ready          # List ready work items
-.ninthwave/nw batch-order H-1 H-2   # Check dependency order
-.ninthwave/nw start H-1 H-2         # Launch sessions (auto-detects tool)
-.ninthwave/nw status                 # Check worktree status
-.ninthwave/nw watch-ready            # Watch PR readiness
-.ninthwave/nw version-bump           # Bump version from commits
+.ninthwave/work list --ready          # List ready work items
+.ninthwave/work batch-order H-1 H-2   # Check dependency order
+.ninthwave/work start H-1 H-2         # Launch sessions (auto-detects tool)
+.ninthwave/work status                 # Check worktree status
+.ninthwave/work watch-ready            # Watch PR readiness
+.ninthwave/work version-bump           # Bump version from commits
 ```
+
+## Work Item Backends
+
+| Backend | When to use |
+|---------|-------------|
+| `TODOS.md` (built-in) | Solo devs, quick projects, no external dependencies |
+| ClickUp, Linear, Jira (adapters) | Teams and organizations with existing task management |
 
 ## Project Configuration
 

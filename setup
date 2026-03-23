@@ -60,12 +60,15 @@ echo "$NINTHWAVE_DIR" > "$PROJECT_DIR/.ninthwave/dir"
 echo "  .ninthwave/dir"
 
 # Create the CLI shim
-cat > "$PROJECT_DIR/.ninthwave/nw" << 'SHIM'
+# Clean up old shim name
+rm -f "$PROJECT_DIR/.ninthwave/nw"
+
+cat > "$PROJECT_DIR/.ninthwave/work" << 'SHIM'
 #!/usr/bin/env bash
 exec "$(cat "$(dirname "$0")/dir")/core/batch-todos.sh" "$@"
 SHIM
-chmod +x "$PROJECT_DIR/.ninthwave/nw"
-echo "  .ninthwave/nw"
+chmod +x "$PROJECT_DIR/.ninthwave/work"
+echo "  .ninthwave/work"
 
 if [[ ! -f "$PROJECT_DIR/.ninthwave/config" ]]; then
   cat > "$PROJECT_DIR/.ninthwave/config" << 'CONF'

@@ -70,8 +70,8 @@ ninthwave/                          # The repo IS the installable bundle
 ### How the Pieces Fit
 
 1. **User runs `/decompose`** — the decompose skill explores the codebase, breaks the feature into work items, writes them to `TODOS.md`
-2. **User runs `/work`** — the work skill reads `TODOS.md`, presents selection options, then calls `.ninthwave/nw start` to create worktrees and launch AI sessions via cmux
-3. **`.ninthwave/nw start`** (shim → `core/batch-todos.sh`) auto-detects the AI tool, creates a git worktree per item, allocates a partition for port/DB isolation, and launches each session with the `todo-worker` agent
+2. **User runs `/work`** — the work skill reads `TODOS.md`, presents selection options, then calls `.ninthwave/work start` to create worktrees and launch AI sessions via cmux
+3. **`.ninthwave/work start`** (shim → `core/batch-todos.sh`) auto-detects the AI tool, creates a git worktree per item, allocates a partition for port/DB isolation, and launches each session with the `todo-worker` agent
 4. **Each worker session** reads `CLAUDE.md`/`AGENTS.md` for project conventions, implements the TODO, runs tests, creates a PR, then idles waiting for orchestrator messages
 5. **The orchestrator** (the `/work` skill session) monitors PR status, dispatches CI fixes and review feedback to workers via `cmux send`, merges PRs, rebases dependents, and handles version bumping
 

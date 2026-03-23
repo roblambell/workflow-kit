@@ -1,6 +1,6 @@
 # TODOS.md Format Guide
 
-Canonical reference for the `TODOS.md` format. Used by `/decompose` (feature decomposition) and ad-hoc TODO creation. Parsed by `.ninthwave/nw` (the ninthwave CLI).
+Canonical reference for the `TODOS.md` format. Used by `/decompose` (feature decomposition) and ad-hoc TODO creation. Parsed by `.ninthwave/work` (the ninthwave CLI).
 
 ## Empty Template
 
