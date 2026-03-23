@@ -35,7 +35,9 @@ Changes to source files take effect immediately (global installs point directly 
 ```
 ninthwave/                          # The repo IS the installable bundle
 ├── core/
-│   ├── batch-todos.sh              # Universal CLI (auto-detects AI tool)
+│   ├── cli.ts                      # CLI entry point (TypeScript + Bun)
+│   ├── commands/                   # CLI command implementations
+│   ├── parser.ts                   # TODOS.md parser
 │   └── docs/todos-format.md        # TODOS.md format reference
 ├── skills/                         # SKILL.md files (cross-tool standard)
 │   ├── work/SKILL.md               # /work — batch orchestration
@@ -61,7 +63,7 @@ ninthwave/                          # The repo IS the installable bundle
 
 | File | What it does |
 |------|-------------|
-| `core/batch-todos.sh` | The CLI backbone. Parses TODOS.md, manages worktrees/partitions, launches AI sessions, monitors PRs, handles version bumps. ~1900 lines of bash. |
+| `core/cli.ts` | The CLI entry point. Routes commands to `core/commands/` which handle worktrees/partitions, AI session launches, PR monitoring, and version bumps. TypeScript + Bun. |
 | `skills/work/SKILL.md` | The orchestration skill. Drives the 5-phase workflow (select, launch, monitor, merge, finalize). |
 | `skills/decompose/SKILL.md` | Breaks feature specs into PR-sized work items with dependency batches. |
 | `agents/todo-worker.md` | The worker prompt. Each AI session follows this: read the TODO, read project conventions, implement, test, review, PR, wait for orchestrator. |
@@ -71,7 +73,7 @@ ninthwave/                          # The repo IS the installable bundle
 
 1. **User runs `/decompose`** — the decompose skill explores the codebase, breaks the feature into work items, writes them to `TODOS.md`
 2. **User runs `/work`** — the work skill reads `TODOS.md`, presents selection options, then calls `.ninthwave/work start` to create worktrees and launch AI sessions via cmux
-3. **`.ninthwave/work start`** (shim → `core/batch-todos.sh`) auto-detects the AI tool, creates a git worktree per item, allocates a partition for port/DB isolation, and launches each session with the `todo-worker` agent
+3. **`.ninthwave/work start`** (shim → `core/cli.ts`) auto-detects the AI tool, creates a git worktree per item, allocates a partition for port/DB isolation, and launches each session with the `todo-worker` agent
 4. **Each worker session** reads `CLAUDE.md`/`AGENTS.md` for project conventions, implements the TODO, runs tests, creates a PR, then idles waiting for orchestrator messages
 5. **The orchestrator** (the `/work` skill session) monitors PR status, dispatches CI fixes and review feedback to workers via `cmux send`, merges PRs, rebases dependents, and handles version bumping
 

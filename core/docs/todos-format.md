@@ -25,7 +25,7 @@ Examples:
 - `## Cloud Infrastructure`
 - `## Frontend: Search & Filters`
 
-The section name is normalised by `batch-todos.sh` into a domain slug for filtering (`--domain`).
+The section name is normalised by the ninthwave CLI into a domain slug for filtering (`--domain`).
 
 ## Item Format
 
@@ -122,7 +122,7 @@ Each TODO should target one human-reviewable PR:
 
 ## Parsing Rules
 
-`batch-todos.sh` extracts these fields via regex:
+`core/parser.ts` extracts these fields via regex:
 - **ID**: from parenthetical in `### ` header, pattern `([A-Z]-[A-Za-z0-9]+-[0-9]+)`
 - **Priority**: from `**Priority:**` line, converted to lowercase
 - **Depends on**: from `**Depends on:**` line, comma/space-separated IDs
