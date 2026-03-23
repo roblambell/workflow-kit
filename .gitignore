@@ -3,3 +3,9 @@
 
 # Machine-specific bundle location (created by setup)
 .ninthwave/dir
+
+# Node/Bun dependencies
+node_modules/
+
+# Bun auto-generated files
+CLAUDE.md

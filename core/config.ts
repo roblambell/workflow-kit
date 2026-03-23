@@ -1,0 +1,66 @@
+// Project configuration loading for the ninthwave CLI.
+
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
+import type { ProjectConfig } from "./types.ts";
+import { DEFAULT_LOC_EXTENSIONS } from "./types.ts";
+
+/**
+ * Load project config from .ninthwave/config (key=value format).
+ * Only accepts KEY=VALUE lines; comments and blank lines are skipped.
+ */
+export function loadConfig(projectRoot: string): ProjectConfig {
+  const config: ProjectConfig = {
+    locExtensions: DEFAULT_LOC_EXTENSIONS,
+  };
+
+  const configPath = join(projectRoot, ".ninthwave", "config");
+  if (!existsSync(configPath)) return config;
+
+  const content = readFileSync(configPath, "utf-8");
+  for (const rawLine of content.split("\n")) {
+    const eqIdx = rawLine.indexOf("=");
+    if (eqIdx === -1) continue;
+
+    const key = rawLine.slice(0, eqIdx).trim();
+    if (!key || key.startsWith("#")) continue;
+
+    // Strip surrounding quotes from value
+    let value = rawLine.slice(eqIdx + 1).trim();
+    value = value.replace(/^["']/, "").replace(/["']$/, "");
+
+    config[key] = value;
+  }
+
+  // Apply LOC_EXTENSIONS if set in config
+  if (config["LOC_EXTENSIONS"]) {
+    config.locExtensions = config["LOC_EXTENSIONS"];
+  }
+
+  return config;
+}
+
+/**
+ * Load domain mappings from .ninthwave/domains.conf.
+ * Format: pattern=domain_key (one per line, comments with #).
+ * Patterns are matched case-insensitively against section headers.
+ */
+export function loadDomainMappings(projectRoot: string): Map<string, string> {
+  const mappings = new Map<string, string>();
+  const domainsPath = join(projectRoot, ".ninthwave", "domains.conf");
+  if (!existsSync(domainsPath)) return mappings;
+
+  const content = readFileSync(domainsPath, "utf-8");
+  for (const rawLine of content.split("\n")) {
+    const eqIdx = rawLine.indexOf("=");
+    if (eqIdx === -1) continue;
+
+    const pattern = rawLine.slice(0, eqIdx).trim();
+    if (!pattern || pattern.startsWith("#")) continue;
+
+    const domainKey = rawLine.slice(eqIdx + 1).trim();
+    mappings.set(pattern, domainKey);
+  }
+
+  return mappings;
+}

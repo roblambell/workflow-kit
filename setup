@@ -18,6 +18,10 @@ set -euo pipefail
 
 NINTHWAVE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+if ! command -v bun &>/dev/null; then
+  echo "Warning: bun is required for ninthwave. Install: curl -fsSL https://bun.sh/install | bash"
+fi
+
 # Defaults
 PROJECT_DIR=""
 
@@ -65,7 +69,11 @@ rm -f "$PROJECT_DIR/.ninthwave/nw"
 
 cat > "$PROJECT_DIR/.ninthwave/work" << 'SHIM'
 #!/usr/bin/env bash
-exec "$(cat "$(dirname "$0")/dir")/core/batch-todos.sh" "$@"
+if [[ "${NINTHWAVE_LEGACY:-}" == "1" ]]; then
+  exec bash "$(cat "$(dirname "$0")/dir")/core/batch-todos.sh" "$@"
+else
+  exec bun run "$(cat "$(dirname "$0")/dir")/core/cli.ts" "$@"
+fi
 SHIM
 chmod +x "$PROJECT_DIR/.ninthwave/work"
 echo "  .ninthwave/work"

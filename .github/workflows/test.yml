@@ -10,6 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+
       - uses: arduino/setup-task@v2
         with:
           version: '3.x'

@@ -75,6 +75,30 @@ ninthwave/                          # The repo IS the installable bundle
 4. **Each worker session** reads `CLAUDE.md`/`AGENTS.md` for project conventions, implements the TODO, runs tests, creates a PR, then idles waiting for orchestrator messages
 5. **The orchestrator** (the `/work` skill session) monitors PR status, dispatches CI fixes and review feedback to workers via `cmux send`, merges PRs, rebases dependents, and handles version bumping
 
+### TypeScript Development
+
+The CLI is implemented in TypeScript and runs via Bun. No build step needed — Bun executes `.ts` files directly.
+
+```bash
+# Run tests
+bun test
+
+# Run a specific test file
+bun test test/parser.test.ts
+
+# Run tests in watch mode
+bun test --watch
+
+# Run the CLI directly
+bun run core/cli.ts list
+bun run core/cli.ts batch-order H-1 H-2
+
+# Type-check without running
+bunx tsc --noEmit
+```
+
+Changes to `.ts` files take effect immediately on the next invocation — no compilation needed.
+
 ## Pull Requests
 
 External contributors: fork the repo and open a PR against `main`. The `main` branch is protected — direct pushes require maintainer access.
