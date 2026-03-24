@@ -330,6 +330,164 @@ describe("createWebhookNotifier", () => {
   });
 });
 
+// ── createWebhookNotifier debounce ──────────────────────────────────
+
+describe("createWebhookNotifier debounce", () => {
+  it("coalesces rapid events within the debounce window into one webhook call", async () => {
+    const fetchFn = mockFetch();
+    const notify = createWebhookNotifier("https://hooks.example.com", fetchFn, undefined, {
+      debounceMs: 100,
+    });
+
+    // Fire 3 events rapidly (within the 100ms window)
+    notify("pr_merged", { itemId: "T-1", prNumber: 1 });
+    notify("ci_failed", { itemId: "T-2", prNumber: 2 });
+    notify("pr_merged", { itemId: "T-3", prNumber: 3 });
+
+    // Flush immediately instead of waiting for timer
+    notify.flush!();
+
+    // Wait for fire-and-forget to settle
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Should have made exactly one fetch call (coalesced)
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    const body = JSON.parse((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.batched).toHaveLength(3);
+    expect(body.text).toContain("3 events coalesced");
+  });
+
+  it("preserves all event data in coalesced payload", async () => {
+    const fetchFn = mockFetch();
+    const notify = createWebhookNotifier("https://hooks.example.com", fetchFn, undefined, {
+      debounceMs: 100,
+    });
+
+    notify("pr_merged", { itemId: "T-1", prNumber: 10 });
+    notify("ci_failed", { itemId: "T-2", prNumber: 20, error: "build failed" });
+    notify("batch_complete", {
+      items: [{ id: "A-1", state: "done" }],
+      summary: { done: 1, stuck: 0, total: 1 },
+    });
+
+    notify.flush!();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const body = JSON.parse((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.batched).toHaveLength(3);
+
+    // Verify each individual payload preserves its data
+    const [first, second, third] = body.batched;
+
+    expect(first.event).toBe("pr_merged");
+    expect(first.itemId).toBe("T-1");
+    expect(first.prNumber).toBe(10);
+    expect(first.timestamp).toBeTruthy();
+    expect(first.text).toContain("PR #10");
+
+    expect(second.event).toBe("ci_failed");
+    expect(second.itemId).toBe("T-2");
+    expect(second.prNumber).toBe(20);
+    expect(second.error).toBe("build failed");
+    expect(second.text).toContain("CI failed");
+
+    expect(third.event).toBe("batch_complete");
+    expect(third.items).toHaveLength(1);
+    expect(third.items[0].id).toBe("A-1");
+    expect(third.summary.done).toBe(1);
+    expect(third.text).toContain("Batch complete");
+  });
+
+  it("sends single events individually after the debounce window", async () => {
+    const fetchFn = mockFetch();
+    const notify = createWebhookNotifier("https://hooks.example.com", fetchFn, undefined, {
+      debounceMs: 50,
+    });
+
+    // Fire a single event
+    notify("pr_merged", { itemId: "T-1", prNumber: 42 });
+
+    // Wait for the debounce window to expire
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Should have fired exactly one fetch call
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    const body = JSON.parse((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    // Single event should NOT have a batched wrapper
+    expect(body.batched).toBeUndefined();
+    expect(body.event).toBe("pr_merged");
+    expect(body.itemId).toBe("T-1");
+    expect(body.prNumber).toBe(42);
+    expect(body.text).toContain("PR #42");
+  });
+
+  it("events separated by more than the debounce window are sent individually", async () => {
+    const fetchFn = mockFetch();
+    const notify = createWebhookNotifier("https://hooks.example.com", fetchFn, undefined, {
+      debounceMs: 30,
+    });
+
+    // Fire first event
+    notify("pr_merged", { itemId: "T-1", prNumber: 1 });
+
+    // Wait for debounce window to expire
+    await new Promise((r) => setTimeout(r, 60));
+
+    // Fire second event after the first has been flushed
+    notify("ci_failed", { itemId: "T-2", prNumber: 2 });
+
+    // Wait for second debounce window to expire
+    await new Promise((r) => setTimeout(r, 60));
+
+    // Should have made two separate fetch calls
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+
+    const body1 = JSON.parse((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body1.event).toBe("pr_merged");
+    expect(body1.itemId).toBe("T-1");
+    expect(body1.batched).toBeUndefined();
+
+    const body2 = JSON.parse((fetchFn as ReturnType<typeof vi.fn>).mock.calls[1][1].body);
+    expect(body2.event).toBe("ci_failed");
+    expect(body2.itemId).toBe("T-2");
+    expect(body2.batched).toBeUndefined();
+  });
+
+  it("flush() is a no-op when buffer is empty", () => {
+    const fetchFn = mockFetch();
+    const notify = createWebhookNotifier("https://hooks.example.com", fetchFn, undefined, {
+      debounceMs: 100,
+    });
+
+    // Flush with nothing buffered — should not call fetch
+    notify.flush!();
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("no-debounce mode fires immediately without flush", async () => {
+    const fetchFn = mockFetch();
+    // No debounce option — should work exactly as before
+    const notify = createWebhookNotifier("https://hooks.example.com", fetchFn);
+
+    notify("pr_merged", { itemId: "T-1", prNumber: 1 });
+    notify("ci_failed", { itemId: "T-2", prNumber: 2 });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Each event fires its own webhook immediately
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    // flush should not be present
+    expect(notify.flush).toBeUndefined();
+  });
+
+  it("flush() is not present on no-op notifier", () => {
+    const notify = createWebhookNotifier(null);
+    expect(notify.flush).toBeUndefined();
+  });
+});
+
 // ── Integration with orchestrateLoop ────────────────────────────────
 
 describe("orchestrateLoop webhook integration", () => {

@@ -35,6 +35,8 @@ export interface WebhookPayload {
   prNumber?: number;
   /** Error details (ci_failed). */
   error?: string;
+  /** When multiple events are coalesced via debounce, contains all individual payloads. */
+  batched?: WebhookPayload[];
 }
 
 /** Injectable fetch signature matching globalThis.fetch. */
@@ -44,10 +46,13 @@ export type WebhookFetchFn = (
 ) => Promise<{ ok: boolean; status: number }>;
 
 /** Callback signature for the notifier returned by createWebhookNotifier. */
-export type WebhookNotifyFn = (
+export type WebhookNotifyFn = ((
   event: WebhookEvent,
   data: Omit<WebhookPayload, "text" | "event" | "timestamp">,
-) => void;
+) => void) & {
+  /** Flush any debounce-buffered events immediately. Present only when debounce is active. */
+  flush?: () => void;
+};
 
 // ── URL resolution ──────────────────────────────────────────────────────
 
@@ -148,29 +153,99 @@ export async function fireWebhook(
 
 // ── Notifier factory ────────────────────────────────────────────────────
 
+/** Options for createWebhookNotifier. */
+export interface WebhookNotifierOptions {
+  /**
+   * Debounce window in milliseconds. When > 0, rapid events within this
+   * window are coalesced into a single batched webhook payload.
+   * Default: 0 (no debounce — fire immediately).
+   */
+  debounceMs?: number;
+}
+
 /**
  * Create a fire-and-forget webhook notifier.
  * Returns a no-op function when URL is null (webhook not configured).
  *
+ * When `debounceMs` is set, events are buffered and flushed after the
+ * debounce window. If multiple events arrive within the window, they are
+ * coalesced into a single payload with a `batched` array containing all
+ * individual payloads. The returned function has a `flush()` method to
+ * force immediate delivery of buffered events.
+ *
  * @param url - Webhook URL (null = disabled).
  * @param fetchFn - Injectable fetch function.
  * @param logError - Optional error logger.
+ * @param options - Optional notifier options (e.g., debounceMs).
  */
 export function createWebhookNotifier(
   url: string | null,
   fetchFn: WebhookFetchFn = globalThis.fetch,
   logError?: (msg: string) => void,
+  options?: WebhookNotifierOptions,
 ): WebhookNotifyFn {
   if (!url) return () => {};
 
-  return (event, data) => {
+  const debounceMs = options?.debounceMs ?? 0;
+
+  if (debounceMs <= 0) {
+    // No debounce — fire immediately (existing behavior)
+    return (event, data) => {
+      const payload: WebhookPayload = {
+        ...data,
+        event,
+        timestamp: new Date().toISOString(),
+        text: formatWebhookText(event, data),
+      };
+      // Fire-and-forget — intentionally not awaited
+      fireWebhook(url, payload, fetchFn, logError).catch(() => {});
+    };
+  }
+
+  // Debounced mode — buffer events and flush after window
+  let buffer: WebhookPayload[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const flush = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (buffer.length === 0) return;
+
+    const events = buffer;
+    buffer = [];
+
+    if (events.length === 1) {
+      // Single event — send as-is (no batched wrapper)
+      fireWebhook(url, events[0], fetchFn, logError).catch(() => {});
+    } else {
+      // Multiple events — coalesce into batched payload
+      const combinedText = events.map((e) => e.text).join("\n");
+      const payload: WebhookPayload = {
+        text: `📦 *${events.length} events coalesced*\n${combinedText}`,
+        event: events[0].event,
+        timestamp: new Date().toISOString(),
+        batched: events,
+      };
+      fireWebhook(url, payload, fetchFn, logError).catch(() => {});
+    }
+  };
+
+  const notify: WebhookNotifyFn = (event, data) => {
     const payload: WebhookPayload = {
       ...data,
       event,
       timestamp: new Date().toISOString(),
       text: formatWebhookText(event, data),
     };
-    // Fire-and-forget — intentionally not awaited
-    fireWebhook(url, payload, fetchFn, logError).catch(() => {});
+    buffer.push(payload);
+
+    // Reset the debounce timer on each new event
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(flush, debounceMs);
   };
+
+  notify.flush = flush;
+  return notify;
 }
