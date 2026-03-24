@@ -104,6 +104,38 @@ export function getRepoOwner(repoRoot: string): string {
   return result.stdout;
 }
 
+/** Merge a PR by number. Returns true on success, false on failure. */
+export function prMerge(
+  repoRoot: string,
+  prNumber: number,
+  method: "squash" | "merge" | "rebase" = "squash",
+): boolean {
+  const result = ghInRepo(repoRoot, [
+    "pr",
+    "merge",
+    String(prNumber),
+    `--${method}`,
+    "--delete-branch",
+  ]);
+  return result.exitCode === 0;
+}
+
+/** Post a comment on a PR. Returns true on success, false on failure. */
+export function prComment(
+  repoRoot: string,
+  prNumber: number,
+  body: string,
+): boolean {
+  const result = ghInRepo(repoRoot, [
+    "pr",
+    "comment",
+    String(prNumber),
+    "--body",
+    body,
+  ]);
+  return result.exitCode === 0;
+}
+
 /** Make a gh api GET request, optionally with a jq filter. */
 export function apiGet(
   repoRoot: string,
