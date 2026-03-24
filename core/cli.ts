@@ -30,6 +30,7 @@ import { cmdCiFailures } from "./commands/ci.ts";
 import { cmdVersionBump } from "./commands/version-bump.ts";
 import { cmdSetup } from "./commands/setup.ts";
 import { cmdOrchestrate } from "./commands/orchestrate.ts";
+import { cmdReconcile } from "./commands/reconcile.ts";
 
 // Resolve project root via git
 function getProjectRoot(): string {
@@ -156,6 +157,9 @@ if (!command) {
   console.log(
     "  repos                                         List discovered repos",
   );
+  console.log(
+    "  reconcile                                     Sync TODOS.md with merged PRs",
+  );
   process.exit(0);
 }
 
@@ -244,6 +248,9 @@ switch (command) {
     break;
   case "orchestrate":
     await cmdOrchestrate(args, todosFile, worktreeDir, projectRoot);
+    break;
+  case "reconcile":
+    cmdReconcile(todosFile, worktreeDir, projectRoot);
     break;
   default:
     die(`Unknown command: ${command}`);
