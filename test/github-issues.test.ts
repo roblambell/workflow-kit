@@ -1,19 +1,29 @@
 // Tests for core/backends/github-issues.ts
-// Uses vi.spyOn (not vi.mock) to avoid global module pollution in bun test.
+// Uses dependency injection (not vi.mock/vi.spyOn) to avoid Bun runtime dependency.
 
-import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
-import * as shell from "../core/shell.ts";
+import { describe, it, expect } from "vitest";
 import {
   parsePriorityLabel,
   issueToTodoItem,
   GitHubIssuesBackend,
 } from "../core/backends/github-issues.ts";
-import type { GhIssueJson } from "../core/backends/github-issues.ts";
+import type { GhIssueJson, GhRunner } from "../core/backends/github-issues.ts";
+import type { RunResult } from "../core/types.ts";
 
-const runSpy = vi.spyOn(shell, "run");
+/** Create a mock GhRunner that returns a fixed result. */
+function mockRunner(result: RunResult): GhRunner {
+  return (_repoRoot: string, _args: string[]) => result;
+}
 
-beforeEach(() => runSpy.mockReset());
-afterAll(() => runSpy.mockRestore());
+/** Create a mock GhRunner that captures calls and returns a fixed result. */
+function spyRunner(result: RunResult): { runner: GhRunner; calls: Array<{ repoRoot: string; args: string[] }> } {
+  const calls: Array<{ repoRoot: string; args: string[] }> = [];
+  const runner: GhRunner = (repoRoot: string, args: string[]) => {
+    calls.push({ repoRoot, args });
+    return result;
+  };
+  return { runner, calls };
+}
 
 // ---------------------------------------------------------------------------
 // parsePriorityLabel
@@ -133,13 +143,13 @@ describe("GitHubIssuesBackend.list", () => {
       },
     ];
 
-    runSpy.mockReturnValue({
+    const runner = mockRunner({
       stdout: JSON.stringify(issues),
       stderr: "",
       exitCode: 0,
     });
 
-    const backend = new GitHubIssuesBackend("/repo");
+    const backend = new GitHubIssuesBackend("/repo", "ninthwave", runner);
     const items = backend.list();
 
     expect(items).toHaveLength(2);
@@ -152,71 +162,65 @@ describe("GitHubIssuesBackend.list", () => {
   });
 
   it("passes correct label filter to gh CLI", () => {
-    runSpy.mockReturnValue({
+    const { runner, calls } = spyRunner({
       stdout: "[]",
       stderr: "",
       exitCode: 0,
     });
 
-    const backend = new GitHubIssuesBackend("/repo", "my-label");
+    const backend = new GitHubIssuesBackend("/repo", "my-label", runner);
     backend.list();
 
-    expect(runSpy).toHaveBeenCalledWith(
-      "gh",
-      [
-        "issue",
-        "list",
-        "--state",
-        "open",
-        "--label",
-        "my-label",
-        "--json",
-        "number,title,body,labels,milestone,state",
-        "--limit",
-        "100",
-      ],
-      { cwd: "/repo" },
-    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].repoRoot).toBe("/repo");
+    expect(calls[0].args).toEqual([
+      "issue",
+      "list",
+      "--state",
+      "open",
+      "--label",
+      "my-label",
+      "--json",
+      "number,title,body,labels,milestone,state",
+      "--limit",
+      "100",
+    ]);
   });
 
   it("uses default ninthwave label", () => {
-    runSpy.mockReturnValue({
+    const { runner, calls } = spyRunner({
       stdout: "[]",
       stderr: "",
       exitCode: 0,
     });
 
-    const backend = new GitHubIssuesBackend("/repo");
+    const backend = new GitHubIssuesBackend("/repo", "ninthwave", runner);
     backend.list();
 
-    expect(runSpy).toHaveBeenCalledWith(
-      "gh",
-      expect.arrayContaining(["--label", "ninthwave"]),
-      { cwd: "/repo" },
-    );
+    expect(calls[0].args).toContain("ninthwave");
   });
 
   it("returns empty array when gh command fails", () => {
-    runSpy.mockReturnValue({
+    const runner = mockRunner({
       stdout: "",
       stderr: "error",
       exitCode: 1,
     });
 
-    const backend = new GitHubIssuesBackend("/repo");
+    const backend = new GitHubIssuesBackend("/repo", "ninthwave", runner);
     const items = backend.list();
 
     expect(items).toEqual([]);
   });
 
   it("returns empty array when gh returns invalid JSON", () => {
-    runSpy.mockReturnValue({
+    const runner = mockRunner({
       stdout: "not json",
       stderr: "",
       exitCode: 0,
     });
 
-    const backend = new GitHubIssuesBackend("/repo");
+    const backend = new GitHubIssuesBackend("/repo", "ninthwave", runner);
     const items = backend.list();
 
     expect(items).toEqual([]);
@@ -237,13 +241,13 @@ describe("GitHubIssuesBackend.read", () => {
       state: "OPEN",
     };
 
-    runSpy.mockReturnValue({
+    const { runner, calls } = spyRunner({
       stdout: JSON.stringify(issue),
       stderr: "",
       exitCode: 0,
     });
 
-    const backend = new GitHubIssuesBackend("/repo");
+    const backend = new GitHubIssuesBackend("/repo", "ninthwave", runner);
     const item = backend.read("GHI-7");
 
     expect(item).toBeDefined();
@@ -252,17 +256,13 @@ describe("GitHubIssuesBackend.read", () => {
     expect(item!.domain).toBe("Backlog");
 
     // Verify the GHI- prefix was stripped for the gh command
-    expect(runSpy).toHaveBeenCalledWith(
-      "gh",
-      [
-        "issue",
-        "view",
-        "7",
-        "--json",
-        "number,title,body,labels,milestone,state",
-      ],
-      { cwd: "/repo" },
-    );
+    expect(calls[0].args).toEqual([
+      "issue",
+      "view",
+      "7",
+      "--json",
+      "number,title,body,labels,milestone,state",
+    ]);
   });
 
   it("reads a single issue by plain number string", () => {
@@ -275,13 +275,13 @@ describe("GitHubIssuesBackend.read", () => {
       state: "OPEN",
     };
 
-    runSpy.mockReturnValue({
+    const runner = mockRunner({
       stdout: JSON.stringify(issue),
       stderr: "",
       exitCode: 0,
     });
 
-    const backend = new GitHubIssuesBackend("/repo");
+    const backend = new GitHubIssuesBackend("/repo", "ninthwave", runner);
     const item = backend.read("3");
 
     expect(item).toBeDefined();
@@ -289,13 +289,13 @@ describe("GitHubIssuesBackend.read", () => {
   });
 
   it("returns undefined when issue not found", () => {
-    runSpy.mockReturnValue({
+    const runner = mockRunner({
       stdout: "",
       stderr: "not found",
       exitCode: 1,
     });
 
-    const backend = new GitHubIssuesBackend("/repo");
+    const backend = new GitHubIssuesBackend("/repo", "ninthwave", runner);
     const item = backend.read("GHI-999");
 
     expect(item).toBeUndefined();
@@ -307,7 +307,8 @@ describe("GitHubIssuesBackend.read", () => {
 // ---------------------------------------------------------------------------
 describe("GitHubIssuesBackend.markDone", () => {
   it("returns false (stub for read-only backend)", () => {
-    const backend = new GitHubIssuesBackend("/repo");
+    const runner = mockRunner({ stdout: "", stderr: "", exitCode: 0 });
+    const backend = new GitHubIssuesBackend("/repo", "ninthwave", runner);
     expect(backend.markDone("GHI-1")).toBe(false);
   });
 });

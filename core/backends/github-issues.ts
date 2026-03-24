@@ -1,8 +1,10 @@
 // GitHub Issues backend: reads issues from a GitHub repo via `gh` CLI
 // and maps them to TodoItem shape. Read-only — markDone is a no-op stub.
 
-import { ghInRepo } from "../gh.ts";
-import type { TodoItem, Priority, TaskBackend } from "../types.ts";
+import type { RunResult, TodoItem, Priority, TaskBackend } from "../types.ts";
+
+/** Function signature for running gh commands in a repo context. */
+export type GhRunner = (repoRoot: string, args: string[]) => RunResult;
 
 /** Raw shape returned by `gh issue list --json ...` */
 export interface GhIssueJson {
@@ -34,7 +36,7 @@ export function issueToTodoItem(issue: GhIssueJson): TodoItem {
     domain: issue.milestone?.title ?? "uncategorized",
     dependencies: [],
     bundleWith: [],
-    status: issue.state === "closed" ? "open" : "open", // issues from list are open
+    status: "open",
     lineNumber: 0,
     lineEndNumber: 0,
     repoAlias: "",
@@ -50,6 +52,7 @@ export class GitHubIssuesBackend implements TaskBackend {
   constructor(
     private repoRoot: string,
     private label: string = "ninthwave",
+    private runner: GhRunner = () => ({ stdout: "", stderr: "", exitCode: 1 }),
   ) {}
 
   /** List open issues matching the configured label. */
@@ -66,7 +69,7 @@ export class GitHubIssuesBackend implements TaskBackend {
       "--limit",
       "100",
     ];
-    const result = ghInRepo(this.repoRoot, args);
+    const result = this.runner(this.repoRoot, args);
     if (result.exitCode !== 0 || !result.stdout) return [];
     try {
       const issues = JSON.parse(result.stdout) as GhIssueJson[];
@@ -86,7 +89,7 @@ export class GitHubIssuesBackend implements TaskBackend {
       "--json",
       ISSUE_FIELDS,
     ];
-    const result = ghInRepo(this.repoRoot, args);
+    const result = this.runner(this.repoRoot, args);
     if (result.exitCode !== 0 || !result.stdout) return undefined;
     try {
       const issue = JSON.parse(result.stdout) as GhIssueJson;

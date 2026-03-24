@@ -5,6 +5,7 @@ import { die, BOLD, RED, YELLOW, CYAN, DIM, RESET } from "../output.ts";
 import { ID_PATTERN_GLOBAL } from "../types.ts";
 import type { TodoItem } from "../types.ts";
 import { GitHubIssuesBackend } from "../backends/github-issues.ts";
+import { ghInRepo } from "../gh.ts";
 
 export function cmdList(
   args: string[],
@@ -50,7 +51,7 @@ export function cmdList(
   let items: TodoItem[];
   if (backend === "github-issues") {
     if (!projectRoot) die("Project root is required for github-issues backend");
-    const ghBackend = new GitHubIssuesBackend(projectRoot!);
+    const ghBackend = new GitHubIssuesBackend(projectRoot!, "ninthwave", ghInRepo);
     items = ghBackend.list();
   } else if (backend) {
     die(`Unknown backend: ${backend}`);
