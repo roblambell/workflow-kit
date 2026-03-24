@@ -302,27 +302,6 @@ Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
 
 ---
 
-### Fix: ci-pending conflict uses daemon-rebase instead of worker rebase (H-ORC-5)
-
-**Priority:** High
-**Source:** Friction #23 — unnecessary CI churn from worker rebases
-**Depends on:** None
-
-The ci-pending conflict detection (line ~504 in `handlePrLifecycle`) sends `type: "rebase"` (worker-side) for PRs with merge conflicts. Change to `type: "daemon-rebase"`. `executeDaemonRebase` already tries daemon resolution first (handles TODOS.md-only conflicts automatically), falling back to worker message if it fails.
-
-One-line change: `type: "rebase"` → `type: "daemon-rebase"`.
-
-**Test plan:**
-- Update ci-pending conflict tests to expect `"daemon-rebase"` action type
-- Verify rebaseRequested dedup flag still works with daemon-rebase
-- Verify flag resets on state change
-
-Acceptance: ci-pending PRs with merge conflicts get daemon-rebase instead of worker rebase. `bun test test/` passes.
-
-Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
-
----
-
 ### Feat: Post-merge auto-rebase all sibling PRs via daemon (H-ORC-6)
 
 **Priority:** High

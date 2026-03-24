@@ -515,7 +515,7 @@ export class Orchestrator {
     if (item.state === "ci-pending" && snap?.isMergeable === false && !item.rebaseRequested) {
       item.rebaseRequested = true;
       actions.push({
-        type: "rebase",
+        type: "daemon-rebase",
         itemId: item.id,
         message: "[ORCHESTRATOR] Rebase Request: PR has merge conflicts with main. Please rebase onto latest main.",
       });
