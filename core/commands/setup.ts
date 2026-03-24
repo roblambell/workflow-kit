@@ -18,6 +18,19 @@ import { info, die, warn, RED, YELLOW, GREEN, RESET, BOLD, DIM } from "../output
 import { run } from "../shell.ts";
 
 /**
+ * Resolve the absolute path to a command on PATH.
+ * Default implementation uses `which`; tests can inject a stub.
+ */
+export type CommandPathResolver = (cmd: string) => string | null;
+
+const defaultResolveCommandPath: CommandPathResolver = (
+  cmd: string,
+): string | null => {
+  const result = run("which", [cmd]);
+  return result.exitCode === 0 ? result.stdout.trim() : null;
+};
+
+/**
  * Prerequisite descriptor for a required external tool.
  */
 interface Prerequisite {
@@ -142,6 +155,47 @@ export function checkPrerequisites(
   };
 }
 
+/**
+ * Create an `nw` symlink next to the `ninthwave` binary in PATH.
+ *
+ * This provides the short alias for daily-driver use. The symlink is
+ * relative (`nw` → `ninthwave`) so it survives Homebrew prefix changes.
+ *
+ * Returns true if symlink was created, false if skipped or failed.
+ */
+export function createNwSymlink(
+  commandExists: CommandChecker = defaultCommandExists,
+  resolveCommandPath: CommandPathResolver = defaultResolveCommandPath,
+): boolean {
+  // If nw already exists in PATH, nothing to do
+  if (commandExists("nw")) {
+    console.log("  nw alias: already in PATH");
+    return false;
+  }
+
+  // Find where ninthwave is installed
+  const ninthwavePath = resolveCommandPath("ninthwave");
+  if (!ninthwavePath) {
+    console.log(
+      `  nw alias: skipped (ninthwave not in PATH — install via ${BOLD}brew install ninthwave-sh/tap/ninthwave${RESET})`,
+    );
+    return false;
+  }
+
+  const nwPath = join(dirname(ninthwavePath), "nw");
+
+  try {
+    symlinkSync("ninthwave", nwPath);
+    console.log(`  ${GREEN}✓${RESET} nw → ninthwave ${DIM}(${dirname(ninthwavePath)})${RESET}`);
+    return true;
+  } catch {
+    console.log(
+      `  ${YELLOW}⚠${RESET} nw alias: could not create symlink at ${nwPath} (permission denied?)`,
+    );
+    return false;
+  }
+}
+
 const SKILLS = ["work", "decompose", "grind", "todo-preview", "ninthwave-upgrade"];
 
 const AGENT_TARGETS = [
@@ -208,14 +262,19 @@ export function setupGlobal(bundleDir: string): void {
 export function generateShimContent(): string {
   return `#!/usr/bin/env bash
 # ninthwave CLI shim — auto-resolves the ninthwave binary.
-# Priority: (1) ninthwave in PATH, (2) dev-mode walk-up to find core/cli.ts
+# Priority: (1) nw or ninthwave in PATH, (2) dev-mode walk-up to find core/cli.ts
 
-# 1. If ninthwave is in PATH, use it directly
+# 1. If nw is in PATH, use it directly (preferred short alias)
+if command -v nw &>/dev/null; then
+  exec nw "$@"
+fi
+
+# 2. If ninthwave is in PATH, use it directly
 if command -v ninthwave &>/dev/null; then
   exec ninthwave "$@"
 fi
 
-# 2. Dev mode: walk up from this script to find a ninthwave checkout
+# 3. Dev mode: walk up from this script to find a ninthwave checkout
 dir="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
 while [ "$dir" != "/" ]; do
   if [ -f "$dir/core/cli.ts" ]; then
@@ -240,6 +299,7 @@ export function setupProject(
   deps?: {
     commandExists?: CommandChecker;
     ghAuthCheck?: AuthChecker;
+    resolveCommandPath?: CommandPathResolver;
   },
 ): void {
   console.log(`Setting up ninthwave in: ${projectDir}`);
@@ -372,6 +432,12 @@ export function setupProject(
 
   console.log();
 
+  // --- nw short alias ---
+  console.log("CLI alias...");
+  createNwSymlink(deps?.commandExists, deps?.resolveCommandPath);
+
+  console.log();
+
   // --- Version tracking ---
   const versionResult = run("git", [
     "-C",
@@ -393,6 +459,8 @@ export function setupProject(
   console.log("  1. Review: git diff");
   console.log("  2. Commit: git add -A && git commit -m 'chore: set up ninthwave'");
   console.log("  3. Add work items to TODOS.md and run /work");
+  console.log();
+  console.log(`${DIM}Tip: Use ${BOLD}nw${RESET}${DIM} as a short alias for ${BOLD}ninthwave${RESET}${DIM} in daily use.${RESET}`);
 }
 
 /**

@@ -145,6 +145,8 @@ All items merged. Version bump: 1.4.0 → 1.5.0 (CHANGELOG updated)
 brew install ninthwave-sh/tap/ninthwave
 ```
 
+This installs both `nw` (short alias) and `ninthwave` (full name). Use `nw` for daily work — it's the recommended command.
+
 <details>
 <summary>Alternative: install via curl</summary>
 
@@ -167,7 +169,7 @@ curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/install
 
 ```bash
 cd /path/to/your/project
-ninthwave setup
+nw setup
 ```
 
 One developer runs setup. The team gets everything via `git pull`.
@@ -200,8 +202,8 @@ To explicitly select a multiplexer:
 
 ```bash
 # Via CLI flag
-ninthwave start C-UO-1 --mux tmux
-ninthwave orchestrate --items C-UO-1,H-UO-2 --mux tmux
+nw start C-UO-1 --mux tmux
+nw orchestrate --items C-UO-1,H-UO-2 --mux tmux
 
 # Via environment variable (persists for the session)
 export NINTHWAVE_MUX=tmux
@@ -243,7 +245,7 @@ All orchestration features work identically — the only difference is the UI.
 
 ### CLI
 
-All commands are available via `.ninthwave/work`:
+All commands work with both `nw` and `ninthwave` (identical behavior). In-project, `.ninthwave/work` also works:
 
 | Command | Description |
 |---------|-------------|
@@ -286,7 +288,7 @@ Workers reference these skill names during execution. If available, they're used
 <details>
 <summary><strong>What gets installed</strong></summary>
 
-`brew install` places the `ninthwave` binary and resource files (skills, agents, docs) in the Homebrew prefix. `ninthwave setup` creates minimal project-level config.
+`brew install` places the `ninthwave` binary (plus `nw` short alias) and resource files (skills, agents, docs) in the Homebrew prefix. `nw setup` creates minimal project-level config.
 
 **Project-level files** (created by `ninthwave setup`, committed to git):
 
@@ -309,7 +311,7 @@ Run `/ninthwave-upgrade` from any AI coding session, or manually:
 
 ```bash
 brew upgrade ninthwave
-ninthwave setup   # re-sync project-level files
+nw setup   # re-sync project-level files
 ```
 
 Project-specific config (`TODOS.md`, `.ninthwave/config`, `domains.conf`) is preserved.

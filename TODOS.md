@@ -327,30 +327,6 @@ Key files: `core/commands/reconcile.ts`, `core/commands/clean.ts`, `test/reconci
 
 ---
 
-## Distribution & CLI Identity (2026-03-24)
-
-
-### Feat: Add `nw` short alias for the CLI binary (M-CLI-1)
-
-**Priority:** Medium
-**Source:** CEO review — CLI command naming decision
-**Depends on:** None
-
-Install both `ninthwave` and `nw` as CLI entry points. `nw` is the daily-driver short form (2 chars, no conflicts), `ninthwave` is the full name for docs and scripts. When distributing via Homebrew tap (`ninthwave-sh/tap`), the formula should install the primary binary as `ninthwave` with a symlink `nw` → `ninthwave`. For local development, the `setup` command should create the symlink.
-
-Precedent: `uv` (2 chars), `fd` (2 chars), `rg` (2 chars) all ship as short binaries via Homebrew. `n` is taken (Node.js version manager). `nwave` was considered but doesn't add value when you have both `nw` and `ninthwave`.
-
-**Test plan:**
-- Verify `nw` symlink is created by setup command
-- Verify `nw start`, `nw list`, `nw status` all work identically to `ninthwave` equivalents
-- Verify Homebrew formula installs both names
-
-Acceptance: Both `nw` and `ninthwave` invoke the CLI. Docs reference both (with `nw` as the recommended short form). Homebrew formula includes `bin.install_symlink`.
-
-Key files: `core/cli.ts`, `core/commands/setup.ts`, `homebrew/ninthwave.rb` (new)
-
----
-
 ## Vision (recurring, 2026-03-24)
 
 

@@ -90,7 +90,8 @@ const worktreeDir = join(projectRoot, ".worktrees");
 const partitionDir = join(worktreeDir, ".partitions");
 
 if (!command) {
-  console.log("Usage: ninthwave <command> [options]");
+  console.log("Usage: nw <command> [options]");
+  console.log("       ninthwave <command> [options]");
   console.log();
   console.log("Commands:");
   console.log(

@@ -36,6 +36,12 @@ cd /path/to/your/project
 
 Changes to source files take effect immediately (the dev install runs TypeScript directly via Bun).
 
+### CLI aliases
+
+The CLI installs as both `ninthwave` (full name) and `nw` (short alias). `nw` is the recommended daily-driver command — 2 chars, no conflicts with existing tools. Both names invoke the same binary.
+
+When installed via Homebrew, the `nw` symlink is created automatically by the formula. For development, `ninthwave setup` creates the symlink next to the `ninthwave` binary if it's in PATH.
+
 ## Architecture
 
 ```

@@ -18,8 +18,13 @@ import {
   createSkillSymlinks,
   generateShimContent,
   checkPrerequisites,
+  createNwSymlink,
 } from "../core/commands/setup.ts";
-import type { CommandChecker, AuthChecker } from "../core/commands/setup.ts";
+import type {
+  CommandChecker,
+  AuthChecker,
+  CommandPathResolver,
+} from "../core/commands/setup.ts";
 
 // Store original env
 const originalEnv = { ...process.env };
@@ -687,6 +692,16 @@ describe("generateShimContent", () => {
     expect(content.startsWith("#!/usr/bin/env bash\n")).toBe(true);
   });
 
+  it("checks for nw before ninthwave in PATH", () => {
+    const content = generateShimContent();
+    const nwCheck = content.indexOf("command -v nw");
+    const ninthwaveCheck = content.indexOf("command -v ninthwave");
+    expect(nwCheck).toBeGreaterThan(-1);
+    expect(ninthwaveCheck).toBeGreaterThan(-1);
+    // nw check must come before ninthwave check
+    expect(nwCheck).toBeLessThan(ninthwaveCheck);
+  });
+
   it("checks for ninthwave in PATH before dev-mode walk-up", () => {
     const content = generateShimContent();
     const pathCheck = content.indexOf("command -v ninthwave");
@@ -695,6 +710,11 @@ describe("generateShimContent", () => {
     expect(walkUp).toBeGreaterThan(-1);
     // PATH check must come before walk-up
     expect(pathCheck).toBeLessThan(walkUp);
+  });
+
+  it("uses exec nw for preferred short alias", () => {
+    const content = generateShimContent();
+    expect(content).toContain('exec nw "$@"');
   });
 
   it("uses exec ninthwave for PATH-based resolution", () => {
@@ -734,5 +754,90 @@ describe("setupProject — legacy cleanup", () => {
 
     // Legacy file should be cleaned up
     expect(existsSync(join(projectDir, ".ninthwave/dir"))).toBe(false);
+  });
+});
+
+// --- createNwSymlink ---
+
+describe("createNwSymlink", () => {
+  it("creates nw symlink next to ninthwave binary", () => {
+    // Create a fake bin directory with a ninthwave binary
+    const { mkdtempSync, rmSync: rmSyncFn } = require("fs");
+    const { tmpdir } = require("os");
+    const fakeBin = mkdtempSync(join(tmpdir(), "nw-symlink-test-"));
+
+    writeFileSync(join(fakeBin, "ninthwave"), "#!/bin/sh\n");
+
+    const commandExists: CommandChecker = (cmd) => cmd !== "nw";
+    const resolveCommandPath: CommandPathResolver = (cmd) =>
+      cmd === "ninthwave" ? join(fakeBin, "ninthwave") : null;
+
+    const result = createNwSymlink(commandExists, resolveCommandPath);
+
+    expect(result).toBe(true);
+    expect(existsSync(join(fakeBin, "nw"))).toBe(true);
+    expect(lstatSync(join(fakeBin, "nw")).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(fakeBin, "nw"))).toBe("ninthwave");
+
+    rmSyncFn(fakeBin, { recursive: true, force: true });
+  });
+
+  it("skips when nw already exists in PATH", () => {
+    const commandExists: CommandChecker = () => true; // nw exists
+    const resolveCommandPath: CommandPathResolver = () => null;
+
+    const result = createNwSymlink(commandExists, resolveCommandPath);
+
+    expect(result).toBe(false);
+  });
+
+  it("skips when ninthwave is not in PATH", () => {
+    const commandExists: CommandChecker = () => false;
+    const resolveCommandPath: CommandPathResolver = () => null;
+
+    const result = createNwSymlink(commandExists, resolveCommandPath);
+
+    expect(result).toBe(false);
+  });
+
+  it("handles permission errors gracefully", () => {
+    const commandExists: CommandChecker = (cmd) => cmd !== "nw";
+    // Return a non-writable path to trigger permission error
+    const resolveCommandPath: CommandPathResolver = (cmd) =>
+      cmd === "ninthwave" ? "/nonexistent-dir-12345/ninthwave" : null;
+
+    const result = createNwSymlink(commandExists, resolveCommandPath);
+
+    expect(result).toBe(false);
+  });
+});
+
+describe("setupProject — nw symlink via deps", () => {
+  it("calls createNwSymlink during setup with injected deps", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    // Create a fake bin directory for the ninthwave binary
+    const fakeBin = join(projectDir, "fake-bin");
+    mkdirSync(fakeBin, { recursive: true });
+    writeFileSync(join(fakeBin, "ninthwave"), "#!/bin/sh\n");
+
+    const depsWithPath = {
+      ...allPresentDeps,
+      // nw does not exist yet, ninthwave is in fake bin
+      commandExists: ((cmd: string) =>
+        cmd === "nw" ? false : true) as CommandChecker,
+      resolveCommandPath: ((cmd: string) =>
+        cmd === "ninthwave"
+          ? join(fakeBin, "ninthwave")
+          : null) as CommandPathResolver,
+    };
+
+    setupProject(projectDir, bundleDir, depsWithPath);
+
+    // Verify nw symlink was created in the fake bin directory
+    expect(existsSync(join(fakeBin, "nw"))).toBe(true);
+    expect(lstatSync(join(fakeBin, "nw")).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(fakeBin, "nw"))).toBe("ninthwave");
   });
 });
