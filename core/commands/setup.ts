@@ -35,13 +35,10 @@ export function createSkillSymlinks(
 ): void {
   mkdirSync(skillsDir, { recursive: true });
 
-  // Determine if we can use relative paths
+  // Always compute relative paths so symlinks survive directory moves/renames
   const linkTarget = (skill: string): string => {
     const absTarget = join(bundleDir, "skills", skill);
-    // Try to make a relative link
-    const rel = relative(skillsDir, absTarget);
-    // If relative path doesn't go too far up, use it
-    return rel.startsWith("../../../") ? absTarget : rel;
+    return relative(skillsDir, absTarget);
   };
 
   for (const skill of SKILLS) {

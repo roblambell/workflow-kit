@@ -9,6 +9,7 @@ import {
   mkdirSync,
   lstatSync,
   readlinkSync,
+  renameSync,
 } from "fs";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 import {
@@ -124,7 +125,7 @@ describe("setupProject", () => {
     expect(content).toContain("# TODOS");
   });
 
-  it("creates skill symlinks in .claude/skills/", () => {
+  it("creates relative skill symlinks in .claude/skills/", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -139,6 +140,10 @@ describe("setupProject", () => {
       const linkPath = join(projectDir, ".claude/skills", skill);
       expect(existsSync(linkPath)).toBe(true);
       expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+
+      // Symlink target must be relative (not starting with /)
+      const target = readlinkSync(linkPath);
+      expect(target.startsWith("/")).toBe(false);
     }
   });
 
@@ -274,6 +279,57 @@ describe("setupProject — idempotency", () => {
   });
 });
 
+describe("setupProject — relative symlinks survive directory moves", () => {
+  it("skill symlinks resolve after renaming the parent directory", () => {
+    // Create a container directory that holds both project and bundle as siblings
+    const { mkdtempSync } = require("fs");
+    const { tmpdir } = require("os");
+    const container = mkdtempSync(join(tmpdir(), "nw-move-test-"));
+    const projectDir = join(container, "my-project");
+    mkdirSync(projectDir, { recursive: true });
+
+    // Init git in the project dir
+    const { spawnSync } = require("child_process");
+    spawnSync("git", ["-C", projectDir, "init", "--quiet"]);
+    spawnSync("git", ["-C", projectDir, "config", "user.email", "test@test.com"]);
+    spawnSync("git", ["-C", projectDir, "config", "user.name", "Test"]);
+
+    const bundleDir = createFakeBundle(join(container, "bundle-parent"));
+
+    setupProject(projectDir, bundleDir);
+
+    // Verify symlinks work before the move
+    expect(existsSync(join(projectDir, ".claude/skills/work"))).toBe(true);
+
+    // Rename the container directory
+    const renamedContainer = container + "-renamed";
+    renameSync(container, renamedContainer);
+
+    // Compute new paths after rename
+    const renamedProject = join(renamedContainer, "my-project");
+
+    // Symlinks should still resolve because they're relative
+    for (const skill of [
+      "work",
+      "decompose",
+      "todo-preview",
+      "ninthwave-upgrade",
+    ]) {
+      const linkPath = join(renamedProject, ".claude/skills", skill);
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      expect(existsSync(linkPath)).toBe(true);
+
+      // Verify the symlink target file is actually reachable
+      const content = readFileSync(join(linkPath, "SKILL.md"), "utf-8");
+      expect(content).toContain(`# ${skill}`);
+    }
+
+    // Clean up the renamed directory
+    const { rmSync } = require("fs");
+    rmSync(renamedContainer, { recursive: true, force: true });
+  });
+});
+
 describe("setupProject — preserves existing config", () => {
   it("does not overwrite existing .ninthwave/config", () => {
     const projectDir = setupTempRepo();
@@ -334,7 +390,7 @@ describe("setupProject — preserves existing config", () => {
 });
 
 describe("setupGlobal", () => {
-  it("creates skill symlinks in ~/.claude/skills/", () => {
+  it("creates relative skill symlinks in ~/.claude/skills/", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -355,6 +411,10 @@ describe("setupGlobal", () => {
       const linkPath = join(skillsDir, skill);
       expect(existsSync(linkPath)).toBe(true);
       expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+
+      // Symlink target must be relative
+      const target = readlinkSync(linkPath);
+      expect(target.startsWith("/")).toBe(false);
     }
   });
 
