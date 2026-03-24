@@ -361,12 +361,26 @@ export class Orchestrator {
     if (ciStatus === "fail") {
       this.transition(item, "ci-failed");
       item.ciFailCount++;
-      actions.push({
-        type: "notify-ci-failure",
-        itemId: item.id,
-        prNumber: item.prNumber,
-        message: "CI failed — please investigate and fix.",
-      });
+
+      // When CI fails due to merge conflicts with main, send a rebase
+      // message instead of a generic CI failure. The worker should rebase
+      // rather than investigate a code bug.
+      const isMergeConflict = snap?.isMergeable === false;
+
+      if (isMergeConflict) {
+        actions.push({
+          type: "rebase",
+          itemId: item.id,
+          message: "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
+        });
+      } else {
+        actions.push({
+          type: "notify-ci-failure",
+          itemId: item.id,
+          prNumber: item.prNumber,
+          message: "[ORCHESTRATOR] CI Fix Request: CI failed — please investigate and fix.",
+        });
+      }
       return actions;
     }
 

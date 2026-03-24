@@ -959,6 +959,89 @@ describe("buildSnapshot lastCommitTime", () => {
   });
 });
 
+// ── buildSnapshot isMergeable propagation (H-ORC-1) ──────────────
+
+describe("buildSnapshot isMergeable", () => {
+  function mockMux(workspaces: string = ""): Multiplexer {
+    return {
+      isAvailable: () => true,
+      launchWorkspace: () => null,
+      sendMessage: () => true,
+      readScreen: () => "",
+      listWorkspaces: () => workspaces,
+      closeWorkspace: () => true,
+    };
+  }
+
+  it("sets isMergeable=true when checkPr returns MERGEABLE in 4th field", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("M-1-1"));
+    orch.setState("M-1-1", "ci-pending");
+
+    // Simulate checkPr returning: ID\tPR\tSTATUS\tMERGEABLE
+    const checkPr = () => "M-1-1\t10\tfailing\tMERGEABLE";
+    const getLastCommitTime = vi.fn(() => null);
+    const mux = mockMux();
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, getLastCommitTime, checkPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "M-1-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.isMergeable).toBe(true);
+    expect(snapItem!.ciStatus).toBe("fail");
+  });
+
+  it("sets isMergeable=false when checkPr returns CONFLICTING in 4th field", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("M-2-1"));
+    orch.setState("M-2-1", "ci-pending");
+
+    const checkPr = () => "M-2-1\t10\tfailing\tCONFLICTING";
+    const getLastCommitTime = vi.fn(() => null);
+    const mux = mockMux();
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, getLastCommitTime, checkPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "M-2-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.isMergeable).toBe(false);
+    expect(snapItem!.ciStatus).toBe("fail");
+  });
+
+  it("does not set isMergeable when 4th field is UNKNOWN", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("M-3-1"));
+    orch.setState("M-3-1", "ci-pending");
+
+    const checkPr = () => "M-3-1\t10\tpending\tUNKNOWN";
+    const getLastCommitTime = vi.fn(() => null);
+    const mux = mockMux();
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, getLastCommitTime, checkPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "M-3-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.isMergeable).toBeUndefined();
+  });
+
+  it("does not set isMergeable when checkPr returns 3-field format (backward compat)", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("M-4-1"));
+    orch.setState("M-4-1", "ci-pending");
+
+    // Old 3-field format without mergeable
+    const checkPr = () => "M-4-1\t10\tpending";
+    const getLastCommitTime = vi.fn(() => null);
+    const mux = mockMux();
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, getLastCommitTime, checkPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "M-4-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.isMergeable).toBeUndefined();
+  });
+});
+
 // ── Status pane management ────────────────────────────────────────
 
 describe("launchStatusPane", () => {

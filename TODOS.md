@@ -2,28 +2,6 @@
 
 <!-- Format guide: see $(cat .ninthwave/dir)/core/docs/todos-format.md -->
 
-## Orchestrator reliability (dogfood friction, 2026-03-24)
-
-### Fix: Detect CI failures and notify workers to rebase (H-ORC-1)
-
-**Priority:** High
-**Source:** Dogfood friction #5, #6
-**Depends on:** None
-
-The orchestrator's `checkPrStatus` (watch.ts) correctly parses failing CI and the state machine has a `ci-pending → ci-failed` transition, but items observed in production stayed in `ci-pending` for 5+ minutes with failing CI. Investigate why the transition doesn't fire reliably — likely a race between snapshot polling and check status propagation. Also: when CI fails due to merge conflicts with main (friction #6), the orchestrator should auto-send a rebase message to the worker rather than requiring manual intervention.
-
-**Test plan:**
-- Add unit test: `checkPrStatus` returns `"failing"` when GitHub checks report failure
-- Add integration test: state machine transitions `ci-pending → ci-failed` on snapshot with `ciStatus: "fail"`
-- Test rebase notification: when ci-failed is caused by merge conflict, worker receives rebase message
-- Edge case: CI that's still pending (no conclusion yet) should remain in `ci-pending`
-
-Acceptance: Orchestrator transitions items to `ci-failed` within one poll cycle of CI reporting failure. When CI failure is caused by merge conflicts with main, orchestrator sends a rebase message to the worker. Items no longer get stuck in `ci-pending` with failing CI.
-
-Key files: `core/commands/watch.ts:47-100`, `core/orchestrator.ts:343-376`, `core/commands/orchestrate.ts:134-158`
-
----
-
 ## Vision (recurring, 2026-03-24)
 
 

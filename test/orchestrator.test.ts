@@ -265,6 +265,55 @@ describe("Orchestrator", () => {
     expect(orch.getItem("H-1-1")!.ciFailCount).toBe(1);
   });
 
+  // ── 7b. CI fail with merge conflict → rebase action (H-ORC-1) ──
+
+  it("CI fail with merge conflict sends rebase action instead of notify-ci-failure", () => {
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "ci-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open", isMergeable: false }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-failed");
+    // Should emit rebase, not notify-ci-failure
+    const rebaseActions = actions.filter((a) => a.type === "rebase");
+    expect(rebaseActions).toHaveLength(1);
+    expect(rebaseActions[0]!.message).toContain("merge conflicts");
+    expect(rebaseActions[0]!.message).toContain("rebase");
+    // Should NOT emit notify-ci-failure
+    expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(false);
+  });
+
+  it("CI fail without merge conflict sends notify-ci-failure (not rebase)", () => {
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "ci-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open", isMergeable: true }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-failed");
+    expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
+    expect(actions.some((a) => a.type === "rebase")).toBe(false);
+  });
+
+  it("CI fail with unknown mergeability sends notify-ci-failure", () => {
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "ci-pending");
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-failed");
+    expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
+    expect(actions.some((a) => a.type === "rebase")).toBe(false);
+  });
+
   // ── 8. CI fail recovery ────────────────────────────────────────
 
   it("ci-failed recovers when CI passes (chains to merge evaluation)", () => {
@@ -1437,6 +1486,18 @@ describe("Orchestrator", () => {
           snapshotWith([{ id: "X-1-1", ciStatus: "pending", prState: "open" }]),
         );
         expect(orch.getItem("X-1-1")!.state).toBe("ci-pending");
+      });
+
+      it("→ ci-failed with rebase action when CI fails due to merge conflict", () => {
+        orch.addItem(makeTodo("X-1-1"));
+        orch.setState("X-1-1", "ci-pending");
+        orch.getItem("X-1-1")!.workspaceRef = "workspace:1";
+        const actions = orch.processTransitions(
+          snapshotWith([{ id: "X-1-1", ciStatus: "fail", prState: "open", isMergeable: false }]),
+        );
+        expect(orch.getItem("X-1-1")!.state).toBe("ci-failed");
+        expect(actions.some((a) => a.type === "rebase")).toBe(true);
+        expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(false);
       });
     });
 

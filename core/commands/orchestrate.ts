@@ -126,6 +126,7 @@ export function buildSnapshot(
       const parts = statusLine.split("\t");
       const prNumStr = parts[1];
       const status = parts[2];
+      const mergeableStr = parts[3]; // 4th field: MERGEABLE|CONFLICTING|UNKNOWN
 
       if (prNumStr) {
         snap.prNumber = parseInt(prNumStr, 10);
@@ -154,6 +155,15 @@ export function buildSnapshot(
           snap.prState = "open";
           break;
         // "no-pr" — leave snap fields unset
+      }
+
+      // Set isMergeable from the 4th field for all open PR states.
+      // This lets the orchestrator distinguish CI failures caused by
+      // merge conflicts (needs rebase) from regular CI failures (needs code fix).
+      if (mergeableStr === "MERGEABLE") {
+        snap.isMergeable = true;
+      } else if (mergeableStr === "CONFLICTING") {
+        snap.isMergeable = false;
       }
     }
 
