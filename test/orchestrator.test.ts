@@ -316,7 +316,7 @@ describe("Orchestrator", () => {
 
   // ── 7b. CI fail with merge conflict → rebase action (H-ORC-1) ──
 
-  it("CI fail with merge conflict sends rebase action instead of notify-ci-failure", () => {
+  it("CI fail with merge conflict sends daemon-rebase action instead of notify-ci-failure", () => {
     orch.addItem(makeTodo("H-1-1"));
     orch.setState("H-1-1", "ci-pending");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -327,13 +327,14 @@ describe("Orchestrator", () => {
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("ci-failed");
-    // Should emit rebase, not notify-ci-failure
-    const rebaseActions = actions.filter((a) => a.type === "rebase");
-    expect(rebaseActions).toHaveLength(1);
-    expect(rebaseActions[0]!.message).toContain("merge conflicts");
-    expect(rebaseActions[0]!.message).toContain("rebase");
-    // Should NOT emit notify-ci-failure
+    // Should emit daemon-rebase, not notify-ci-failure
+    const daemonRebaseActions = actions.filter((a) => a.type === "daemon-rebase");
+    expect(daemonRebaseActions).toHaveLength(1);
+    expect(daemonRebaseActions[0]!.message).toContain("merge conflicts");
+    expect(daemonRebaseActions[0]!.message).toContain("rebase");
+    // Should NOT emit notify-ci-failure or regular rebase
     expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(false);
+    expect(actions.some((a) => a.type === "rebase")).toBe(false);
   });
 
   it("CI fail without merge conflict sends notify-ci-failure (not rebase)", () => {
@@ -1002,7 +1003,7 @@ describe("Orchestrator", () => {
       );
     });
 
-    it("merge: logs warning when conflicting PR has dead worker (no workspace ref)", () => {
+    it("merge: logs warning when conflicting PR has dead worker and no daemonRebase dep", () => {
       const checkPrMergeable = vi.fn(() => false);
       const warn = vi.fn();
       const deps = mockDeps({ checkPrMergeable, warn });
@@ -1012,7 +1013,7 @@ describe("Orchestrator", () => {
       orch.getItem("H-1-1")!.prNumber = 42;
       orch.setState("H-1-2", "ci-pending");
       orch.getItem("H-1-2")!.prNumber = 43;
-      // No workspaceRef — worker is dead
+      // No workspaceRef — worker is dead, no daemonRebase dep
 
       orch.executeAction(
         { type: "merge", itemId: "H-1-1", prNumber: 42 },
@@ -1024,7 +1025,7 @@ describe("Orchestrator", () => {
         expect.stringContaining("PR #43"),
       );
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining("merge conflicts"),
+        expect.stringContaining("Manual rebase needed"),
       );
       // Should NOT try to send a message to a non-existent workspace
       expect(deps.sendMessage).not.toHaveBeenCalled();
@@ -1247,7 +1248,7 @@ describe("Orchestrator", () => {
       // mark-done was removed: workers remove their TODO item in their PR branch.
       // Orchestrator no longer pushes to main after merge.
       const actionTypes: string[] = [
-        "launch", "merge", "notify-ci-failure", "notify-review", "clean", "rebase", "retry",
+        "launch", "merge", "notify-ci-failure", "notify-review", "clean", "rebase", "daemon-rebase", "retry",
       ];
       expect(actionTypes).not.toContain("mark-done");
     });
@@ -1302,6 +1303,178 @@ describe("Orchestrator", () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain("Failed to send rebase message");
+    });
+
+    // ── daemon-rebase ──────────────────────────────────────────
+
+    it("daemon-rebase: succeeds when daemonRebase dep succeeds", () => {
+      const daemonRebase = vi.fn(() => true);
+      const deps = mockDeps({ daemonRebase });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.setState("H-1-1", "ci-failed");
+      orch.getItem("H-1-1")!.prNumber = 42;
+
+      const result = orch.executeAction(
+        { type: "daemon-rebase", itemId: "H-1-1" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      // daemonRebase receives the worktree path, not projectRoot
+      expect(daemonRebase).toHaveBeenCalledWith(
+        `${defaultCtx.worktreeDir}/todo-H-1-1`,
+        "todo/H-1-1",
+      );
+      // Should transition to ci-pending after successful rebase
+      expect(orch.getItem("H-1-1")!.state).toBe("ci-pending");
+    });
+
+    it("daemon-rebase: falls back to worker message when daemonRebase fails", () => {
+      const daemonRebase = vi.fn(() => false);
+      const deps = mockDeps({ daemonRebase });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.setState("H-1-1", "ci-failed");
+      orch.getItem("H-1-1")!.prNumber = 42;
+      orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+      const result = orch.executeAction(
+        { type: "daemon-rebase", itemId: "H-1-1", message: "Rebase needed." },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(deps.sendMessage).toHaveBeenCalledWith("workspace:1", "Rebase needed.");
+    });
+
+    it("daemon-rebase: falls back to worker message when daemonRebase throws", () => {
+      const daemonRebase = vi.fn(() => { throw new Error("git error"); });
+      const deps = mockDeps({ daemonRebase });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.setState("H-1-1", "ci-failed");
+      orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+      const result = orch.executeAction(
+        { type: "daemon-rebase", itemId: "H-1-1", message: "Rebase needed." },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(deps.sendMessage).toHaveBeenCalledWith("workspace:1", "Rebase needed.");
+    });
+
+    it("daemon-rebase: fails with warning when no daemonRebase dep and no worker", () => {
+      const warn = vi.fn();
+      const deps = mockDeps({ warn });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.setState("H-1-1", "ci-failed");
+
+      const result = orch.executeAction(
+        { type: "daemon-rebase", itemId: "H-1-1" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Daemon rebase failed");
+      expect(result.error).toContain("no worker available");
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("merge conflicts"));
+    });
+
+    it("daemon-rebase: fails when daemonRebase fails and no worker available", () => {
+      const daemonRebase = vi.fn(() => false);
+      const warn = vi.fn();
+      const deps = mockDeps({ daemonRebase, warn });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.setState("H-1-1", "ci-failed");
+      // No workspaceRef — worker is dead
+
+      const result = orch.executeAction(
+        { type: "daemon-rebase", itemId: "H-1-1" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(false);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Manual rebase needed"));
+    });
+
+    it("daemon-rebase: uses --force-with-lease via daemonRebase dep (integration note)", () => {
+      // The daemonRebase dep is responsible for using --force-with-lease.
+      // This test verifies the orchestrator calls the dep with the correct worktree path and branch.
+      const daemonRebase = vi.fn(() => true);
+      const deps = mockDeps({ daemonRebase });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.setState("H-1-1", "ci-failed");
+
+      orch.executeAction(
+        { type: "daemon-rebase", itemId: "H-1-1" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(daemonRebase).toHaveBeenCalledWith(
+        `${defaultCtx.worktreeDir}/todo-H-1-1`,
+        "todo/H-1-1",
+      );
+    });
+
+    // ── daemon-rebase in post-merge conflict detection ────────
+
+    it("merge: tries daemon rebase for conflicting sibling PR with dead worker", () => {
+      const checkPrMergeable = vi.fn(() => false);
+      const daemonRebase = vi.fn(() => true);
+      const warn = vi.fn();
+      const deps = mockDeps({ checkPrMergeable, daemonRebase, warn });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.addItem(makeTodo("H-1-2"));
+      orch.setState("H-1-1", "merging");
+      orch.getItem("H-1-1")!.prNumber = 42;
+      orch.setState("H-1-2", "ci-pending");
+      orch.getItem("H-1-2")!.prNumber = 43;
+      // No workspaceRef on H-1-2 — worker is dead
+
+      orch.executeAction(
+        { type: "merge", itemId: "H-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      // Should try daemon rebase for the dead worker's worktree
+      expect(daemonRebase).toHaveBeenCalledWith(
+        `${defaultCtx.worktreeDir}/todo-H-1-2`,
+        "todo/H-1-2",
+      );
+      // Should NOT warn because daemon rebase succeeded
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("merge: warns when daemon rebase fails for dead worker sibling", () => {
+      const checkPrMergeable = vi.fn(() => false);
+      const daemonRebase = vi.fn(() => false);
+      const warn = vi.fn();
+      const deps = mockDeps({ checkPrMergeable, daemonRebase, warn });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.addItem(makeTodo("H-1-2"));
+      orch.setState("H-1-1", "merging");
+      orch.getItem("H-1-1")!.prNumber = 42;
+      orch.setState("H-1-2", "ci-pending");
+      orch.getItem("H-1-2")!.prNumber = 43;
+      // No workspaceRef — worker is dead
+
+      orch.executeAction(
+        { type: "merge", itemId: "H-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(daemonRebase).toHaveBeenCalledWith(
+        `${defaultCtx.worktreeDir}/todo-H-1-2`,
+        "todo/H-1-2",
+      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("daemon rebase failed"));
     });
 
     // ── common error handling ─────────────────────────────────
@@ -1651,7 +1824,7 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("ci-pending");
       });
 
-      it("→ ci-failed with rebase action when CI fails due to merge conflict", () => {
+      it("→ ci-failed with daemon-rebase action when CI fails due to merge conflict", () => {
         orch.addItem(makeTodo("X-1-1"));
         orch.setState("X-1-1", "ci-pending");
         orch.getItem("X-1-1")!.workspaceRef = "workspace:1";
@@ -1659,7 +1832,7 @@ describe("Orchestrator", () => {
           snapshotWith([{ id: "X-1-1", ciStatus: "fail", prState: "open", isMergeable: false }]),
         );
         expect(orch.getItem("X-1-1")!.state).toBe("ci-failed");
-        expect(actions.some((a) => a.type === "rebase")).toBe(true);
+        expect(actions.some((a) => a.type === "daemon-rebase")).toBe(true);
         expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(false);
       });
     });

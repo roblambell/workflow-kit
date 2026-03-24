@@ -25,7 +25,7 @@ import { checkPrStatus } from "./watch.ts";
 import { launchSingleItem, detectAiTool } from "./start.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner } from "../gh.ts";
-import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset } from "../git.ts";
+import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset, daemonRebase } from "../git.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
 import { die } from "../output.ts";
@@ -1125,6 +1125,7 @@ export async function cmdOrchestrate(
     fetchOrigin,
     ffMerge,
     checkPrMergeable,
+    daemonRebase,
     warn: (message) =>
       structuredLog({ ts: new Date().toISOString(), level: "warn", event: "orchestrator_warning", message }),
   };

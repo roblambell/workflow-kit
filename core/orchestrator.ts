@@ -2,6 +2,7 @@
 // processTransitions is pure — takes a snapshot and returns actions, no side effects.
 // executeAction bridges the pure state machine to external dependencies via injected deps.
 
+import { join } from "path";
 import type { TodoItem } from "./types.ts";
 
 // ── State types ──────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ export type ActionType =
   | "notify-review"
   | "clean"
   | "rebase"
+  | "daemon-rebase"
   | "retry";
 
 export interface Action {
@@ -132,6 +134,13 @@ export interface OrchestratorDeps {
   ffMerge: (repoRoot: string, branch: string) => void;
   /** Check if a PR is mergeable (no conflicts). Returns true if mergeable, false if conflicting. */
   checkPrMergeable?: (repoRoot: string, prNumber: number) => boolean;
+  /**
+   * Daemon-side rebase: fetch origin/main, rebase the branch, and force-push.
+   * Used to auto-resolve TODOS.md-only conflicts without involving the worker.
+   * The worktreePath is the path to the worktree where the branch is checked out.
+   * Returns true on success, false on failure (caller should fall back to worker rebase).
+   */
+  daemonRebase?: (worktreePath: string, branch: string) => boolean;
   /** Log a warning message (for situations that need human attention). */
   warn?: (message: string) => void;
 }
@@ -436,7 +445,7 @@ export class Orchestrator {
 
       if (isMergeConflict) {
         actions.push({
-          type: "rebase",
+          type: "daemon-rebase",
           itemId: item.id,
           message: "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
         });
@@ -585,6 +594,8 @@ export class Orchestrator {
         return this.executeClean(item, ctx, deps);
       case "rebase":
         return this.executeRebase(item, action, deps);
+      case "daemon-rebase":
+        return this.executeDaemonRebase(item, action, ctx, deps);
       case "retry":
         return this.executeRetry(item, ctx, deps);
     }
@@ -690,9 +701,22 @@ export class Orchestrator {
               `Sibling PR #${other.prNumber} has merge conflicts after ${item.id} was merged. Please rebase onto latest main.`,
             );
           } else {
-            deps.warn?.(
-              `[Orchestrator] PR #${other.prNumber} (${other.id}) has merge conflicts but worker has no workspace reference. Manual rebase needed.`,
-            );
+            // Worker is dead — try daemon-side rebase (handles TODOS.md-only conflicts)
+            const otherBranch = `todo/${other.id}`;
+            const otherWorktreePath = join(ctx.worktreeDir, `todo-${other.id}`);
+            let daemonSuccess = false;
+            if (deps.daemonRebase) {
+              try {
+                daemonSuccess = deps.daemonRebase(otherWorktreePath, otherBranch);
+              } catch {
+                // Fall through to warning
+              }
+            }
+            if (!daemonSuccess) {
+              deps.warn?.(
+                `[Orchestrator] PR #${other.prNumber} (${other.id}) has merge conflicts but daemon rebase failed and worker has no workspace reference. Manual rebase needed.`,
+              );
+            }
           }
         }
       }
@@ -773,6 +797,50 @@ export class Orchestrator {
     }
 
     return { success: true };
+  }
+
+  /**
+   * Daemon-side rebase: attempt to rebase the branch onto main without worker involvement.
+   * Resolves TODOS.md-only conflicts automatically. Falls back to worker rebase message on failure.
+   */
+  private executeDaemonRebase(
+    item: OrchestratorItem,
+    action: Action,
+    ctx: ExecutionContext,
+    deps: OrchestratorDeps,
+  ): ActionResult {
+    const branch = `todo/${item.id}`;
+
+    // Try daemon-side rebase if the dep is available
+    if (deps.daemonRebase) {
+      const worktreePath = join(ctx.worktreeDir, `todo-${item.id}`);
+      try {
+        const success = deps.daemonRebase(worktreePath, branch);
+        if (success) {
+          // Rebase succeeded — transition back to ci-pending so CI re-runs
+          this.transition(item, "ci-pending");
+          return { success: true };
+        }
+      } catch {
+        // Fall through to worker rebase
+      }
+    }
+
+    // Daemon rebase not available or failed — fall back to worker rebase message
+    const message = action.message || "Please rebase onto latest main.";
+    if (item.workspaceRef) {
+      const sent = deps.sendMessage(item.workspaceRef, message);
+      if (!sent) {
+        return { success: false, error: `Daemon rebase failed and could not send worker message for ${item.id}` };
+      }
+      return { success: true };
+    }
+
+    // No daemon rebase and no worker — log warning
+    deps.warn?.(
+      `[Orchestrator] PR for ${item.id} (branch ${branch}) has merge conflicts but daemon rebase failed and worker has no workspace. Manual rebase needed.`,
+    );
+    return { success: false, error: `Daemon rebase failed and no worker available for ${item.id}` };
   }
 
   /** Clean up a failed worker's worktree and workspace to prepare for retry. */

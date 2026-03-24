@@ -560,27 +560,6 @@ Key files: `core/analytics.ts`, `test/analytics.test.ts`
 
 ---
 
-### Feat: Daemon-side auto-rebase for TODOS.md-only conflicts (H-DET-4)
-
-**Priority:** High
-**Source:** Friction #18 — TODOS.md conflicts are predictable and should be auto-resolved
-**Depends on:** H-DET-1
-
-When the orchestrator detects a PR with `mergeable: CONFLICTING`, check if TODOS.md is the only conflicting file. If so, instead of sending a rebase message to the worker, perform the rebase directly: `git fetch origin main`, `git checkout <branch>`, `git rebase origin/main` (auto-resolve TODOS.md by keeping the branch's deletion + preserving other items), `git push --force-with-lease`. This eliminates the most common bottleneck in parallel processing. Fall back to worker-message rebase for non-TODOS.md conflicts.
-
-**Test plan:**
-- Unit test: TODOS.md-only conflict triggers daemon-side rebase
-- Unit test: non-TODOS.md conflict falls back to worker rebase message
-- Unit test: rebase failure (e.g., unexpected conflict) falls back to worker message
-- Unit test: force-push uses --force-with-lease for safety
-- Edge case: branch doesn't exist locally (need to fetch first)
-
-Acceptance: TODOS.md-only conflicts are auto-resolved by the daemon without worker involvement. Non-TODOS.md conflicts still use the worker message path. Force-push uses --force-with-lease. Tests cover both paths and fallback. No regression.
-
-Key files: `core/orchestrator.ts`, `core/commands/orchestrate.ts`, `core/git.ts`, `test/orchestrator.test.ts`
-
----
-
 ### Feat: Priority-ordered merge queue (M-DET-5)
 
 **Priority:** Medium
