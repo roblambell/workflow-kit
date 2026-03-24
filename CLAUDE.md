@@ -30,16 +30,36 @@ No build step — Bun executes TypeScript directly. Changes take effect immediat
 
 ## Dogfooding Mode
 
-This repo uses ninthwave to develop ninthwave. When working here:
+This repo uses ninthwave to develop ninthwave. When working here, **dogfooding self-improvement mode is the default** — follow the full loop below unless explicitly asked to skip it.
+
+### Basics
 
 1. **Log friction.** Any issue, slowdown, or surprising behavior you encounter while using ninthwave tools (the CLI, /work, /decompose, workers, orchestrator) is valuable signal. Append observations to the friction log at `~/.claude/projects/-Users-roblambell-code-ninthwave/memory/project_dogfood_friction.md`.
 
 2. **Workers auto-merge.** When processing TODOs in this repo, workers should create PRs with auto-merge enabled (`gh pr merge --squash --auto` after PR creation). This keeps the feedback loop tight.
 
-3. **WIP limit ≤ 4.** Each worker session (Claude Code + language server + worktree) consumes ~2-3GB RAM. On a 16GB Mac, WIP limit of 4 is safe; 8 caused an OOM crash. Use `--wip-limit 3` or `--wip-limit 4` until memory-aware defaults ship (M-FIX-3).
+3. **WIP limit ≤ 5.** Each worker session (Claude Code + language server + worktree) consumes ~2-3GB RAM. On a 16GB Mac, WIP limit of 5 is the default; reduce if memory pressure is observed.
 
 4. **Always use worktree isolation for parallel agents.** When spawning agents that work on branches in the same repo, use `isolation: "worktree"` so each gets its own working copy. Never have two agents share a checkout.
 
-5. **Continuous delivery.** The orchestrator should not stop after one batch. Process all dependency batches sequentially until TODOS.md is empty. If friction was logged during a batch, decompose actionable friction into new TODOs and continue.
+### Self-Improvement Loop (default behavior)
 
-6. **Self-improvement loop.** The goal is: decompose → work → merge → check friction → decompose friction into TODOs → work → repeat until no actionable friction remains.
+The full dogfooding cycle runs automatically unless the user explicitly opts out:
+
+1. **Process all code TODOs.** Launch the orchestrator on all ready items. It handles dependency batches, CI, merging, and cleanup automatically.
+
+2. **Pause before the vision TODO.** When all code items are done but before running the recurring vision item (L-VIS-N), stop and review friction.
+
+3. **Review friction.** Read the friction log and run it through `/plan-ceo-review` (scope/ambition) and `/plan-eng-review` (architecture/execution). This ensures friction fixes are well-scoped and well-designed before decomposition.
+
+4. **Decompose friction into TODOs.** Use `/decompose` to break actionable friction into TODO items. Add them to TODOS.md *before* the vision item so they're processed first.
+
+5. **Process friction TODOs.** Launch the orchestrator again on the new friction-derived items.
+
+6. **Run the vision TODO.** Once no actionable friction remains, process the recurring vision item (L-VIS-N). This explores what's next, decomposes new work, and adds a new vision item (L-VIS-N+1) depending on the new terminal items.
+
+7. **Repeat.** Go back to step 1 with the new TODOs from the vision exploration. The cycle continues indefinitely: code → friction review → friction fixes → vision → new code → repeat.
+
+### Opting Out
+
+If the user explicitly asks to skip the self-improvement loop (e.g., "just process the items" or "no friction review"), process items straight through without pausing. Ask the user at the start of `/work` if there's any ambiguity.
