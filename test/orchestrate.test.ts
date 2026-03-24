@@ -667,54 +667,54 @@ describe("orchestrateLoop", () => {
 });
 
 describe("adaptivePollInterval", () => {
-  it("returns 10s when items are ready", () => {
+  it("returns 5s when items are ready", () => {
     const orch = new Orchestrator();
     orch.addItem(makeTodo("A-1-1"));
     orch.setState("A-1-1", "ready");
 
-    expect(adaptivePollInterval(orch)).toBe(10_000);
+    expect(adaptivePollInterval(orch)).toBe(5_000);
   });
 
-  it("returns 30s when workers are active", () => {
+  it("returns 10s when workers are active", () => {
     const orch = new Orchestrator();
     orch.addItem(makeTodo("A-1-1"));
     orch.setState("A-1-1", "implementing");
 
-    expect(adaptivePollInterval(orch)).toBe(30_000);
+    expect(adaptivePollInterval(orch)).toBe(10_000);
   });
 
-  it("returns 30s when workers are launching", () => {
+  it("returns 10s when workers are launching", () => {
     const orch = new Orchestrator();
     orch.addItem(makeTodo("A-1-1"));
     orch.setState("A-1-1", "launching");
 
-    expect(adaptivePollInterval(orch)).toBe(30_000);
+    expect(adaptivePollInterval(orch)).toBe(10_000);
   });
 
-  it("returns 120s when waiting for reviews/CI", () => {
+  it("returns 15s when waiting for CI", () => {
     const orch = new Orchestrator();
     orch.addItem(makeTodo("A-1-1"));
     orch.setState("A-1-1", "ci-pending");
 
-    expect(adaptivePollInterval(orch)).toBe(120_000);
+    expect(adaptivePollInterval(orch)).toBe(15_000);
   });
 
-  it("returns 120s when all items are in terminal states", () => {
+  it("returns 30s when all items are in terminal states", () => {
     const orch = new Orchestrator();
     orch.addItem(makeTodo("A-1-1"));
     orch.setState("A-1-1", "done");
 
-    expect(adaptivePollInterval(orch)).toBe(120_000);
+    expect(adaptivePollInterval(orch)).toBe(30_000);
   });
 
-  it("prioritizes ready (10s) over implementing (30s)", () => {
+  it("prioritizes ready (5s) over implementing (10s)", () => {
     const orch = new Orchestrator();
     orch.addItem(makeTodo("A-1-1"));
     orch.addItem(makeTodo("A-1-2"));
     orch.setState("A-1-1", "ready");
     orch.setState("A-1-2", "implementing");
 
-    expect(adaptivePollInterval(orch)).toBe(10_000);
+    expect(adaptivePollInterval(orch)).toBe(5_000);
   });
 });
 
@@ -750,7 +750,9 @@ describe("reconstructState", () => {
       closeWorkspace: () => true,
     };
 
-    reconstructState(orch, tmpDir, wtDir, fakeMux);
+    // Pass no-op checkPr to avoid shelling out
+    const noopCheckPr = () => null;
+    reconstructState(orch, tmpDir, wtDir, fakeMux, noopCheckPr);
 
     const item = orch.getItem("H-DF-1")!;
     expect(item.state).toBe("implementing");
@@ -779,7 +781,8 @@ describe("reconstructState", () => {
       closeWorkspace: () => true,
     };
 
-    reconstructState(orch, tmpDir, wtDir, fakeMux);
+    const noopCheckPr = () => null;
+    reconstructState(orch, tmpDir, wtDir, fakeMux, noopCheckPr);
 
     const item = orch.getItem("H-DF-2")!;
     expect(item.state).toBe("implementing");

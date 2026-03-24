@@ -148,18 +148,23 @@ function isWorkerAlive(item: OrchestratorItem, mux: Multiplexer): boolean {
 export function adaptivePollInterval(orch: Orchestrator): number {
   const items = orch.getAllItems();
 
-  // 10s between batches: items are ready and about to launch
+  // 5s between batches: items are ready and about to launch
   if (items.some((i) => i.state === "ready")) {
+    return 5_000;
+  }
+
+  // 10s when workers active: launching or implementing
+  if (items.some((i) => i.state === "launching" || i.state === "implementing")) {
     return 10_000;
   }
 
-  // 30s when workers active: launching or implementing
-  if (items.some((i) => i.state === "launching" || i.state === "implementing")) {
-    return 30_000;
+  // 15s when waiting for CI or reviews — still want fast feedback
+  if (items.some((i) => i.state === "ci-pending" || i.state === "ci-passed" || i.state === "ci-failed")) {
+    return 15_000;
   }
 
-  // 120s when waiting for reviews or CI
-  return 120_000;
+  // 30s idle fallback
+  return 30_000;
 }
 
 // ── State reconstruction (crash recovery) ──────────────────────────
@@ -178,6 +183,7 @@ export function reconstructState(
   projectRoot: string,
   worktreeDir: string,
   mux?: Multiplexer,
+  checkPr: (id: string, root: string) => string | null = checkPrStatus,
 ): void {
   // Pre-fetch workspace list once (avoid per-item shell calls)
   const workspaceList = mux ? mux.listWorkspaces() : "";
@@ -187,7 +193,7 @@ export function reconstructState(
     if (!existsSync(wtPath)) continue;
 
     // Item has a worktree — check PR status
-    const statusLine = checkPrStatus(item.id, projectRoot);
+    const statusLine = checkPr(item.id, projectRoot);
     if (!statusLine) {
       orch.setState(item.id, "implementing");
       recoverWorkspaceRef(orch, item.id, workspaceList);
