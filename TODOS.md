@@ -197,24 +197,6 @@ Key files: `core/commands/start.ts`, `core/commands/clean.ts`, `test/start.test.
 
 ---
 
-### Refactor: Extract helpers from orchestrateLoop (L-REF-1)
-
-**Priority:** Low
-**Source:** Eng review H-ENG-1 — finding F20
-**Depends on:** None
-
-The `orchestrateLoop` function handles ~360 lines of logic: supervisor ticks, analytics, webhooks, cost capture, daemon state persistence, cleanup sweeps, and the core loop. Extract post-completion handling into `handleRunComplete()` and per-action execution into `handleActionExecution()` to improve readability without changing behavior.
-
-**Test plan:**
-- Verify all existing orchestrateLoop tests still pass after refactoring
-- No new tests needed — this is a pure refactoring with no behavior changes
-
-Acceptance: `orchestrateLoop` is shorter and delegates to extracted helpers. All existing tests pass without modification. No behavior changes.
-
-Key files: `core/commands/orchestrate.ts`, `test/orchestrate.test.ts`
-
----
-
 ## Detection Latency & Auto-Rebase (friction #17/#18, 2026-03-24)
 
 

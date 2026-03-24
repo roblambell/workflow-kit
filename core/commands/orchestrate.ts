@@ -13,6 +13,7 @@ import { run } from "../shell.ts";
 import {
   Orchestrator,
   calculateMemoryWipLimit,
+  type Action,
   type MergeStrategy,
   type PollSnapshot,
   type ItemSnapshot,
@@ -458,6 +459,253 @@ export function getAvailableMemory(): number {
   return freemem();
 }
 
+// ── Run-complete and action-execution helpers ─────────────────────
+
+/**
+ * Handle post-completion processing: cleanup sweep, logging, webhooks, analytics.
+ * Extracted from orchestrateLoop for readability.
+ */
+function handleRunComplete(
+  allItems: OrchestratorItem[],
+  orch: Orchestrator,
+  ctx: ExecutionContext,
+  deps: OrchestrateLoopDeps,
+  config: OrchestrateLoopConfig,
+  log: (entry: LogEntry) => void,
+  runStartTime: string,
+  costData: Map<string, CostSummary>,
+): void {
+  // Final cleanup sweep: remove any stale worktrees for managed items
+  const cleanedIds: string[] = [];
+  for (const item of allItems) {
+    try {
+      const cleaned = deps.actionDeps.cleanSingleWorktree(
+        item.id,
+        ctx.worktreeDir,
+        ctx.projectRoot,
+      );
+      if (cleaned) {
+        cleanedIds.push(item.id);
+      }
+    } catch {
+      // Non-fatal — best-effort cleanup
+    }
+  }
+
+  if (cleanedIds.length > 0) {
+    log({
+      ts: new Date().toISOString(),
+      level: "info",
+      event: "worktree_cleanup_sweep",
+      cleanedIds,
+      count: cleanedIds.length,
+    });
+  }
+
+  const doneCount = allItems.filter((i) => i.state === "done").length;
+  const stuckCount = allItems.filter((i) => i.state === "stuck").length;
+  const itemSummaries = allItems.map((i) => ({
+    id: i.id,
+    state: i.state,
+    prUrl: i.prNumber && config.repoUrl
+      ? `${config.repoUrl}/pull/${i.prNumber}`
+      : null,
+  }));
+  log({
+    ts: new Date().toISOString(),
+    level: "info",
+    event: "orchestrate_complete",
+    done: doneCount,
+    stuck: stuckCount,
+    total: allItems.length,
+    items: itemSummaries,
+  });
+
+  // Webhook: orchestrate_complete
+  deps.notify?.("orchestrate_complete", {
+    items: allItems.map((i) => ({ id: i.id, state: i.state, prNumber: i.prNumber })),
+    summary: { done: doneCount, stuck: stuckCount, total: allItems.length },
+  });
+
+  // Analytics: write structured metrics file
+  if (config.analyticsDir && deps.analyticsIO) {
+    try {
+      const endTime = new Date().toISOString();
+      const metrics = collectRunMetrics(
+        allItems,
+        orch.config,
+        runStartTime,
+        endTime,
+        config.aiTool ?? "unknown",
+        costData.size > 0 ? costData : undefined,
+      );
+      const metricsPath = writeRunMetrics(metrics, config.analyticsDir, deps.analyticsIO);
+      log({
+        ts: new Date().toISOString(),
+        level: "info",
+        event: "analytics_written",
+        path: metricsPath,
+      });
+    } catch (e: unknown) {
+      // Non-fatal — analytics failure shouldn't block the orchestrator
+      const msg = e instanceof Error ? e.message : String(e);
+      log({
+        ts: new Date().toISOString(),
+        level: "warn",
+        event: "analytics_error",
+        error: msg,
+      });
+    }
+  }
+
+  // Analytics: auto-commit analytics files to current branch
+  if (config.analyticsDir && deps.analyticsCommit) {
+    try {
+      const analyticsRelPath = ".ninthwave/analytics";
+      const result = commitAnalyticsFiles(
+        ctx.projectRoot,
+        analyticsRelPath,
+        deps.analyticsCommit,
+      );
+      if (result.committed) {
+        log({
+          ts: new Date().toISOString(),
+          level: "info",
+          event: "analytics_committed",
+        });
+      } else {
+        log({
+          ts: new Date().toISOString(),
+          level: "debug",
+          event: "analytics_commit_skipped",
+          reason: result.reason,
+        });
+      }
+    } catch (e: unknown) {
+      // Non-fatal — commit failure shouldn't block the orchestrator
+      const msg = e instanceof Error ? e.message : String(e);
+      log({
+        ts: new Date().toISOString(),
+        level: "warn",
+        event: "analytics_commit_error",
+        error: msg,
+      });
+    }
+  }
+}
+
+/**
+ * Execute a single orchestrator action with logging, cost capture, webhooks, and reconcile.
+ * Extracted from orchestrateLoop for readability.
+ */
+function handleActionExecution(
+  action: Action,
+  orch: Orchestrator,
+  ctx: ExecutionContext,
+  deps: OrchestrateLoopDeps,
+  log: (entry: LogEntry) => void,
+  costData: Map<string, CostSummary>,
+): void {
+  // Before clean action: capture worker screen for cost/token parsing
+  if (action.type === "clean" && deps.readScreen) {
+    const orchItem = orch.getItem(action.itemId);
+    if (orchItem?.workspaceRef) {
+      try {
+        const screenText = deps.readScreen(orchItem.workspaceRef, 50);
+        const cost = parseCostSummary(screenText);
+        if (cost.tokensUsed != null || cost.costUsd != null) {
+          costData.set(action.itemId, cost);
+          log({
+            ts: new Date().toISOString(),
+            level: "info",
+            event: "cost_captured",
+            itemId: action.itemId,
+            tokensUsed: cost.tokensUsed,
+            costUsd: cost.costUsd,
+          });
+        }
+      } catch {
+        // Non-fatal — cost capture failure doesn't block cleanup
+      }
+    }
+  }
+
+  log({
+    ts: new Date().toISOString(),
+    level: "info",
+    event: "action_execute",
+    action: action.type,
+    itemId: action.itemId,
+    prNumber: action.prNumber,
+  });
+
+  const result = orch.executeAction(action, ctx, deps.actionDeps);
+
+  log({
+    ts: new Date().toISOString(),
+    level: result.success ? "info" : "warn",
+    event: "action_result",
+    action: action.type,
+    itemId: action.itemId,
+    success: result.success,
+    error: result.error,
+  });
+
+  // Structured log for retry events
+  if (action.type === "retry" && result.success) {
+    const orchItem = orch.getItem(action.itemId);
+    log({
+      ts: new Date().toISOString(),
+      level: "info",
+      event: "worker_retry",
+      itemId: action.itemId,
+      retryCount: orchItem?.retryCount ?? 0,
+      maxRetries: orch.config.maxRetries,
+    });
+  }
+
+  // Webhook: pr_merged on successful merge
+  if (action.type === "merge" && result.success) {
+    deps.notify?.("pr_merged", {
+      itemId: action.itemId,
+      prNumber: action.prNumber,
+    });
+  }
+
+  // Webhook: ci_failed on CI failure notification
+  if (action.type === "notify-ci-failure") {
+    deps.notify?.("ci_failed", {
+      itemId: action.itemId,
+      prNumber: action.prNumber,
+      error: action.message,
+    });
+  }
+
+  // After a successful merge, reconcile TODOS.md with GitHub state
+  // so list --ready reflects reality for the rest of the run.
+  if (action.type === "merge" && result.success && deps.reconcile) {
+    try {
+      deps.reconcile(ctx.todosFile, ctx.worktreeDir, ctx.projectRoot);
+      log({
+        ts: new Date().toISOString(),
+        level: "info",
+        event: "post_merge_reconcile",
+        itemId: action.itemId,
+      });
+    } catch (e: unknown) {
+      // Non-fatal — reconcile failure shouldn't block the orchestrator
+      const msg = e instanceof Error ? e.message : String(e);
+      log({
+        ts: new Date().toISOString(),
+        level: "warn",
+        event: "post_merge_reconcile_error",
+        itemId: action.itemId,
+        error: msg,
+      });
+    }
+  }
+}
+
 // ── Event loop ─────────────────────────────────────────────────────
 
 /** Dependencies injected into orchestrateLoop for testability. */
@@ -558,124 +806,7 @@ export async function orchestrateLoop(
     const allItems = orch.getAllItems();
     const allTerminal = allItems.every((i) => i.state === "done" || i.state === "stuck");
     if (allTerminal) {
-      // Final cleanup sweep: remove any stale worktrees for managed items
-      const cleanedIds: string[] = [];
-      for (const item of allItems) {
-        try {
-          const cleaned = deps.actionDeps.cleanSingleWorktree(
-            item.id,
-            ctx.worktreeDir,
-            ctx.projectRoot,
-          );
-          if (cleaned) {
-            cleanedIds.push(item.id);
-          }
-        } catch {
-          // Non-fatal — best-effort cleanup
-        }
-      }
-
-      if (cleanedIds.length > 0) {
-        wrappedLog({
-          ts: new Date().toISOString(),
-          level: "info",
-          event: "worktree_cleanup_sweep",
-          cleanedIds,
-          count: cleanedIds.length,
-        });
-      }
-
-      const doneCount = allItems.filter((i) => i.state === "done").length;
-      const stuckCount = allItems.filter((i) => i.state === "stuck").length;
-      const itemSummaries = allItems.map((i) => ({
-        id: i.id,
-        state: i.state,
-        prUrl: i.prNumber && config.repoUrl
-          ? `${config.repoUrl}/pull/${i.prNumber}`
-          : null,
-      }));
-      wrappedLog({
-        ts: new Date().toISOString(),
-        level: "info",
-        event: "orchestrate_complete",
-        done: doneCount,
-        stuck: stuckCount,
-        total: allItems.length,
-        items: itemSummaries,
-      });
-
-      // Webhook: orchestrate_complete
-      deps.notify?.("orchestrate_complete", {
-        items: allItems.map((i) => ({ id: i.id, state: i.state, prNumber: i.prNumber })),
-        summary: { done: doneCount, stuck: stuckCount, total: allItems.length },
-      });
-
-      // Analytics: write structured metrics file
-      if (config.analyticsDir && deps.analyticsIO) {
-        try {
-          const endTime = new Date().toISOString();
-          const metrics = collectRunMetrics(
-            allItems,
-            orch.config,
-            runStartTime,
-            endTime,
-            config.aiTool ?? "unknown",
-            costData.size > 0 ? costData : undefined,
-          );
-          const metricsPath = writeRunMetrics(metrics, config.analyticsDir, deps.analyticsIO);
-          wrappedLog({
-            ts: new Date().toISOString(),
-            level: "info",
-            event: "analytics_written",
-            path: metricsPath,
-          });
-        } catch (e: unknown) {
-          // Non-fatal — analytics failure shouldn't block the orchestrator
-          const msg = e instanceof Error ? e.message : String(e);
-          wrappedLog({
-            ts: new Date().toISOString(),
-            level: "warn",
-            event: "analytics_error",
-            error: msg,
-          });
-        }
-      }
-
-      // Analytics: auto-commit analytics files to current branch
-      if (config.analyticsDir && deps.analyticsCommit) {
-        try {
-          const analyticsRelPath = ".ninthwave/analytics";
-          const result = commitAnalyticsFiles(
-            ctx.projectRoot,
-            analyticsRelPath,
-            deps.analyticsCommit,
-          );
-          if (result.committed) {
-            wrappedLog({
-              ts: new Date().toISOString(),
-              level: "info",
-              event: "analytics_committed",
-            });
-          } else {
-            wrappedLog({
-              ts: new Date().toISOString(),
-              level: "debug",
-              event: "analytics_commit_skipped",
-              reason: result.reason,
-            });
-          }
-        } catch (e: unknown) {
-          // Non-fatal — commit failure shouldn't block the orchestrator
-          const msg = e instanceof Error ? e.message : String(e);
-          wrappedLog({
-            ts: new Date().toISOString(),
-            level: "warn",
-            event: "analytics_commit_error",
-            error: msg,
-          });
-        }
-      }
-
+      handleRunComplete(allItems, orch, ctx, deps, config, wrappedLog, runStartTime, costData);
       break;
     }
 
@@ -736,104 +867,7 @@ export async function orchestrateLoop(
 
     // Execute actions
     for (const action of actions) {
-      // Before clean action: capture worker screen for cost/token parsing
-      if (action.type === "clean" && deps.readScreen) {
-        const orchItem = orch.getItem(action.itemId);
-        if (orchItem?.workspaceRef) {
-          try {
-            const screenText = deps.readScreen(orchItem.workspaceRef, 50);
-            const cost = parseCostSummary(screenText);
-            if (cost.tokensUsed != null || cost.costUsd != null) {
-              costData.set(action.itemId, cost);
-              wrappedLog({
-                ts: new Date().toISOString(),
-                level: "info",
-                event: "cost_captured",
-                itemId: action.itemId,
-                tokensUsed: cost.tokensUsed,
-                costUsd: cost.costUsd,
-              });
-            }
-          } catch {
-            // Non-fatal — cost capture failure doesn't block cleanup
-          }
-        }
-      }
-
-      wrappedLog({
-        ts: new Date().toISOString(),
-        level: "info",
-        event: "action_execute",
-        action: action.type,
-        itemId: action.itemId,
-        prNumber: action.prNumber,
-      });
-
-      const result = orch.executeAction(action, ctx, deps.actionDeps);
-
-      wrappedLog({
-        ts: new Date().toISOString(),
-        level: result.success ? "info" : "warn",
-        event: "action_result",
-        action: action.type,
-        itemId: action.itemId,
-        success: result.success,
-        error: result.error,
-      });
-
-      // Structured log for retry events
-      if (action.type === "retry" && result.success) {
-        const orchItem = orch.getItem(action.itemId);
-        wrappedLog({
-          ts: new Date().toISOString(),
-          level: "info",
-          event: "worker_retry",
-          itemId: action.itemId,
-          retryCount: orchItem?.retryCount ?? 0,
-          maxRetries: orch.config.maxRetries,
-        });
-      }
-
-      // Webhook: pr_merged on successful merge
-      if (action.type === "merge" && result.success) {
-        deps.notify?.("pr_merged", {
-          itemId: action.itemId,
-          prNumber: action.prNumber,
-        });
-      }
-
-      // Webhook: ci_failed on CI failure notification
-      if (action.type === "notify-ci-failure") {
-        deps.notify?.("ci_failed", {
-          itemId: action.itemId,
-          prNumber: action.prNumber,
-          error: action.message,
-        });
-      }
-
-      // After a successful merge, reconcile TODOS.md with GitHub state
-      // so list --ready reflects reality for the rest of the run.
-      if (action.type === "merge" && result.success && deps.reconcile) {
-        try {
-          deps.reconcile(ctx.todosFile, ctx.worktreeDir, ctx.projectRoot);
-          wrappedLog({
-            ts: new Date().toISOString(),
-            level: "info",
-            event: "post_merge_reconcile",
-            itemId: action.itemId,
-          });
-        } catch (e: unknown) {
-          // Non-fatal — reconcile failure shouldn't block the orchestrator
-          const msg = e instanceof Error ? e.message : String(e);
-          wrappedLog({
-            ts: new Date().toISOString(),
-            level: "warn",
-            event: "post_merge_reconcile_error",
-            itemId: action.itemId,
-            error: msg,
-          });
-        }
-      }
+      handleActionExecution(action, orch, ctx, deps, wrappedLog, costData);
     }
 
     // Log state summary
