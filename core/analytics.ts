@@ -108,3 +108,54 @@ export function writeRunMetrics(
 
   return filePath;
 }
+
+// ── Auto-commit analytics files ────────────────────────────────────────
+
+/** Injectable git operations for analytics commit (avoids vi.mock). */
+export interface AnalyticsCommitDeps {
+  hasChanges: (repoRoot: string, pathspec: string) => boolean;
+  gitAdd: (repoRoot: string, files: string[]) => void;
+  getStagedFiles: (repoRoot: string) => string[];
+  gitCommit: (repoRoot: string, message: string) => void;
+}
+
+export interface CommitAnalyticsResult {
+  committed: boolean;
+  reason?: "no_changes" | "dirty_index" | "committed";
+}
+
+/**
+ * Auto-commit analytics files after an orchestration run.
+ * Only stages files under the analytics path — never commits unrelated changes.
+ *
+ * Safety: if non-analytics files are already staged in the index, skips the
+ * commit and returns `dirty_index` to avoid accidentally including them.
+ *
+ * @param projectRoot - The git repo root
+ * @param analyticsRelPath - Relative path to analytics dir (e.g., ".ninthwave/analytics")
+ * @param deps - Injectable git operations
+ */
+export function commitAnalyticsFiles(
+  projectRoot: string,
+  analyticsRelPath: string,
+  deps: AnalyticsCommitDeps,
+): CommitAnalyticsResult {
+  // 1. Check if analytics files have any changes
+  if (!deps.hasChanges(projectRoot, analyticsRelPath)) {
+    return { committed: false, reason: "no_changes" };
+  }
+
+  // 2. Stage analytics files only
+  deps.gitAdd(projectRoot, [analyticsRelPath]);
+
+  // 3. Safety check: ensure only analytics files are staged
+  const staged = deps.getStagedFiles(projectRoot);
+  const nonAnalytics = staged.filter((f) => !f.startsWith(analyticsRelPath));
+  if (nonAnalytics.length > 0) {
+    return { committed: false, reason: "dirty_index" };
+  }
+
+  // 4. Commit
+  deps.gitCommit(projectRoot, "chore: update orchestration analytics");
+  return { committed: true, reason: "committed" };
+}

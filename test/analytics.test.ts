@@ -5,8 +5,10 @@ import { describe, it, expect, vi } from "vitest";
 import {
   collectRunMetrics,
   writeRunMetrics,
+  commitAnalyticsFiles,
   type RunMetrics,
   type AnalyticsIO,
+  type AnalyticsCommitDeps,
 } from "../core/analytics.ts";
 import {
   loadRuns,
@@ -746,5 +748,286 @@ describe("formatAnalytics", () => {
     // Should be joinable for piping
     const output = lines.join("\n");
     expect(output.length).toBeGreaterThan(0);
+  });
+});
+
+// ── commitAnalyticsFiles ──────────────────────────────────────────────
+
+function mockCommitDeps(overrides?: Partial<AnalyticsCommitDeps>): AnalyticsCommitDeps & {
+  hasChanges: ReturnType<typeof vi.fn>;
+  gitAdd: ReturnType<typeof vi.fn>;
+  getStagedFiles: ReturnType<typeof vi.fn>;
+  gitCommit: ReturnType<typeof vi.fn>;
+} {
+  return {
+    hasChanges: vi.fn(() => true),
+    gitAdd: vi.fn(),
+    getStagedFiles: vi.fn(() => [".ninthwave/analytics/2026-03-24T10-00-00-000Z.json"]),
+    gitCommit: vi.fn(),
+    ...overrides,
+  };
+}
+
+describe("commitAnalyticsFiles", () => {
+  it("commits when analytics files have changes", () => {
+    const deps = mockCommitDeps();
+
+    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
+
+    expect(result.committed).toBe(true);
+    expect(result.reason).toBe("committed");
+    expect(deps.hasChanges).toHaveBeenCalledWith("/project", ".ninthwave/analytics");
+    expect(deps.gitAdd).toHaveBeenCalledWith("/project", [".ninthwave/analytics"]);
+    expect(deps.gitCommit).toHaveBeenCalledWith(
+      "/project",
+      "chore: update orchestration analytics",
+    );
+  });
+
+  it("skips commit when no analytics files changed", () => {
+    const deps = mockCommitDeps({
+      hasChanges: vi.fn(() => false),
+    });
+
+    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
+
+    expect(result.committed).toBe(false);
+    expect(result.reason).toBe("no_changes");
+    expect(deps.gitAdd).not.toHaveBeenCalled();
+    expect(deps.gitCommit).not.toHaveBeenCalled();
+  });
+
+  it("skips commit when non-analytics files are staged (dirty index)", () => {
+    const deps = mockCommitDeps({
+      getStagedFiles: vi.fn(() => [
+        ".ninthwave/analytics/2026-03-24T10-00-00-000Z.json",
+        "src/unrelated-file.ts",
+      ]),
+    });
+
+    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
+
+    expect(result.committed).toBe(false);
+    expect(result.reason).toBe("dirty_index");
+    expect(deps.gitAdd).toHaveBeenCalled(); // analytics were staged
+    expect(deps.gitCommit).not.toHaveBeenCalled(); // but commit was skipped
+  });
+
+  it("handles multiple analytics files", () => {
+    const deps = mockCommitDeps({
+      getStagedFiles: vi.fn(() => [
+        ".ninthwave/analytics/2026-03-24T10-00-00-000Z.json",
+        ".ninthwave/analytics/2026-03-24T11-00-00-000Z.json",
+      ]),
+    });
+
+    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
+
+    expect(result.committed).toBe(true);
+    expect(result.reason).toBe("committed");
+  });
+});
+
+// ── Integration: orchestrateLoop auto-commits analytics ──────────────
+
+describe("orchestrateLoop analytics auto-commit", () => {
+  it("auto-commits analytics files after writing metrics", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("T-1-1"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    const io = mockAnalyticsIO();
+    const commitDeps = mockCommitDeps();
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1:
+          return { items: [], readyIds: ["T-1-1"] };
+        case 2:
+          return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
+        case 3:
+          return {
+            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+      analyticsIO: io,
+      analyticsCommit: commitDeps,
+    };
+
+    const config: OrchestrateLoopConfig = {
+      analyticsDir: "/tmp/.ninthwave/analytics",
+      aiTool: "claude",
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, config);
+
+    // Analytics were written
+    expect(io.writeFileSync).toHaveBeenCalledTimes(1);
+
+    // Analytics were auto-committed
+    expect(commitDeps.gitCommit).toHaveBeenCalledTimes(1);
+    expect(logs.some((l) => l.event === "analytics_committed")).toBe(true);
+  });
+
+  it("logs skip when no analytics changes to commit", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("T-1-1"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    const io = mockAnalyticsIO();
+    const commitDeps = mockCommitDeps({
+      hasChanges: vi.fn(() => false),
+    });
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1:
+          return { items: [], readyIds: ["T-1-1"] };
+        case 2:
+          return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
+        case 3:
+          return {
+            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+      analyticsIO: io,
+      analyticsCommit: commitDeps,
+    };
+
+    const config: OrchestrateLoopConfig = {
+      analyticsDir: "/tmp/.ninthwave/analytics",
+      aiTool: "claude",
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, config);
+
+    expect(commitDeps.gitCommit).not.toHaveBeenCalled();
+    expect(logs.some((l) => l.event === "analytics_commit_skipped")).toBe(true);
+  });
+
+  it("handles analytics commit failure gracefully", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("T-1-1"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    const io = mockAnalyticsIO();
+    const commitDeps = mockCommitDeps({
+      gitCommit: vi.fn(() => { throw new Error("nothing to commit"); }),
+    });
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1:
+          return { items: [], readyIds: ["T-1-1"] };
+        case 2:
+          return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
+        case 3:
+          return {
+            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+      analyticsIO: io,
+      analyticsCommit: commitDeps,
+    };
+
+    const config: OrchestrateLoopConfig = {
+      analyticsDir: "/tmp/.ninthwave/analytics",
+      aiTool: "claude",
+    };
+
+    // Should not throw
+    await orchestrateLoop(orch, defaultCtx, deps, config);
+
+    // Item still completes
+    expect(orch.getItem("T-1-1")!.state).toBe("done");
+
+    // Error was logged
+    const errorLog = logs.find((l) => l.event === "analytics_commit_error");
+    expect(errorLog).toBeDefined();
+    expect(errorLog!.error).toContain("nothing to commit");
+  });
+
+  it("skips auto-commit when analyticsCommit deps not provided", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("T-1-1"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    const io = mockAnalyticsIO();
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1:
+          return { items: [], readyIds: ["T-1-1"] };
+        case 2:
+          return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
+        case 3:
+          return {
+            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+      analyticsIO: io,
+      // No analyticsCommit provided
+    };
+
+    const config: OrchestrateLoopConfig = {
+      analyticsDir: "/tmp/.ninthwave/analytics",
+      aiTool: "claude",
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, config);
+
+    // Analytics were written but no commit events
+    expect(io.writeFileSync).toHaveBeenCalledTimes(1);
+    expect(logs.some((l) => l.event === "analytics_committed")).toBe(false);
+    expect(logs.some((l) => l.event === "analytics_commit_skipped")).toBe(false);
+    expect(logs.some((l) => l.event === "analytics_commit_error")).toBe(false);
   });
 });

@@ -4,25 +4,6 @@
 
 ## Operational Maturity (vision exploration, 2026-03-24)
 
-### Feat: Auto-commit analytics files after orchestration runs (H-ANL-3)
-
-**Priority:** High
-**Source:** Friction log #13 — analytics JSON files never committed
-**Depends on:** None
-
-The orchestrator writes `.ninthwave/analytics/*.json` per run but never commits them. Data accumulates locally and is lost on clean. At the end of a successful orchestration run, auto-commit analytics files to the current branch (or main if orchestrating from main). Use `git add .ninthwave/analytics/ && git commit` with a conventional commit message. Skip if no analytics files changed.
-
-**Test plan:**
-- Unit test: verify commit is created when analytics files exist after run
-- Unit test: verify no commit when no analytics files changed
-- Edge case: verify behavior when git working directory is dirty (other unstaged changes)
-
-Acceptance: Analytics JSON files are committed automatically at end of orchestration run. No commit is created if no analytics files changed. Existing dirty state is not accidentally committed (only stage analytics files). Tests pass.
-
-Key files: `core/commands/orchestrate.ts`, `core/analytics.ts`, `core/git.ts`
-
----
-
 ### Feat: Memory-aware dynamic WIP limits (H-WIP-1)
 
 **Priority:** High

@@ -22,7 +22,7 @@ import { checkPrStatus } from "./watch.ts";
 import { launchSingleItem, detectAiTool } from "./start.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, getRepoOwner } from "../gh.ts";
-import { fetchOrigin, ffMerge } from "../git.ts";
+import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit } from "../git.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
 import { die } from "../output.ts";
@@ -46,7 +46,9 @@ import {
 import {
   collectRunMetrics,
   writeRunMetrics,
+  commitAnalyticsFiles,
   type AnalyticsIO,
+  type AnalyticsCommitDeps,
 } from "../analytics.ts";
 
 // ── Structured logging ─────────────────────────────────────────────
@@ -344,6 +346,8 @@ export interface OrchestrateLoopDeps {
   notify?: WebhookNotifyFn;
   /** File I/O for analytics metrics (injectable for testing). When absent, analytics is skipped. */
   analyticsIO?: AnalyticsIO;
+  /** Git operations for auto-committing analytics files. When absent, commit is skipped. */
+  analyticsCommit?: AnalyticsCommitDeps;
 }
 
 export interface OrchestrateLoopConfig {
@@ -494,6 +498,41 @@ export async function orchestrateLoop(
             ts: new Date().toISOString(),
             level: "warn",
             event: "analytics_error",
+            error: msg,
+          });
+        }
+      }
+
+      // Analytics: auto-commit analytics files to current branch
+      if (config.analyticsDir && deps.analyticsCommit) {
+        try {
+          const analyticsRelPath = ".ninthwave/analytics";
+          const result = commitAnalyticsFiles(
+            ctx.projectRoot,
+            analyticsRelPath,
+            deps.analyticsCommit,
+          );
+          if (result.committed) {
+            wrappedLog({
+              ts: new Date().toISOString(),
+              level: "info",
+              event: "analytics_committed",
+            });
+          } else {
+            wrappedLog({
+              ts: new Date().toISOString(),
+              level: "debug",
+              event: "analytics_commit_skipped",
+              reason: result.reason,
+            });
+          }
+        } catch (e: unknown) {
+          // Non-fatal — commit failure shouldn't block the orchestrator
+          const msg = e instanceof Error ? e.message : String(e);
+          wrappedLog({
+            ts: new Date().toISOString(),
+            level: "warn",
+            event: "analytics_commit_error",
             error: msg,
           });
         }
@@ -932,6 +971,7 @@ export async function cmdOrchestrate(
     supervisorDeps: supervisorActive ? createSupervisorDeps(structuredLog) : undefined,
     notify,
     analyticsIO: { mkdirSync, writeFileSync },
+    analyticsCommit: { hasChanges, gitAdd, getStagedFiles, gitCommit },
   };
 
   // Resolve repo URL for PR URL construction in completion event

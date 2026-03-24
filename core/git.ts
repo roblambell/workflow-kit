@@ -155,6 +155,19 @@ export function logOneline(repoRoot: string, range: string): string {
   return git(repoRoot, ["log", "--oneline", range]);
 }
 
+/** Check if a pathspec has uncommitted changes (staged, unstaged, or untracked). */
+export function hasChanges(repoRoot: string, pathspec: string): boolean {
+  const result = run("git", ["-C", repoRoot, "status", "--porcelain", "--", pathspec]);
+  return result.exitCode === 0 && !!result.stdout;
+}
+
+/** Get the list of staged file paths (relative to repo root). */
+export function getStagedFiles(repoRoot: string): string[] {
+  const result = run("git", ["-C", repoRoot, "diff", "--cached", "--name-only"]);
+  if (result.exitCode !== 0 || !result.stdout) return [];
+  return result.stdout.split("\n").filter(Boolean);
+}
+
 /** Get insertions/deletions for a range, filtered by file extensions. */
 export function diffStat(
   repoRoot: string,
