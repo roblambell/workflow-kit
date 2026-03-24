@@ -581,6 +581,78 @@ describe("loadRuns", () => {
     expect(runs[0]!.runTimestamp).toBe("2026-03-24T08:00:00.000Z");
     expect(runs[1]!.runTimestamp).toBe("2026-03-24T16:00:00.000Z");
   });
+
+  it("skips file with valid timestamp but missing items array and warns", () => {
+    const noItems = { runTimestamp: "2026-03-24T10:00:00.000Z", wallClockMs: 100 };
+    const validRun = makeRun();
+    const io = mockReadIO({
+      "/dir/a-no-items.json": JSON.stringify(noItems),
+      "/dir/b-good.json": JSON.stringify(validRun),
+    });
+
+    const warnings: string[] = [];
+    const runs = loadRuns("/dir", io, (msg) => warnings.push(msg));
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.runTimestamp).toBe(validRun.runTimestamp);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("a-no-items.json");
+    expect(warnings[0]).toContain("items array");
+  });
+
+  it("skips file with malformed item entries and warns", () => {
+    const badItems = {
+      runTimestamp: "2026-03-24T10:00:00.000Z",
+      wallClockMs: 100,
+      items: [{ id: "T-1", state: "done" }, { notAnId: true }],
+    };
+    const validRun = makeRun();
+    const io = mockReadIO({
+      "/dir/a-bad-items.json": JSON.stringify(badItems),
+      "/dir/b-good.json": JSON.stringify(validRun),
+    });
+
+    const warnings: string[] = [];
+    const runs = loadRuns("/dir", io, (msg) => warnings.push(msg));
+
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.runTimestamp).toBe(validRun.runTimestamp);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("a-bad-items.json");
+    expect(warnings[0]).toContain("missing id or state");
+  });
+
+  it("warns on invalid JSON when onWarn is provided", () => {
+    const validRun = makeRun();
+    const io = mockReadIO({
+      "/dir/bad.json": "not json{",
+      "/dir/good.json": JSON.stringify(validRun),
+    });
+
+    const warnings: string[] = [];
+    const runs = loadRuns("/dir", io, (msg) => warnings.push(msg));
+
+    expect(runs).toHaveLength(1);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("bad.json");
+    expect(warnings[0]).toContain("invalid JSON");
+  });
+
+  it("loads valid files normally without warnings", () => {
+    const run1 = makeRun({ runTimestamp: "2026-03-24T10:00:00.000Z" });
+    const run2 = makeRun({ runTimestamp: "2026-03-24T11:00:00.000Z", wallClockMs: 600_000 });
+
+    const io = mockReadIO({
+      "/dir/2026-03-24T10-00-00-000Z.json": JSON.stringify(run1),
+      "/dir/2026-03-24T11-00-00-000Z.json": JSON.stringify(run2),
+    });
+
+    const warnings: string[] = [];
+    const runs = loadRuns("/dir", io, (msg) => warnings.push(msg));
+
+    expect(runs).toHaveLength(2);
+    expect(warnings).toHaveLength(0);
+  });
 });
 
 describe("computeSummary", () => {

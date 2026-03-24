@@ -60,25 +60,6 @@ Key files: `core/analytics.ts`, `test/analytics.test.ts`
 
 ---
 
-### Fix: Analytics loadRuns should validate JSON structure and warn on corrupt files (L-DP-8)
-
-**Priority:** Low
-**Source:** Eng review M-ENG-3 findings 2.3 and 3.2
-**Depends on:** None
-
-`loadRuns` does minimal validation (only checks `runTimestamp` and `wallClockMs`) and silently skips corrupt files. Add structural validation (items array exists, each item has id and state) and an optional warn callback for corrupt/skipped files.
-
-**Test plan:**
-- Unit test: file with valid timestamp but missing items array is skipped with warning
-- Unit test: file with malformed item entries is skipped with warning
-- Unit test: valid files are loaded as before
-
-Acceptance: Corrupt analytics files are skipped with a diagnostic warning. Valid files load normally. Tests cover corrupt file scenarios.
-
-Key files: `core/commands/analytics.ts`, `test/analytics.test.ts`
-
----
-
 ### Fix: Webhook fireWebhook should have a fetch timeout (M-DP-9)
 
 **Priority:** Medium
