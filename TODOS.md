@@ -25,25 +25,6 @@ Key files: `core/commands/orchestrate.ts`, `core/orchestrator.ts`
 
 ---
 
-### Feat: GitHub Issues adapter — close issues on merge and sync status (M-GHI-2)
-
-**Priority:** Medium
-**Source:** Vision — complete the GitHub Issues lifecycle loop
-**Depends on:** H-GHI-1
-
-Implement `markDone(id)` on `GitHubIssuesBackend` to close the issue via `gh issue close`. During orchestration lifecycle, add status labels to issues: `status:in-progress` when worker starts, `status:pr-open` when PR is created, remove status labels and close issue on merge. Wire into orchestrator's state transition hooks so status syncs automatically when using the GitHub Issues backend.
-
-**Test plan:**
-- Unit test: markDone calls `gh issue close` with correct issue number
-- Unit test: status labels are added/removed at correct state transitions
-- Edge case: issue already closed (markDone is idempotent)
-- Edge case: status label doesn't exist on the repo (skip gracefully, don't error)
-
-Acceptance: Issues are automatically closed when their PRs merge. Status labels reflect orchestrator state during processing. Label operations are idempotent and skip gracefully on missing labels. Tests pass.
-
-Key files: `core/backends/github-issues.ts`, `core/commands/orchestrate.ts`
-
----
 
 ### Feat: Automatic worker retry on crash or OOM (M-RET-1)
 
