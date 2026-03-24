@@ -119,14 +119,20 @@ Work from the bottom of the stack up:
 
 When a TODO targets a repo other than the hub repo, include the `**Repo:** <alias>` metadata field. Omit the field for items that target the hub repo itself.
 
-#### Test plan
+#### Test plan (REQUIRED)
 
-Each TODO gets a `**Test plan:**` field specifying:
-- What tests will verify this item (new tests to write vs. existing test coverage)
-- Expected coverage areas (which paths/behaviors are tested)
-- Key edge cases that must be tested
+Every TODO MUST include a `**Test plan:**` field. This is not optional — workers use it as a testing checklist during implementation.
 
-The test plan makes testability expectations explicit. Workers use it as a checklist during implementation. Keep test plans concise — 2-4 bullet points per item.
+Each test plan specifies:
+- **What tests** to write or verify (new tests vs. existing coverage)
+- **Key code paths** that must be covered
+- **Edge cases** specific to this item
+
+**Specificity rule:** Test plans must be specific to each item's implementation, not generic boilerplate. Reference the actual functions, modules, or behaviors the item touches. A good test plan reads like instructions a developer could follow without re-reading the description.
+
+**Non-testable items** (docs-only, config changes): Use `**Test plan:**\n- Manual review` instead of omitting the field.
+
+Keep test plans concise — 2-4 bullet points per item.
 
 #### Dependency mapping
 
@@ -160,9 +166,33 @@ Show totals and ask for approval. Options: looks good, adjust, re-decompose.
 **Goal:** Add the TODOs to TODOS.md.
 
 1. Read current TODOS.md
-2. Add section: `## <Feature Name> (feature decomposition, <YYYY-MM-DD>)`
-3. Write each TODO following the format guide. Read it with: `cat "$(cat .ninthwave/dir)/core/docs/todos-format.md"`
-4. Verify parseable: `.ninthwave/work list | grep <feature_code>`
+2. Read the format guide: `cat "$(cat .ninthwave/dir)/core/docs/todos-format.md"`
+3. Add section: `## <Feature Name> (feature decomposition, <YYYY-MM-DD>)`
+4. Write each TODO using this template:
+
+```markdown
+### <Type>: <Title> (<ID>)
+
+**Priority:** <Critical|High|Medium|Low>
+**Source:** <origin>
+**Depends on:** <IDs or None>
+
+<Description — 2-4 sentences.>
+
+**Test plan:**
+- <what tests to write or verify for this specific item>
+- <key code paths to cover>
+- <edge cases specific to this item>
+
+Acceptance: <concrete, verifiable conditions>
+
+Key files: `path/to/file.ts`, `path/to/other.ex`
+
+---
+```
+
+5. Verify every item has a `**Test plan:**` section (non-optional for decomposed items)
+6. Verify parseable: `.ninthwave/work list | grep <feature_code>`
 
 ---
 

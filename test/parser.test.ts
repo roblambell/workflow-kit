@@ -3,7 +3,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { join } from "path";
 import { mkdirSync, writeFileSync } from "fs";
-import { parseTodos, extractFilePaths, normalizeDomain } from "../core/parser.ts";
+import { parseTodos, extractFilePaths, extractTestPlan, normalizeDomain } from "../core/parser.ts";
 import {
   setupTempRepo,
   setupTempRepoPair,
@@ -405,6 +405,125 @@ describe("extractFilePaths", () => {
     );
     const paths = extractFilePaths(item);
     expect(paths).toHaveLength(0);
+  });
+});
+
+describe("parseTodos — test plan extraction from fixture", () => {
+  it("extracts test plan from items that have one", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "valid.md");
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const byId = new Map(items.map((i) => [i.id, i]));
+
+    // M-CI-1 has a test plan
+    const mci1Plan = byId.get("M-CI-1")!.testPlan;
+    expect(mci1Plan).toContain("4 vCPU runner labels");
+    expect(mci1Plan).toContain("ARM vs x86");
+
+    // H-CI-2 has a test plan
+    const hci2Plan = byId.get("H-CI-2")!.testPlan;
+    expect(hci2Plan).toContain("pool size env var");
+  });
+
+  it("returns empty string for items without test plan", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "valid.md");
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const byId = new Map(items.map((i) => [i.id, i]));
+
+    // C-UO-1 has no test plan
+    expect(byId.get("C-UO-1")!.testPlan).toBe("");
+  });
+});
+
+describe("extractTestPlan", () => {
+  it("extracts bullet-point test plan", () => {
+    const raw = [
+      "### Feat: Something (X-TP-1)",
+      "",
+      "Description of the feature.",
+      "",
+      "**Test plan:**",
+      "- Write unit test for parseTodos with new field",
+      "- Verify existing integration tests still pass",
+      "- Edge case: missing test plan defaults to empty",
+      "",
+      "Acceptance: Tests pass.",
+    ].join("\n");
+
+    const plan = extractTestPlan(raw);
+    expect(plan).toContain("Write unit test for parseTodos");
+    expect(plan).toContain("Edge case: missing test plan");
+    expect(plan).not.toContain("Acceptance");
+  });
+
+  it("returns empty string when no test plan present", () => {
+    const raw = [
+      "### Feat: No plan (X-TP-2)",
+      "",
+      "Description only.",
+      "",
+      "Acceptance: Something works.",
+    ].join("\n");
+
+    expect(extractTestPlan(raw)).toBe("");
+  });
+
+  it("stops at Acceptance: line", () => {
+    const raw = [
+      "**Test plan:**",
+      "- Test the thing",
+      "Acceptance: Done when thing works.",
+    ].join("\n");
+
+    const plan = extractTestPlan(raw);
+    expect(plan).toContain("Test the thing");
+    expect(plan).not.toContain("Acceptance");
+  });
+
+  it("stops at Key files: line", () => {
+    const raw = [
+      "**Test plan:**",
+      "- Verify output format",
+      "Key files: `lib/foo.ts`",
+    ].join("\n");
+
+    const plan = extractTestPlan(raw);
+    expect(plan).toContain("Verify output format");
+    expect(plan).not.toContain("Key files");
+  });
+
+  it("stops at next metadata field", () => {
+    const raw = [
+      "**Test plan:**",
+      "- Check behavior",
+      "**Priority:** High",
+    ].join("\n");
+
+    const plan = extractTestPlan(raw);
+    expect(plan).toContain("Check behavior");
+    expect(plan).not.toContain("Priority");
+  });
+
+  it("handles inline content after header", () => {
+    const raw = "**Test plan:** Manual review";
+    const plan = extractTestPlan(raw);
+    expect(plan).toBe("Manual review");
+  });
+
+  it("handles multi-line plan with blank lines between bullets", () => {
+    const raw = [
+      "**Test plan:**",
+      "- First bullet",
+      "",
+      "- Second bullet",
+      "",
+      "Acceptance: Done.",
+    ].join("\n");
+
+    const plan = extractTestPlan(raw);
+    expect(plan).toContain("First bullet");
+    expect(plan).toContain("Second bullet");
   });
 });
 

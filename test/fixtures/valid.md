@@ -10,6 +10,11 @@
 
 Upgrade test CI runners from 2 to 4 vCPUs for faster execution.
 
+**Test plan:**
+- Verify updated workflow YAML specifies 4 vCPU runner labels
+- Check deploy workflows still reference 2 vCPU runners
+- Edge case: ensure ARM vs x86 platform is unchanged
+
 Acceptance: Test workflows use 4 vCPU runners. Deploy workflows remain on 2 vCPU.
 
 Key files: `.github/workflows/test-api.yml`, `.github/workflows/ci.yml`
@@ -23,6 +28,10 @@ Key files: `.github/workflows/test-api.yml`, `.github/workflows/ci.yml`
 **Depends on:** M-CI-1
 
 Fix intermittent connection pool timeout errors in test suite by increasing pool size.
+
+**Test plan:**
+- Add unit test for pool size env var override
+- Run full test suite to confirm no more timeout errors
 
 Acceptance: No more timeout errors in CI. Pool size configurable via env var.
 
