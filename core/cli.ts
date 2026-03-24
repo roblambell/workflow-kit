@@ -29,6 +29,7 @@ import {
 import { cmdCiFailures } from "./commands/ci.ts";
 import { cmdVersionBump } from "./commands/version-bump.ts";
 import { cmdSetup } from "./commands/setup.ts";
+import { cmdInit } from "./commands/init.ts";
 import { cmdOrchestrate } from "./commands/orchestrate.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
 
@@ -47,12 +48,17 @@ function getProjectRoot(): string {
 }
 
 // Commands that don't need a project root
-const NO_PROJECT_COMMANDS = ["setup", "version"];
+const NO_PROJECT_COMMANDS = ["setup", "init", "version"];
 
 const command = process.argv[2] ?? "";
 const args = process.argv.slice(3);
 
 // Handle commands that don't need a project root
+if (command === "init") {
+  cmdInit();
+  process.exit(0);
+}
+
 if (command === "setup") {
   cmdSetup(args);
   process.exit(0);
@@ -85,6 +91,9 @@ if (!command) {
   console.log("Usage: ninthwave <command> [options]");
   console.log();
   console.log("Commands:");
+  console.log(
+    "  init                                          Auto-detect and initialize ninthwave (zero input)",
+  );
   console.log(
     "  setup [--global]                              Set up ninthwave in a project or globally",
   );
