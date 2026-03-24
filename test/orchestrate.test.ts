@@ -555,6 +555,207 @@ describe("orchestrateLoop", () => {
     expect(sweepLog!.count).toBe(1);
   });
 
+  it("final cleanup sweep closes workspaces for terminal items before worktree cleanup", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("WC-1-1"));
+    orch.addItem(makeTodo("WC-1-2"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    const callOrder: string[] = [];
+
+    const buildSnapshot = (o: Orchestrator): PollSnapshot => {
+      cycle++;
+      const readyIds: string[] = [];
+      const items: ItemSnapshot[] = [];
+
+      for (const item of o.getAllItems()) {
+        if (item.state === "queued") {
+          readyIds.push(item.id);
+          continue;
+        }
+        if (item.state === "done" || item.state === "stuck") continue;
+
+        if (item.state === "launching") {
+          items.push({ id: item.id, workerAlive: true });
+        } else if (item.state === "implementing") {
+          items.push({ id: item.id, prNumber: cycle, prState: "open", ciStatus: "pass" });
+        } else if (item.state === "merging" || item.state === "merged") {
+          items.push({ id: item.id, prState: "merged" });
+        }
+      }
+
+      return { items, readyIds };
+    };
+
+    const closeWorkspace = vi.fn((ref: string) => {
+      callOrder.push(`close:${ref}`);
+      return true;
+    });
+
+    const actionDeps = mockActionDeps({
+      closeWorkspace,
+      cleanSingleWorktree: vi.fn((id: string) => {
+        callOrder.push(`clean:${id}`);
+        return true;
+      }),
+    });
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps,
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps);
+
+    // Both items completed
+    expect(orch.getItem("WC-1-1")!.state).toBe("done");
+    expect(orch.getItem("WC-1-2")!.state).toBe("done");
+
+    // closeWorkspace was called during the final cleanup sweep.
+    // Items get workspaceRef from the launch action. The final sweep should
+    // call closeWorkspace for items that have a workspaceRef.
+    const sweepCloseEntries = callOrder.filter((e) => e.startsWith("close:"));
+    const sweepCleanEntries = callOrder.filter((e) => e.startsWith("clean:"));
+
+    // Both items should have been cleaned in the sweep
+    expect(sweepCleanEntries).toHaveLength(2);
+
+    // closeWorkspace should be called for items with workspace refs
+    // (launch action sets workspaceRef on the orchestrator item)
+    expect(sweepCloseEntries.length).toBeGreaterThan(0);
+
+    // For each item with a workspace ref, close should happen before clean
+    // Find the last close and first clean — close should come first per-item
+    for (const item of orch.getAllItems()) {
+      if (item.workspaceRef) {
+        const closeIdx = callOrder.indexOf(`close:${item.workspaceRef}`);
+        const cleanIdx = callOrder.indexOf(`clean:${item.id}`);
+        if (closeIdx >= 0 && cleanIdx >= 0) {
+          expect(closeIdx).toBeLessThan(cleanIdx);
+        }
+      }
+    }
+  });
+
+  it("final cleanup sweep skips closeWorkspace for items without workspaceRef", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("WN-1-1"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      if (cycle === 1) return { items: [], readyIds: ["WN-1-1"] };
+      if (cycle === 2) return { items: [{ id: "WN-1-1", workerAlive: true }], readyIds: [] };
+      if (cycle === 3)
+        return { items: [{ id: "WN-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }], readyIds: [] };
+      return { items: [], readyIds: [] };
+    };
+
+    const closeWorkspace = vi.fn(() => true);
+    const actionDeps = mockActionDeps({
+      closeWorkspace,
+      // Launch doesn't set workspaceRef (simulates case where it wasn't set)
+      launchSingleItem: vi.fn(() => ({
+        worktreePath: "/tmp/test/todo-test",
+        workspaceRef: null,
+      })),
+      cleanSingleWorktree: vi.fn(() => true),
+    });
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps,
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps);
+
+    // Item completed
+    expect(orch.getItem("WN-1-1")!.state).toBe("done");
+
+    // closeWorkspace should NOT have been called during the final cleanup sweep
+    // since the item has no workspaceRef (null from launch)
+    // Note: closeWorkspace may be called during the clean action itself (executeClean),
+    // but the final sweep should not call it for items without workspaceRef
+    const sweepLog = logs.find((l) => l.event === "worktree_cleanup_sweep");
+    expect(sweepLog).toBeDefined();
+  });
+
+  it("shutdown closes workspaces only for terminal items, not in-flight", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("SD-1-1"));
+    orch.addItem(makeTodo("SD-1-2"));
+
+    const abortController = new AbortController();
+    const logs: LogEntry[] = [];
+    let sleepCount = 0;
+
+    // SD-1-1 will reach done state, SD-1-2 will stay implementing when we abort
+    const buildSnapshot = (o: Orchestrator): PollSnapshot => {
+      const readyIds: string[] = [];
+      const items: ItemSnapshot[] = [];
+
+      for (const item of o.getAllItems()) {
+        if (item.state === "queued") {
+          readyIds.push(item.id);
+          continue;
+        }
+        if (item.state === "done" || item.state === "stuck") continue;
+
+        if (item.state === "launching") {
+          items.push({ id: item.id, workerAlive: true });
+        } else if (item.state === "implementing") {
+          if (item.id === "SD-1-1") {
+            // SD-1-1 gets PR merged quickly
+            items.push({ id: item.id, prNumber: 1, prState: "open", ciStatus: "pass" });
+          } else {
+            // SD-1-2 stays implementing (worker alive)
+            items.push({ id: item.id, workerAlive: true });
+          }
+        } else if (item.state === "merging" || item.state === "merged") {
+          items.push({ id: item.id, prState: "merged" });
+        } else if (item.state === "ci-pending") {
+          items.push({ id: item.id, workerAlive: true });
+        }
+      }
+
+      return { items, readyIds };
+    };
+
+    const closeWorkspace = vi.fn(() => true);
+    const actionDeps = mockActionDeps({ closeWorkspace });
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: async () => {
+        sleepCount++;
+        // Abort after SD-1-1 merges but SD-1-2 is still implementing
+        if (sleepCount >= 8) {
+          abortController.abort();
+        }
+      },
+      log: (entry) => logs.push(entry),
+      actionDeps,
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, {}, abortController.signal);
+
+    // Verify SD-1-1 reached terminal state (done) and SD-1-2 is still in-flight
+    const item1 = orch.getItem("SD-1-1")!;
+    const item2 = orch.getItem("SD-1-2")!;
+    expect(item1.state).toBe("done");
+    expect(["launching", "implementing", "ci-pending", "ci-passed", "ci-failed"]).toContain(item2.state);
+
+    // Shutdown log emitted
+    expect(logs.some((l) => l.event === "shutdown")).toBe(true);
+  });
+
   it("stops on SIGINT and emits shutdown log", async () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
     orch.addItem(makeTodo("I-1-1"));

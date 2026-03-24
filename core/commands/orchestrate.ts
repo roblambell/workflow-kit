@@ -475,10 +475,14 @@ function handleRunComplete(
   runStartTime: string,
   costData: Map<string, CostSummary>,
 ): void {
-  // Final cleanup sweep: remove any stale worktrees for managed items
+  // Final cleanup sweep: close workspaces and remove worktrees for managed items
   const cleanedIds: string[] = [];
   for (const item of allItems) {
     try {
+      // Close workspace before worktree cleanup (prevents orphaned workspaces)
+      if (item.workspaceRef) {
+        deps.actionDeps.closeWorkspace(item.workspaceRef);
+      }
       const cleaned = deps.actionDeps.cleanSingleWorktree(
         item.id,
         ctx.worktreeDir,
@@ -1358,6 +1362,32 @@ export async function cmdOrchestrate(
       abortController.signal,
     );
   } finally {
+    // Close workspaces for terminal items only (done, stuck, merged).
+    // In-flight workers (implementing, ci-pending, etc.) may still be actively
+    // running — leave their workspaces open so they survive orchestrator restarts.
+    // On restart, reconstructState recovers their workspace refs.
+    const terminalStates = new Set(["done", "stuck", "merged"]);
+    const closedWorkspaces: string[] = [];
+    for (const item of orch.getAllItems()) {
+      if (terminalStates.has(item.state) && item.workspaceRef) {
+        try {
+          mux.closeWorkspace(item.workspaceRef);
+          closedWorkspaces.push(item.id);
+        } catch {
+          // Non-fatal — best-effort cleanup
+        }
+      }
+    }
+    if (closedWorkspaces.length > 0) {
+      structuredLog({
+        ts: new Date().toISOString(),
+        level: "info",
+        event: "shutdown_workspaces_closed",
+        itemIds: closedWorkspaces,
+        count: closedWorkspaces.length,
+      });
+    }
+
     // Close status pane on completion (or SIGINT)
     if (statusPaneRef) {
       closeStatusPane(mux, statusPaneRef);
