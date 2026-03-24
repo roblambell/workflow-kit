@@ -5,6 +5,8 @@ import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { reconcile, mergeTodosThreeWay, parseTodosForMerge, type ReconcileDeps } from "../core/commands/reconcile.ts";
+import { closeWorkspacesForIds } from "../core/commands/clean.ts";
+import type { Multiplexer } from "../core/mux.ts";
 
 // --- Test helpers ---
 
@@ -96,6 +98,7 @@ function makeDeps(overrides: Partial<ReconcileDeps> = {}): ReconcileDeps {
     markDone: () => {},
     getWorktreeIds: () => [],
     cleanWorktree: () => false,
+    closeStaleWorkspaces: () => 0,
     commitAndPush: () => false,
     ...overrides,
   };
@@ -335,6 +338,144 @@ describe("reconcile", () => {
 
     reconcile(todosFile, worktreeDir, projectRoot, deps);
     expect(commitCalled).toBe(false);
+  });
+
+  it("closes stale workspaces for merged items", () => {
+    const { todosFile, worktreeDir, projectRoot } = setupTodos(SAMPLE_TODOS);
+    let closedIds: string[] = [];
+
+    const deps = makeDeps({
+      getMergedTodoIds: () => ["M-CI-1", "H-CI-2"],
+      closeStaleWorkspaces: (ids) => {
+        closedIds = [...ids];
+        return ids.length;
+      },
+    });
+
+    reconcile(todosFile, worktreeDir, projectRoot, deps);
+    // All merged IDs are passed, not just newly-marked-done ones
+    expect(closedIds).toEqual(["M-CI-1", "H-CI-2"]);
+  });
+
+  it("includes workspace count in summary output", () => {
+    const { todosFile, worktreeDir, projectRoot } = setupTodos(SAMPLE_TODOS);
+
+    const deps = makeDeps({
+      getMergedTodoIds: () => ["M-CI-1"],
+      closeStaleWorkspaces: () => 1,
+      commitAndPush: () => true,
+    });
+
+    const output = captureOutput(() => reconcile(todosFile, worktreeDir, projectRoot, deps));
+    expect(output).toContain("1 workspace(s)");
+  });
+});
+
+// --- closeWorkspacesForIds tests ---
+
+function mockMux(overrides: Partial<Multiplexer> = {}): Multiplexer {
+  return {
+    isAvailable: () => true,
+    launchWorkspace: () => null,
+    sendMessage: () => false,
+    readScreen: () => "",
+    listWorkspaces: () => "",
+    closeWorkspace: () => true,
+    ...overrides,
+  };
+}
+
+describe("closeWorkspacesForIds", () => {
+  it("closes workspaces matching done TODO IDs", () => {
+    const closedRefs: string[] = [];
+    const mux = mockMux({
+      listWorkspaces: () => [
+        "workspace:1  TODO H-CI-2  (running)",
+        "workspace:2  TODO M-CI-1  (running)",
+        "workspace:3  TODO C-UO-1  (running)",
+      ].join("\n"),
+      closeWorkspace: (ref) => {
+        closedRefs.push(ref);
+        return true;
+      },
+    });
+
+    const count = closeWorkspacesForIds(new Set(["H-CI-2", "M-CI-1"]), mux);
+    expect(count).toBe(2);
+    expect(closedRefs).toContain("workspace:1");
+    expect(closedRefs).toContain("workspace:2");
+    // Should not close workspace:3 (C-UO-1 is not in done set)
+    expect(closedRefs).not.toContain("workspace:3");
+  });
+
+  it("correctly extracts TODO ID from workspace name", () => {
+    const closedRefs: string[] = [];
+    const mux = mockMux({
+      listWorkspaces: () => [
+        "workspace:5  TODO H-DF-2  ninthwave worker session",
+        "workspace:6  some-other-workspace without TODO pattern",
+        "workspace:7  TODO M-ABC-123  another worker",
+      ].join("\n"),
+      closeWorkspace: (ref) => {
+        closedRefs.push(ref);
+        return true;
+      },
+    });
+
+    const count = closeWorkspacesForIds(new Set(["H-DF-2", "M-ABC-123"]), mux);
+    expect(count).toBe(2);
+    expect(closedRefs).toEqual(["workspace:5", "workspace:7"]);
+  });
+
+  it("skips when no workspaces match done IDs", () => {
+    let closeCalled = false;
+    const mux = mockMux({
+      listWorkspaces: () => [
+        "workspace:1  TODO X-OTHER-1  (running)",
+        "workspace:2  TODO Y-OTHER-2  (running)",
+      ].join("\n"),
+      closeWorkspace: () => {
+        closeCalled = true;
+        return true;
+      },
+    });
+
+    const count = closeWorkspacesForIds(new Set(["H-CI-2"]), mux);
+    expect(count).toBe(0);
+    expect(closeCalled).toBe(false);
+  });
+
+  it("handles empty workspace list", () => {
+    let closeCalled = false;
+    const mux = mockMux({
+      listWorkspaces: () => "",
+      closeWorkspace: () => {
+        closeCalled = true;
+        return true;
+      },
+    });
+
+    const count = closeWorkspacesForIds(new Set(["H-CI-2"]), mux);
+    expect(count).toBe(0);
+    expect(closeCalled).toBe(false);
+  });
+
+  it("returns 0 when mux is not available", () => {
+    const mux = mockMux({
+      isAvailable: () => false,
+    });
+
+    const count = closeWorkspacesForIds(new Set(["H-CI-2"]), mux);
+    expect(count).toBe(0);
+  });
+
+  it("handles null workspace list", () => {
+    const mux = mockMux({
+      listWorkspaces: () => null as unknown as string,
+    });
+
+    const count = closeWorkspacesForIds(new Set(["H-CI-2"]), mux);
+    expect(count).toBe(0);
   });
 });
 

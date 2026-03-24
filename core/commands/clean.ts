@@ -12,6 +12,39 @@ import {
   removeCrossRepoIndex,
 } from "../cross-repo.ts";
 
+/**
+ * Close cmux workspaces whose TODO ID is in the given set.
+ * Shared helper used by both reconcile (targeted) and clean (broad).
+ * Returns the number of workspaces successfully closed.
+ */
+export function closeWorkspacesForIds(
+  ids: Set<string>,
+  mux: Multiplexer,
+): number {
+  if (!mux.isAvailable()) return 0;
+
+  const workspaces = mux.listWorkspaces();
+  if (!workspaces) return 0;
+
+  let closed = 0;
+  for (const line of workspaces.split("\n")) {
+    const wsMatch = line.match(/workspace:\d+/);
+    const todoMatch = line.match(/TODO\s+([A-Z]+-[A-Za-z0-9]+-[0-9]+)/);
+
+    if (wsMatch && todoMatch && ids.has(todoMatch[1]!)) {
+      const wsRef = wsMatch[0]!;
+      const todoId = todoMatch[1]!;
+      info(`Closing workspace ${wsRef} (${todoId})`);
+      if (mux.closeWorkspace(wsRef)) {
+        closed++;
+      } else {
+        warn(`Failed to close ${wsRef}`);
+      }
+    }
+  }
+  return closed;
+}
+
 /** Close all cmux workspaces that belong to todo items. */
 export function cmdCloseWorkspaces(mux: Multiplexer = getMux()): void {
   if (!mux.isAvailable()) {

@@ -5,7 +5,8 @@ import { join } from "path";
 import { info, warn, GREEN, RESET } from "../output.ts";
 import { run } from "../shell.ts";
 import { cmdMarkDone } from "./mark-done.ts";
-import { cleanSingleWorktree } from "./clean.ts";
+import { cleanSingleWorktree, closeWorkspacesForIds } from "./clean.ts";
+import { getMux } from "../mux.ts";
 import { ID_IN_PARENS } from "../types.ts";
 
 /**
@@ -29,6 +30,9 @@ export interface ReconcileDeps {
 
   /** Clean a single worktree. Returns true if cleaned. */
   cleanWorktree(id: string, worktreeDir: string, projectRoot: string): boolean;
+
+  /** Close cmux workspaces for done/merged items. Returns count closed. */
+  closeStaleWorkspaces(doneIds: string[]): number;
 
   /** Stage, commit, and push TODOS.md changes. Returns true if committed. */
   commitAndPush(projectRoot: string, todosFile: string): boolean;
@@ -383,6 +387,10 @@ function defaultCommitAndPush(projectRoot: string, todosFile: string): boolean {
   return true;
 }
 
+function defaultCloseStaleWorkspaces(doneIds: string[]): number {
+  return closeWorkspacesForIds(new Set(doneIds), getMux());
+}
+
 /** Build default dependencies from real implementations. */
 export function defaultDeps(): ReconcileDeps {
   return {
@@ -392,6 +400,7 @@ export function defaultDeps(): ReconcileDeps {
     markDone: defaultMarkDone,
     getWorktreeIds: defaultGetWorktreeIds,
     cleanWorktree: defaultCleanWorktree,
+    closeStaleWorkspaces: defaultCloseStaleWorkspaces,
     commitAndPush: defaultCommitAndPush,
   };
 }
@@ -461,11 +470,17 @@ export function reconcile(
     info(`Cleaned ${cleanedCount} stale worktree(s).`);
   }
 
+  // Step 4.5: Close cmux workspaces for done/merged items
+  const closedWorkspaces = deps.closeStaleWorkspaces(mergedIds);
+  if (closedWorkspaces > 0) {
+    info(`Closed ${closedWorkspaces} stale workspace(s).`);
+  }
+
   // Step 5: Commit and push TODOS.md if changed
   if (toMarkDone.length > 0) {
     info("Committing and pushing TODOS.md...");
     if (deps.commitAndPush(projectRoot, todosFile)) {
-      console.log(`${GREEN}Reconciled: marked ${toMarkDone.length} item(s) done, cleaned ${cleanedCount} worktree(s).${RESET}`);
+      console.log(`${GREEN}Reconciled: marked ${toMarkDone.length} item(s) done, cleaned ${cleanedCount} worktree(s), closed ${closedWorkspaces} workspace(s).${RESET}`);
     } else {
       info("No TODOS.md changes to commit.");
     }
