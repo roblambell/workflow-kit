@@ -6,22 +6,24 @@
 
 
 
-### Fix: Scope cmdClean workspace closing to merged items only (M-WRK-7)
+### Test: Add TmuxAdapter unit tests (M-WRK-8)
 
 **Priority:** Medium
-**Source:** Eng review W-20 — `docs/reviews/eng-review-workers.md`
+**Source:** Eng review — `docs/reviews/eng-review-workers.md`
 **Depends on:** None
 
-`cmdClean` without a target ID calls `cmdCloseWorkspaces(mux)` which kills ALL todo workspaces before checking merge status. Active workers for non-merged items are killed. Fix by deferring workspace closure: close workspaces only for items whose branches are confirmed merged, or at minimum warn before closing active workspaces.
+`TmuxAdapter` has zero test coverage. All 7 methods (`isAvailable`, `launchWorkspace`, `splitPane`, `sendMessage`, `readScreen`, `listWorkspaces`, `closeWorkspace`) are untested. Use the injectable `ShellRunner` constructor parameter to test without requiring tmux to be installed. Mirror the structure of the `CmuxAdapter` delegation tests.
 
 **Test plan:**
-- Unit test: cmdClean without target only closes workspaces for merged worktrees
-- Unit test: active workers for non-merged items are not killed
-- Unit test: targeted cleanup (with ID) still closes the specific workspace
+- Test all 7 TmuxAdapter methods via injected ShellRunner
+- Test session name generation (`nw-N` pattern)
+- Test `listWorkspaces` filtering to `nw-` prefix
+- Test `sendMessage` two-step (send-keys -l + Enter)
+- Test error handling when tmux commands fail
 
-Acceptance: `cmdClean` (without target ID) only closes workspaces for items that are confirmed merged. Non-merged worker workspaces are preserved. Tests cover both targeted and broad cleanup. No regression.
+Acceptance: All 7 `TmuxAdapter` methods have unit tests. Tests use dependency injection (ShellRunner), no real tmux required. Tests verify session name patterns, filtering, and error handling. No regression.
 
-Key files: `core/commands/clean.ts`, `test/clean.test.ts`
+Key files: `core/mux.ts`, `test/mux.test.ts`
 
 ---
 
