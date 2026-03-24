@@ -97,13 +97,54 @@ Key files: `agents/todo-worker.md`
 
 ---
 
+## LLM Supervisor (orchestrator intelligence layer, 2026-03-24)
+
+### Feat: Add LLM supervisor tick to orchestrate event loop (H-SUP-1)
+
+**Priority:** High
+**Source:** Dogfooding insight
+**Depends on:** M-FIX-3
+
+The deterministic orchestrator daemon handles the mechanical lifecycle (poll, merge, clean) but can't apply judgment. Add a periodic "supervisor tick" to the orchestrate event loop that pipes recent structured logs + current state into an LLM prompt. The supervisor runs on a configurable interval (default: every 5 minutes, or at batch boundaries). It does NOT drive the loop — the daemon continues regardless. The supervisor produces structured observations.
+
+The supervisor prompt receives: (1) the last N log entries since the previous tick, (2) current item states, (3) wall-clock elapsed time per item in each state. It answers:
+
+1. **Anomaly detection** — Is anything stuck or abnormal? (worker idle too long, CI cycling on same error, PR open but no commits for 10+ minutes)
+2. **Intervention suggestions** — Should I send a worker a hint? Retry? Escalate to human?
+3. **Friction observations** — Anything surprising about how the pipeline is behaving
+4. **Process improvements** — Patterns across workers that suggest systemic fixes (e.g., "3 workers hit the same import error — add a CLAUDE.md note")
+
+Implementation: Add a `supervisorTick` function that calls an LLM (via the `claude` CLI or Anthropic SDK) with the supervisor prompt. The orchestrate loop calls it every `--supervisor-interval` seconds (default 300). Observations are: (a) logged as structured JSON events, (b) optionally appended to a friction log file (`--friction-log`), (c) actions (send message to worker, adjust WIP) are returned as suggested actions that the daemon can execute.
+
+The supervisor is opt-in via `--supervisor` flag (off by default). When running in dogfooding mode (detected by `skills/work/SKILL.md` in project root), it activates automatically.
+
+Acceptance: `ninthwave orchestrate --supervisor --items X,Y` periodically invokes the LLM supervisor. Observations appear in structured logs as `supervisor_tick` events. Friction is logged to `--friction-log` path when specified. Worker messages are sent when the supervisor suggests intervention. The daemon continues running if the supervisor call fails. Unit test verifies the tick interval logic and prompt construction (with mocked LLM call).
+
+Key files: `core/commands/orchestrate.ts`, `core/supervisor.ts` (new), `test/supervisor.test.ts` (new)
+
+---
+
+### Docs: Update /work skill and worker agent for supervisor mode (M-SUP-2)
+
+**Priority:** Medium
+**Source:** Follows H-SUP-1
+**Depends on:** H-SUP-1
+
+Update `skills/work/SKILL.md` Phase 1 to add a supervisor toggle question: "Enable LLM supervisor? (monitors for anomalies, logs friction)" with options A) Yes (recommended for unattended runs) B) No (daemon only). Pass `--supervisor` flag when enabled. Update the Phase 2 ORCHESTRATE section to mention supervisor log events. Update `agents/todo-worker.md` to note that workers may receive supervisor-generated hints (prefixed `[SUPERVISOR]`) in addition to standard orchestrator messages.
+
+Acceptance: /work skill asks about supervisor mode during selection. Orchestrate command includes `--supervisor` when enabled. Worker agent prompt documents `[SUPERVISOR]` message prefix.
+
+Key files: `skills/work/SKILL.md`, `agents/todo-worker.md`
+
+---
+
 ## Vision (recurring, 2026-03-24)
 
 ### Feat: Explore vision, scope next iteration, and decompose into TODOs (L-VIS-2)
 
 **Priority:** Low
 **Source:** Self-improvement loop
-**Depends on:** M-FIX-4, M-CI-1, L-DX-1
+**Depends on:** M-FIX-4, M-CI-1, L-DX-1, M-SUP-2
 
 This is a recurring meta-item. When all other TODOs are complete, this item triggers a new cycle: (1) Review the current state of ninthwave against the product vision — what's shipped, what's missing, what friction was logged. (2) Read the friction log and identify actionable improvements. (3) Identify the next most impactful capability or refinement. (4) Decompose it into TODO items following the standard format. (5) Add a new copy of this same item (L-VIS-3, etc.) depending on the new terminal items, so the cycle continues.
 
