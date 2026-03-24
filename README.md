@@ -139,27 +139,33 @@ All items merged. Version bump: 1.4.0 → 1.5.0 (CHANGELOG updated)
 
 ## Quick Start
 
+### Install
+
+```bash
+brew install ninthwave-sh/tap/ninthwave
+```
+
+<details>
+<summary>Alternative: install via curl</summary>
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/install.sh | bash
+```
+</details>
+
 ### Prerequisites
 
 | Dependency | Purpose | Install |
 |------------|---------|---------|
-| [bun](https://bun.sh/) | Runs the CLI | `curl -fsSL https://bun.sh/install \| bash` |
 | AI coding tool | Runs the sessions | [Claude Code](https://claude.ai/download), [OpenCode](https://opencode.ai), or [Copilot CLI](https://docs.github.com/en/copilot) |
-| [cmux](https://cmux.com) | Parallel terminal sessions with visual sidebar | `brew tap manaflow-ai/cmux && brew install --cask cmux` |
+| [cmux](https://cmux.com) | Parallel terminal sessions with visual sidebar | `brew install --cask manaflow-ai/cmux/cmux` |
 | [gh](https://cli.github.com) | PR operations | `brew install gh` |
 
-### Global install (recommended)
+### Set up a project
 
 ```bash
-git clone https://github.com/ninthwave-sh/ninthwave.git ~/.claude/skills/ninthwave
 cd /path/to/your/project
-~/.claude/skills/ninthwave/setup
-```
-
-### Per-project install (shared via git)
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/remote-install.sh) --local
+ninthwave setup
 ```
 
 One developer runs setup. The team gets everything via `git pull`.
@@ -249,23 +255,17 @@ Workers reference these skill names during execution. If available, they're used
 <details>
 <summary><strong>What gets installed</strong></summary>
 
-ninthwave is a **self-contained bundle**. All skills, agents, and the CLI live inside the ninthwave directory. The `setup` script creates minimal project-level config.
+`brew install` places the `ninthwave` binary and resource files (skills, agents, docs) in the Homebrew prefix. `ninthwave setup` creates minimal project-level config.
 
-**The bundle** (in `~/.claude/skills/ninthwave/` or `.claude/skills/ninthwave/`):
-- Skills: `/work`, `/decompose`, `/todo-preview`, `/ninthwave-upgrade`
-- Worker agent: `todo-worker.md`
-- CLI: `core/cli.ts`
-- Docs: `core/docs/todos-format.md`
-
-**Project-level files** (created by setup, committed to git):
+**Project-level files** (created by `ninthwave setup`, committed to git):
 
 | Path | Purpose |
 |------|---------|
-| `.ninthwave/work` | CLI shim that calls the bundle's `core/cli.ts` |
-| `.ninthwave/dir` | Points to the ninthwave bundle location |
+| `.ninthwave/work` | CLI shim that calls the ninthwave binary |
+| `.ninthwave/dir` | Points to the ninthwave resource directory |
 | `.ninthwave/config` | Project settings (LOC extensions, domain mappings) |
 | `.ninthwave/domains.conf` | Custom domain slug mappings |
-| `.claude/skills/*` | Symlinks to bundle skills (for discovery) |
+| `.claude/skills/*` | Symlinks to skills (for discovery) |
 | `.claude/agents/todo-worker.md` | Worker agent (Claude Code) |
 | `.opencode/agents/todo-worker.md` | Worker agent (OpenCode) |
 | `.github/agents/todo-worker.agent.md` | Worker agent (Copilot CLI) |
@@ -278,12 +278,8 @@ ninthwave is a **self-contained bundle**. All skills, agents, and the CLI live i
 Run `/ninthwave-upgrade` from any AI coding session, or manually:
 
 ```bash
-# Global install
-cd ~/.claude/skills/ninthwave && git pull
-~/.claude/skills/ninthwave/setup --project-dir /path/to/your/project
-
-# Per-project install
-bash <(curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/remote-install.sh) --local
+brew upgrade ninthwave
+ninthwave setup   # re-sync project-level files
 ```
 
 Project-specific config (`TODOS.md`, `.ninthwave/config`, `domains.conf`) is preserved.
