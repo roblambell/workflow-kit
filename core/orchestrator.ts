@@ -145,6 +145,30 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   maxCiRetries: 2,
 };
 
+// ── Memory-aware WIP limit ──────────────────────────────────────────
+
+/** Estimated memory consumption per worker (Claude Code + language server + worktree). */
+export const BYTES_PER_WORKER = 2.5 * 1024 * 1024 * 1024; // 2.5 GB
+
+/**
+ * Calculate the memory-aware WIP limit based on available free memory.
+ * Returns floor(freeMemBytes / memPerWorkerBytes), clamped to [1, configuredLimit].
+ * Returns 0 only when configuredLimit is 0 (used in tests to prevent auto-launch).
+ *
+ * @param configuredLimit - The user-configured or default WIP limit (upper bound)
+ * @param freeMemBytes - Available free memory in bytes (e.g., from os.freemem())
+ * @param memPerWorkerBytes - Memory per worker in bytes (default: 2.5 GB)
+ */
+export function calculateMemoryWipLimit(
+  configuredLimit: number,
+  freeMemBytes: number,
+  memPerWorkerBytes: number = BYTES_PER_WORKER,
+): number {
+  if (configuredLimit <= 0) return 0;
+  const memorySlots = Math.floor(freeMemBytes / memPerWorkerBytes);
+  return Math.max(1, Math.min(memorySlots, configuredLimit));
+}
+
 // ── WIP states: states that count toward the WIP limit ───────────────
 
 const WIP_STATES: Set<OrchestratorItemState> = new Set([
@@ -163,9 +187,24 @@ const WIP_STATES: Set<OrchestratorItemState> = new Set([
 export class Orchestrator {
   readonly config: OrchestratorConfig;
   private items: Map<string, OrchestratorItem> = new Map();
+  /** Memory-adjusted WIP limit. When set, takes precedence over config.wipLimit for slot calculation. */
+  private _effectiveWipLimit?: number;
 
   constructor(config: Partial<OrchestratorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  /**
+   * Set the effective WIP limit after memory adjustment.
+   * Call this each poll cycle with the result of calculateMemoryWipLimit().
+   */
+  setEffectiveWipLimit(limit: number): void {
+    this._effectiveWipLimit = limit;
+  }
+
+  /** Get the effective WIP limit (memory-adjusted when set, otherwise configured). */
+  get effectiveWipLimit(): number {
+    return this._effectiveWipLimit ?? this.config.wipLimit;
   }
 
   /** Add a TODO item to orchestration. Starts in 'queued' state. */
@@ -209,9 +248,9 @@ export class Orchestrator {
       .length;
   }
 
-  /** How many more items can be launched without exceeding WIP limit. */
+  /** How many more items can be launched without exceeding the effective WIP limit. */
   get wipSlots(): number {
-    return Math.max(0, this.config.wipLimit - this.wipCount);
+    return Math.max(0, this.effectiveWipLimit - this.wipCount);
   }
 
   /**

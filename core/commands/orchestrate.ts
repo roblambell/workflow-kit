@@ -6,11 +6,12 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync } from "fs";
 import { join } from "path";
-import { totalmem } from "os";
+import { totalmem, freemem } from "os";
 import { spawn as nodeSpawn } from "node:child_process";
 import { run } from "../shell.ts";
 import {
   Orchestrator,
+  calculateMemoryWipLimit,
   type MergeStrategy,
   type PollSnapshot,
   type ItemSnapshot,
@@ -403,6 +404,8 @@ export interface OrchestrateLoopDeps {
   sleep: (ms: number) => Promise<void>;
   log: (entry: LogEntry) => void;
   actionDeps: OrchestratorDeps;
+  /** Get available free memory in bytes. Defaults to os.freemem(). Injectable for testing. */
+  getFreeMem?: () => number;
   /** Reconcile TODOS.md with GitHub state after merge actions. */
   reconcile?: (todosFile: string, worktreeDir: string, projectRoot: string) => void;
   /** Supervisor dependencies (injected when supervisor is active). */
@@ -621,6 +624,22 @@ export async function orchestrateLoop(
     ).length;
     for (const item of allItems) {
       prevStates.set(item.id, item.state);
+    }
+
+    // Memory-aware WIP: adjust effective limit based on available free memory
+    const freeMemBytes = (deps.getFreeMem ?? freemem)();
+    const memoryWip = calculateMemoryWipLimit(orch.config.wipLimit, freeMemBytes);
+    orch.setEffectiveWipLimit(memoryWip);
+
+    if (memoryWip < orch.config.wipLimit) {
+      wrappedLog({
+        ts: new Date().toISOString(),
+        level: "info",
+        event: "wip_reduced_memory",
+        configuredWip: orch.config.wipLimit,
+        effectiveWip: memoryWip,
+        freeMemMB: Math.round(freeMemBytes / (1024 * 1024)),
+      });
     }
 
     // Build snapshot from external state
@@ -1176,6 +1195,7 @@ export async function cmdOrchestrate(
     sleep: (ms) => interruptibleSleep(ms, abortController.signal),
     log: structuredLog,
     actionDeps,
+    getFreeMem: freemem,
     reconcile,
     supervisorDeps: supervisorActive ? createSupervisorDeps(structuredLog) : undefined,
     notify,
