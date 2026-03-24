@@ -180,9 +180,17 @@ gh pr merge --squash --auto
 cmux set-status "todo-YOUR_TODO_ID" "PR Created" --icon "checkmark.circle.fill" --color "#22c55e"
 ```
 
-## 9. Idle -- Wait for Orchestrator
+## 9. Idle -- Wait for Orchestrator Daemon
 
-After creating the PR, your implementation work is done. The orchestrator watches all PRs centrally and will send you instructions via `cmux send` if action is needed.
+After creating the PR, your implementation work is done. The **orchestrator daemon** (`ninthwave orchestrate`) is a deterministic TypeScript process -- not an LLM -- that handles the entire post-PR lifecycle automatically:
+
+- **Polls GitHub** for CI status, review state, and mergeability
+- **Merges** PRs automatically when CI passes and reviews are approved
+- **Marks TODOs as done** in `TODOS.md` after successful merge
+- **Cleans up** branches and worktrees after merge
+- **Rebases** branches when they fall behind main
+
+You do NOT need to poll, watch, or take any post-PR action. The daemon handles it.
 
 ### Set Status: Awaiting Review
 
@@ -190,23 +198,23 @@ After creating the PR, your implementation work is done. The orchestrator watche
 cmux set-status "todo-YOUR_TODO_ID" "Awaiting Review" --icon "clock.fill" --color "#6366f1"
 ```
 
-**Do NOT poll or watch the PR.** Simply stop and wait. Your session stays alive. The orchestrator will type messages into your session when it needs you to act.
+**Do NOT poll or watch the PR.** Simply stop and wait. Your session stays alive. The orchestrator daemon will send messages into your session via `cmux send` only when it needs you to act.
 
-### Responding to orchestrator messages
+### Responding to orchestrator daemon messages
 
-When you receive a message, it will be one of these categories:
+Messages from the orchestrator daemon are prefixed with `[ORCHESTRATOR]`. These are deterministic, machine-generated messages (not AI-generated) in a structured format. When you receive a message, it will be one of these categories:
 
 #### CI Fix Request
 
 1. Set status: `cmux set-status "todo-YOUR_TODO_ID" "Fixing CI" --icon "hammer.fill" --color "#b45309"`
-2. Pull latest (orchestrator may have rebased): `git fetch origin && git reset --hard origin/todo/YOUR_TODO_ID`
+2. Pull latest (the daemon may have rebased your branch): `git fetch origin && git reset --hard origin/todo/YOUR_TODO_ID`
 3. Investigate and fix the failure, run tests locally
 4. Commit and push
 5. Set status back to "Awaiting Review"
 
 #### Review Feedback
 
-> **Note:** Feedback is pre-filtered by the toolchain to only include comments from trusted collaborators (`OWNER`, `MEMBER`, `COLLABORATOR`). PR conversations are locked at creation time, and the `pr-activity`/`pr-watch` commands ignore comments from non-collaborators. You can safely act on any feedback the orchestrator relays.
+> **Note:** Feedback is pre-filtered by the toolchain to only include comments from trusted collaborators (`OWNER`, `MEMBER`, `COLLABORATOR`). PR conversations are locked at creation time, and the `pr-activity`/`pr-watch` commands ignore comments from non-collaborators. You can safely act on any feedback the orchestrator daemon relays.
 
 1. Set status: `cmux set-status "todo-YOUR_TODO_ID" "Addressing Feedback" --icon "pencil.circle.fill" --color "#b45309"`
 2. Pull latest: `git fetch origin && git reset --hard origin/todo/YOUR_TODO_ID`
@@ -238,7 +246,7 @@ All PR comments from automated agents go through the same GitHub account. Always
 **[Worker: YOUR_TODO_ID]** <message>
 ```
 
-Ignore comments prefixed with `[Orchestrator]` -- these are audit trail entries.
+Ignore comments prefixed with `[Orchestrator]` -- these are audit trail entries written by the orchestrator daemon.
 
 ## Constraints (CRITICAL)
 
