@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 // CLI entry point for the ninthwave tool.
 
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { die } from "./output.ts";
 import { run } from "./shell.ts";
+import { getBundleDir } from "./paths.ts";
 import { cmdList } from "./commands/list.ts";
 import { cmdDeps } from "./commands/deps.ts";
 import { cmdConflicts } from "./commands/conflicts.ts";
@@ -27,6 +28,7 @@ import {
 } from "./commands/watch.ts";
 import { cmdCiFailures } from "./commands/ci.ts";
 import { cmdVersionBump } from "./commands/version-bump.ts";
+import { cmdSetup } from "./commands/setup.ts";
 
 // Resolve project root via git
 function getProjectRoot(): string {
@@ -42,18 +44,51 @@ function getProjectRoot(): string {
   return result.stdout.replace(/\/.git$/, "");
 }
 
+// Commands that don't need a project root
+const NO_PROJECT_COMMANDS = ["setup", "version"];
+
+const command = process.argv[2] ?? "";
+const args = process.argv.slice(3);
+
+// Handle commands that don't need a project root
+if (command === "setup") {
+  cmdSetup(args);
+  process.exit(0);
+}
+
+if (command === "version") {
+  try {
+    const bundleDir = getBundleDir();
+    const versionFile = join(bundleDir, "VERSION");
+    if (existsSync(versionFile)) {
+      console.log(readFileSync(versionFile, "utf-8").trim());
+    } else {
+      // Fall back to git describe
+      const result = run("git", ["-C", bundleDir, "describe", "--tags", "--always"]);
+      console.log(result.exitCode === 0 ? result.stdout : "unknown");
+    }
+  } catch {
+    console.log("unknown");
+  }
+  process.exit(0);
+}
+
+// All other commands need a project root
 const projectRoot = getProjectRoot();
 const todosFile = join(projectRoot, "TODOS.md");
 const worktreeDir = join(projectRoot, ".worktrees");
 const partitionDir = join(worktreeDir, ".partitions");
 
-const command = process.argv[2] ?? "";
-const args = process.argv.slice(3);
-
 if (!command) {
   console.log("Usage: ninthwave <command> [options]");
   console.log();
   console.log("Commands:");
+  console.log(
+    "  setup [--global]                              Set up ninthwave in a project or globally",
+  );
+  console.log(
+    "  version                                       Print ninthwave version",
+  );
   console.log(
     '  list [--priority P] [--domain D] [--feature F] [--ready]',
   );
@@ -121,6 +156,7 @@ if (!command) {
 }
 
 // Most commands require TODOS.md — check before dispatching
+// (setup and version are handled above before project root resolution)
 const needsTodos = ![
   "repos",
   "partitions",
