@@ -5,25 +5,6 @@
 ## Operational Maturity (vision exploration, 2026-03-24)
 
 
-### Feat: GitHub Issues adapter — close issues on merge and sync status (M-GHI-2)
-
-**Priority:** Medium
-**Source:** Vision — complete the GitHub Issues lifecycle loop
-**Depends on:** H-GHI-1
-
-Implement `markDone(id)` on `GitHubIssuesBackend` to close the issue via `gh issue close`. During orchestration lifecycle, add status labels to issues: `status:in-progress` when worker starts, `status:pr-open` when PR is created, remove status labels and close issue on merge. Wire into orchestrator's state transition hooks so status syncs automatically when using the GitHub Issues backend.
-
-**Test plan:**
-- Unit test: markDone calls `gh issue close` with correct issue number
-- Unit test: status labels are added/removed at correct state transitions
-- Edge case: issue already closed (markDone is idempotent)
-- Edge case: status label doesn't exist on the repo (skip gracefully, don't error)
-
-Acceptance: Issues are automatically closed when their PRs merge. Status labels reflect orchestrator state during processing. Label operations are idempotent and skip gracefully on missing labels. Tests pass.
-
-Key files: `core/backends/github-issues.ts`, `core/commands/orchestrate.ts`
-
----
 
 ### Feat: Automatic worker retry on crash or OOM (M-RET-1)
 
@@ -46,13 +27,8 @@ Key files: `core/orchestrator.ts`, `core/commands/orchestrate.ts`, `core/command
 
 ---
 
-## Engineering Review (vision exploration, 2026-03-24)
-
-
-
----
-
 ## Data Pipeline Hardening (eng review M-ENG-3, 2026-03-24)
+
 
 
 ### Fix: Parser should warn on skipped items with missing IDs (M-DP-1)
@@ -372,6 +348,7 @@ Key files: `core/parser.ts`, `core/config.ts`, `test/parser.test.ts`, `test/conf
 ## Worker Reliability (eng-review-workers, 2026-03-24)
 
 
+
 ### Fix: Sanitize TODO title with allowlist to prevent shell injection (H-WRK-1)
 
 **Priority:** High
@@ -549,6 +526,7 @@ Key files: `core/commands/orchestrate.ts`, `test/orchestrator.test.ts`
 ---
 
 ## Orchestrator Review Findings (eng-review H-ENG-1, 2026-03-24)
+
 
 
 ### Fix: Add timeout support to shell.ts run() (H-SHL-1)
@@ -848,6 +826,7 @@ Key files: `core/commands/orchestrate.ts`, `test/orchestrate.test.ts`
 ---
 
 ## Vision (recurring, 2026-03-24)
+
 
 
 ### Feat: Explore vision, scope next iteration, and decompose into TODOs (L-VIS-5)
