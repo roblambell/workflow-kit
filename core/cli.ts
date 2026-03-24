@@ -32,6 +32,7 @@ import { cmdSetup } from "./commands/setup.ts";
 import { cmdInit } from "./commands/init.ts";
 import { cmdOrchestrate } from "./commands/orchestrate.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
+import { cmdAnalytics } from "./commands/analytics.ts";
 
 // Resolve project root via git
 function getProjectRoot(): string {
@@ -169,6 +170,9 @@ if (!command) {
   console.log(
     "  reconcile                                     Sync TODOS.md with merged PRs",
   );
+  console.log(
+    "  analytics [--all]                             Show orchestration performance trends",
+  );
   process.exit(0);
 }
 
@@ -188,6 +192,7 @@ const needsTodos = ![
   "ci-failures",
   "pr-activity",
   "version-bump",
+  "analytics",
 ].includes(command);
 
 if (needsTodos && !existsSync(todosFile)) {
@@ -264,6 +269,9 @@ switch (command) {
     break;
   case "reconcile":
     cmdReconcile(todosFile, worktreeDir, projectRoot);
+    break;
+  case "analytics":
+    cmdAnalytics(args, projectRoot);
     break;
   default:
     die(`Unknown command: ${command}`);

@@ -1,4 +1,4 @@
-// Tests for core/analytics.ts — Structured metrics emitted on orchestrate_complete.
+// Tests for core/analytics.ts and core/commands/analytics.ts.
 // Uses dependency injection (no vi.mock) per project conventions.
 
 import { describe, it, expect, vi } from "vitest";
@@ -8,6 +8,14 @@ import {
   type RunMetrics,
   type AnalyticsIO,
 } from "../core/analytics.ts";
+import {
+  loadRuns,
+  computeSummary,
+  formatAnalytics,
+  trendArrow,
+  type AnalyticsReadIO,
+  type AnalyticsSummary,
+} from "../core/commands/analytics.ts";
 import {
   orchestrateLoop,
   type LogEntry,
@@ -478,5 +486,265 @@ describe("orchestrateLoop analytics integration", () => {
     expect(written.itemsFailed).toBe(0);
     expect(written.items).toEqual([]);
     expect(written.mergeStrategy).toBe("asap");
+  });
+});
+
+// ── Analytics display command tests ──────────────────────────────────
+
+function makeRun(overrides: Partial<RunMetrics> = {}): RunMetrics {
+  return {
+    runTimestamp: "2026-03-24T10:00:00.000Z",
+    wallClockMs: 300_000,
+    itemsAttempted: 3,
+    itemsCompleted: 2,
+    itemsFailed: 1,
+    mergeStrategy: "asap",
+    items: [
+      { id: "T-1-1", state: "done", ciRetryCount: 0, tool: "claude" },
+      { id: "T-1-2", state: "done", ciRetryCount: 1, tool: "claude" },
+      { id: "T-1-3", state: "stuck", ciRetryCount: 2, tool: "claude" },
+    ],
+    ...overrides,
+  };
+}
+
+function mockReadIO(files: Record<string, string>): AnalyticsReadIO {
+  return {
+    existsSync: (path: string) => path in files || Object.keys(files).some((f) => f.startsWith(path + "/")),
+    readdirSync: (dir: string) => {
+      const prefix = dir.endsWith("/") ? dir : dir + "/";
+      return Object.keys(files)
+        .filter((f) => f.startsWith(prefix))
+        .map((f) => f.slice(prefix.length));
+    },
+    readFileSync: (path: string) => {
+      if (path in files) return files[path]!;
+      throw new Error(`ENOENT: ${path}`);
+    },
+  };
+}
+
+describe("loadRuns", () => {
+  it("parses metrics files correctly", () => {
+    const run1 = makeRun({ runTimestamp: "2026-03-24T10:00:00.000Z" });
+    const run2 = makeRun({ runTimestamp: "2026-03-24T11:00:00.000Z", wallClockMs: 600_000 });
+
+    const io = mockReadIO({
+      "/project/.ninthwave/analytics/2026-03-24T10-00-00-000Z.json": JSON.stringify(run1),
+      "/project/.ninthwave/analytics/2026-03-24T11-00-00-000Z.json": JSON.stringify(run2),
+    });
+
+    const runs = loadRuns("/project/.ninthwave/analytics", io);
+    expect(runs).toHaveLength(2);
+    expect(runs[0]!.wallClockMs).toBe(300_000);
+    expect(runs[1]!.wallClockMs).toBe(600_000);
+  });
+
+  it("returns empty array when directory does not exist", () => {
+    const io = mockReadIO({});
+    const runs = loadRuns("/nonexistent", io);
+    expect(runs).toEqual([]);
+  });
+
+  it("skips malformed JSON files", () => {
+    const validRun = makeRun();
+    const io = mockReadIO({
+      "/dir/bad.json": "not json{",
+      "/dir/good.json": JSON.stringify(validRun),
+    });
+
+    const runs = loadRuns("/dir", io);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.runTimestamp).toBe(validRun.runTimestamp);
+  });
+
+  it("sorts runs chronologically by filename", () => {
+    const early = makeRun({ runTimestamp: "2026-03-24T08:00:00.000Z" });
+    const late = makeRun({ runTimestamp: "2026-03-24T16:00:00.000Z" });
+
+    const io = mockReadIO({
+      "/dir/2026-03-24T16-00-00-000Z.json": JSON.stringify(late),
+      "/dir/2026-03-24T08-00-00-000Z.json": JSON.stringify(early),
+    });
+
+    const runs = loadRuns("/dir", io);
+    expect(runs[0]!.runTimestamp).toBe("2026-03-24T08:00:00.000Z");
+    expect(runs[1]!.runTimestamp).toBe("2026-03-24T16:00:00.000Z");
+  });
+});
+
+describe("computeSummary", () => {
+  it("computes averages across multiple runs", () => {
+    const runs = [
+      makeRun({ wallClockMs: 200_000, itemsAttempted: 4, itemsCompleted: 3, itemsFailed: 1 }),
+      makeRun({
+        runTimestamp: "2026-03-25T10:00:00.000Z",
+        wallClockMs: 400_000,
+        itemsAttempted: 6,
+        itemsCompleted: 5,
+        itemsFailed: 1,
+      }),
+    ];
+
+    const summary = computeSummary(runs);
+    expect(summary.totalRuns).toBe(2);
+    expect(summary.avgWallClockMs).toBe(300_000);
+    expect(summary.avgItemsPerBatch).toBe(5); // (4+6)/2
+    expect(summary.totalItemsShipped).toBe(8); // 3+5
+  });
+
+  it("handles single run (no trend) gracefully", () => {
+    const summary = computeSummary([makeRun()]);
+    expect(summary.totalRuns).toBe(1);
+    expect(summary.avgWallClockMs).toBe(300_000);
+    expect(summary.latestWallClockMs).toBe(300_000);
+    // Items per day with a single run = totalItemsShipped (span is 0)
+    expect(summary.itemsPerDay).toBe(2);
+  });
+
+  it("handles zero runs", () => {
+    const summary = computeSummary([]);
+    expect(summary.totalRuns).toBe(0);
+    expect(summary.totalItemsShipped).toBe(0);
+    expect(summary.avgWallClockMs).toBe(0);
+    expect(summary.ciRetryRate).toBe(0);
+  });
+
+  it("computes CI retry rate correctly", () => {
+    const runs = [
+      makeRun({
+        itemsAttempted: 4,
+        items: [
+          { id: "A", state: "done", ciRetryCount: 0, tool: "claude" },
+          { id: "B", state: "done", ciRetryCount: 2, tool: "claude" },
+          { id: "C", state: "done", ciRetryCount: 0, tool: "claude" },
+          { id: "D", state: "stuck", ciRetryCount: 1, tool: "claude" },
+        ],
+      }),
+    ];
+
+    const summary = computeSummary(runs);
+    // 3 total retries / 4 items = 0.75
+    expect(summary.ciRetryRate).toBe(0.75);
+  });
+});
+
+describe("trendArrow", () => {
+  it("shows up arrow when current > average", () => {
+    const arrow = trendArrow(10, 5, true);
+    expect(arrow).toContain("↑");
+  });
+
+  it("shows down arrow when current < average", () => {
+    const arrow = trendArrow(3, 10, true);
+    expect(arrow).toContain("↓");
+  });
+
+  it("shows right arrow when roughly equal", () => {
+    const arrow = trendArrow(100, 102, true, 0.05);
+    expect(arrow).toContain("→");
+  });
+
+  it("uses green for higher-is-better up", () => {
+    // When higherIsBetter=true, going up is good (green)
+    const arrow = trendArrow(10, 5, true);
+    expect(arrow).toContain("↑");
+  });
+
+  it("uses red for higher-is-worse up (e.g., wall-clock time)", () => {
+    // When higherIsBetter=false, going up is bad (red)
+    const arrow = trendArrow(10, 5, false);
+    expect(arrow).toContain("↑");
+  });
+
+  it("handles zero average", () => {
+    const arrow = trendArrow(5, 0, true);
+    expect(arrow).toContain("↑");
+  });
+
+  it("handles both zero", () => {
+    const arrow = trendArrow(0, 0, true);
+    expect(arrow).toContain("→");
+  });
+});
+
+describe("formatAnalytics", () => {
+  it("shows readable message when no data", () => {
+    const summary = computeSummary([]);
+    const lines = formatAnalytics(summary, false);
+    expect(lines.join("\n")).toContain("No analytics data");
+  });
+
+  it("shows summary metrics for multiple runs", () => {
+    const runs = [
+      makeRun({ runTimestamp: "2026-03-24T10:00:00.000Z", wallClockMs: 200_000 }),
+      makeRun({ runTimestamp: "2026-03-25T10:00:00.000Z", wallClockMs: 400_000 }),
+    ];
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    expect(output).toContain("Analytics");
+    expect(output).toContain("wall-clock");
+    expect(output).toContain("items per batch");
+    expect(output).toContain("CI retry rate");
+    expect(output).toContain("Total items shipped");
+    expect(output).toContain("Items per day");
+  });
+
+  it("shows last 10 runs by default", () => {
+    const runs = Array.from({ length: 15 }, (_, i) =>
+      makeRun({
+        runTimestamp: `2026-03-${String(i + 1).padStart(2, "0")}T10:00:00.000Z`,
+        wallClockMs: (i + 1) * 60_000,
+      }),
+    );
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    // Should show 15 total but only last 10 in table
+    expect(output).toContain("15 total");
+    // The first run (March 1) should NOT be in the output
+    expect(output).not.toContain("2026-03-01");
+    // The last run (March 15) should be in the output
+    expect(output).toContain("2026-03-15");
+  });
+
+  it("--all flag includes all runs", () => {
+    const runs = Array.from({ length: 15 }, (_, i) =>
+      makeRun({
+        runTimestamp: `2026-03-${String(i + 1).padStart(2, "0")}T10:00:00.000Z`,
+        wallClockMs: (i + 1) * 60_000,
+      }),
+    );
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, true).join("\n");
+
+    expect(output).toContain("All runs");
+    // First run should now be visible
+    expect(output).toContain("2026-03-01");
+    expect(output).toContain("2026-03-15");
+  });
+
+  it("handles single run without trend arrows", () => {
+    const summary = computeSummary([makeRun()]);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    // Should not have trend arrows with a single run
+    expect(output).not.toContain("↑");
+    expect(output).not.toContain("↓");
+    expect(output).not.toContain("→");
+  });
+
+  it("output is pipe-friendly (plain text)", () => {
+    const summary = computeSummary([makeRun()]);
+    const lines = formatAnalytics(summary, false);
+
+    // All lines should be strings
+    for (const line of lines) {
+      expect(typeof line).toBe("string");
+    }
+    // Should be joinable for piping
+    const output = lines.join("\n");
+    expect(output.length).toBeGreaterThan(0);
   });
 });
