@@ -105,6 +105,14 @@ This skill interactively selects TODO items, then delegates all orchestration to
 
    Store WIP_LIMIT (default: 4).
 
+10. **Supervisor mode:**
+
+   AskUserQuestion -- "Enable LLM supervisor? (monitors for anomalies, logs friction)"
+   - A) Yes (recommended for unattended runs) -- an LLM periodically reviews orchestrator state, detects anomalies, and logs friction
+   - B) No (daemon only) -- deterministic daemon with no LLM oversight
+
+   Store SUPERVISOR_ENABLED (boolean, default: false).
+
 ---
 
 ### Phase 2: ORCHESTRATE
@@ -118,6 +126,16 @@ This skill interactively selects TODO items, then delegates all orchestration to
      --items <comma-separated-IDs> \
      --merge-strategy <MERGE_STRATEGY> \
      --wip-limit <WIP_LIMIT>
+   ```
+
+   If SUPERVISOR_ENABLED is true, append `--supervisor` to the command:
+
+   ```bash
+   ninthwave orchestrate \
+     --items <comma-separated-IDs> \
+     --merge-strategy <MERGE_STRATEGY> \
+     --wip-limit <WIP_LIMIT> \
+     --supervisor
    ```
 
    If running via the `.ninthwave/work` shim, use `.ninthwave/work orchestrate ...` instead.
@@ -137,6 +155,9 @@ This skill interactively selects TODO items, then delegates all orchestration to
    - `action_execute` / `action_result` — launches, merges, cleanups
    - `orchestrate_complete` — all items reached terminal state (done or stuck)
    - `shutdown` — SIGINT received, clean exit
+   - `supervisor_tick` — (supervisor mode only) periodic LLM review of orchestrator state
+   - `supervisor_anomaly` — (supervisor mode only) supervisor detected an anomaly and sent a hint to a worker
+   - `supervisor_friction` — (supervisor mode only) supervisor logged a friction observation
 
 4. **When the orchestrator exits**, summarize results:
    - How many items completed successfully (done)
