@@ -29,11 +29,6 @@ interface Prerequisite {
 
 const PREREQUISITES: Prerequisite[] = [
   {
-    name: "cmux",
-    installCmd: "brew install --cask manaflow-ai/cmux/cmux",
-    purpose: "Parallel terminal sessions with visual sidebar",
-  },
-  {
     name: "gh",
     installCmd: "brew install gh",
     purpose: "GitHub PR operations",
@@ -75,6 +70,8 @@ export interface PrerequisiteResult {
   missing: string[];
   /** warnings (e.g. gh not authenticated) */
   warnings: string[];
+  /** detected multiplexer: "cmux", "tmux", or null if none found */
+  detectedMux: "cmux" | "tmux" | null;
 }
 
 /**
@@ -92,6 +89,7 @@ export function checkPrerequisites(
 
   console.log("Checking prerequisites...");
 
+  // Check required prerequisites
   for (const prereq of PREREQUISITES) {
     if (commandExists(prereq.name)) {
       console.log(`  ${GREEN}✓${RESET} ${prereq.name} ${DIM}(${prereq.purpose})${RESET}`);
@@ -100,6 +98,22 @@ export function checkPrerequisites(
       console.log(`    Install: ${BOLD}${prereq.installCmd}${RESET}`);
       missing.push(prereq.name);
     }
+  }
+
+  // Detect multiplexer (cmux preferred, tmux as alternative)
+  let detectedMux: "cmux" | "tmux" | null = null;
+  if (commandExists("cmux")) {
+    detectedMux = "cmux";
+    console.log(`  ${GREEN}✓${RESET} cmux ${DIM}(multiplexer — visual sidebar, recommended)${RESET}`);
+  } else if (commandExists("tmux")) {
+    detectedMux = "tmux";
+    console.log(`  ${GREEN}✓${RESET} tmux ${DIM}(multiplexer — headless sessions)${RESET}`);
+    console.log(`    ${DIM}Tip: Install cmux for a visual sidebar: ${BOLD}brew install --cask manaflow-ai/cmux/cmux${RESET}`);
+  } else {
+    console.log(`  ${RED}✗${RESET} cmux or tmux ${DIM}(terminal multiplexer for parallel sessions)${RESET}`);
+    console.log(`    Install cmux (recommended): ${BOLD}brew install --cask manaflow-ai/cmux/cmux${RESET}`);
+    console.log(`    Or install tmux: ${BOLD}brew install tmux${RESET}`);
+    missing.push("multiplexer (cmux or tmux)");
   }
 
   // If gh is present, check authentication
@@ -125,6 +139,7 @@ export function checkPrerequisites(
     allPresent: missing.length === 0,
     missing,
     warnings,
+    detectedMux,
   };
 }
 
@@ -369,6 +384,8 @@ export function setupProject(
 
   // --- Summary ---
   console.log("Done! All files are project-level (commit to git).");
+  console.log();
+  console.log(`Multiplexer: ${BOLD}${prereqs.detectedMux}${RESET}${prereqs.detectedMux === "tmux" ? ` ${DIM}(install cmux for visual sidebar)${RESET}` : ""}`);
   console.log();
   console.log("Next steps:");
   console.log("  1. Review: git diff");

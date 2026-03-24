@@ -30,7 +30,7 @@ Your AI coding tool handles one session at a time. A feature with 8 work items m
 
 Switch into any session mid-flight. ninthwave is the orchestration layer; your tools do the work.
 
-**Built on [cmux](https://cmux.com).** cmux provides composable primitives — terminal, workspaces, splits, notifications, CLI control — and invites developers to build their own workflows on top. ninthwave is our answer to that call: an orchestration layer that turns those primitives into a parallel AI coding pipeline.
+**Built on [cmux](https://cmux.com), works with tmux.** cmux provides composable primitives — terminal, workspaces, splits, notifications, CLI control — and invites developers to build their own workflows on top. ninthwave is our answer to that call: an orchestration layer that turns those primitives into a parallel AI coding pipeline. Already using tmux? ninthwave auto-detects it and works out of the box.
 
 ## See It Work
 
@@ -132,7 +132,7 @@ All items merged. Version bump: 1.4.0 → 1.5.0 (CHANGELOG updated)
 | Phase | What happens |
 |-------|-------------|
 | **Select** | Choose items by feature, priority, domain, or all-at-once |
-| **Launch** | Each item gets a git worktree + full AI coding session via cmux |
+| **Launch** | Each item gets a git worktree + full AI coding session via your multiplexer (cmux or tmux) |
 | **Monitor** | `orchestrate` daemon polls CI, dispatches failures to workers, forwards review feedback, handles rebases |
 | **Merge** | Auto-merge after approval, on CI pass, or confirm each one |
 | **Finalize** | Version bump, changelog, cleanup. Offer to continue with next batch. |
@@ -158,8 +158,10 @@ curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/install
 | Dependency | Purpose | Install |
 |------------|---------|---------|
 | AI coding tool | Runs the sessions | [Claude Code](https://claude.ai/download), [OpenCode](https://opencode.ai), or [Copilot CLI](https://docs.github.com/en/copilot) |
-| [cmux](https://cmux.com) | Parallel terminal sessions with visual sidebar | `brew install --cask manaflow-ai/cmux/cmux` |
+| [cmux](https://cmux.com) **or** [tmux](https://github.com/tmux/tmux) | Parallel terminal sessions | cmux *(recommended)*: `brew install --cask manaflow-ai/cmux/cmux`<br>tmux: `brew install tmux` |
 | [gh](https://cli.github.com) | PR operations | `brew install gh && gh auth login` |
+
+> **cmux vs tmux:** cmux provides a visual sidebar showing all active sessions with live status. tmux works as a headless alternative — same orchestration, no GUI. If you already have tmux, ninthwave auto-detects it. Install cmux for the best experience.
 
 ### Set up a project
 
@@ -189,6 +191,34 @@ One developer runs setup. The team gets everything via `git pull`.
 **Cross-repo by convention.** Work items can target different repositories via a `Repo:` field. Sibling directories resolve automatically — no config file required.
 
 Works for a solo dev decomposing a weekend feature and a team dividing a quarterly milestone.
+
+## Using with tmux
+
+ninthwave auto-detects your multiplexer. If cmux is installed, it's preferred. Otherwise, tmux is used automatically.
+
+To explicitly select a multiplexer:
+
+```bash
+# Via CLI flag
+ninthwave start C-UO-1 --mux tmux
+ninthwave orchestrate --items C-UO-1,H-UO-2 --mux tmux
+
+# Via environment variable (persists for the session)
+export NINTHWAVE_MUX=tmux
+```
+
+**Differences when using tmux:**
+
+| Feature | cmux | tmux |
+|---------|------|------|
+| Visual sidebar | ✓ Live status indicators | ✗ No sidebar |
+| Switch sessions | Click in sidebar | `tmux attach -t nw-1` |
+| Session management | Automatic | `tmux list-sessions` to see `nw-*` sessions |
+| Orchestration | Full | Full |
+| CI monitoring | Full | Full |
+| PR feedback loop | Full | Full |
+
+All orchestration features work identically — the only difference is the UI.
 
 <!-- PLACEHOLDER: docs/assets/pr-feedback-loop.png
      Shows a GitHub PR titled "feat: Add onboarding checklist (H-UO-3)"

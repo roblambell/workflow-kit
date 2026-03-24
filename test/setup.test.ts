@@ -103,14 +103,41 @@ describe("checkPrerequisites", () => {
     expect(result.allPresent).toBe(true);
     expect(result.missing).toEqual([]);
     expect(result.warnings).toEqual([]);
+    expect(result.detectedMux).toBe("cmux");
   });
 
-  it("detects missing cmux and prints install instructions", () => {
+  it("detects tmux as multiplexer when cmux is not available", () => {
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (...args: unknown[]) => logs.push(args.join(" "));
 
-    const commandExists: CommandChecker = (cmd) => cmd !== "cmux";
+    // gh and tmux available, cmux not available
+    const commandExists: CommandChecker = (cmd) => cmd === "gh" || cmd === "tmux";
+    const ghAuthCheck: AuthChecker = () => ({
+      authenticated: true,
+      stderr: "",
+    });
+
+    const result = checkPrerequisites(commandExists, ghAuthCheck);
+
+    console.log = origLog;
+
+    expect(result.allPresent).toBe(true);
+    expect(result.missing).toEqual([]);
+    expect(result.detectedMux).toBe("tmux");
+
+    // Should show tmux detected and suggest cmux upgrade
+    const output = logs.join("\n");
+    expect(output).toContain("tmux");
+    expect(output).toContain("cmux");
+  });
+
+  it("reports missing multiplexer when neither cmux nor tmux is available", () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+
+    const commandExists: CommandChecker = (cmd) => cmd === "gh";
     const ghAuthCheck: AuthChecker = () => ({
       authenticated: true,
       stderr: "",
@@ -121,12 +148,13 @@ describe("checkPrerequisites", () => {
     console.log = origLog;
 
     expect(result.allPresent).toBe(false);
-    expect(result.missing).toContain("cmux");
+    expect(result.missing).toContain("multiplexer (cmux or tmux)");
+    expect(result.detectedMux).toBeNull();
 
-    // Should print install instructions
+    // Should suggest both install options
     const output = logs.join("\n");
-    expect(output).toContain("cmux");
     expect(output).toContain("brew install --cask manaflow-ai/cmux/cmux");
+    expect(output).toContain("brew install tmux");
   });
 
   it("detects missing gh and prints install instructions", () => {
@@ -153,7 +181,7 @@ describe("checkPrerequisites", () => {
     expect(output).toContain("brew install gh");
   });
 
-  it("detects both cmux and gh missing", () => {
+  it("detects both multiplexer and gh missing", () => {
     const commandExists: CommandChecker = () => false;
     const ghAuthCheck: AuthChecker = () => ({
       authenticated: false,
@@ -163,8 +191,9 @@ describe("checkPrerequisites", () => {
     const result = checkPrerequisites(commandExists, ghAuthCheck);
 
     expect(result.allPresent).toBe(false);
-    expect(result.missing).toContain("cmux");
+    expect(result.missing).toContain("multiplexer (cmux or tmux)");
     expect(result.missing).toContain("gh");
+    expect(result.detectedMux).toBeNull();
   });
 
   it("warns when gh is installed but not authenticated", () => {
@@ -196,7 +225,8 @@ describe("checkPrerequisites", () => {
 
   it("does not check gh auth when gh is missing", () => {
     let authCheckCalled = false;
-    const commandExists: CommandChecker = (cmd) => cmd !== "gh";
+    // cmux available so multiplexer check passes, but gh missing
+    const commandExists: CommandChecker = (cmd) => cmd === "cmux";
     const ghAuthCheck: AuthChecker = () => {
       authCheckCalled = true;
       return { authenticated: false, stderr: "" };
@@ -205,6 +235,18 @@ describe("checkPrerequisites", () => {
     checkPrerequisites(commandExists, ghAuthCheck);
 
     expect(authCheckCalled).toBe(false);
+  });
+
+  it("prefers cmux over tmux when both are available", () => {
+    const commandExists: CommandChecker = () => true;
+    const ghAuthCheck: AuthChecker = () => ({
+      authenticated: true,
+      stderr: "",
+    });
+
+    const result = checkPrerequisites(commandExists, ghAuthCheck);
+
+    expect(result.detectedMux).toBe("cmux");
   });
 });
 
