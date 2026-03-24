@@ -49,22 +49,6 @@ Key files: `core/orchestrator.ts`, `core/commands/orchestrate.ts`, `core/command
 ## Engineering Review (vision exploration, 2026-03-24)
 
 
-### Docs: Engineering review — core orchestrator and state machine (H-ENG-1)
-
-**Priority:** High
-**Source:** Vision — comprehensive architecture audit
-**Depends on:** None
-
-Run `/plan-eng-review` on the core orchestrator: state machine (`core/orchestrator.ts`), command driver (`core/commands/orchestrate.ts`), and supporting modules (shell execution, git operations, lock management). Audit: state transition correctness, error handling at boundaries, race conditions in concurrent operations, recovery robustness, and test coverage gaps. Document findings in a `docs/reviews/eng-review-orchestrator.md` file. For each finding that requires a code change, add a new TODO item to TODOS.md with the appropriate priority, description, and test plan.
-
-**Test plan:**
-- Run `/plan-eng-review` targeting orchestrator modules
-- Verify review document is comprehensive (covers all 13 states and transitions)
-- Verify each actionable finding has a corresponding TODO with acceptance criteria
-
-Acceptance: `docs/reviews/eng-review-orchestrator.md` exists with structured findings. Every actionable finding (not just observations) has a corresponding TODO added to TODOS.md. Review covers: state transitions, error handling, race conditions, recovery paths, and test coverage. No code changes in this TODO — findings only.
-
-Key files: `core/orchestrator.ts`, `core/commands/orchestrate.ts`, `core/shell.ts`, `core/git.ts`, `core/lock.ts`, `test/orchestrator.test.ts`, `test/orchestrate.test.ts`
 
 ---
 
@@ -262,6 +246,228 @@ Key files: `core/mux.ts`, `test/mux.test.ts`
 
 Acceptance: `isWorkerAlive` uses per-line matching or word-boundary regex. No false positives from partial ID matches. Tests cover the edge case. No regression.
 
+Key files: `core/commands/orchestrate.ts`, `test/orchestrator.test.ts`
+
+---
+
+## Orchestrator Review Findings (eng-review H-ENG-1, 2026-03-24)
+
+
+### Fix: Add timeout support to shell.ts run() (H-SHL-1)
+
+**Priority:** High
+**Source:** Eng review H-ENG-1 — finding F5
+**Depends on:** None
+
+`Bun.spawnSync` in `run()` can block indefinitely. Git commands that prompt for SSH credentials, encounter network timeouts, or deadlock on large repos will hang the orchestrator's event loop. Since the event loop is single-threaded, a single hung command blocks all processing. Add an optional `timeout` parameter to `run()` with sensible defaults (30s for git, 60s for gh). Use Bun's `timeout` option in `spawnSync`. Return a timeout-specific error that callers can handle.
+
+**Test plan:**
+- Unit test: run() with timeout kills process and returns non-zero exit code after timeout
+- Unit test: run() without timeout still works (backward compatible)
+- Unit test: timeout error message is distinguishable from normal exit code errors
+- Edge case: very short timeout (1ms) doesn't cause flaky behavior
+
+Acceptance: `run()` accepts an optional `timeout` parameter. Commands that exceed the timeout are killed and return a timeout error. Existing callers are unaffected (no breaking changes). Tests pass.
+
+Key files: `core/shell.ts`, `test/shell.test.ts`
+
+---
+
+### Fix: TOCTOU race in lock.ts acquireLock (H-LCK-1)
+
+**Priority:** High
+**Source:** Eng review H-ENG-1 — finding F6
+**Depends on:** None
+
+In `acquireLock`, two processes can both detect a stale lock and race to acquire it. Process A acquires the lock, then process B removes A's lock (thinking it's still stale) and acquires its own. Both believe they hold the lock. Fix by adding a verification step after PID file write: re-read the PID file and verify `process.pid` matches. If another process stole the lock, retry. This turns the TOCTOU into a detect-and-retry pattern with atomic verification.
+
+**Test plan:**
+- Unit test: acquireLock succeeds on first try when lock is free
+- Unit test: acquireLock detects stale lock and recovers
+- Unit test: acquireLock times out when lock is held by a live process
+- Unit test: verify-after-write detects stolen lock and retries
+- Edge case: PID file is deleted between write and verify (treat as stolen)
+
+Acceptance: Lock acquisition is safe against concurrent stale-lock recovery. PID is verified after write. Existing timeout and backoff behavior preserved. Tests pass.
+
+Key files: `core/lock.ts`, `test/lock.test.ts`
+
+---
+
+### Fix: Guard asap merge strategy against CHANGES_REQUESTED (H-ORC-2)
+
+**Priority:** High
+**Source:** Eng review H-ENG-1 — finding F3
+**Depends on:** None
+
+With `mergeStrategy: "asap"`, `evaluateMerge` triggers a merge when CI passes regardless of review state. A PR with explicit "changes requested" review decision would still be auto-merged. In repos without branch protection, this could merge PRs that a human explicitly flagged for revision. Add a guard: if `reviewDecision === "CHANGES_REQUESTED"`, transition to `review-pending` instead of merging, even with `asap` strategy. This respects explicit human feedback in all modes.
+
+**Test plan:**
+- Unit test: asap strategy with CHANGES_REQUESTED → review-pending (not merging)
+- Unit test: asap strategy with no review → merging (unchanged behavior)
+- Unit test: asap strategy with APPROVED → merging (unchanged behavior)
+- Unit test: asap strategy with REVIEW_REQUIRED → merging (unchanged, no explicit rejection)
+
+Acceptance: The `asap` merge strategy no longer auto-merges PRs with `CHANGES_REQUESTED`. Other review states are unchanged. Tests pass. No regression in existing merge strategy tests.
+
+Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
+
+---
+
+### Fix: Persist ciFailCount across crash recovery (M-REC-1)
+
+**Priority:** Medium
+**Source:** Eng review H-ENG-1 — finding F11
+**Depends on:** None
+
+`reconstructState` rebuilds items from disk/GitHub but resets `ciFailCount` to 0. After a restart, an item that already exhausted its CI retries gets a fresh budget, wasting CI resources on persistently failing items. The daemon state file already serializes item state via `serializeOrchestratorState`. Extend it to include `ciFailCount` and restore it during `reconstructState` when the state file is available.
+
+**Test plan:**
+- Unit test: ciFailCount is included in serialized daemon state
+- Unit test: reconstructState restores ciFailCount from state file when available
+- Unit test: reconstructState defaults to 0 when no state file exists
+- Edge case: state file has higher ciFailCount than maxCiRetries (item goes stuck immediately)
+
+Acceptance: `ciFailCount` survives orchestrator restarts when daemon state file is present. Items that exhausted retries before a crash don't get additional retries. Serialization format is backward-compatible. Tests pass.
+
+Key files: `core/daemon.ts`, `core/commands/orchestrate.ts`, `test/orchestrate.test.ts`
+
+---
+
+### Test: Add unit tests for executeRebase action handler (M-TST-2)
+
+**Priority:** Medium
+**Source:** Eng review H-ENG-1 — finding F13
+**Depends on:** None
+
+The `executeRebase` method in `core/orchestrator.ts` has no direct unit tests. It handles rebase message delivery to workers and is a critical recovery mechanism. Add tests covering: successful message send, failure when workspaceRef is missing, failure when `sendMessage` returns false.
+
+**Test plan:**
+- Unit test: executeRebase sends message to workspace and returns success
+- Unit test: executeRebase returns error when workspaceRef is undefined
+- Unit test: executeRebase returns error when sendMessage returns false
+- Unit test: executeRebase uses action.message when provided, falls back to default
+
+Acceptance: All four `executeRebase` paths are covered by unit tests. Tests pass.
+
+Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
+
+---
+
+### Test: Add tests for review-pending with CHANGES_REQUESTED (M-TST-3)
+
+**Priority:** Medium
+**Source:** Eng review H-ENG-1 — finding F14
+**Depends on:** None
+
+The `handleReviewPending` handler has no test for `CHANGES_REQUESTED` review decision or CI regression while in review-pending. Add tests verifying: review-pending stays in review-pending when review is CHANGES_REQUESTED, review-pending behavior when CI regresses to fail.
+
+**Test plan:**
+- Unit test: review-pending with CHANGES_REQUESTED and CI pass → stays review-pending
+- Unit test: review-pending with CHANGES_REQUESTED and CI fail → behavior documented
+- Unit test: review-pending with external merge → transitions to merged
+
+Acceptance: Review-pending edge cases are covered by unit tests. Tests pass.
+
+Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
+
+---
+
+### Test: Add tests for lock.ts timeout and backoff behavior (M-TST-4)
+
+**Priority:** Medium
+**Source:** Eng review H-ENG-1 — finding F15
+**Depends on:** None
+
+`acquireLock` has exponential backoff (10ms → 200ms cap) and timeout (default 5s) with zero test coverage. Also untested: stale lock detection, PID file contents, and `releaseLock` cleanup. Add comprehensive tests for the lock module.
+
+**Test plan:**
+- Unit test: acquireLock succeeds immediately when lock is free
+- Unit test: acquireLock throws after timeout when lock is held
+- Unit test: acquireLock detects stale lock (dead PID) and recovers
+- Unit test: releaseLock cleans up PID file and directory
+- Unit test: isLockStale returns true for missing PID file
+- Unit test: isLockStale returns true for dead process PID
+
+Acceptance: Lock module has comprehensive test coverage including timeout, backoff, stale detection, and cleanup. Tests pass.
+
+Key files: `core/lock.ts`, `test/lock.test.ts`
+
+---
+
+### Test: Add single-cycle multi-step chaining test (H-TST-1)
+
+**Priority:** High
+**Source:** Eng review H-ENG-1 — finding F1
+**Depends on:** None
+
+When `handleImplementing` detects a PR, it falls through to `handlePrLifecycle`. An item can chain through implementing → pr-open → ci-passed → merging in one `processTransitions` call with `asap` strategy. This optimization is correct but untested. Add a dedicated test.
+
+**Test plan:**
+- Unit test: implementing item with snapshot containing prNumber, prState: "open", ciStatus: "pass" reaches "merging" in one processTransitions call (asap strategy)
+- Unit test: same scenario with "approved" strategy reaches "review-pending"
+- Unit test: same scenario with ciStatus: "pending" reaches "ci-pending" (not further)
+
+Acceptance: Multi-step chaining from implementing through merge evaluation is tested for all three merge strategies. Tests pass.
+
+Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
+
+---
+
+### Test: Add basic tests for shell.ts (L-TST-5)
+
+**Priority:** Low
+**Source:** Eng review H-ENG-1 — finding F16
+**Depends on:** None
+
+The `run()` function has zero test coverage. Add basic tests for: successful command execution, non-zero exit code handling, stderr capture, stdout trimming.
+
+**Test plan:**
+- Unit test: run() captures stdout from a simple command
+- Unit test: run() captures stderr
+- Unit test: run() returns correct exit code for failing command
+- Unit test: run() trims whitespace from stdout and stderr
+
+Acceptance: Basic `run()` behavior is covered by tests. Tests pass.
+
+Key files: `core/shell.ts`, `test/shell.test.ts`
+
+---
+
+### Test: Add unit tests for git.ts error handling (L-TST-6)
+
+**Priority:** Low
+**Source:** Eng review H-ENG-1 — finding F17
+**Depends on:** None
+
+All 17 git functions in `git.ts` are tested only indirectly. Add direct tests for error handling paths: non-zero exit codes throw with descriptive messages, helper functions return correct defaults on failure.
+
+**Test plan:**
+- Unit test: git helper throws Error with command name and stderr on failure
+- Unit test: branchExists returns false on non-zero exit
+- Unit test: commitCount returns 0 on failure
+- Unit test: diffStat returns {0, 0} on failure
+- Unit test: getStagedFiles returns [] on failure
+
+Acceptance: Error handling paths in git.ts are directly tested. Tests pass.
+
+Key files: `core/git.ts`, `test/git.test.ts`
+
+---
+
+### Test: Add test for buildSnapshot "ready" status mapping (L-TST-7)
+
+**Priority:** Low
+**Source:** Eng review H-ENG-1 — finding F18
+**Depends on:** None
+
+When `checkPrStatus` returns "ready" (CI pass + review approved), `buildSnapshot` sets `ciStatus: "pass"`, `reviewDecision: "APPROVED"`, and `isMergeable: true`. This compound mapping is untested. Add a test.
+
+**Test plan:**
+- Unit test: buildSnapshot with checkPr returning "ready" status sets ciStatus pass, reviewDecision APPROVED, isMergeable true
+
+Acceptance: The "ready" status mapping in buildSnapshot is tested. Tests pass.
+
 Key files: `core/commands/orchestrate.ts`, `test/orchestrate.test.ts`
 
 ---
@@ -303,6 +509,43 @@ Key files: `core/mux.ts`, `core/commands/orchestrate.ts`, `test/mux.test.ts`
 Acceptance: `extractTodoText` has unit tests covering edge cases. Cross-repo cleanup path in `cmdClean` has tests. All new tests pass. No regression.
 
 Key files: `core/commands/start.ts`, `core/commands/clean.ts`, `test/start.test.ts`, `test/clean.test.ts`
+
+---
+
+### Refactor: Return actual success/failure from executeClean (L-CLN-1)
+
+**Priority:** Low
+**Source:** Eng review H-ENG-1 — finding F7
+**Depends on:** None
+
+`executeClean` always returns `{ success: true }` regardless of whether `closeWorkspace` or `cleanSingleWorktree` actually succeeded. Return `success: false` with an error message if both operations fail, to aid debugging of systematic cleanup issues.
+
+**Test plan:**
+- Unit test: executeClean returns success when cleanup works
+- Unit test: executeClean returns success when only one operation fails (partial cleanup is OK)
+- Unit test: executeClean returns failure when both operations fail
+
+Acceptance: `executeClean` returns accurate success/failure status. Partial cleanup (one of two operations succeeds) is still reported as success. Tests pass.
+
+Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
+
+---
+
+### Refactor: Extract helpers from orchestrateLoop (L-REF-1)
+
+**Priority:** Low
+**Source:** Eng review H-ENG-1 — finding F20
+**Depends on:** None
+
+The `orchestrateLoop` function handles ~360 lines of logic: supervisor ticks, analytics, webhooks, cost capture, daemon state persistence, cleanup sweeps, and the core loop. Extract post-completion handling into `handleRunComplete()` and per-action execution into `handleActionExecution()` to improve readability without changing behavior.
+
+**Test plan:**
+- Verify all existing orchestrateLoop tests still pass after refactoring
+- No new tests needed — this is a pure refactoring with no behavior changes
+
+Acceptance: `orchestrateLoop` is shorter and delegates to extracted helpers. All existing tests pass without modification. No behavior changes.
+
+Key files: `core/commands/orchestrate.ts`, `test/orchestrate.test.ts`
 
 ---
 
