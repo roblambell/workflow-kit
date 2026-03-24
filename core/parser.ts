@@ -207,10 +207,15 @@ export function expandWildcardDeps(
 
 /**
  * Parse TODOS.md into a structured list of TodoItem objects.
+ *
+ * Options:
+ *   warn — called when an item is skipped (e.g. missing ID) with a
+ *          descriptive message and the 1-based line number of the item header.
  */
 export function parseTodos(
   todosFile: string,
   worktreeDir: string,
+  opts?: { warn?: (message: string, lineNumber: number) => void },
 ): TodoItem[] {
   if (!existsSync(todosFile)) return [];
 
@@ -271,7 +276,15 @@ export function parseTodos(
   let rawLines: string[] = [];
 
   function emitItem(endLine: number) {
-    if (!id) return;
+    if (!id) {
+      if (inItem && opts?.warn) {
+        opts.warn(
+          `Skipping item with no ID at line ${itemStartLine}: "${title}"`,
+          itemStartLine,
+        );
+      }
+      return;
+    }
 
     const status = inProgressIds.has(id) ? "in-progress" : "open";
 

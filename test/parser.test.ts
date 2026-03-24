@@ -171,6 +171,75 @@ describe("parseTodos — malformed fixture", () => {
   });
 });
 
+describe("parseTodos — warn callback on skipped items", () => {
+  it("invokes warn with line number when an item has no ID", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "malformed.md");
+    const warnings: Array<{ message: string; lineNumber: number }> = [];
+    const warn = (message: string, lineNumber: number) => {
+      warnings.push({ message, lineNumber });
+    };
+
+    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.lineNumber).toBe(5); // "### Feat: Item with no ID in header" is line 5
+    expect(warnings[0]!.message).toContain("no ID");
+    expect(warnings[0]!.message).toContain("line 5");
+  });
+
+  it("parsing continues correctly after warning", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "malformed.md");
+    const warnings: Array<{ message: string; lineNumber: number }> = [];
+    const warn = (message: string, lineNumber: number) => {
+      warnings.push({ message, lineNumber });
+    };
+
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
+
+    // The no-ID item is skipped but both valid items are still parsed
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.id)).toContain("H-BK-2");
+    expect(items.map((i) => i.id)).toContain("M-BK-3");
+  });
+
+  it("warn is not called for valid items", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "valid.md");
+    const warnings: Array<{ message: string; lineNumber: number }> = [];
+    const warn = (message: string, lineNumber: number) => {
+      warnings.push({ message, lineNumber });
+    };
+
+    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
+
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("no warn callback does not change behavior", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "malformed.md");
+
+    // No warn option — should not throw
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    expect(items).toHaveLength(2);
+  });
+
+  it("warn message includes the item title", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "malformed.md");
+    const warnings: Array<{ message: string; lineNumber: number }> = [];
+    const warn = (message: string, lineNumber: number) => {
+      warnings.push({ message, lineNumber });
+    };
+
+    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
+
+    expect(warnings[0]!.message).toContain("Item with no ID in header");
+  });
+});
+
 describe("parseTodos — empty fixture", () => {
   it("empty TODOS.md produces no items", () => {
     const repo = setupTempRepo();
