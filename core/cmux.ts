@@ -1,4 +1,7 @@
 import { run } from "./shell.ts";
+import { sendMessageImpl } from "./send-message.ts";
+export type { SendMessageDeps, Runner, Sleeper } from "./send-message.ts";
+export { verifyDelivery } from "./send-message.ts";
 
 /** Check if the cmux binary is available. */
 export function isAvailable(): boolean {
@@ -26,18 +29,21 @@ export function launchWorkspace(
   return match ? match[0] : null;
 }
 
-/** Send a message/text to a cmux workspace. Returns true on success. */
+/**
+ * Send a message to a cmux workspace. Returns true on success.
+ *
+ * Uses paste-then-submit to avoid the race condition where `cmux send`
+ * types text character-by-character and fires Return before the text is
+ * fully entered. Verifies delivery and retries with exponential backoff.
+ */
 export function sendMessage(
   workspaceRef: string,
   message: string,
 ): boolean {
-  const result = run("cmux", [
-    "send",
-    "--workspace",
-    workspaceRef,
-    message,
-  ]);
-  return result.exitCode === 0;
+  return sendMessageImpl(workspaceRef, message, {
+    runner: (cmd, args) => run(cmd, args),
+    sleep: (ms) => Bun.sleepSync(ms),
+  });
 }
 
 /** List all cmux workspaces. Returns the raw output string. */
