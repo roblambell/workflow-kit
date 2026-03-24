@@ -281,26 +281,24 @@ Key files: `.ninthwave/friction.log`, `agents/todo-worker.md`, `core/supervisor.
 
 ## Workspace Lifecycle & Daemon Rebase (friction #23, 2026-03-24)
 
-
-### Fix: Close workspaces for terminal items in final cleanup sweep and on shutdown (M-ORC-4)
+### Fix: Emit clean action when items transition to stuck (M-ORC-3)
 
 **Priority:** Medium
-**Source:** Friction #23 — orphaned workspaces survive orchestrator exit
+**Source:** Friction #23 — orphaned workspaces after stuck items
 **Depends on:** None
 
-Two gaps in the orchestrate event loop:
+`stuckOrRetry()` returns `[]` when an item is permanently stuck — no clean action, so the workspace and worktree are never cleaned up. Same gap in the ci-failed → stuck path in `handlePrLifecycle`.
 
-1. **Final cleanup sweep**: Calls `cleanSingleWorktree` for terminal items but never closes their workspace first. Add `closeWorkspace(item.workspaceRef)` before worktree cleanup.
-2. **Shutdown**: After the loop exits, close workspaces only for terminal items (done, stuck, merged). Do NOT close workspaces for in-flight items (implementing, ci-pending, etc.) — those workers may still be actively running and should survive orchestrator restarts. On restart, `reconstructState` recovers their workspace refs.
+Return `[{ type: "clean", itemId: item.id }]` instead of `[]` in both stuck paths. `executeClean` already handles workspace closure + worktree cleanup correctly.
 
 **Test plan:**
-- Verify `closeWorkspace` called for terminal items in final sweep
-- Verify in-flight item workspaces are NOT closed on shutdown
-- Verify signal handler (SIGINT) triggers terminal-only cleanup
+- Update existing stuck transition tests to expect a `"clean"` action
+- Verify ci-failed → stuck (max retries exceeded) also emits clean action
+- Verify heartbeat timeout → stuck emits clean action
 
-Acceptance: Terminal item workspaces are closed on orchestrator exit. In-flight workers survive restarts. `bun test test/` passes.
+Acceptance: All stuck transitions emit a clean action. Existing tests updated. `bun test test/` passes.
 
-Key files: `core/commands/orchestrate.ts`, `test/orchestrate.test.ts`
+Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
 
 ---
 
