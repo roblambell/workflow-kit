@@ -1,7 +1,7 @@
 ---
 name: ninthwave-upgrade
 description: |
-  Upgrade ninthwave to the latest version. Detects install type (git clone vs vendored),
+  Upgrade ninthwave to the latest version. Detects install type (brew, git clone, or vendored),
   pulls updates, and re-runs setup. Use when asked to "upgrade ninthwave", "update ninthwave",
   or "get latest version".
 allowed-tools:
@@ -15,38 +15,58 @@ user_invocable: true
 
 ## When Invoked
 
-### 1. Detect Install Location
+### 1. Detect Install Type
 
-Read `.ninthwave/dir` to find the ninthwave bundle:
+Check install type in order of priority:
 
-```bash
-NINTHWAVE_DIR="$(cat .ninthwave/dir 2>/dev/null)"
-```
-
-If `.ninthwave/dir` does not exist, tell the user ninthwave is not set up in this project.
-
-### 2. Detect Install Type
-
-Check if the bundle is a git repo:
+**Homebrew install:**
 
 ```bash
-if git -C "$NINTHWAVE_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
-  INSTALL_TYPE="git"
-else
-  INSTALL_TYPE="vendored"
+if brew list ninthwave &>/dev/null; then
+  INSTALL_TYPE="brew"
 fi
 ```
 
-### 3. Show Current Version
+**Git clone install (via `.ninthwave/dir`):**
 
 ```bash
-echo "Current: $(cat .ninthwave/version 2>/dev/null || echo unknown)"
-echo "Install: $INSTALL_TYPE ($NINTHWAVE_DIR)"
+if [ "$INSTALL_TYPE" != "brew" ]; then
+  NINTHWAVE_DIR="$(cat .ninthwave/dir 2>/dev/null)"
+  if [ -n "$NINTHWAVE_DIR" ] && git -C "$NINTHWAVE_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
+    INSTALL_TYPE="git"
+  elif [ -n "$NINTHWAVE_DIR" ]; then
+    INSTALL_TYPE="vendored"
+  else
+    # No .ninthwave/dir and not brew — unknown
+    echo "Cannot detect ninthwave installation. Run 'ninthwave setup' first."
+    exit 1
+  fi
+fi
 ```
 
-### 4. Upgrade
+### 2. Show Current Version
 
-**Git installs:**
+```bash
+echo "Current: $(ninthwave version 2>/dev/null || cat .ninthwave/version 2>/dev/null || echo unknown)"
+echo "Install type: $INSTALL_TYPE"
+```
+
+### 3. Upgrade
+
+**Homebrew installs:**
+
+```bash
+brew update --quiet
+brew upgrade ninthwave
+```
+
+After upgrading, re-run setup to update skill symlinks and agent files:
+
+```bash
+ninthwave setup
+```
+
+**Git clone installs:**
 
 ```bash
 cd "$NINTHWAVE_DIR"
@@ -64,6 +84,12 @@ git log --oneline "$LOCAL..$REMOTE"
 git pull --ff-only origin main
 ```
 
+After pulling, re-run setup:
+
+```bash
+"$NINTHWAVE_DIR/setup" --project-dir "$(git rev-parse --show-toplevel)"
+```
+
 **Vendored installs (no .git):**
 
 Tell the user to re-download:
@@ -73,14 +99,11 @@ To upgrade a vendored install, re-download from GitHub:
     tar -xz --strip-components=1 -C "$NINTHWAVE_DIR"
 ```
 
-### 5. Re-run Setup
-
-After pulling updates, re-run setup to update the CLI shim and agent files:
-
+Then re-run setup:
 ```bash
 "$NINTHWAVE_DIR/setup" --project-dir "$(git rev-parse --show-toplevel)"
 ```
 
-### 6. Report
+### 4. Report
 
 Show the new version and a summary of changes.

@@ -94,7 +94,7 @@ describe("setupProject", () => {
       "utf-8",
     );
     expect(shimContent).toContain("#!/usr/bin/env bash");
-    expect(shimContent).toContain("exec bun run");
+    expect(shimContent).toContain('exec ninthwave "$@"');
 
     // .ninthwave/config exists
     expect(existsSync(join(projectDir, ".ninthwave/config"))).toBe(true);

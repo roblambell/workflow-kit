@@ -101,7 +101,7 @@ export function setupProject(projectDir: string, bundleDir: string): void {
   const shimPath = join(projectDir, ".ninthwave/work");
   writeFileSync(
     shimPath,
-    '#!/usr/bin/env bash\nexec bun run "$(cat "$(dirname "$0")/dir")/core/cli.ts" "$@"\n',
+    '#!/usr/bin/env bash\nexec ninthwave "$@"\n',
   );
   chmodSync(shimPath, 0o755);
   console.log("  .ninthwave/work");
@@ -157,7 +157,7 @@ export function setupProject(projectDir: string, bundleDir: string): void {
       todosPath,
       `# TODOS
 
-<!-- Format guide: see $(cat .ninthwave/dir)/core/docs/todos-format.md -->
+<!-- Format guide: https://github.com/ninthwave-sh/ninthwave/blob/main/core/docs/todos-format.md -->
 `,
     );
     console.log("TODOS.md (created)");

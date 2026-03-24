@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-exec bun run "$(cat "$(dirname "$0")/dir")/core/cli.ts" "$@"
+exec ninthwave "$@"

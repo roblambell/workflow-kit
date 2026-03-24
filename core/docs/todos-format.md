@@ -9,7 +9,7 @@ When `TODOS.md` is cleared down, it should contain:
 ```markdown
 # TODOS
 
-<!-- Format guide: see $(cat .ninthwave/dir)/core/docs/todos-format.md -->
+<!-- Format guide: https://github.com/ninthwave-sh/ninthwave/blob/main/core/docs/todos-format.md -->
 ```
 
 ## Section Headers
