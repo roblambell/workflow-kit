@@ -44,6 +44,22 @@ export function cmdWatchReady(
   return output;
 }
 
+/**
+ * CI check states that indicate a definitive failure.
+ * GitHub returns these from check runs (FAILURE, CANCELLED, TIMED_OUT,
+ * ACTION_REQUIRED, STARTUP_FAILURE) and commit status checks (ERROR).
+ * Without this, only FAILURE was detected — other failure states like ERROR
+ * left ciStatus as "unknown", causing items to stay stuck in ci-pending.
+ */
+export const CI_FAILURE_STATES = new Set([
+  "FAILURE",
+  "ERROR",
+  "CANCELLED",
+  "TIMED_OUT",
+  "STARTUP_FAILURE",
+  "ACTION_REQUIRED",
+]);
+
 export function checkPrStatus(id: string, repoRoot: string): string {
   const branch = `todo/${id}`;
 
@@ -76,7 +92,7 @@ export function checkPrStatus(id: string, repoRoot: string): string {
   if (nonSkipped.length > 0) {
     if (nonSkipped.every((c) => c.state === "SUCCESS")) {
       ciStatus = "pass";
-    } else if (nonSkipped.some((c) => c.state === "FAILURE")) {
+    } else if (nonSkipped.some((c) => CI_FAILURE_STATES.has(c.state))) {
       ciStatus = "fail";
     } else if (nonSkipped.some((c) => c.state === "PENDING")) {
       ciStatus = "pending";
@@ -96,7 +112,10 @@ export function checkPrStatus(id: string, repoRoot: string): string {
     status = "pending";
   }
 
-  return `${id}\t${prNumber}\t${status}`;
+  // Include mergeable status as 4th field for open PRs so the orchestrator
+  // can distinguish CI failures caused by merge conflicts (needs rebase)
+  // from regular CI failures (needs code fix).
+  return `${id}\t${prNumber}\t${status}\t${isMergeable || "UNKNOWN"}`;
 }
 
 /**

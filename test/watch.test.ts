@@ -29,6 +29,7 @@ import {
   findTransitions,
   findGoneItems,
   TRUSTED_ASSOC,
+  CI_FAILURE_STATES,
 } from "../core/commands/watch.ts";
 
 function captureOutput(fn: () => void): string {
@@ -364,7 +365,7 @@ describe("checkPrStatus", () => {
     ]);
 
     const result = checkPrStatus("H-1-1", "/fake/repo");
-    expect(result).toBe("H-1-1\t10\tready");
+    expect(result).toBe("H-1-1\t10\tready\tMERGEABLE");
   });
 
   it("returns ci-passed when CI passes but not approved", () => {
@@ -383,7 +384,7 @@ describe("checkPrStatus", () => {
     ]);
 
     const result = checkPrStatus("H-1-1", "/fake/repo");
-    expect(result).toBe("H-1-1\t10\tci-passed");
+    expect(result).toBe("H-1-1\t10\tci-passed\tMERGEABLE");
   });
 
   it("returns ci-passed when CI passes but not mergeable", () => {
@@ -402,7 +403,7 @@ describe("checkPrStatus", () => {
     ]);
 
     const result = checkPrStatus("H-1-1", "/fake/repo");
-    expect(result).toBe("H-1-1\t10\tci-passed");
+    expect(result).toBe("H-1-1\t10\tci-passed\tCONFLICTING");
   });
 
   it("returns failing when CI fails", () => {
@@ -421,7 +422,7 @@ describe("checkPrStatus", () => {
     ]);
 
     const result = checkPrStatus("H-1-1", "/fake/repo");
-    expect(result).toBe("H-1-1\t10\tfailing");
+    expect(result).toBe("H-1-1\t10\tfailing\tMERGEABLE");
   });
 
   it("returns pending when CI is pending", () => {
@@ -440,7 +441,140 @@ describe("checkPrStatus", () => {
     ]);
 
     const result = checkPrStatus("H-1-1", "/fake/repo");
-    expect(result).toBe("H-1-1\t10\tpending");
+    expect(result).toBe("H-1-1\t10\tpending\tMERGEABLE");
+  });
+
+  // ── CI failure state detection (H-ORC-1) ─────────────────────
+
+  it("returns failing for ERROR check state (commit status API)", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({ reviewDecision: "", mergeable: "MERGEABLE" });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "ERROR", name: "test", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tfailing\tMERGEABLE");
+  });
+
+  it("returns failing for CANCELLED check state", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({ reviewDecision: "", mergeable: "MERGEABLE" });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "CANCELLED", name: "build", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tfailing\tMERGEABLE");
+  });
+
+  it("returns failing for TIMED_OUT check state", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({ reviewDecision: "", mergeable: "MERGEABLE" });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "TIMED_OUT", name: "build", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tfailing\tMERGEABLE");
+  });
+
+  it("returns failing for STARTUP_FAILURE check state", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({ reviewDecision: "", mergeable: "MERGEABLE" });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "STARTUP_FAILURE", name: "build", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tfailing\tMERGEABLE");
+  });
+
+  it("returns failing when mix of SUCCESS and ERROR checks", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({ reviewDecision: "", mergeable: "MERGEABLE" });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "SUCCESS", name: "lint", url: "" },
+      { state: "ERROR", name: "test", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tfailing\tMERGEABLE");
+  });
+
+  it("includes CONFLICTING mergeable status in 4th field", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({ reviewDecision: "", mergeable: "CONFLICTING" });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "FAILURE", name: "test", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tfailing\tCONFLICTING");
+  });
+
+  it("returns UNKNOWN when mergeable field is empty", () => {
+    (gh.prList as Mock).mockImplementation(
+      (_root: string, _branch: string, state: string) => {
+        if (state === "open") return [{ number: 10 }];
+        return [];
+      },
+    );
+    (gh.prView as Mock).mockReturnValue({ reviewDecision: "", mergeable: "" });
+    (gh.prChecks as Mock).mockReturnValue([
+      { state: "PENDING", name: "build", url: "" },
+    ]);
+
+    const result = checkPrStatus("H-1-1", "/fake/repo");
+    expect(result).toBe("H-1-1\t10\tpending\tUNKNOWN");
+  });
+});
+
+describe("CI_FAILURE_STATES", () => {
+  it("includes all expected failure states", () => {
+    expect(CI_FAILURE_STATES.has("FAILURE")).toBe(true);
+    expect(CI_FAILURE_STATES.has("ERROR")).toBe(true);
+    expect(CI_FAILURE_STATES.has("CANCELLED")).toBe(true);
+    expect(CI_FAILURE_STATES.has("TIMED_OUT")).toBe(true);
+    expect(CI_FAILURE_STATES.has("STARTUP_FAILURE")).toBe(true);
+    expect(CI_FAILURE_STATES.has("ACTION_REQUIRED")).toBe(true);
+  });
+
+  it("does not include non-failure states", () => {
+    expect(CI_FAILURE_STATES.has("SUCCESS")).toBe(false);
+    expect(CI_FAILURE_STATES.has("PENDING")).toBe(false);
+    expect(CI_FAILURE_STATES.has("SKIPPED")).toBe(false);
+    expect(CI_FAILURE_STATES.has("NEUTRAL")).toBe(false);
   });
 });
 
