@@ -24,6 +24,7 @@ import { cmdMarkDone } from "./mark-done.ts";
 import { prMerge, prComment, getRepoOwner } from "../gh.ts";
 import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush } from "../git.ts";
 import * as cmux from "../cmux.ts";
+import { reconcile } from "./reconcile.ts";
 import { die } from "../output.ts";
 import type { TodoItem } from "../types.ts";
 import {
@@ -242,6 +243,8 @@ export interface OrchestrateLoopDeps {
   sleep: (ms: number) => Promise<void>;
   log: (entry: LogEntry) => void;
   actionDeps: OrchestratorDeps;
+  /** Reconcile TODOS.md with GitHub state after merge actions. */
+  reconcile?: (todosFile: string, worktreeDir: string, projectRoot: string) => void;
   /** Supervisor dependencies (injected when supervisor is active). */
   supervisorDeps?: SupervisorDeps;
 }
@@ -408,6 +411,30 @@ export async function orchestrateLoop(
         success: result.success,
         error: result.error,
       });
+
+      // After a successful merge, reconcile TODOS.md with GitHub state
+      // so list --ready reflects reality for the rest of the run.
+      if (action.type === "merge" && result.success && deps.reconcile) {
+        try {
+          deps.reconcile(ctx.todosFile, ctx.worktreeDir, ctx.projectRoot);
+          wrappedLog({
+            ts: new Date().toISOString(),
+            level: "info",
+            event: "post_merge_reconcile",
+            itemId: action.itemId,
+          });
+        } catch (e: unknown) {
+          // Non-fatal — reconcile failure shouldn't block the orchestrator
+          const msg = e instanceof Error ? e.message : String(e);
+          wrappedLog({
+            ts: new Date().toISOString(),
+            level: "warn",
+            event: "post_merge_reconcile_error",
+            itemId: action.itemId,
+            error: msg,
+          });
+        }
+      }
     }
 
     // Log state summary
@@ -638,6 +665,7 @@ export async function cmdOrchestrate(
     sleep: (ms) => interruptibleSleep(ms, abortController.signal),
     log: structuredLog,
     actionDeps,
+    reconcile,
     supervisorDeps: supervisorActive ? createSupervisorDeps(structuredLog) : undefined,
   };
 

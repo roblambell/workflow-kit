@@ -46,10 +46,13 @@ This skill interactively selects TODO items, then delegates all orchestration to
 
 **Goal:** Help the user choose which TODO items to work on and how to process them.
 
-1. Run `.ninthwave/work list --ready` to get all available items.
-2. Parse the output and present a summary table to the user showing: ID, priority, domain, title, and estimated complexity. Items with a `Repo:` field will indicate which target repo they belong to.
+> **Rule: Never trust `list --ready` without reconciling first.** TODOS.md may be stale if PRs were merged outside the orchestrator (manually, by another session, or by GitHub auto-merge). Always reconcile before listing.
 
-3. AskUserQuestion -- "How do you want to select items?"
+1. Run `.ninthwave/work reconcile` to sync TODOS.md with GitHub state (marks merged PRs as done, cleans stale worktrees).
+2. Run `.ninthwave/work list --ready` to get all available items.
+3. Parse the output and present a summary table to the user showing: ID, priority, domain, title, and estimated complexity. Items with a `Repo:` field will indicate which target repo they belong to.
+
+4. AskUserQuestion -- "How do you want to select items?"
    - Detect if any feature-code IDs exist (IDs with alphabetic characters like `BF5`, `UO`, `ST`).
    - Options:
      - A) By feature code -- select all items for a specific feature (only if feature IDs detected)
@@ -70,23 +73,23 @@ This skill interactively selects TODO items, then delegates all orchestration to
    - AskUserQuestion -- "Which domain?"
    - Filter items by chosen domain.
 
-4. **Dependency analysis:** Run `.ninthwave/work batch-order <selected-IDs>` to check for dependency chains.
+5. **Dependency analysis:** Run `.ninthwave/work batch-order <selected-IDs>` to check for dependency chains.
 
    - **If all items are in Batch 1** (no dependencies): proceed to conflict check.
    - **If items span multiple batches**: present the batch plan. The orchestrator handles dependency ordering automatically — all selected items can be passed together.
 
-5. Run `.ninthwave/work conflicts <batch-IDs>` to check for file overlaps.
+6. Run `.ninthwave/work conflicts <batch-IDs>` to check for file overlaps.
 
-6. Present the conflict analysis. If conflicts, suggest splitting into sub-batches or lowering the WIP limit.
+7. Present the conflict analysis. If conflicts, suggest splitting into sub-batches or lowering the WIP limit.
 
-7. AskUserQuestion -- "Start this batch?"
+8. AskUserQuestion -- "Start this batch?"
    - Options:
      - A) Start these N items -- launch the orchestrator now
      - B) Remove conflicting items -- run only non-overlapping subset
      - C) Pick manually -- let me choose specific items by ID
      - D) Cancel -- go back to selection
 
-8. **Merge strategy:**
+9. **Merge strategy:**
 
    AskUserQuestion -- "How should PRs be merged?"
    - A) Auto-merge once approved -- merge after approval + CI passes
@@ -95,7 +98,7 @@ This skill interactively selects TODO items, then delegates all orchestration to
 
    Store MERGE_STRATEGY as: `approved` | `asap` | `ask`
 
-9. **WIP limit** (only when total items >= 4):
+10. **WIP limit** (only when total items >= 4):
 
    AskUserQuestion -- "WIP limit? (how many items to process concurrently)"
    - A) 4 (default) -- good balance of parallelism and memory usage
@@ -105,7 +108,7 @@ This skill interactively selects TODO items, then delegates all orchestration to
 
    Store WIP_LIMIT (default: 4).
 
-10. **Supervisor mode:**
+11. **Supervisor mode:**
 
    AskUserQuestion -- "Enable LLM supervisor? (monitors for anomalies, logs friction)"
    - A) Yes (recommended for unattended runs) -- an LLM periodically reviews orchestrator state, detects anomalies, and logs friction
@@ -179,9 +182,11 @@ This skill interactively selects TODO items, then delegates all orchestration to
 
 Phase 3 runs automatically after Phase 2 completes. It checks whether more work was unblocked by the completed batch and offers to continue. In dogfooding mode (developing ninthwave itself), it also reviews the friction log for new actionable entries.
 
-#### Step 1: Check for remaining ready items
+#### Step 1: Reconcile and check for remaining ready items
 
-Run `.ninthwave/work list --ready` to see if any items were unblocked by the batch that just completed.
+Run `.ninthwave/work reconcile` to sync TODOS.md with GitHub state — items merged during the batch are marked done, stale worktrees are cleaned, and TODOS.md is committed/pushed. Never trust `list --ready` without reconciling first.
+
+Then run `.ninthwave/work list --ready` to see if any items were unblocked by the batch that just completed.
 
 - If **no ready items remain**, report "All done — no remaining work items" and exit the loop.
 - If **ready items exist**, continue to Step 2.
