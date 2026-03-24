@@ -103,7 +103,7 @@ if (!command) {
     "  version                                       Print ninthwave version",
   );
   console.log(
-    '  list [--priority P] [--domain D] [--feature F] [--ready]',
+    '  list [--priority P] [--domain D] [--feature F] [--ready] [--backend B]',
   );
   console.log(
     "                                                List TODO items",
@@ -201,13 +201,17 @@ const needsTodos = ![
   "analytics",
 ].includes(command);
 
-if (needsTodos && !existsSync(todosFile)) {
+// list --backend <name> sources from an external backend, not TODOS.md
+const usesExternalBackend =
+  command === "list" && args.includes("--backend");
+
+if (needsTodos && !usesExternalBackend && !existsSync(todosFile)) {
   die(`TODOS.md not found at ${todosFile}`);
 }
 
 switch (command) {
   case "list":
-    cmdList(args, todosFile, worktreeDir);
+    cmdList(args, todosFile, worktreeDir, projectRoot);
     break;
   case "deps":
     cmdDeps(args, todosFile, worktreeDir);

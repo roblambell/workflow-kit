@@ -24,23 +24,23 @@ Key files: `core/commands/orchestrate.ts`, `core/orchestrator.ts`
 
 ---
 
-### Feat: GitHub Issues adapter — read and list issues as work items (H-GHI-1)
+### Feat: Track token usage and cost per worker session (M-ANL-4)
 
-**Priority:** High
-**Source:** Vision — first external task backend for reach expansion
+**Priority:** Medium
+**Source:** Friction log #14 — no model/token/cost tracking in analytics
 **Depends on:** None
 
-Create a `TaskBackend` interface with three operations: `list()`, `read(id)`, `markDone(id)`. Implement `GitHubIssuesBackend` that reads issues from a GitHub repo using `gh` CLI. Map issue fields to `TodoItem` shape: title from issue title, priority from labels (e.g., `priority:high`), domain from milestone name, description from issue body. Filter by label (default: `ninthwave`). Support `ninthwave list --backend github-issues` to list issues from the current repo. This TODO covers read-only operations — write operations come in GHI-2.
+Add cost and token tracking to analytics. When a worker session exits, parse its summary output for token count and cost (Claude Code prints this on exit). Add optional `tokensUsed` and `costUsd` fields to `ItemMetric`. Aggregate totals in `RunMetrics`. Display cost summary in `ninthwave analytics` output. Gracefully handle tools that don't report cost (default to null).
 
 **Test plan:**
-- Unit test: parse GitHub issue JSON into TodoItem shape
-- Unit test: priority label mapping (`priority:high` → high, missing → medium default)
-- Unit test: list with label filter returns only matching issues
-- Edge case: issue with no body, no labels, no milestone (all fields have safe defaults)
+- Unit test: parse Claude Code exit summary for tokens and cost
+- Unit test: aggregate cost across items in RunMetrics
+- Unit test: graceful handling when cost data is unavailable (null fields)
+- Integration: analytics display includes cost column when data exists
 
-Acceptance: `TaskBackend` interface defined in `core/types.ts` with `list()`, `read(id)`, `markDone(id)` methods. `GitHubIssuesBackend` implements `list()` and `read(id)`. `ninthwave list --backend github-issues` displays issues from the current repo. Priority is derived from labels with medium as default. Tests pass.
+Acceptance: `ItemMetric` has optional `tokensUsed` and `costUsd` fields. Cost data is parsed from worker exit output when available. `ninthwave analytics` displays cost totals per run. Fields are null (not 0) when cost data is unavailable. Tests pass.
 
-Key files: `core/backends/github-issues.ts`, `core/types.ts`, `core/commands/list.ts`, `core/gh.ts`
+Key files: `core/analytics.ts`, `core/commands/analytics.ts`, `core/commands/orchestrate.ts`
 
 ---
 

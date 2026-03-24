@@ -4,16 +4,20 @@ import { parseTodos } from "../parser.ts";
 import { die, BOLD, RED, YELLOW, CYAN, DIM, RESET } from "../output.ts";
 import { ID_PATTERN_GLOBAL } from "../types.ts";
 import type { TodoItem } from "../types.ts";
+import { GitHubIssuesBackend } from "../backends/github-issues.ts";
+import { ghInRepo } from "../gh.ts";
 
 export function cmdList(
   args: string[],
   todosFile: string,
   worktreeDir: string,
+  projectRoot?: string,
 ): void {
   let filterPriority = "";
   let filterDomain = "";
   let filterFeature = "";
   let showReady = false;
+  let backend = "";
 
   // Parse args
   let i = 0;
@@ -35,12 +39,25 @@ export function cmdList(
         showReady = true;
         i += 1;
         break;
+      case "--backend":
+        backend = args[i + 1] ?? "";
+        i += 2;
+        break;
       default:
         die(`Unknown option: ${args[i]}`);
     }
   }
 
-  let items = parseTodos(todosFile, worktreeDir);
+  let items: TodoItem[];
+  if (backend === "github-issues") {
+    if (!projectRoot) die("Project root is required for github-issues backend");
+    const ghBackend = new GitHubIssuesBackend(projectRoot!, "ninthwave", ghInRepo);
+    items = ghBackend.list();
+  } else if (backend) {
+    die(`Unknown backend: ${backend}`);
+  } else {
+    items = parseTodos(todosFile, worktreeDir);
+  }
 
   // Apply filters
   if (filterPriority) {
