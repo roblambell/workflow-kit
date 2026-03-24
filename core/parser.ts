@@ -262,6 +262,7 @@ export function parseTodos(
   );
 
   const items: TodoItem[] = [];
+  const seenIds = new Set<string>();
   let currentDomain = "";
 
   // Current item state
@@ -285,6 +286,17 @@ export function parseTodos(
       }
       return;
     }
+
+    if (seenIds.has(id)) {
+      if (opts?.warn) {
+        opts.warn(
+          `Skipping duplicate ID "${id}" at line ${itemStartLine}: "${title}" (first occurrence kept)`,
+          itemStartLine,
+        );
+      }
+      return;
+    }
+    seenIds.add(id);
 
     const status = inProgressIds.has(id) ? "in-progress" : "open";
 

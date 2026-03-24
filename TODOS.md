@@ -6,26 +6,6 @@
 
 
 
-### Fix: Parser should detect and warn on duplicate IDs (M-DP-2)
-
-**Priority:** Medium
-**Source:** Eng review M-ENG-3 finding 1.2
-**Depends on:** None
-
-If two items share the same ID, both are added to the items array. Downstream consumers using `Map(items.map(i => [i.id, i]))` silently pick the last one. Add duplicate detection during parsing: warn on the second occurrence and skip it.
-
-**Test plan:**
-- Unit test: duplicate ID triggers warning via warn callback
-- Unit test: first item is kept, duplicate is skipped
-- Unit test: parsing continues after duplicate is detected
-- Add a `duplicate_ids.md` fixture
-
-Acceptance: Duplicate IDs are detected and the duplicate is skipped with a warning. First occurrence is kept. Tests cover the duplicate detection behavior. No regression in existing parser tests.
-
-Key files: `core/parser.ts`, `test/parser.test.ts`, `test/fixtures/duplicate_ids.md`
-
----
-
 ### Refactor: Remove dead `projectRoot` variable in parseTodos (L-DP-3)
 
 **Priority:** Low

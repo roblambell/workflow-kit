@@ -240,6 +240,69 @@ describe("parseTodos — warn callback on skipped items", () => {
   });
 });
 
+describe("parseTodos — duplicate ID detection", () => {
+  it("duplicate ID triggers warning via warn callback", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "duplicate_ids.md");
+    const warnings: Array<{ message: string; lineNumber: number }> = [];
+    const warn = (message: string, lineNumber: number) => {
+      warnings.push({ message, lineNumber });
+    };
+
+    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.message).toContain("duplicate ID");
+    expect(warnings[0]!.message).toContain("H-TD-1");
+  });
+
+  it("first item is kept, duplicate is skipped", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "duplicate_ids.md");
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+
+    const td1Items = items.filter((i) => i.id === "H-TD-1");
+    expect(td1Items).toHaveLength(1);
+    // First occurrence is kept — it has priority High
+    expect(td1Items[0]!.priority).toBe("high");
+    expect(td1Items[0]!.title).toContain("First item");
+  });
+
+  it("parsing continues after duplicate is detected", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "duplicate_ids.md");
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+
+    // 3 items in the fixture, but one is a duplicate → 2 items parsed
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i.id)).toContain("H-TD-1");
+    expect(items.map((i) => i.id)).toContain("M-TD-2");
+  });
+
+  it("warn callback receives the line number of the duplicate", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "duplicate_ids.md");
+    const warnings: Array<{ message: string; lineNumber: number }> = [];
+    const warn = (message: string, lineNumber: number) => {
+      warnings.push({ message, lineNumber });
+    };
+
+    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
+
+    // The duplicate is at line 16 (### Feat: Duplicate of first item (H-TD-1))
+    expect(warnings[0]!.lineNumber).toBe(16);
+  });
+
+  it("no warn callback does not throw on duplicate", () => {
+    const repo = setupTempRepo();
+    useFixture(repo, "duplicate_ids.md");
+
+    // No warn option — should not throw
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    expect(items).toHaveLength(2);
+  });
+});
+
 describe("parseTodos — empty fixture", () => {
   it("empty TODOS.md produces no items", () => {
     const repo = setupTempRepo();
