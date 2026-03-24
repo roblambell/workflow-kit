@@ -284,9 +284,22 @@ export function cmdStart(
   worktreeDir: string,
   projectRoot: string,
 ): void {
-  if (args.length < 1) die("Usage: ninthwave start <ID1> [ID2...]");
+  // Parse --mux flag before treating remaining args as IDs
+  const ids: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--mux") {
+      const value = args[i + 1];
+      if (value !== "cmux" && value !== "tmux") {
+        die(`Invalid --mux value: "${value ?? ""}". Must be "cmux" or "tmux".`);
+      }
+      process.env.NINTHWAVE_MUX = value;
+      i++; // skip value
+    } else {
+      ids.push(args[i]!);
+    }
+  }
 
-  const ids = args;
+  if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...] [--mux cmux|tmux]");
   const items = parseTodos(todosFile, worktreeDir);
   const itemMap = new Map<string, TodoItem>();
   for (const item of items) {

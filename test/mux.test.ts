@@ -1,4 +1,5 @@
-// Tests for core/mux.ts — Multiplexer interface, CmuxAdapter, and getMux factory.
+// Tests for core/mux.ts — Multiplexer interface, CmuxAdapter, TmuxAdapter,
+// detectMuxType auto-detection, and getMux factory.
 
 import { describe, it, expect, vi } from "vitest";
 
@@ -12,7 +13,29 @@ vi.mock("../core/cmux.ts", () => ({
 }));
 
 import * as cmux from "../core/cmux.ts";
-import { CmuxAdapter, getMux, waitForReady, type Multiplexer } from "../core/mux.ts";
+import {
+  CmuxAdapter,
+  TmuxAdapter,
+  detectMuxType,
+  getMux,
+  waitForReady,
+  type DetectMuxDeps,
+  type Multiplexer,
+} from "../core/mux.ts";
+
+// ── Helper: build injectable DetectMuxDeps ──────────────────────────
+
+function makeDeps(
+  env: Record<string, string | undefined> = {},
+  binaries: string[] = [],
+): DetectMuxDeps {
+  return {
+    env,
+    checkBinary: (name: string) => binaries.includes(name),
+  };
+}
+
+// ── CmuxAdapter tests ───────────────────────────────────────────────
 
 describe("CmuxAdapter", () => {
   it("delegates isAvailable to cmux.isAvailable", () => {
@@ -58,14 +81,106 @@ describe("CmuxAdapter", () => {
   });
 });
 
+// ── detectMuxType tests ─────────────────────────────────────────────
+
+describe("detectMuxType", () => {
+  it("returns cmux when NINTHWAVE_MUX=cmux", () => {
+    const deps = makeDeps({ NINTHWAVE_MUX: "cmux" });
+    expect(detectMuxType(deps)).toBe("cmux");
+  });
+
+  it("returns tmux when NINTHWAVE_MUX=tmux", () => {
+    const deps = makeDeps({ NINTHWAVE_MUX: "tmux" });
+    expect(detectMuxType(deps)).toBe("tmux");
+  });
+
+  it("throws on invalid NINTHWAVE_MUX value", () => {
+    const deps = makeDeps({ NINTHWAVE_MUX: "screen" });
+    expect(() => detectMuxType(deps)).toThrow(
+      'Invalid NINTHWAVE_MUX value: "screen"',
+    );
+  });
+
+  it("NINTHWAVE_MUX overrides session env vars", () => {
+    // Even when inside a cmux session, explicit override wins
+    const deps = makeDeps(
+      { NINTHWAVE_MUX: "tmux", CMUX_WORKSPACE_ID: "some-id" },
+      ["cmux", "tmux"],
+    );
+    expect(detectMuxType(deps)).toBe("tmux");
+  });
+
+  it("picks cmux when CMUX_WORKSPACE_ID is set", () => {
+    const deps = makeDeps({ CMUX_WORKSPACE_ID: "abc-123" });
+    expect(detectMuxType(deps)).toBe("cmux");
+  });
+
+  it("picks tmux when TMUX env var is set", () => {
+    const deps = makeDeps({ TMUX: "/tmp/tmux-501/default,12345,0" });
+    expect(detectMuxType(deps)).toBe("tmux");
+  });
+
+  it("prefers cmux session over tmux session when both present", () => {
+    const deps = makeDeps({
+      CMUX_WORKSPACE_ID: "abc",
+      TMUX: "/tmp/tmux-501/default",
+    });
+    expect(detectMuxType(deps)).toBe("cmux");
+  });
+
+  it("falls back to cmux binary when no session env vars", () => {
+    const deps = makeDeps({}, ["cmux"]);
+    expect(detectMuxType(deps)).toBe("cmux");
+  });
+
+  it("falls back to tmux binary when cmux is not available", () => {
+    const deps = makeDeps({}, ["tmux"]);
+    expect(detectMuxType(deps)).toBe("tmux");
+  });
+
+  it("prefers cmux binary over tmux binary", () => {
+    const deps = makeDeps({}, ["cmux", "tmux"]);
+    expect(detectMuxType(deps)).toBe("cmux");
+  });
+
+  it("throws when no multiplexer is available", () => {
+    const deps = makeDeps({}, []);
+    expect(() => detectMuxType(deps)).toThrow(
+      "No multiplexer available",
+    );
+  });
+});
+
+// ── getMux tests ────────────────────────────────────────────────────
+
 describe("getMux", () => {
-  it("returns a CmuxAdapter by default", () => {
-    const mux = getMux();
+  it("returns CmuxAdapter when detection picks cmux", () => {
+    const deps = makeDeps({ NINTHWAVE_MUX: "cmux" });
+    const mux = getMux(deps);
+    expect(mux).toBeInstanceOf(CmuxAdapter);
+  });
+
+  it("returns TmuxAdapter when detection picks tmux", () => {
+    const deps = makeDeps({ NINTHWAVE_MUX: "tmux" });
+    const mux = getMux(deps);
+    expect(mux).toBeInstanceOf(TmuxAdapter);
+  });
+
+  it("returns TmuxAdapter when inside a tmux session", () => {
+    const deps = makeDeps({ TMUX: "/tmp/tmux-501/default,12345,0" });
+    const mux = getMux(deps);
+    expect(mux).toBeInstanceOf(TmuxAdapter);
+  });
+
+  it("returns CmuxAdapter when inside a cmux session", () => {
+    const deps = makeDeps({ CMUX_WORKSPACE_ID: "abc-123" }, ["cmux"]);
+    const mux = getMux(deps);
     expect(mux).toBeInstanceOf(CmuxAdapter);
   });
 
   it("returns an object satisfying the Multiplexer interface", () => {
-    const mux: Multiplexer = getMux();
+    const deps = makeDeps({ NINTHWAVE_MUX: "cmux" });
+    const mux: Multiplexer = getMux(deps);
     expect(typeof mux.isAvailable).toBe("function");
     expect(typeof mux.launchWorkspace).toBe("function");
     expect(typeof mux.sendMessage).toBe("function");
@@ -73,7 +188,14 @@ describe("getMux", () => {
     expect(typeof mux.listWorkspaces).toBe("function");
     expect(typeof mux.closeWorkspace).toBe("function");
   });
+
+  it("throws with clear message when no mux available", () => {
+    const deps = makeDeps({}, []);
+    expect(() => getMux(deps)).toThrow("No multiplexer available");
+  });
 });
+
+// ── waitForReady tests ──────────────────────────────────────────────
 
 describe("waitForReady", () => {
   it("returns true when screen has stable, substantial content", () => {

@@ -130,9 +130,76 @@ export class TmuxAdapter implements Multiplexer {
   }
 }
 
-/** Return the active multiplexer adapter. */
-export function getMux(): Multiplexer {
-  return new CmuxAdapter();
+/** Supported multiplexer backends. */
+export type MuxType = "cmux" | "tmux";
+
+/** Injectable dependencies for multiplexer detection — enables testing without vi.mock. */
+export interface DetectMuxDeps {
+  env: Record<string, string | undefined>;
+  checkBinary: (name: string) => boolean;
+}
+
+const defaultDetectDeps: DetectMuxDeps = {
+  env: process.env,
+  checkBinary: (name: string): boolean => {
+    const flag = name === "tmux" ? "-V" : "--version";
+    const result = defaultRun(name, [flag]);
+    return result.exitCode === 0;
+  },
+};
+
+/**
+ * Auto-detect the best available multiplexer.
+ *
+ * Detection chain:
+ * 1. NINTHWAVE_MUX env var — explicit override (set by --mux flag)
+ * 2. CMUX_WORKSPACE_ID — inside a cmux session
+ * 3. TMUX env var — inside a tmux session
+ * 4. cmux binary available
+ * 5. tmux binary available
+ * 6. Error — no multiplexer found
+ */
+export function detectMuxType(deps: DetectMuxDeps = defaultDetectDeps): MuxType {
+  const { env, checkBinary } = deps;
+
+  // 1. Explicit override via env var (set by --mux CLI flag)
+  const override = env.NINTHWAVE_MUX;
+  if (override) {
+    if (override !== "cmux" && override !== "tmux") {
+      throw new Error(
+        `Invalid NINTHWAVE_MUX value: "${override}". Must be "cmux" or "tmux".`,
+      );
+    }
+    return override;
+  }
+
+  // 2. Inside a cmux session
+  if (env.CMUX_WORKSPACE_ID) return "cmux";
+
+  // 3. Inside a tmux session
+  if (env.TMUX) return "tmux";
+
+  // 4. cmux binary available
+  if (checkBinary("cmux")) return "cmux";
+
+  // 5. tmux binary available
+  if (checkBinary("tmux")) return "tmux";
+
+  // 6. No multiplexer found
+  throw new Error(
+    "No multiplexer available. Install cmux or tmux, or set NINTHWAVE_MUX=cmux|tmux.",
+  );
+}
+
+/** Return the active multiplexer adapter based on auto-detection. */
+export function getMux(deps?: DetectMuxDeps): Multiplexer {
+  const muxType = detectMuxType(deps);
+  switch (muxType) {
+    case "cmux":
+      return new CmuxAdapter();
+    case "tmux":
+      return new TmuxAdapter();
+  }
 }
 
 /**

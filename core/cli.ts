@@ -107,7 +107,7 @@ if (!command) {
     "  batch-order <ID1> [ID2]...                    Group items into dependency batches",
   );
   console.log(
-    "  start <ID1> [ID2]...                          Launch parallel sessions",
+    "  start <ID1> [ID2]... [--mux cmux|tmux]        Launch parallel sessions",
   );
   console.log(
     "  status                                        Show active worktrees",
@@ -152,7 +152,7 @@ if (!command) {
     "  version-bump                                  Bump version + changelog",
   );
   console.log(
-    "  orchestrate --items ID1,ID2 [options]         Orchestrate parallel processing",
+    "  orchestrate --items ID1,ID2 [--mux cmux|tmux] Orchestrate parallel processing",
   );
   console.log(
     "  repos                                         List discovered repos",
