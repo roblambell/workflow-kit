@@ -140,25 +140,6 @@ Key files: `core/mux.ts`, `core/send-message.ts`, `test/mux.test.ts`
 
 ---
 
-### Fix: TmuxAdapter splitPane returns correct pane ID (M-WRK-5)
-
-**Priority:** Medium
-**Source:** Eng review W-9 — `docs/reviews/eng-review-workers.md`
-**Depends on:** None
-
-`TmuxAdapter.splitPane` (mux.ts lines 92-108) runs `tmux split-window` then `tmux display-message -p '#{pane_id}'` to get the new pane's ID. But `display-message` returns the active pane's ID, which may not be the newly created pane. Fix by using `tmux split-window -P -F '#{pane_id}'` which prints the new pane's ID as output.
-
-**Test plan:**
-- Unit test: splitPane returns the pane ID from split-window output
-- Unit test: splitPane returns fallback when -P flag output is empty
-- Verify via injected ShellRunner mock
-
-Acceptance: `TmuxAdapter.splitPane` uses `split-window -P -F '#{pane_id}'` and returns the correct pane ID. Tests verify correct pane ID is returned. No regression.
-
-Key files: `core/mux.ts`, `test/mux.test.ts`
-
----
-
 ### Fix: Log cleanup failures instead of silently swallowing (M-WRK-6)
 
 **Priority:** Medium
