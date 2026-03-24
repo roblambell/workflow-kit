@@ -133,7 +133,7 @@ All items merged. Version bump: 1.4.0 → 1.5.0 (CHANGELOG updated)
 |-------|-------------|
 | **Select** | Choose items by feature, priority, domain, or all-at-once |
 | **Launch** | Each item gets a git worktree + full AI coding session via cmux |
-| **Monitor** | CI failures dispatched to workers. Review feedback forwarded. Rebases handled. |
+| **Monitor** | `orchestrate` daemon polls CI, dispatches failures to workers, forwards review feedback, handles rebases |
 | **Merge** | Auto-merge after approval, on CI pass, or confirm each one |
 | **Finalize** | Version bump, changelog, cleanup. Offer to continue with next batch. |
 
@@ -206,7 +206,7 @@ Works for a solo dev decomposing a weekend feature and a team dividing a quarter
 
 | Skill | Description |
 |-------|-------------|
-| `/work` | Orchestrate parallel AI coding sessions for selected work items |
+| `/work` | Interactively select work items, then delegate to `ninthwave orchestrate` |
 | `/decompose` | Break a feature spec into PR-sized work items with dependency mapping |
 | `/todo-preview` | Launch port-isolated dev servers for live testing in worktrees |
 | `/ninthwave-upgrade` | Update ninthwave to the latest version |
@@ -229,6 +229,7 @@ All commands are available via `.ninthwave/work`:
 | `mark-done <ID1> [ID2] ...` | Remove completed items from TODOS.md |
 | `version-bump` | Bump version and generate changelog from commits |
 | `clean [ID]` | Remove merged worktrees and close workspaces |
+| `orchestrate --items ID1,ID2 [options]` | Orchestrate parallel processing (launch workers, poll CI, merge PRs) |
 | `repos` | List discovered repos (sibling dirs + repos.conf) |
 
 ### Expected skills (bring your own)
