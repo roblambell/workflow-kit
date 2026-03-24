@@ -947,6 +947,26 @@ Key files: `agents/todo-worker.md`, `core/orchestrator.ts`
 
 ---
 
+### Refactor: Migrate friction log to per-stream directory (M-DET-7)
+
+**Priority:** Medium
+**Source:** Friction #19 — friction log consistency and conflict avoidance
+**Depends on:** None
+
+Replace the single `.ninthwave/friction.log` file with a `.ninthwave/friction/` directory using per-stream files. Each writer owns its own file: `worker-{ID}.yaml` for workers, `grind-cycle-{N}.md` for grind session observations, `supervisor-{date}.yaml` for supervisor anomalies. This eliminates merge conflicts on friction log files (each PR adds a new file, not appending to a shared file) and consolidates friction into the repo (the memory-system friction log becomes a pointer). Update: worker agent prompt, supervisor code, grind skill friction review phase to read from the directory, and add a commit step after friction review/decomposition.
+
+**Test plan:**
+- Verify workers write friction to `worker-{ID}.yaml` in the friction directory
+- Verify grind friction review reads all files in the directory
+- Verify no merge conflicts when multiple workers write friction simultaneously
+- Verify old friction.log entries are migrated
+
+Acceptance: `.ninthwave/friction/` directory exists. Workers, supervisor, and grind loop all write to their own files. Friction review reads the entire directory. The grind skill commits friction as part of its flow. Old single-file friction.log is migrated. No friction data is lost outside the repo. Tests pass.
+
+Key files: `.ninthwave/friction.log`, `agents/todo-worker.md`, `core/supervisor.ts`, `.claude/skills/grind/SKILL.md`
+
+---
+
 ## Vision (recurring, 2026-03-24)
 
 
