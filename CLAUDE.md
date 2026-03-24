@@ -38,7 +38,7 @@ This repo uses ninthwave to develop ninthwave. When working here:
 
 3. **WIP limit ≤ 4.** Each worker session (Claude Code + language server + worktree) consumes ~2-3GB RAM. On a 16GB Mac, WIP limit of 4 is safe; 8 caused an OOM crash. Use `--wip-limit 3` or `--wip-limit 4` until memory-aware defaults ship (M-FIX-3).
 
-4. **Don't parallelize agents in the same working directory.** Two agents creating branches in the same checkout will collide (one checks out a branch, the other loses its working state). Either use the `isolation: "worktree"` agent parameter, or run agents sequentially when they touch the same repo.
+4. **Always use worktree isolation for parallel agents.** When spawning agents that work on branches in the same repo, use `isolation: "worktree"` so each gets its own working copy. Never have two agents share a checkout.
 
 5. **Continuous delivery.** The orchestrator should not stop after one batch. Process all dependency batches sequentially until TODOS.md is empty. If friction was logged during a batch, decompose actionable friction into new TODOs and continue.
 
