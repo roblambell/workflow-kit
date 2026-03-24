@@ -6,6 +6,7 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { totalmem } from "os";
+import { run } from "../shell.ts";
 import {
   Orchestrator,
   type MergeStrategy,
@@ -52,6 +53,28 @@ export function structuredLog(entry: LogEntry): void {
   console.log(JSON.stringify(entry));
 }
 
+// ── Worktree commit tracking ──────────────────────────────────────
+
+/**
+ * Get the ISO timestamp of the most recent commit on a worktree branch.
+ * Returns the ISO 8601 timestamp string, or null if the branch doesn't exist
+ * or has no commits (e.g., just launched, branch not yet created).
+ */
+export function getWorktreeLastCommitTime(
+  projectRoot: string,
+  branchName: string,
+): string | null {
+  try {
+    const result = run("git", ["log", "-1", "--format=%cI", branchName], {
+      cwd: projectRoot,
+    });
+    if (result.exitCode !== 0 || !result.stdout) return null;
+    return result.stdout;
+  } catch {
+    return null;
+  }
+}
+
 // ── Snapshot building ──────────────────────────────────────────────
 
 /**
@@ -63,6 +86,8 @@ export function buildSnapshot(
   projectRoot: string,
   _worktreeDir: string,
   mux: Multiplexer = getMux(),
+  getLastCommitTime: (projectRoot: string, branchName: string) => string | null = getWorktreeLastCommitTime,
+  checkPr: (id: string, projectRoot: string) => string | null = checkPrStatus,
 ): PollSnapshot {
   const items: ItemSnapshot[] = [];
   const readyIds: string[] = [];
@@ -87,7 +112,7 @@ export function buildSnapshot(
     const snap: ItemSnapshot = { id: orchItem.id };
 
     // Check PR status via gh for items past the implementing phase
-    const statusLine = checkPrStatus(orchItem.id, projectRoot);
+    const statusLine = checkPr(orchItem.id, projectRoot);
     if (statusLine) {
       const parts = statusLine.split("\t");
       const prNumStr = parts[1];
@@ -123,9 +148,13 @@ export function buildSnapshot(
       }
     }
 
-    // Check worker alive for early-stage items
+    // Check worker alive and commit freshness for early-stage items
     if (orchItem.state === "launching" || orchItem.state === "implementing") {
       snap.workerAlive = isWorkerAlive(orchItem, mux);
+      const commitTime = getLastCommitTime(projectRoot, `todo/${orchItem.id}`);
+      snap.lastCommitTime = commitTime;
+      // Also store on the orchestrator item so the supervisor can read it
+      orchItem.lastCommitTime = commitTime;
     }
 
     items.push(snap);

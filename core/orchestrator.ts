@@ -37,6 +37,8 @@ export interface OrchestratorItem {
   lastTransition: string;
   /** Number of times CI has failed for this item. */
   ciFailCount: number;
+  /** ISO timestamp of the most recent commit on the worktree branch, or null if none. */
+  lastCommitTime?: string | null;
 }
 
 export interface OrchestratorConfig {
@@ -64,6 +66,8 @@ export interface ItemSnapshot {
   isMergeable?: boolean;
   /** Whether the worker session is alive. */
   workerAlive?: boolean;
+  /** ISO timestamp of the most recent commit on the worktree branch, or null if none beyond base. */
+  lastCommitTime?: string | null;
 }
 
 export interface PollSnapshot {

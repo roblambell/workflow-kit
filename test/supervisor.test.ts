@@ -145,6 +145,79 @@ describe("buildSupervisorPrompt", () => {
     expect(prompt).toContain("frictionObservations");
     expect(prompt).toContain("processImprovements");
   });
+
+  it("includes commit freshness for implementing items with recent commits", () => {
+    const now = new Date("2026-03-24T12:10:00Z");
+    const items = [
+      makeItem("B-1-1", "implementing", {
+        lastCommitTime: "2026-03-24T12:08:00Z", // 2 min ago
+      }),
+    ];
+
+    const elapsed = new Map<string, number>();
+    elapsed.set("B-1-1", 600_000); // 10 min in state
+
+    const prompt = buildSupervisorPrompt([], items, elapsed, now);
+
+    expect(prompt).toContain("B-1-1: state=implementing, elapsed=10min");
+    expect(prompt).toContain("lastCommit=2min ago");
+  });
+
+  it("shows lastCommit=none for implementing items with no commits", () => {
+    const now = new Date("2026-03-24T12:10:00Z");
+    const items = [
+      makeItem("B-2-1", "implementing", {
+        lastCommitTime: null,
+      }),
+    ];
+
+    const elapsed = new Map<string, number>();
+    elapsed.set("B-2-1", 480_000); // 8 min
+
+    const prompt = buildSupervisorPrompt([], items, elapsed, now);
+
+    expect(prompt).toContain("B-2-1: state=implementing, elapsed=8min");
+    expect(prompt).toContain("lastCommit=none");
+  });
+
+  it("includes commit freshness for launching items", () => {
+    const now = new Date("2026-03-24T12:10:00Z");
+    const items = [
+      makeItem("B-3-1", "launching", {
+        lastCommitTime: null, // just launched, no commits
+      }),
+    ];
+
+    const elapsed = new Map<string, number>();
+    elapsed.set("B-3-1", 60_000); // 1 min
+
+    const prompt = buildSupervisorPrompt([], items, elapsed, now);
+
+    expect(prompt).toContain("B-3-1: state=launching, elapsed=1min");
+    expect(prompt).toContain("lastCommit=none");
+  });
+
+  it("does not include commit freshness for non-active states like ci-pending", () => {
+    const now = new Date("2026-03-24T12:10:00Z");
+    const items = [
+      makeItem("B-4-1", "ci-pending"),
+    ];
+
+    const elapsed = new Map<string, number>();
+    elapsed.set("B-4-1", 300_000);
+
+    const prompt = buildSupervisorPrompt([], items, elapsed, now);
+
+    expect(prompt).toContain("B-4-1: state=ci-pending, elapsed=5min");
+    expect(prompt).not.toContain("lastCommit=");
+  });
+
+  it("supervisor prompt instructions reference commit freshness for anomaly detection", () => {
+    const prompt = buildSupervisorPrompt([], [], new Map());
+
+    expect(prompt).toContain("commit freshness");
+    expect(prompt).toContain("lastCommit");
+  });
 });
 
 // ── parseSupervisorResponse ──────────────────────────────────────────

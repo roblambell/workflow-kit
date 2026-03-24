@@ -9,6 +9,7 @@ import {
   reconstructState,
   interruptibleSleep,
   computeDefaultWipLimit,
+  buildSnapshot,
   type LogEntry,
   type OrchestrateLoopDeps,
 } from "../core/commands/orchestrate.ts";
@@ -20,6 +21,7 @@ import {
   type OrchestratorDeps,
 } from "../core/orchestrator.ts";
 import type { TodoItem } from "../core/types.ts";
+import type { Multiplexer } from "../core/mux.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -866,5 +868,102 @@ describe("computeDefaultWipLimit", () => {
     const result = computeDefaultWipLimit();
     expect(result).toBeGreaterThanOrEqual(2);
     expect(typeof result).toBe("number");
+  });
+});
+
+// ── buildSnapshot with lastCommitTime ─────────────────────────────
+
+describe("buildSnapshot lastCommitTime", () => {
+  /** Create a mock multiplexer that reports no workspaces. */
+  function mockMux(workspaces: string = ""): Multiplexer {
+    return {
+      isAvailable: () => true,
+      launchWorkspace: () => null,
+      sendMessage: () => true,
+      readScreen: () => "",
+      listWorkspaces: () => workspaces,
+      closeWorkspace: () => true,
+    };
+  }
+
+  /** No-op checkPr to avoid gh CLI dependency in tests. */
+  const noOpCheckPr = () => null;
+
+  it("includes lastCommitTime for implementing items", () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("HC-1-1"));
+    orch.setState("HC-1-1", "implementing");
+    // Set workspace ref so worker appears alive
+    const item = orch.getItem("HC-1-1")!;
+    item.workspaceRef = "workspace:1";
+
+    const fixedTime = "2026-03-24T12:05:30+00:00";
+    const getLastCommitTime = vi.fn(() => fixedTime);
+    const mux = mockMux("workspace:1");
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, getLastCommitTime, noOpCheckPr);
+
+    // getLastCommitTime was called with the right branch name
+    expect(getLastCommitTime).toHaveBeenCalledWith("/tmp/project", "todo/HC-1-1");
+
+    // Snapshot includes lastCommitTime
+    const snapItem = snapshot.items.find((i) => i.id === "HC-1-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.lastCommitTime).toBe(fixedTime);
+
+    // Orchestrator item also updated
+    expect(orch.getItem("HC-1-1")!.lastCommitTime).toBe(fixedTime);
+  });
+
+  it("lastCommitTime is null when worktree has no commits beyond base", () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("HC-2-1"));
+    orch.setState("HC-2-1", "implementing");
+    const item = orch.getItem("HC-2-1")!;
+    item.workspaceRef = "workspace:2";
+
+    const getLastCommitTime = vi.fn(() => null);
+    const mux = mockMux("workspace:2");
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, getLastCommitTime, noOpCheckPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "HC-2-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.lastCommitTime).toBeNull();
+
+    // Orchestrator item also null
+    expect(orch.getItem("HC-2-1")!.lastCommitTime).toBeNull();
+  });
+
+  it("includes lastCommitTime for launching items (branch may not exist yet)", () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("HC-3-1"));
+    orch.setState("HC-3-1", "launching");
+    const item = orch.getItem("HC-3-1")!;
+    item.workspaceRef = "workspace:3";
+
+    // Branch doesn't exist yet → null
+    const getLastCommitTime = vi.fn(() => null);
+    const mux = mockMux("workspace:3");
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, getLastCommitTime, noOpCheckPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "HC-3-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.lastCommitTime).toBeNull();
+  });
+
+  it("does not query lastCommitTime for non-active states", () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("HC-4-1"));
+    orch.setState("HC-4-1", "ci-pending");
+
+    const getLastCommitTime = vi.fn(() => "2026-03-24T12:00:00+00:00");
+    const mux = mockMux();
+
+    buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, getLastCommitTime, noOpCheckPr);
+
+    // Should not have been called for ci-pending items
+    expect(getLastCommitTime).not.toHaveBeenCalled();
   });
 });

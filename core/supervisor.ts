@@ -80,6 +80,7 @@ export function buildSupervisorPrompt(
   recentLogs: LogEntry[],
   items: OrchestratorItem[],
   elapsedByItem: Map<string, number>,
+  now: Date = new Date(),
 ): string {
   const logSection = recentLogs.length > 0
     ? recentLogs.map((l) => JSON.stringify(l)).join("\n")
@@ -88,7 +89,19 @@ export function buildSupervisorPrompt(
   const itemSection = items.map((item) => {
     const elapsedMs = elapsedByItem.get(item.id) ?? 0;
     const elapsedMin = Math.round(elapsedMs / 60_000);
-    return `- ${item.id}: state=${item.state}, elapsed=${elapsedMin}min, ciFailCount=${item.ciFailCount}${item.prNumber ? `, PR=#${item.prNumber}` : ""}`;
+    let line = `- ${item.id}: state=${item.state}, elapsed=${elapsedMin}min, ciFailCount=${item.ciFailCount}`;
+    if (item.prNumber) line += `, PR=#${item.prNumber}`;
+    // Include commit freshness for active worker items
+    if (item.state === "launching" || item.state === "implementing") {
+      if (item.lastCommitTime) {
+        const commitAge = now.getTime() - new Date(item.lastCommitTime).getTime();
+        const commitAgeMin = Math.round(commitAge / 60_000);
+        line += `, lastCommit=${commitAgeMin}min ago`;
+      } else {
+        line += `, lastCommit=none`;
+      }
+    }
+    return line;
   }).join("\n");
 
   return `You are an engineering supervisor reviewing a parallel AI coding pipeline.
@@ -103,7 +116,7 @@ ${logSection}
 
 Analyze the pipeline state and respond with a JSON object (no markdown fencing) containing:
 
-1. "anomalies": string[] — Anything stuck or abnormal. A worker idle in "implementing" for >10 minutes, CI cycling on the same error, a PR open with no commits for 10+ minutes.
+1. "anomalies": string[] — Anything stuck or abnormal. Use commit freshness (lastCommit) to distinguish active workers (recent commits) from stalled ones (no recent commits). A worker in "implementing" for 8 min with commits 2 min ago is healthy; one with no commits for 8 min is likely stuck. Also flag CI cycling on the same error, a PR open with no activity, etc.
 
 2. "interventions": { type: "send-message" | "adjust-wip" | "escalate", itemId?: string, message?: string, wipLimit?: number, reason?: string }[] — Concrete actions to unstick the pipeline. Only suggest when clearly warranted.
 
@@ -183,6 +196,7 @@ export function supervisorTick(
     state.logsSinceLastTick,
     items,
     elapsedByItem,
+    now,
   );
 
   const response = deps.callLLM(prompt);
