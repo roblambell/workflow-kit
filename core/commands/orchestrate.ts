@@ -22,7 +22,7 @@ import { launchSingleItem, detectAiTool } from "./start.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { cmdMarkDone } from "./mark-done.ts";
 import { prMerge, prComment, getRepoOwner } from "../gh.ts";
-import { fetchOrigin, ffMerge } from "../git.ts";
+import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush } from "../git.ts";
 import * as cmux from "../cmux.ts";
 import { die } from "../output.ts";
 import type { TodoItem } from "../types.ts";
@@ -597,6 +597,9 @@ export async function cmdOrchestrate(
     closeWorkspace: cmux.closeWorkspace,
     fetchOrigin,
     ffMerge,
+    gitAdd,
+    gitCommit,
+    gitPush,
   };
 
   // Graceful SIGINT handling

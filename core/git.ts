@@ -130,6 +130,21 @@ export function commitCount(
   return parseInt(result.stdout, 10) || 0;
 }
 
+/** Stage files in the index. */
+export function gitAdd(repoRoot: string, files: string[]): void {
+  git(repoRoot, ["add", ...files]);
+}
+
+/** Create a commit with the given message. */
+export function gitCommit(repoRoot: string, message: string): void {
+  git(repoRoot, ["commit", "-m", message]);
+}
+
+/** Push to origin. */
+export function gitPush(repoRoot: string): void {
+  git(repoRoot, ["push", "--quiet"]);
+}
+
 /** Get the current branch name. */
 export function getCurrentBranch(repoRoot: string): string {
   return git(repoRoot, ["branch", "--show-current"]);

@@ -53,6 +53,9 @@ function mockActionDeps(overrides?: Partial<OrchestratorDeps>): OrchestratorDeps
     closeWorkspace: vi.fn(() => true),
     fetchOrigin: vi.fn(),
     ffMerge: vi.fn(),
+    gitAdd: vi.fn(),
+    gitCommit: vi.fn(),
+    gitPush: vi.fn(),
     ...overrides,
   };
 }
@@ -570,6 +573,62 @@ describe("orchestrateLoop", () => {
     expect(logs.some((l) => l.event === "shutdown" && l.reason === "SIGINT")).toBe(true);
     // Loop exited cleanly — did not process to completion
     expect(logs.some((l) => l.event === "orchestrate_complete")).toBe(false);
+  });
+
+  it("calls mark-done with commit+push on transition to done", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("D-1-1"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    const actionDeps = mockActionDeps();
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1: // Ready
+          return { items: [], readyIds: ["D-1-1"] };
+        case 2: // Worker alive
+          return { items: [{ id: "D-1-1", workerAlive: true }], readyIds: [] };
+        case 3: // PR with CI pass → merge
+          return {
+            items: [{ id: "D-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        case 4: // After merge, item in merged state → mark-done
+          return { items: [], readyIds: [] };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps,
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps);
+
+    // Item reaches done
+    expect(orch.getItem("D-1-1")!.state).toBe("done");
+
+    // mark-done was called
+    expect(actionDeps.cmdMarkDone).toHaveBeenCalledWith(["D-1-1"], defaultCtx.todosFile);
+
+    // git add, commit, push were called to persist the change
+    expect(actionDeps.gitAdd).toHaveBeenCalledWith(defaultCtx.projectRoot, [defaultCtx.todosFile]);
+    expect(actionDeps.gitCommit).toHaveBeenCalledWith(
+      defaultCtx.projectRoot,
+      "chore: mark D-1-1 done in TODOS.md",
+    );
+    expect(actionDeps.gitPush).toHaveBeenCalledWith(defaultCtx.projectRoot);
+
+    // mark-done action was logged
+    expect(
+      logs.some((l) => l.event === "action_execute" && l.action === "mark-done" && l.itemId === "D-1-1"),
+    ).toBe(true);
   });
 
   it("emits structured log with state_summary on each cycle", async () => {

@@ -67,6 +67,9 @@ function mockDeps(overrides?: Partial<OrchestratorDeps>): OrchestratorDeps {
     closeWorkspace: vi.fn(() => true),
     fetchOrigin: vi.fn(),
     ffMerge: vi.fn(),
+    gitAdd: vi.fn(),
+    gitCommit: vi.fn(),
+    gitPush: vi.fn(),
     ...overrides,
   };
 }
@@ -339,13 +342,14 @@ describe("Orchestrator", () => {
 
   // ── 10. Merged → Done ─────────────────────────────────────────
 
-  it("merged transitions to done on next cycle", () => {
+  it("merged transitions to done and emits mark-done action", () => {
     orch.addItem(makeTodo("H-1-1"));
     orch.setState("H-1-1", "merged");
 
-    orch.processTransitions(emptySnapshot());
+    const actions = orch.processTransitions(emptySnapshot());
 
     expect(orch.getItem("H-1-1")!.state).toBe("done");
+    expect(actions).toContainEqual({ type: "mark-done", itemId: "H-1-1" });
   });
 
   // ── 11. Batch complete → launch next ───────────────────────────
@@ -954,7 +958,7 @@ describe("Orchestrator", () => {
 
     // ── mark-done ─────────────────────────────────────────────
 
-    it("mark-done: calls cmdMarkDone and transitions to done", () => {
+    it("mark-done: calls cmdMarkDone, commits, pushes, and transitions to done", () => {
       const deps = mockDeps();
       orch.addItem(makeTodo("H-1-1"));
       orch.setState("H-1-1", "merged");
@@ -967,6 +971,12 @@ describe("Orchestrator", () => {
 
       expect(result.success).toBe(true);
       expect(deps.cmdMarkDone).toHaveBeenCalledWith(["H-1-1"], defaultCtx.todosFile);
+      expect(deps.gitAdd).toHaveBeenCalledWith(defaultCtx.projectRoot, [defaultCtx.todosFile]);
+      expect(deps.gitCommit).toHaveBeenCalledWith(
+        defaultCtx.projectRoot,
+        "chore: mark H-1-1 done in TODOS.md",
+      );
+      expect(deps.gitPush).toHaveBeenCalledWith(defaultCtx.projectRoot);
       expect(orch.getItem("H-1-1")!.state).toBe("done");
     });
 

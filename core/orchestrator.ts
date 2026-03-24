@@ -123,6 +123,9 @@ export interface OrchestratorDeps {
   closeWorkspace: (workspaceRef: string) => boolean;
   fetchOrigin: (repoRoot: string, branch: string) => void;
   ffMerge: (repoRoot: string, branch: string) => void;
+  gitAdd: (repoRoot: string, files: string[]) => void;
+  gitCommit: (repoRoot: string, message: string) => void;
+  gitPush: (repoRoot: string) => void;
 }
 
 /** Result of executing a single action. */
@@ -287,7 +290,7 @@ export class Orchestrator {
 
       case "merged":
         this.transition(item, "done");
-        return [];
+        return [{ type: "mark-done", itemId: item.id }];
 
       case "done":
       case "stuck":
@@ -635,7 +638,7 @@ export class Orchestrator {
     return { success: true };
   }
 
-  /** Mark an item as done in TODOS.md and transition to done state. */
+  /** Mark an item as done in TODOS.md, commit, and push. */
   private executeMarkDone(
     item: OrchestratorItem,
     ctx: ExecutionContext,
@@ -643,6 +646,9 @@ export class Orchestrator {
   ): ActionResult {
     try {
       deps.cmdMarkDone([item.id], ctx.todosFile);
+      deps.gitAdd(ctx.projectRoot, [ctx.todosFile]);
+      deps.gitCommit(ctx.projectRoot, `chore: mark ${item.id} done in TODOS.md`);
+      deps.gitPush(ctx.projectRoot);
       this.transition(item, "done");
       return { success: true };
     } catch (e: unknown) {
