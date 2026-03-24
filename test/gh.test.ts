@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import * as shell from "../core/shell.ts";
-import { prMerge, prComment } from "../core/gh.ts";
+import { prMerge, prComment, prLock, getRepoOwner } from "../core/gh.ts";
 
 const runSpy = vi.spyOn(shell, "run");
 
@@ -110,5 +110,53 @@ describe("prComment", () => {
       ["pr", "comment", "5", "--body", body],
       { cwd: "/repo" },
     );
+  });
+});
+
+describe("prLock", () => {
+  it("returns true when gh api lock succeeds", () => {
+    runSpy.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "repo") {
+        return { stdout: "owner/repo", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    const result = prLock("/repo", 42);
+
+    expect(result).toBe(true);
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      [
+        "api",
+        "--method",
+        "PUT",
+        "repos/owner/repo/issues/42/lock",
+        "-f",
+        "lock_reason=resolved",
+      ],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("returns false when gh api lock fails", () => {
+    runSpy.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "repo") {
+        return { stdout: "owner/repo", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "403 Forbidden", exitCode: 1 };
+    });
+
+    const result = prLock("/repo", 99);
+
+    expect(result).toBe(false);
+  });
+
+  it("returns false when getRepoOwner fails", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "not a repo", exitCode: 1 });
+
+    const result = prLock("/repo", 42);
+
+    expect(result).toBe(false);
   });
 });
