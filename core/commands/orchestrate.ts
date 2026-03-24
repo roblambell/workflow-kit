@@ -691,7 +691,7 @@ function handleActionExecution(
     });
   }
 
-  // After a successful merge, reconcile TODOS.md with GitHub state
+  // After a successful merge, reconcile todo files with GitHub state
   // so list --ready reflects reality for the rest of the run.
   if (action.type === "merge" && result.success && deps.reconcile) {
     try {
@@ -726,7 +726,7 @@ export interface OrchestrateLoopDeps {
   actionDeps: OrchestratorDeps;
   /** Get available free memory in bytes. Defaults to os.freemem(). Injectable for testing. */
   getFreeMem?: () => number;
-  /** Reconcile TODOS.md with GitHub state after merge actions. */
+  /** Reconcile todo files with GitHub state after merge actions. */
   reconcile?: (todosDir: string, worktreeDir: string, projectRoot: string) => void;
   /** Supervisor dependencies (injected when supervisor is active). */
   supervisorDeps?: SupervisorDeps;
@@ -1202,7 +1202,7 @@ export async function cmdOrchestrate(
   // Validate all items exist
   for (const id of itemIds) {
     if (!todoMap.has(id)) {
-      die(`Item ${id} not found in TODOS.md`);
+      die(`Item ${id} not found in todo files`);
     }
   }
 

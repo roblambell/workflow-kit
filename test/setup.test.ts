@@ -295,15 +295,14 @@ describe("setupProject", () => {
     expect(domainsContent).toContain("Domain mappings");
   });
 
-  it("creates TODOS.md", () => {
+  it("creates .ninthwave/todos/ directory", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
     setupProject(projectDir, bundleDir, allPresentDeps);
 
-    expect(existsSync(join(projectDir, "TODOS.md"))).toBe(true);
-    const content = readFileSync(join(projectDir, "TODOS.md"), "utf-8");
-    expect(content).toContain("# TODOS");
+    expect(existsSync(join(projectDir, ".ninthwave/todos"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
   });
 
   it("creates relative skill symlinks in .claude/skills/", () => {
@@ -442,7 +441,7 @@ describe("setupProject", () => {
 
     // Verify setup completed
     expect(existsSync(join(projectDir, ".ninthwave/work"))).toBe(true);
-    expect(existsSync(join(projectDir, "TODOS.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/todos"))).toBe(true);
   });
 });
 
@@ -467,7 +466,7 @@ describe("setupProject — idempotency", () => {
       join(projectDir, ".ninthwave/domains.conf"),
       "utf-8",
     );
-    const firstTodos = readFileSync(join(projectDir, "TODOS.md"), "utf-8");
+    const firstTodosExists = existsSync(join(projectDir, ".ninthwave/todos"));
     const firstGitignore = readFileSync(
       join(projectDir, ".gitignore"),
       "utf-8",
@@ -486,8 +485,8 @@ describe("setupProject — idempotency", () => {
     expect(
       readFileSync(join(projectDir, ".ninthwave/domains.conf"), "utf-8"),
     ).toBe(firstDomains);
-    expect(readFileSync(join(projectDir, "TODOS.md"), "utf-8")).toBe(
-      firstTodos,
+    expect(existsSync(join(projectDir, ".ninthwave/todos"))).toBe(
+      firstTodosExists,
     );
     expect(readFileSync(join(projectDir, ".gitignore"), "utf-8")).toBe(
       firstGitignore,
@@ -598,21 +597,22 @@ describe("setupProject — preserves existing config", () => {
     expect(domains).toBe("auth=auth\n");
   });
 
-  it("does not overwrite existing TODOS.md", () => {
+  it("does not overwrite existing todos directory", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
-    // Pre-create TODOS.md with content
+    // Pre-create todos directory with content
+    mkdirSync(join(projectDir, ".ninthwave/todos"), { recursive: true });
     writeFileSync(
-      join(projectDir, "TODOS.md"),
-      "# My Project TODOs\n\n- [ ] Task 1\n",
+      join(projectDir, ".ninthwave/todos/1-test--H-FOO-1.md"),
+      "# Test item (H-FOO-1)\n",
     );
 
     setupProject(projectDir, bundleDir, allPresentDeps);
 
-    const todos = readFileSync(join(projectDir, "TODOS.md"), "utf-8");
-    expect(todos).toContain("My Project TODOs");
-    expect(todos).toContain("Task 1");
+    expect(existsSync(join(projectDir, ".ninthwave/todos/1-test--H-FOO-1.md"))).toBe(true);
+    const content = readFileSync(join(projectDir, ".ninthwave/todos/1-test--H-FOO-1.md"), "utf-8");
+    expect(content).toContain("H-FOO-1");
   });
 });
 
@@ -645,7 +645,7 @@ describe("setupGlobal", () => {
     }
   });
 
-  it("does not create .ninthwave/, TODOS.md, or agent files", () => {
+  it("does not create .ninthwave/, todos directory, or agent files", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -658,7 +658,7 @@ describe("setupGlobal", () => {
 
     // No project-level artifacts
     expect(existsSync(join(fakeHome, ".ninthwave"))).toBe(false);
-    expect(existsSync(join(fakeHome, "TODOS.md"))).toBe(false);
+    expect(existsSync(join(fakeHome, ".ninthwave/todos"))).toBe(false);
     expect(existsSync(join(fakeHome, ".claude/agents"))).toBe(false);
   });
 

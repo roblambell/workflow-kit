@@ -37,7 +37,7 @@ export function cmdDeps(
         const icon = dep.status === "in-progress" ? "[~]" : "[ ]";
         console.log(`  ${icon} ${depId}: ${dep.title} (${dep.status})`);
       } else {
-        console.log(`  [x] ${depId}: (completed -- removed from TODOS.md)`);
+        console.log(`  [x] ${depId}: (completed)`);
       }
     }
   }
@@ -77,7 +77,7 @@ export function cmdDeps(
       if (bundleItem) {
         console.log(`  ${bid}: ${bundleItem.title}`);
       } else {
-        console.log(`  ${bid}: (not found in TODOS.md)`);
+        console.log(`  ${bid}: (not found)`);
       }
     }
   }

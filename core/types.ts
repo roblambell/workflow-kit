@@ -11,7 +11,7 @@ export interface TodoItem {
   dependencies: string[]; // list of dependency IDs
   bundleWith: string[]; // list of bundle IDs
   status: Status;
-  filePath: string; // path to the individual todo file (or "" for legacy TODOS.md items)
+  filePath: string; // path to the individual todo file
   repoAlias: string; // "" | "self" | "hub" | repo name
   rawText: string; // full markdown text of the TODO item
   filePaths: string[]; // extracted file paths mentioned in the item

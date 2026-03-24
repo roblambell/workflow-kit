@@ -34,7 +34,7 @@ import { cmdOrchestrate } from "./commands/orchestrate.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
 import { cmdAnalytics } from "./commands/analytics.ts";
 import { cmdStop } from "./commands/stop.ts";
-import { cmdMigrateTodos, cmdGenerateTodos } from "./commands/migrate-todos.ts";
+import { cmdGenerateTodos } from "./commands/generate-todos.ts";
 
 // Resolve project root via git
 function getProjectRoot(): string {
@@ -138,7 +138,7 @@ if (!command) {
     "  clean-single <ID>                             Clean single worktree (no side effects)",
   );
   console.log(
-    "  mark-done <ID1> [ID2]...                      Remove completed items from TODOS.md",
+    "  mark-done <ID1> [ID2]...                      Remove completed todo files",
   );
   console.log(
     "  merged-ids                                    List IDs of already-merged worktree items",
@@ -174,13 +174,10 @@ if (!command) {
     "  repos                                         List discovered repos",
   );
   console.log(
-    "  reconcile                                     Sync TODOS.md with merged PRs",
+    "  reconcile                                     Sync todo files with merged PRs",
   );
   console.log(
     "  analytics [--all]                             Show orchestration performance trends",
-  );
-  console.log(
-    "  migrate-todos                                 Migrate TODOS.md to file-per-todo format",
   );
   console.log(
     "  generate-todos                                Generate TODOS.md from individual todo files",
@@ -207,7 +204,6 @@ const needsTodos = ![
   "pr-activity",
   "version-bump",
   "analytics",
-  "migrate-todos",
   "generate-todos",
 ].includes(command);
 
@@ -295,9 +291,6 @@ switch (command) {
     break;
   case "analytics":
     cmdAnalytics(args, projectRoot);
-    break;
-  case "migrate-todos":
-    cmdMigrateTodos(projectRoot);
     break;
   case "generate-todos":
     cmdGenerateTodos(todosDir, join(projectRoot, "TODOS.md"));

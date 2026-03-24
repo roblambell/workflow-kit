@@ -49,8 +49,8 @@ ninthwave/                          # The repo IS the installable bundle
 ├── core/
 │   ├── cli.ts                      # CLI entry point (TypeScript + Bun)
 │   ├── commands/                   # CLI command implementations
-│   ├── parser.ts                   # TODOS.md parser
-│   └── docs/todos-format.md        # TODOS.md format reference
+│   ├── parser.ts                   # Reads .ninthwave/todos/ directory
+│   └── docs/todos-format.md        # Todo file format reference
 ├── skills/                         # SKILL.md files (cross-tool standard)
 │   ├── work/SKILL.md               # /work — batch orchestration
 │   ├── decompose/SKILL.md          # /decompose — feature breakdown
@@ -81,8 +81,8 @@ ninthwave/                          # The repo IS the installable bundle
 
 ### How the Pieces Fit
 
-1. **User runs `/decompose`** — the decompose skill explores the codebase, breaks the feature into work items, writes them to `TODOS.md`
-2. **User runs `/work`** — the work skill reads `TODOS.md`, presents selection options, then calls `.ninthwave/work start` to create worktrees and launch AI sessions via cmux
+1. **User runs `/decompose`** — the decompose skill explores the codebase, breaks the feature into work items, writes them to `.ninthwave/todos/`
+2. **User runs `/work`** — the work skill reads `.ninthwave/todos/`, presents selection options, then calls `.ninthwave/work start` to create worktrees and launch AI sessions via cmux
 3. **`.ninthwave/work start`** (shim → `ninthwave` binary) auto-detects the AI tool, creates a git worktree per item, allocates a partition for port/DB isolation, and launches each session with the `todo-worker` agent
 4. **Each worker session** reads `CLAUDE.md`/`AGENTS.md` for project conventions, implements the TODO, runs tests, creates a PR, then idles waiting for orchestrator messages
 5. **The orchestrator** (the `/work` skill session) monitors PR status, dispatches CI fixes and review feedback to workers via `cmux send`, merges PRs, rebases dependents, and handles version bumping

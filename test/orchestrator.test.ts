@@ -51,7 +51,7 @@ function snapshotWith(
 const defaultCtx: ExecutionContext = {
   projectRoot: "/tmp/test-project",
   worktreeDir: "/tmp/test-project/.worktrees",
-  todosDir: "/tmp/test-project/TODOS.md",
+  todosDir: "/tmp/test-project/.ninthwave/todos",
   aiTool: "claude",
 };
 

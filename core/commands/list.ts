@@ -70,7 +70,7 @@ export function cmdList(
     items = items.filter((item) => item.id.includes(filterFeature));
   }
 
-  // Ready filter: only items whose deps are all satisfied (not in TODOS.md)
+  // Ready filter: only items whose deps are all satisfied (not in todo files)
   if (showReady) {
     const allIds = new Set(
       parseTodos(todosDir, worktreeDir).map((it) => it.id),

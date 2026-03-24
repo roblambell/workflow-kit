@@ -371,7 +371,7 @@ function scaffold(projectDir: string, bundleDir: string): void {
       domainsPath,
       `# Domain mappings for ninthwave
 # Format: pattern=domain_key
-# Patterns are matched case-insensitively against section headers in TODOS.md.
+# Patterns are matched case-insensitively against todo file domain fields.
 # Lines starting with # are comments.
 #
 # Examples:

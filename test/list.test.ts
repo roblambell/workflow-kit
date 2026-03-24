@@ -110,8 +110,8 @@ describe("list", () => {
 
     // M-CI-1 has no deps -> ready
     // C-UO-1 has no deps -> ready
-    // H-CI-2 depends on M-CI-1 (still in TODOS.md) -> not ready
-    // H-UO-2 depends on C-UO-1 and M-CI-1 (both in TODOS.md) -> not ready
+    // H-CI-2 depends on M-CI-1 (still in todo files) -> not ready
+    // H-UO-2 depends on C-UO-1 and M-CI-1 (both in todo files) -> not ready
     expect(output).toContain("M-CI-1");
     expect(output).toContain("C-UO-1");
     expect(output).not.toContain("H-CI-2");

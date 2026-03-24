@@ -1,7 +1,7 @@
 // Test helper functions for ninthwave TypeScript tests.
 // Provides temp git repo setup/teardown and fixture utilities.
 
-import { mkdtempSync, mkdirSync, cpSync, rmSync, existsSync, readFileSync, writeFileSync } from "fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { tmpdir } from "os";
@@ -65,22 +65,7 @@ export function setupTempRepoPair(): string {
 }
 
 /**
- * Copy a fixture file as TODOS.md into the given repo.
- */
-export function useFixture(repo: string, fixtureName: string): void {
-  const src = join(TEST_DIR, "fixtures", fixtureName);
-  const dest = join(repo, "TODOS.md");
-  cpSync(src, dest);
-
-  // Stage and commit so git tracks it
-  git(repo, "add", "TODOS.md");
-  spawnSync("git", ["-C", repo, "commit", "-m", "Add TODOS.md", "--quiet"], {
-    stdio: "pipe",
-  });
-}
-
-/**
- * Convert a TODOS.md fixture into directory-based todo files.
+ * Convert a fixture file into directory-based todo files.
  * Reads the fixture, splits it into individual items, and writes them
  * as separate .md files in repo/.ninthwave/todos/.
  * Returns the path to the todos directory.
@@ -91,7 +76,7 @@ export function useFixtureDir(repo: string, fixtureName: string): string {
   const todosDir = join(repo, ".ninthwave", "todos");
   mkdirSync(todosDir, { recursive: true });
 
-  // Parse the TODOS.md to extract items with their section context
+  // Parse the fixture to extract items with their section context
   const lines = content.split("\n");
   let currentSection = "";
   let currentItemLines: string[] = [];
@@ -178,7 +163,7 @@ export function useFixtureDir(repo: string, fixtureName: string): string {
 
 /**
  * Write inline todo content as individual directory-based todo files.
- * Parses TODOS.md-format content and writes to repo/.ninthwave/todos/.
+ * Parses todo content and writes to repo/.ninthwave/todos/.
  * Returns the path to the todos directory.
  *
  * Usage:
