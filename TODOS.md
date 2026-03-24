@@ -5,6 +5,7 @@
 ## Multiplexer Abstraction (vision L-VIS-3, 2026-03-24)
 
 
+
 ### Feat: Add tmux multiplexer adapter (H-MUX-2)
 
 **Priority:** High
@@ -68,6 +69,7 @@ Key files: `README.md`, `core/commands/setup.ts`, `test/setup.test.ts`
 ## Communication Reliability (friction log, 2026-03-24)
 
 
+
 ### Fix: cmux send should reliably submit messages to worker sessions (H-COM-1)
 
 **Priority:** High
@@ -82,21 +84,8 @@ Key files: `core/cmux.ts`, `test/cmux.test.ts`
 
 ---
 
-### Feat: Reconcile command handles TODOS.md merge conflicts intelligently (M-COM-2)
-
-**Priority:** Medium
-**Source:** Friction log #21
-**Depends on:** None
-
-When `ninthwave reconcile` encounters a merge conflict in TODOS.md during `git pull --rebase`, it should resolve it intelligently instead of failing: detect both sides, apply mark-done removals AND new item additions, then continue the rebase. Currently, manual conflict resolution with `checkout --theirs` loses content from one side. Consider detecting the conflict, parsing both versions, and producing a merged result that preserves all non-done items.
-
-Acceptance: `ninthwave reconcile` handles TODOS.md rebase conflicts without losing items. New items from one side and mark-done removals from the other are both preserved. Test verifies conflict resolution with a simulated three-way merge.
-
-Key files: `core/commands/reconcile.ts`, `test/reconcile.test.ts`
-
----
-
 ## Vision (recurring, 2026-03-24)
+
 
 
 ### Feat: Explore vision, scope next iteration, and decompose into TODOs (L-VIS-4)
