@@ -24,6 +24,7 @@ No build step — Bun executes TypeScript directly. Changes take effect immediat
 
 - Conventional commits: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`
 - Tests live in `test/` using vitest with `vi.mock` for external dependencies
+- **Mock isolation:** `bun test` (our CI runner) does not isolate `vi.mock` between test files — mocks leak across files and break unrelated tests. Prefer dependency injection (pass collaborators as function arguments) over `vi.mock`. Only use `vi.mock` when the mocked module is not imported by any other test file. When in doubt, inject.
 - No runtime dependencies beyond Bun — keep it self-contained
 - Convention over configuration — sensible defaults, minimal config files
 
