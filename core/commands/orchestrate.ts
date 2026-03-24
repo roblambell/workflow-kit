@@ -202,11 +202,17 @@ export function buildSnapshot(
 }
 
 /** Check if a worker's cmux workspace is still running. */
-function isWorkerAlive(item: OrchestratorItem, mux: Multiplexer): boolean {
+export function isWorkerAlive(item: OrchestratorItem, mux: Multiplexer): boolean {
   if (!item.workspaceRef) return false;
   const workspaces = mux.listWorkspaces();
   if (!workspaces) return false;
-  return workspaces.includes(item.workspaceRef) || workspaces.includes(item.id);
+  const escapedRef = item.workspaceRef.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedId = item.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const refRe = new RegExp(`\\b${escapedRef}\\b`);
+  const idRe = new RegExp(`\\b${escapedId}\\b`);
+  return workspaces.split("\n").some(
+    (line) => refRe.test(line) || idRe.test(line),
+  );
 }
 
 // ── Adaptive poll interval ─────────────────────────────────────────

@@ -13,6 +13,7 @@ import {
   launchStatusPane,
   closeStatusPane,
   isInsideWorkspace,
+  isWorkerAlive,
   forkDaemon,
   STATUS_PANE_NAME,
   type LogEntry,
@@ -21,6 +22,7 @@ import {
 } from "../core/commands/orchestrate.ts";
 import {
   Orchestrator,
+  type OrchestratorItem,
   type PollSnapshot,
   type ItemSnapshot,
   type ExecutionContext,
@@ -1413,5 +1415,88 @@ describe("orchestrateLoop post-merge conflict detection", () => {
       (call: unknown[]) => typeof call[1] === "string" && (call[1] as string).includes("merge conflicts"),
     );
     expect(conflictRebaseCalls.length).toBe(0);
+  });
+});
+
+// ── isWorkerAlive per-line matching (L-WRK-9) ────────────────────
+
+describe("isWorkerAlive", () => {
+  function mockMux(workspaces: string): Multiplexer {
+    return {
+      isAvailable: () => true,
+      launchWorkspace: () => null,
+      splitPane: () => null,
+      sendMessage: () => true,
+      readScreen: () => "",
+      listWorkspaces: () => workspaces,
+      closeWorkspace: () => true,
+    };
+  }
+
+  function makeItem(id: string, workspaceRef?: string): OrchestratorItem {
+    return {
+      id,
+      todo: makeTodo(id),
+      state: "implementing",
+      workspaceRef,
+      lastTransition: new Date().toISOString(),
+      ciFailCount: 0,
+      retryCount: 0,
+    };
+  }
+
+  it("returns true for an exact workspace ref match", () => {
+    const mux = mockMux("  workspace:1  ✳ TODO T-1-1: some task");
+    const item = makeItem("T-1-1", "workspace:1");
+    expect(isWorkerAlive(item, mux)).toBe(true);
+  });
+
+  it("returns true when matching by item ID", () => {
+    const mux = mockMux("  workspace:5  ✳ TODO T-2-1: another task");
+    const item = makeItem("T-2-1", "workspace:5");
+    expect(isWorkerAlive(item, mux)).toBe(true);
+  });
+
+  it("does not false-positive: workspace:1 must not match workspace:10", () => {
+    const mux = mockMux("  workspace:10  ✳ TODO T-3-1: unrelated task");
+    const item = makeItem("T-1-1", "workspace:1");
+    expect(isWorkerAlive(item, mux)).toBe(false);
+  });
+
+  it("does not false-positive: item ID partial match across lines", () => {
+    // T-1 should not match a line containing T-10
+    const mux = mockMux("  workspace:5  ✳ TODO T-10-1: unrelated task");
+    const item = makeItem("T-1", "workspace:99");
+    expect(isWorkerAlive(item, mux)).toBe(false);
+  });
+
+  it("returns false when workspaceRef is undefined", () => {
+    const mux = mockMux("  workspace:1  ✳ TODO T-1-1: some task");
+    const item = makeItem("T-1-1", undefined);
+    expect(isWorkerAlive(item, mux)).toBe(false);
+  });
+
+  it("returns false when workspace listing is empty", () => {
+    const mux = mockMux("");
+    const item = makeItem("T-1-1", "workspace:1");
+    expect(isWorkerAlive(item, mux)).toBe(false);
+  });
+
+  it("matches correctly in a multi-line listing", () => {
+    const listing = [
+      "  workspace:10  ✳ TODO T-10-1: task ten",
+      "  workspace:1  ✳ TODO T-1-1: task one",
+      "  workspace:2  ✳ TODO T-2-1: task two",
+    ].join("\n");
+    const mux = mockMux(listing);
+
+    const item1 = makeItem("T-1-1", "workspace:1");
+    expect(isWorkerAlive(item1, mux)).toBe(true);
+
+    const item10 = makeItem("T-10-1", "workspace:10");
+    expect(isWorkerAlive(item10, mux)).toBe(true);
+
+    const itemMissing = makeItem("T-99-1", "workspace:99");
+    expect(isWorkerAlive(itemMissing, mux)).toBe(false);
   });
 });
