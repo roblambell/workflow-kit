@@ -11,19 +11,6 @@
 
 
 
-### Feat: Add binary compilation and release pipeline (H-BREW-3)
-
-**Priority:** High
-**Source:** Brew distribution pivot
-**Depends on:** H-BREW-2
-
-Add `bun build --compile` support. Add build scripts to `package.json` for macOS ARM64, macOS x64, and Linux x64 targets. Create `.github/workflows/release.yml` that triggers on tag push (`v*`), builds binaries, creates a GitHub Release with attached binaries. Add a compile smoke test to CI (`bun build --compile` + `./dist/ninthwave version`). Add `dist/` to `.gitignore`.
-
-Acceptance: `bun run build` produces a working binary at `dist/ninthwave`. The binary runs `ninthwave version`, `ninthwave setup --help`, and `ninthwave list` correctly. CI includes a compile smoke test. Release workflow builds and publishes binaries on tag push.
-
-Key files: `package.json`, `.github/workflows/release.yml` (new), `.github/workflows/ci.yml`, `.gitignore`
-
----
 
 ### Feat: Create Homebrew tap and formula (H-BREW-4)
 
@@ -37,20 +24,6 @@ Create the `ninthwave-sh/homebrew-tap` repository with a Homebrew formula at `Fo
 Acceptance: `brew tap ninthwave-sh/tap && brew install ninthwave` installs successfully. `ninthwave version` works after install. `ninthwave setup` in a project creates correct symlinks pointing into the Homebrew share directory.
 
 Key files: `Formula/ninthwave.rb` (new, in homebrew-tap repo)
-
----
-
-### Refactor: Simplify shim and update upgrade skill for brew (M-BREW-5)
-
-**Priority:** Medium
-**Source:** Brew distribution pivot
-**Depends on:** H-BREW-2
-
-Update the shim template in `core/commands/setup.ts` to generate `exec ninthwave "$@"` (no bun dependency, no `.ninthwave/dir`). Keep writing `.ninthwave/dir` for backward compatibility with existing skill references. Rewrite `skills/ninthwave-upgrade/SKILL.md` to detect install type: if `brew list ninthwave` succeeds, suggest `brew upgrade ninthwave`; if `.ninthwave/dir` points to a git repo, keep current git-pull behavior. Update TODOS.md template comment to use a URL instead of the `$(cat .ninthwave/dir)` shell expansion.
-
-Acceptance: New projects get the simplified shim. The upgrade skill correctly detects brew vs git installs. TODOS.md template uses a stable reference for the format guide.
-
-Key files: `core/commands/setup.ts`, `skills/ninthwave-upgrade/SKILL.md`, `.ninthwave/work`
 
 ---
 
@@ -69,6 +42,7 @@ Key files: `README.md`, `CONTRIBUTING.md`, `setup` (delete), `remote-install.sh`
 ---
 
 ## Event-Driven Orchestrator (orchestrator pivot, 2026-03-23)
+
 
 
 
@@ -134,6 +108,7 @@ Key files: `agents/todo-worker.md`
 ---
 
 ## Vision (recurring, 2026-03-23)
+
 
 
 

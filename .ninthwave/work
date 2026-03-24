@@ -1,2 +1,7 @@
 #!/usr/bin/env bash
-exec ninthwave "$@"
+# Try installed binary first, fall back to dev mode
+if command -v ninthwave &>/dev/null; then
+  exec ninthwave "$@"
+else
+  exec bun run "$(cat "$(dirname "$0")/dir")/core/cli.ts" "$@"
+fi
