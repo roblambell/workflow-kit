@@ -32,7 +32,7 @@ This skill is highly interactive. You MUST use your interactive question tool to
 
 ## Instructions
 
-This skill interactively selects TODO items, then delegates all orchestration to `ninthwave orchestrate` — a deterministic TypeScript daemon that handles launching workers, polling CI, merging PRs, cleaning up, and marking items done. The skill's job is Phase 1 (interactive selection) and Phase 2 (launching the daemon). Everything after that is automated.
+This skill interactively selects TODO items, then delegates all orchestration to `ninthwave orchestrate` — a deterministic TypeScript daemon that handles launching workers, polling CI, merging PRs, cleaning up, and marking items done. The skill has three phases: Phase 1 (interactive selection), Phase 2 (launching the daemon), and Phase 3 (continuous delivery loop — checking for remaining work and looping back).
 
 > **CLI shortcut:** You can skip the interactive selection and run the orchestrator directly from any terminal:
 > ```
@@ -170,6 +170,63 @@ This skill interactively selects TODO items, then delegates all orchestration to
    - C) Done -- accept the results as-is
 
 6. **Crash recovery:** If the orchestrator is interrupted (crash, Ctrl-C, terminal closed), re-running the same command reconstructs state from existing worktrees and GitHub PRs and resumes automatically.
+
+---
+
+### Phase 3: CONTINUOUS DELIVERY LOOP
+
+**Goal:** After the orchestrator finishes a batch, check for remaining work and loop back to keep delivering until everything is done or the user stops.
+
+Phase 3 runs automatically after Phase 2 completes. It checks whether more work was unblocked by the completed batch and offers to continue. In dogfooding mode (developing ninthwave itself), it also reviews the friction log for new actionable entries.
+
+#### Step 1: Check for remaining ready items
+
+Run `.ninthwave/work list --ready` to see if any items were unblocked by the batch that just completed.
+
+- If **no ready items remain**, report "All done — no remaining work items" and exit the loop.
+- If **ready items exist**, continue to Step 2.
+
+#### Step 2: Dogfooding — friction log review (ninthwave projects only)
+
+**Detection:** Check if `skills/work/SKILL.md` exists in the project root. If it does, this is a ninthwave project and dogfooding mode is active.
+
+If in dogfooding mode:
+
+1. Read the friction log at `~/.claude/projects/-Users-roblambell-code-ninthwave/memory/project_dogfood_friction.md` (or `.ninthwave/friction.log` if it exists).
+2. Identify any **new actionable entries** — friction items that don't already have corresponding TODOs in `TODOS.md`.
+3. If actionable entries exist, present them to the user:
+
+   AskUserQuestion — "Friction log has N new actionable entries. Decompose into TODOs?"
+   - A) Yes — decompose into TODOs, then include them in the next batch
+   - B) Skip — continue with existing ready items only
+   - C) Show entries — display the friction entries before deciding
+
+   If the user chooses A, use the `/decompose` skill (or `.ninthwave/work decompose`) to break friction entries into TODOs. The newly created items will appear in the next `list --ready` call.
+
+If **not** in dogfooding mode, skip this step entirely.
+
+#### Step 3: Offer to continue
+
+Present the remaining ready items and ask the user whether to continue.
+
+AskUserQuestion — "Batch complete. N items are now ready. Continue?"
+- A) Continue with all N items — launch the next batch with the same merge strategy and WIP limit
+- B) Select items — go back to Phase 1 to pick specific items
+- C) Stop — exit the delivery loop
+
+**If the user chooses A:** Loop back to Phase 2 with the same MERGE_STRATEGY, WIP_LIMIT, and SUPERVISOR_ENABLED settings. Use the full list of ready items.
+
+**If the user chooses B:** Loop back to Phase 1 (SELECT) with fresh item selection.
+
+**If the user chooses C:** Summarize total progress across all batches (items completed, items remaining, items stuck) and exit.
+
+#### Loop termination
+
+The Phase 2 → Phase 3 loop continues until one of these conditions is met:
+
+1. **No ready items remain** — `list --ready` returns zero items. Report "All done" and exit.
+2. **User chooses to stop** — user selects "Stop" at the continuation prompt.
+3. **All items stuck** — every remaining item is in a stuck/blocked state with no path forward. Report the stuck items and exit.
 
 ---
 
