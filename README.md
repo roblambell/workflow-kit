@@ -30,6 +30,8 @@ Your AI coding tool handles one session at a time. A feature with 8 work items m
 
 Switch into any session mid-flight. ninthwave is the orchestration layer; your tools do the work.
 
+**Built on [cmux](https://cmux.com).** cmux provides composable primitives — terminal, workspaces, splits, notifications, CLI control — and invites developers to build their own workflows on top. ninthwave is our answer to that call: an orchestration layer that turns those primitives into a parallel AI coding pipeline.
+
 ## See It Work
 
 ```
