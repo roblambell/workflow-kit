@@ -265,6 +265,8 @@ export class Orchestrator {
       case "launching":
         if (snap?.workerAlive) {
           this.transition(item, "implementing");
+        } else if (snap?.workerAlive === false) {
+          this.transition(item, "stuck");
         }
         return [];
 

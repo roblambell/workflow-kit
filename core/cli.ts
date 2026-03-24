@@ -29,6 +29,7 @@ import {
 import { cmdCiFailures } from "./commands/ci.ts";
 import { cmdVersionBump } from "./commands/version-bump.ts";
 import { cmdSetup } from "./commands/setup.ts";
+import { cmdOrchestrate } from "./commands/orchestrate.ts";
 
 // Resolve project root via git
 function getProjectRoot(): string {
@@ -150,6 +151,9 @@ if (!command) {
     "  version-bump                                  Bump version + changelog",
   );
   console.log(
+    "  orchestrate --items ID1,ID2 [options]         Orchestrate parallel processing",
+  );
+  console.log(
     "  repos                                         List discovered repos",
   );
   process.exit(0);
@@ -237,6 +241,9 @@ switch (command) {
     break;
   case "version-bump":
     cmdVersionBump(projectRoot);
+    break;
+  case "orchestrate":
+    await cmdOrchestrate(args, todosFile, worktreeDir, projectRoot);
     break;
   default:
     die(`Unknown command: ${command}`);

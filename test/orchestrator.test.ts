@@ -180,6 +180,17 @@ describe("Orchestrator", () => {
     expect(orch.getItem("H-1-1")!.state).toBe("implementing");
   });
 
+  it("transitions launching to stuck when worker dies", () => {
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "launching");
+
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: false }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("stuck");
+  });
+
   // ── 5. Implementing → PR open ─────────────────────────────────
 
   it("transitions implementing to pr-open when PR appears", () => {
