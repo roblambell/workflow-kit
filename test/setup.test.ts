@@ -16,6 +16,7 @@ import {
   setupProject,
   setupGlobal,
   createSkillSymlinks,
+  generateShimContent,
 } from "../core/commands/setup.ts";
 
 // Store original env
@@ -74,28 +75,25 @@ afterEach(() => {
 });
 
 describe("setupProject", () => {
-  it("creates .ninthwave/ directory with dir, work shim, config, and domains.conf", () => {
+  it("creates .ninthwave/ directory with work shim, config, and domains.conf", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
     setupProject(projectDir, bundleDir);
 
-    // .ninthwave/dir records bundle location
-    expect(existsSync(join(projectDir, ".ninthwave/dir"))).toBe(true);
-    const dirContent = readFileSync(
-      join(projectDir, ".ninthwave/dir"),
-      "utf-8",
-    );
-    expect(dirContent.trim()).toBe(bundleDir);
+    // .ninthwave/dir should NOT exist (no longer created)
+    expect(existsSync(join(projectDir, ".ninthwave/dir"))).toBe(false);
 
-    // .ninthwave/work is executable shim
+    // .ninthwave/work is executable shim with auto-resolution
     expect(existsSync(join(projectDir, ".ninthwave/work"))).toBe(true);
     const shimContent = readFileSync(
       join(projectDir, ".ninthwave/work"),
       "utf-8",
     );
     expect(shimContent).toContain("#!/usr/bin/env bash");
+    expect(shimContent).toContain("command -v ninthwave");
     expect(shimContent).toContain('exec ninthwave "$@"');
+    expect(shimContent).toContain("core/cli.ts");
 
     // .ninthwave/config exists
     expect(existsSync(join(projectDir, ".ninthwave/config"))).toBe(true);
@@ -228,8 +226,8 @@ describe("setupProject — idempotency", () => {
     setupProject(projectDir, bundleDir);
 
     // Capture state after first run
-    const firstDir = readFileSync(
-      join(projectDir, ".ninthwave/dir"),
+    const firstShim = readFileSync(
+      join(projectDir, ".ninthwave/work"),
       "utf-8",
     );
     const firstConfig = readFileSync(
@@ -250,8 +248,8 @@ describe("setupProject — idempotency", () => {
     setupProject(projectDir, bundleDir);
 
     // Verify state is identical
-    expect(readFileSync(join(projectDir, ".ninthwave/dir"), "utf-8")).toBe(
-      firstDir,
+    expect(readFileSync(join(projectDir, ".ninthwave/work"), "utf-8")).toBe(
+      firstShim,
     );
     expect(readFileSync(join(projectDir, ".ninthwave/config"), "utf-8")).toBe(
       firstConfig,
@@ -456,5 +454,61 @@ describe("setupGlobal", () => {
       const linkPath = join(skillsDir, skill);
       expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
     }
+  });
+});
+
+describe("generateShimContent", () => {
+  it("produces a valid bash script with shebang", () => {
+    const content = generateShimContent();
+    expect(content.startsWith("#!/usr/bin/env bash\n")).toBe(true);
+  });
+
+  it("checks for ninthwave in PATH before dev-mode walk-up", () => {
+    const content = generateShimContent();
+    const pathCheck = content.indexOf("command -v ninthwave");
+    const walkUp = content.indexOf('if [ -f "$dir/core/cli.ts" ]');
+    expect(pathCheck).toBeGreaterThan(-1);
+    expect(walkUp).toBeGreaterThan(-1);
+    // PATH check must come before walk-up
+    expect(pathCheck).toBeLessThan(walkUp);
+  });
+
+  it("uses exec ninthwave for PATH-based resolution", () => {
+    const content = generateShimContent();
+    expect(content).toContain('exec ninthwave "$@"');
+  });
+
+  it("walks up to find core/cli.ts for dev-mode fallback", () => {
+    const content = generateShimContent();
+    expect(content).toContain('if [ -f "$dir/core/cli.ts" ]');
+    expect(content).toContain('exec bun run "$dir/core/cli.ts" "$@"');
+  });
+
+  it("exits with error if ninthwave is not found", () => {
+    const content = generateShimContent();
+    expect(content).toContain("exit 1");
+    expect(content).toContain("ninthwave not found");
+  });
+
+  it("does not reference .ninthwave/dir", () => {
+    const content = generateShimContent();
+    expect(content).not.toContain(".ninthwave/dir");
+  });
+});
+
+describe("setupProject — legacy cleanup", () => {
+  it("removes legacy .ninthwave/dir if present", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    // Pre-create legacy .ninthwave/dir
+    mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
+    writeFileSync(join(projectDir, ".ninthwave/dir"), "/old/path\n");
+    expect(existsSync(join(projectDir, ".ninthwave/dir"))).toBe(true);
+
+    setupProject(projectDir, bundleDir);
+
+    // Legacy file should be cleaned up
+    expect(existsSync(join(projectDir, ".ninthwave/dir"))).toBe(false);
   });
 });

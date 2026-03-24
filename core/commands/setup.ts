@@ -75,6 +75,37 @@ export function setupGlobal(bundleDir: string): void {
 }
 
 /**
+ * Generate the content for the .ninthwave/work shim script.
+ *
+ * The shim auto-resolves the ninthwave binary without depending on .ninthwave/dir:
+ * 1. If `ninthwave` is in PATH (e.g. brew install), use it directly.
+ * 2. Dev-mode fallback: walk up from the shim's directory to find core/cli.ts.
+ */
+export function generateShimContent(): string {
+  return `#!/usr/bin/env bash
+# ninthwave CLI shim — auto-resolves the ninthwave binary.
+# Priority: (1) ninthwave in PATH, (2) dev-mode walk-up to find core/cli.ts
+
+# 1. If ninthwave is in PATH, use it directly
+if command -v ninthwave &>/dev/null; then
+  exec ninthwave "$@"
+fi
+
+# 2. Dev mode: walk up from this script to find a ninthwave checkout
+dir="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+while [ "$dir" != "/" ]; do
+  if [ -f "$dir/core/cli.ts" ]; then
+    exec bun run "$dir/core/cli.ts" "$@"
+  fi
+  dir="$(dirname "$dir")"
+done
+
+echo "Error: ninthwave not found in PATH and no checkout found in parent directories." >&2
+exit 1
+`;
+}
+
+/**
  * Project setup: seed .ninthwave/, TODOS.md, skill symlinks, agent copies, .gitignore.
  */
 export function setupProject(projectDir: string, bundleDir: string): void {
@@ -86,20 +117,17 @@ export function setupProject(projectDir: string, bundleDir: string): void {
   console.log("Config (.ninthwave/)...");
   mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
 
-  // Record the bundle location
-  writeFileSync(join(projectDir, ".ninthwave/dir"), bundleDir + "\n");
-  console.log("  .ninthwave/dir");
-
-  // Create the CLI shim
+  // Create the CLI shim (auto-resolves ninthwave binary — no .ninthwave/dir needed)
   // Clean up old shim name
   const oldShim = join(projectDir, ".ninthwave/nw");
   if (existsSync(oldShim)) unlinkSync(oldShim);
 
+  // Clean up legacy .ninthwave/dir if present
+  const legacyDir = join(projectDir, ".ninthwave/dir");
+  if (existsSync(legacyDir)) unlinkSync(legacyDir);
+
   const shimPath = join(projectDir, ".ninthwave/work");
-  writeFileSync(
-    shimPath,
-    '#!/usr/bin/env bash\nexec ninthwave "$@"\n',
-  );
+  writeFileSync(shimPath, generateShimContent());
   chmodSync(shimPath, 0o755);
   console.log("  .ninthwave/work");
 
