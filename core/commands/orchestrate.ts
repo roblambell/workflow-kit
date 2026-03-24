@@ -4,6 +4,7 @@
 
 import { existsSync } from "fs";
 import { join } from "path";
+import { totalmem } from "os";
 import {
   Orchestrator,
   type MergeStrategy,
@@ -346,6 +347,21 @@ export async function orchestrateLoop(
   }
 }
 
+// ── Memory-aware WIP default ────────────────────────────────────────
+
+/**
+ * Compute a sensible default WIP limit based on available system memory.
+ * Each parallel worker consumes ~2-3GB RAM (Claude Code + language server + git worktree),
+ * so we allocate one slot per 3GB of total RAM, with a minimum of 2.
+ *
+ * @param getTotalMemory - Injectable for testing; defaults to os.totalmem()
+ */
+export function computeDefaultWipLimit(getTotalMemory: () => number = totalmem): number {
+  const totalBytes = getTotalMemory();
+  const totalGB = totalBytes / (1024 ** 3);
+  return Math.max(2, Math.floor(totalGB / 3));
+}
+
 // ── CLI command ─────────────────────────────────────────────────────
 
 export async function cmdOrchestrate(
@@ -356,7 +372,7 @@ export async function cmdOrchestrate(
 ): Promise<void> {
   let itemIds: string[] = [];
   let mergeStrategy: MergeStrategy = "asap";
-  let wipLimit = 4;
+  let wipLimitOverride: number | undefined;
   let pollIntervalOverride: number | undefined;
 
   // Parse args
@@ -372,7 +388,7 @@ export async function cmdOrchestrate(
         i += 2;
         break;
       case "--wip-limit":
-        wipLimit = parseInt(args[i + 1] ?? "4", 10);
+        wipLimitOverride = parseInt(args[i + 1] ?? "4", 10);
         i += 2;
         break;
       case "--poll-interval":
@@ -387,6 +403,20 @@ export async function cmdOrchestrate(
         die(`Unknown option: ${args[i]}`);
     }
   }
+
+  // Compute memory-aware WIP default, allow --wip-limit to override
+  const computedWipLimit = computeDefaultWipLimit();
+  const wipLimit = wipLimitOverride ?? computedWipLimit;
+
+  structuredLog({
+    ts: new Date().toISOString(),
+    level: "info",
+    event: "wip_limit_resolved",
+    computedDefault: computedWipLimit,
+    effectiveLimit: wipLimit,
+    overridden: wipLimitOverride !== undefined,
+    totalMemoryGB: Math.round(totalmem() / (1024 ** 3)),
+  });
 
   if (itemIds.length === 0) {
     die(

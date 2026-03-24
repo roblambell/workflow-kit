@@ -7,6 +7,7 @@ import {
   adaptivePollInterval,
   reconstructState,
   interruptibleSleep,
+  computeDefaultWipLimit,
   type LogEntry,
   type OrchestrateLoopDeps,
 } from "../core/commands/orchestrate.ts";
@@ -454,5 +455,49 @@ describe("interruptibleSleep", () => {
     await sleepPromise;
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(500);
+  });
+});
+
+describe("computeDefaultWipLimit", () => {
+  const GB = 1024 ** 3;
+
+  it("returns 5 for 16GB machine", () => {
+    expect(computeDefaultWipLimit(() => 16 * GB)).toBe(5);
+  });
+
+  it("returns 2 for 8GB machine", () => {
+    expect(computeDefaultWipLimit(() => 8 * GB)).toBe(2);
+  });
+
+  it("returns minimum of 2 for very low memory (4GB)", () => {
+    expect(computeDefaultWipLimit(() => 4 * GB)).toBe(2);
+  });
+
+  it("returns minimum of 2 for extremely low memory (1GB)", () => {
+    expect(computeDefaultWipLimit(() => 1 * GB)).toBe(2);
+  });
+
+  it("returns 8 for 24GB machine", () => {
+    expect(computeDefaultWipLimit(() => 24 * GB)).toBe(8);
+  });
+
+  it("returns 10 for 32GB machine", () => {
+    expect(computeDefaultWipLimit(() => 32 * GB)).toBe(10);
+  });
+
+  it("returns 21 for 64GB machine", () => {
+    expect(computeDefaultWipLimit(() => 64 * GB)).toBe(21);
+  });
+
+  it("handles fractional GB correctly (e.g. 15.8GB)", () => {
+    // 15.8 / 3 = 5.26 → floor → 5
+    expect(computeDefaultWipLimit(() => 15.8 * GB)).toBe(5);
+  });
+
+  it("uses os.totalmem() by default (no argument)", () => {
+    // Just verify it returns a reasonable number without throwing
+    const result = computeDefaultWipLimit();
+    expect(result).toBeGreaterThanOrEqual(2);
+    expect(typeof result).toBe("number");
   });
 });
