@@ -6,6 +6,7 @@
 
 
 
+
 ### Feat: Add bundle directory resolution module (H-BREW-1)
 
 **Priority:** High
@@ -95,19 +96,6 @@ Key files: `README.md`, `CONTRIBUTING.md`, `setup` (delete), `remote-install.sh`
 
 
 
-### Refactor: Export internal watch functions for orchestrator reuse (H-ORCH-1)
-
-**Priority:** High
-**Source:** Orchestrator pivot
-**Depends on:** None
-
-Export `checkPrStatus`, `getWatchReadyState`, `findTransitions`, and `findGoneItems` as public functions from `watch.ts`. Currently these are private helpers used only by the CLI commands. The orchestrator needs direct access to them. Also add a finer-grained status classification: split `ready` into `ci-passed` (CI green, merge criteria not yet checked) vs `ready` (all merge criteria met) so the orchestrator can distinguish "CI passed but not approved" from "ready to merge".
-
-Acceptance: All four functions are exported and importable. Existing `watch-ready`, `autopilot-watch`, `pr-watch`, `pr-activity` commands still work identically. New tests cover the exported functions directly. Status output includes `ci-passed` as a distinct state.
-
-Key files: `core/commands/watch.ts`, `test/watch.test.ts`
-
----
 
 ### Feat: Add prMerge and prComment to GitHub module (H-ORCH-2)
 
@@ -120,20 +108,6 @@ Add `prMerge(repoRoot, prNumber, method)` that runs `gh pr merge <N> --squash --
 Acceptance: `prMerge` merges a PR and returns true on success, false on failure. `prComment` posts a comment. Both are unit-tested with mocked `gh` calls. Existing `gh.ts` tests still pass.
 
 Key files: `core/gh.ts`, `test/gh.test.ts` (new)
-
----
-
-### Refactor: Extract computeBatches from batch-order command (H-ORCH-3)
-
-**Priority:** High
-**Source:** Orchestrator pivot
-**Depends on:** None
-
-Extract the topological sort and batch grouping logic from `cmdBatchOrder` into a reusable `computeBatches(items, selectedIds)` function that returns `Map<string, number>` (item ID to batch number) and a batch count. The command function becomes a thin wrapper that calls `computeBatches` and formats the output. The orchestrator needs this to know which items to launch when dependencies clear.
-
-Acceptance: `computeBatches` returns correct batch assignments. `cmdBatchOrder` output is unchanged. All existing batch-order tests pass. New tests cover `computeBatches` directly with edge cases (circular deps, single item, all independent).
-
-Key files: `core/commands/batch-order.ts`, `test/batch-order.test.ts`
 
 ---
 
@@ -222,6 +196,7 @@ Key files: `agents/todo-worker.md`
 ---
 
 ## Vision (recurring, 2026-03-23)
+
 
 
 
