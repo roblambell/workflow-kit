@@ -12,6 +12,7 @@ import {
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 import {
   detectCI,
+  detectTestCommand,
   detectMux,
   detectAITools,
   detectRepoType,
@@ -316,12 +317,118 @@ describe("detectRepoType", () => {
   });
 });
 
+// --- detectTestCommand ---
+
+describe("detectTestCommand", () => {
+  it("detects 'bun test' from package.json scripts", () => {
+    const projectDir = setupTempRepo();
+    writeFileSync(
+      join(projectDir, "package.json"),
+      JSON.stringify({ scripts: { test: "bun test" } }),
+    );
+
+    const result = detectTestCommand(projectDir);
+
+    expect(result).toBe("bun test");
+  });
+
+  it("detects 'npm test' as fallback", () => {
+    const projectDir = setupTempRepo();
+    writeFileSync(
+      join(projectDir, "package.json"),
+      JSON.stringify({ scripts: { test: "npm test" } }),
+    );
+
+    const result = detectTestCommand(projectDir);
+
+    expect(result).toBe("npm test");
+  });
+
+  it("detects 'check' script when no 'test' script exists", () => {
+    const projectDir = setupTempRepo();
+    writeFileSync(
+      join(projectDir, "package.json"),
+      JSON.stringify({ scripts: { check: "tsc --noEmit" } }),
+    );
+
+    const result = detectTestCommand(projectDir);
+
+    expect(result).toBe("tsc --noEmit");
+  });
+
+  it("detects 'lint' script when no 'test' or 'check' exists", () => {
+    const projectDir = setupTempRepo();
+    writeFileSync(
+      join(projectDir, "package.json"),
+      JSON.stringify({ scripts: { lint: "eslint ." } }),
+    );
+
+    const result = detectTestCommand(projectDir);
+
+    expect(result).toBe("eslint .");
+  });
+
+  it("prefers 'test' over 'check' and 'lint'", () => {
+    const projectDir = setupTempRepo();
+    writeFileSync(
+      join(projectDir, "package.json"),
+      JSON.stringify({
+        scripts: { lint: "eslint .", check: "tsc", test: "vitest" },
+      }),
+    );
+
+    const result = detectTestCommand(projectDir);
+
+    expect(result).toBe("vitest");
+  });
+
+  it("returns null when package.json has no scripts", () => {
+    const projectDir = setupTempRepo();
+    writeFileSync(
+      join(projectDir, "package.json"),
+      JSON.stringify({ name: "my-app" }),
+    );
+
+    const result = detectTestCommand(projectDir);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when package.json does not exist", () => {
+    const projectDir = setupTempRepo();
+
+    const result = detectTestCommand(projectDir);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when package.json is invalid JSON", () => {
+    const projectDir = setupTempRepo();
+    writeFileSync(join(projectDir, "package.json"), "not valid json{{{");
+
+    const result = detectTestCommand(projectDir);
+
+    expect(result).toBeNull();
+  });
+
+  it("works with injected readFile dep", () => {
+    const deps: InitDeps = {
+      readFile: () => JSON.stringify({ scripts: { test: "jest" } }),
+    };
+
+    const result = detectTestCommand("/fake/project", deps);
+
+    expect(result).toBe("jest");
+  });
+});
+
 // --- generateConfig ---
 
 describe("generateConfig", () => {
   it("writes detected CI value", () => {
     const detection: DetectionResult = {
       ci: "github-actions",
+      testCommand: "bun test",
       mux: "cmux",
       aiTools: ["claude"],
       repoType: "single",
@@ -329,12 +436,13 @@ describe("generateConfig", () => {
 
     const config = generateConfig(detection);
 
-    expect(config).toContain("CI=github-actions");
+    expect(config).toContain("ci_provider=github-actions");
   });
 
-  it("comments out CI when not detected", () => {
+  it("comments out ci_provider when not detected", () => {
     const detection: DetectionResult = {
       ci: null,
+      testCommand: null,
       mux: "cmux",
       aiTools: [],
       repoType: "single",
@@ -342,13 +450,14 @@ describe("generateConfig", () => {
 
     const config = generateConfig(detection);
 
-    expect(config).toContain("# CI=github-actions");
-    expect(config).not.toMatch(/^CI=/m);
+    expect(config).toContain("# ci_provider=github-actions");
+    expect(config).not.toMatch(/^ci_provider=/m);
   });
 
   it("writes detected MUX value", () => {
     const detection: DetectionResult = {
       ci: null,
+      testCommand: null,
       mux: "tmux",
       aiTools: [],
       repoType: "single",
@@ -362,6 +471,7 @@ describe("generateConfig", () => {
   it("comments out MUX when not detected", () => {
     const detection: DetectionResult = {
       ci: null,
+      testCommand: null,
       mux: null,
       aiTools: [],
       repoType: "single",
@@ -376,6 +486,7 @@ describe("generateConfig", () => {
   it("writes REPO_TYPE", () => {
     const detection: DetectionResult = {
       ci: null,
+      testCommand: null,
       mux: null,
       aiTools: [],
       repoType: "monorepo",
@@ -389,6 +500,7 @@ describe("generateConfig", () => {
   it("writes AI_TOOLS as comma-separated list", () => {
     const detection: DetectionResult = {
       ci: null,
+      testCommand: null,
       mux: null,
       aiTools: ["claude", "opencode"],
       repoType: "single",
@@ -397,6 +509,50 @@ describe("generateConfig", () => {
     const config = generateConfig(detection);
 
     expect(config).toContain("AI_TOOLS=claude,opencode");
+  });
+
+  it("writes test_command when detected", () => {
+    const detection: DetectionResult = {
+      ci: "github-actions",
+      testCommand: "bun test",
+      mux: null,
+      aiTools: [],
+      repoType: "single",
+    };
+
+    const config = generateConfig(detection);
+
+    expect(config).toContain("test_command=bun test");
+  });
+
+  it("comments out test_command when not detected", () => {
+    const detection: DetectionResult = {
+      ci: null,
+      testCommand: null,
+      mux: null,
+      aiTools: [],
+      repoType: "single",
+    };
+
+    const config = generateConfig(detection);
+
+    expect(config).toContain("# test_command=bun test");
+    expect(config).not.toMatch(/^test_command=/m);
+  });
+
+  it("writes both ci_provider and test_command together", () => {
+    const detection: DetectionResult = {
+      ci: "github-actions",
+      testCommand: "bun test",
+      mux: "cmux",
+      aiTools: ["claude"],
+      repoType: "single",
+    };
+
+    const config = generateConfig(detection);
+
+    expect(config).toContain("ci_provider=github-actions");
+    expect(config).toContain("test_command=bun test");
   });
 });
 
@@ -412,6 +568,12 @@ describe("initProject", () => {
     mkdirSync(workflowsDir, { recursive: true });
     writeFileSync(join(workflowsDir, "ci.yml"), "name: CI\n");
 
+    // Create package.json with test script
+    writeFileSync(
+      join(projectDir, "package.json"),
+      JSON.stringify({ scripts: { test: "bun test" } }),
+    );
+
     const deps: InitDeps = {
       commandExists: ((cmd: string) =>
         cmd === "cmux" || cmd === "gh") as CommandChecker,
@@ -424,7 +586,8 @@ describe("initProject", () => {
       join(projectDir, ".ninthwave/config"),
       "utf-8",
     );
-    expect(config).toContain("CI=github-actions");
+    expect(config).toContain("ci_provider=github-actions");
+    expect(config).toContain("test_command=bun test");
     expect(config).toContain("MUX=cmux");
     expect(config).toContain("REPO_TYPE=single");
   });
@@ -563,7 +726,7 @@ describe("initProject", () => {
       "utf-8",
     );
     // Should reflect new detection, not old values
-    expect(config).toContain("CI=github-actions");
+    expect(config).toContain("ci_provider=github-actions");
     expect(config).toContain("MUX=cmux");
     expect(config).not.toContain("circleci");
   });

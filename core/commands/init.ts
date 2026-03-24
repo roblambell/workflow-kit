@@ -30,6 +30,8 @@ import {
 export interface DetectionResult {
   /** Detected CI system, e.g. "github-actions" */
   ci: string | null;
+  /** Detected test command, e.g. "bun test" */
+  testCommand: string | null;
   /** Detected multiplexer */
   mux: "cmux" | "tmux" | null;
   /** Detected AI tool configurations */
@@ -44,6 +46,7 @@ export interface DetectionResult {
 export interface InitDeps {
   commandExists?: CommandChecker;
   fileExists?: (path: string) => boolean;
+  readFile?: (path: string) => string | null;
   readDir?: (dir: string) => string[];
   getEnv?: (key: string) => string | undefined;
 }
@@ -61,6 +64,14 @@ const defaultReadDir = (dir: string): string[] => {
 const defaultCommandExists: CommandChecker = (cmd: string): boolean => {
   const result = run("which", [cmd]);
   return result.exitCode === 0;
+};
+
+const defaultReadFile = (path: string): string | null => {
+  try {
+    return readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
 };
 
 const defaultGetEnv = (key: string): string | undefined => process.env[key];
@@ -86,6 +97,38 @@ export function detectCI(
   );
 
   return hasWorkflows ? "github-actions" : null;
+}
+
+/**
+ * Detect the project's test command from package.json scripts.
+ * Checks scripts in priority order: test, check, lint.
+ * Returns the script value (e.g., "bun test", "vitest") or null.
+ */
+export function detectTestCommand(
+  projectDir: string,
+  deps: InitDeps = {},
+): string | null {
+  const rf = deps.readFile ?? defaultReadFile;
+
+  const content = rf(join(projectDir, "package.json"));
+  if (!content) return null;
+
+  let pkg: { scripts?: Record<string, string> };
+  try {
+    pkg = JSON.parse(content);
+  } catch {
+    return null;
+  }
+
+  if (!pkg.scripts) return null;
+
+  // Priority order: test > check > lint
+  for (const key of ["test", "check", "lint"]) {
+    const script = pkg.scripts[key];
+    if (script) return script;
+  }
+
+  return null;
 }
 
 /**
@@ -174,6 +217,7 @@ export function detectAll(
 ): DetectionResult {
   return {
     ci: detectCI(projectDir, deps),
+    testCommand: detectTestCommand(projectDir, deps),
     mux: detectMux(deps),
     aiTools: detectAITools(projectDir, deps),
     repoType: detectRepoType(projectDir, deps),
@@ -192,11 +236,18 @@ export function generateConfig(detection: DetectionResult): string {
     "",
   ];
 
-  // CI
+  // CI provider
   if (detection.ci) {
-    lines.push(`CI=${detection.ci}`);
+    lines.push(`ci_provider=${detection.ci}`);
   } else {
-    lines.push("# CI=github-actions");
+    lines.push("# ci_provider=github-actions");
+  }
+
+  // Test command
+  if (detection.testCommand) {
+    lines.push(`test_command=${detection.testCommand}`);
+  } else {
+    lines.push("# test_command=bun test");
   }
 
   // Mux
@@ -242,6 +293,17 @@ export function printSummary(detection: DetectionResult): void {
   } else {
     console.log(
       `  ${DIM}–${RESET} CI: ${DIM}none detected${RESET}`,
+    );
+  }
+
+  // Test command
+  if (detection.testCommand) {
+    console.log(
+      `  ${GREEN}✓${RESET} Test command: ${detection.testCommand}`,
+    );
+  } else {
+    console.log(
+      `  ${DIM}–${RESET} Test command: ${DIM}none detected${RESET}`,
     );
   }
 
