@@ -4,6 +4,7 @@
 
 ## Operational Maturity (vision exploration, 2026-03-24)
 
+
 ### Feat: Memory-aware dynamic WIP limits (H-WIP-1)
 
 **Priority:** High
@@ -21,26 +22,6 @@ The WIP limit is currently a static number (default 5). Each worker consumes ~2.
 Acceptance: WIP limit is dynamically calculated based on available memory. Workers are queued when memory is constrained instead of launching immediately. Structured log emitted when WIP is reduced. Tests pass. No regression in orchestrator tests.
 
 Key files: `core/commands/orchestrate.ts`, `core/orchestrator.ts`
-
----
-
-### Feat: Track token usage and cost per worker session (M-ANL-4)
-
-**Priority:** Medium
-**Source:** Friction log #14 — no model/token/cost tracking in analytics
-**Depends on:** None
-
-Add cost and token tracking to analytics. When a worker session exits, parse its summary output for token count and cost (Claude Code prints this on exit). Add optional `tokensUsed` and `costUsd` fields to `ItemMetric`. Aggregate totals in `RunMetrics`. Display cost summary in `ninthwave analytics` output. Gracefully handle tools that don't report cost (default to null).
-
-**Test plan:**
-- Unit test: parse Claude Code exit summary for tokens and cost
-- Unit test: aggregate cost across items in RunMetrics
-- Unit test: graceful handling when cost data is unavailable (null fields)
-- Integration: analytics display includes cost column when data exists
-
-Acceptance: `ItemMetric` has optional `tokensUsed` and `costUsd` fields. Cost data is parsed from worker exit output when available. `ninthwave analytics` displays cost totals per run. Fields are null (not 0) when cost data is unavailable. Tests pass.
-
-Key files: `core/analytics.ts`, `core/commands/analytics.ts`, `core/commands/orchestrate.ts`
 
 ---
 
@@ -86,6 +67,7 @@ Key files: `core/orchestrator.ts`, `core/commands/orchestrate.ts`, `core/command
 ---
 
 ## Engineering Review (vision exploration, 2026-03-24)
+
 
 ### Docs: Engineering review — core orchestrator and state machine (H-ENG-1)
 
@@ -145,6 +127,7 @@ Key files: `core/parser.ts`, `core/analytics.ts`, `core/commands/analytics.ts`, 
 ---
 
 ## Vision (recurring, 2026-03-24)
+
 
 ### Feat: Explore vision, scope next iteration, and decompose into TODOs (L-VIS-5)
 
