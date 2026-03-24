@@ -1,6 +1,7 @@
 // orchestrate command: event loop for parallel TODO processing.
 // Parses args, reconstructs state from disk/GitHub, runs the poll→transition→execute loop,
 // emits structured JSON logs, and handles graceful SIGINT shutdown.
+// Optionally runs an LLM supervisor tick for anomaly detection and friction logging.
 
 import { existsSync } from "fs";
 import { join } from "path";
@@ -25,6 +26,17 @@ import { fetchOrigin, ffMerge } from "../git.ts";
 import * as cmux from "../cmux.ts";
 import { die } from "../output.ts";
 import type { TodoItem } from "../types.ts";
+import {
+  supervisorTick,
+  applySupervisorActions,
+  writeFrictionLog,
+  shouldActivateSupervisor,
+  createSupervisorDeps,
+  DEFAULT_SUPERVISOR_CONFIG,
+  type SupervisorConfig,
+  type SupervisorDeps,
+  type SupervisorState,
+} from "../supervisor.ts";
 
 // ── Structured logging ─────────────────────────────────────────────
 
@@ -230,15 +242,20 @@ export interface OrchestrateLoopDeps {
   sleep: (ms: number) => Promise<void>;
   log: (entry: LogEntry) => void;
   actionDeps: OrchestratorDeps;
+  /** Supervisor dependencies (injected when supervisor is active). */
+  supervisorDeps?: SupervisorDeps;
 }
 
 export interface OrchestrateLoopConfig {
   /** Override adaptive poll interval (milliseconds). */
   pollIntervalMs?: number;
+  /** Supervisor configuration (present when supervisor is active). */
+  supervisor?: SupervisorConfig;
 }
 
 /**
  * Main event loop. Polls, detects transitions, executes actions, sleeps.
+ * Optionally runs LLM supervisor ticks on a configurable interval.
  * Exits when all items reach terminal state or signal is aborted.
  */
 export async function orchestrateLoop(
@@ -250,18 +267,41 @@ export async function orchestrateLoop(
 ): Promise<void> {
   const { log } = deps;
 
-  log({
+  // Initialize supervisor state if supervisor is active
+  let supervisorState: SupervisorState | undefined;
+  if (config.supervisor && deps.supervisorDeps) {
+    supervisorState = {
+      lastTickTime: deps.supervisorDeps.now(),
+      logsSinceLastTick: [],
+    };
+  }
+
+  // Wrap log to capture entries for supervisor
+  const wrappedLog = (entry: LogEntry): void => {
+    log(entry);
+    if (supervisorState) {
+      supervisorState.logsSinceLastTick.push(entry);
+      // Cap log buffer to prevent unbounded growth
+      const maxEntries = config.supervisor?.maxLogEntries ?? DEFAULT_SUPERVISOR_CONFIG.maxLogEntries;
+      if (supervisorState.logsSinceLastTick.length > maxEntries) {
+        supervisorState.logsSinceLastTick = supervisorState.logsSinceLastTick.slice(-maxEntries);
+      }
+    }
+  };
+
+  wrappedLog({
     ts: new Date().toISOString(),
     level: "info",
     event: "orchestrate_start",
     items: orch.getAllItems().map((i) => i.id),
     wipLimit: orch.config.wipLimit,
     mergeStrategy: orch.config.mergeStrategy,
+    supervisorActive: !!supervisorState,
   });
 
   while (true) {
     if (signal?.aborted) {
-      log({ ts: new Date().toISOString(), level: "info", event: "shutdown", reason: "SIGINT" });
+      wrappedLog({ ts: new Date().toISOString(), level: "info", event: "shutdown", reason: "SIGINT" });
       break;
     }
 
@@ -271,7 +311,7 @@ export async function orchestrateLoop(
     if (allTerminal) {
       const doneCount = allItems.filter((i) => i.state === "done").length;
       const stuckCount = allItems.filter((i) => i.state === "stuck").length;
-      log({
+      wrappedLog({
         ts: new Date().toISOString(),
         level: "info",
         event: "orchestrate_complete",
@@ -298,7 +338,7 @@ export async function orchestrateLoop(
     for (const item of orch.getAllItems()) {
       const prev = prevStates.get(item.id);
       if (prev && prev !== item.state) {
-        log({
+        wrappedLog({
           ts: new Date().toISOString(),
           level: "info",
           event: "transition",
@@ -311,7 +351,7 @@ export async function orchestrateLoop(
 
     // Execute actions
     for (const action of actions) {
-      log({
+      wrappedLog({
         ts: new Date().toISOString(),
         level: "info",
         event: "action_execute",
@@ -322,7 +362,7 @@ export async function orchestrateLoop(
 
       const result = orch.executeAction(action, ctx, deps.actionDeps);
 
-      log({
+      wrappedLog({
         ts: new Date().toISOString(),
         level: result.success ? "info" : "warn",
         event: "action_result",
@@ -339,7 +379,49 @@ export async function orchestrateLoop(
       if (!states[item.state]) states[item.state] = [];
       states[item.state]!.push(item.id);
     }
-    log({ ts: new Date().toISOString(), level: "debug", event: "state_summary", states });
+    wrappedLog({ ts: new Date().toISOString(), level: "debug", event: "state_summary", states });
+
+    // ── Supervisor tick ──────────────────────────────────────────
+    if (supervisorState && config.supervisor && deps.supervisorDeps) {
+      const now = deps.supervisorDeps.now();
+      const elapsed = now.getTime() - supervisorState.lastTickTime.getTime();
+
+      if (elapsed >= config.supervisor.intervalMs) {
+        try {
+          const observation = supervisorTick(
+            supervisorState,
+            orch.getAllItems(),
+            deps.supervisorDeps,
+          );
+
+          // Apply suggested actions (send messages to workers)
+          applySupervisorActions(
+            observation,
+            orch.getAllItems(),
+            deps.actionDeps.sendMessage,
+            wrappedLog,
+          );
+
+          // Write friction log if configured
+          if (config.supervisor.frictionLogPath) {
+            writeFrictionLog(
+              observation,
+              config.supervisor.frictionLogPath,
+              deps.supervisorDeps.appendFile,
+            );
+          }
+        } catch (e: unknown) {
+          // Supervisor failure is non-fatal — daemon continues
+          const msg = e instanceof Error ? e.message : String(e);
+          wrappedLog({
+            ts: new Date().toISOString(),
+            level: "warn",
+            event: "supervisor_error",
+            error: msg,
+          });
+        }
+      }
+    }
 
     // Sleep — adaptive or fixed override
     const interval = config.pollIntervalMs ?? adaptivePollInterval(orch);
@@ -374,6 +456,9 @@ export async function cmdOrchestrate(
   let mergeStrategy: MergeStrategy = "asap";
   let wipLimitOverride: number | undefined;
   let pollIntervalOverride: number | undefined;
+  let supervisorFlag = false;
+  let supervisorIntervalSecs: number | undefined;
+  let frictionLogPath: string | undefined;
 
   // Parse args
   let i = 0;
@@ -397,6 +482,18 @@ export async function cmdOrchestrate(
         break;
       case "--orchestrator-ws":
         // Reserved for future use — workspace ref for the orchestrator itself
+        i += 2;
+        break;
+      case "--supervisor":
+        supervisorFlag = true;
+        i += 1;
+        break;
+      case "--supervisor-interval":
+        supervisorIntervalSecs = parseInt(args[i + 1] ?? "300", 10);
+        i += 2;
+        break;
+      case "--friction-log":
+        frictionLogPath = args[i + 1];
         i += 2;
         break;
       default:
@@ -473,11 +570,40 @@ export async function cmdOrchestrate(
   };
   process.on("SIGINT", sigintHandler);
 
+  // Resolve supervisor configuration
+  const supervisorActive = shouldActivateSupervisor(supervisorFlag, projectRoot);
+  const supervisorConfig: SupervisorConfig | undefined = supervisorActive
+    ? {
+        intervalMs: supervisorIntervalSecs
+          ? supervisorIntervalSecs * 1000
+          : DEFAULT_SUPERVISOR_CONFIG.intervalMs,
+        frictionLogPath,
+        maxLogEntries: DEFAULT_SUPERVISOR_CONFIG.maxLogEntries,
+      }
+    : undefined;
+
+  if (supervisorActive) {
+    structuredLog({
+      ts: new Date().toISOString(),
+      level: "info",
+      event: "supervisor_enabled",
+      intervalMs: supervisorConfig!.intervalMs,
+      frictionLogPath: frictionLogPath ?? null,
+      autoActivated: !supervisorFlag,
+    });
+  }
+
   const loopDeps: OrchestrateLoopDeps = {
     buildSnapshot,
     sleep: (ms) => interruptibleSleep(ms, abortController.signal),
     log: structuredLog,
     actionDeps,
+    supervisorDeps: supervisorActive ? createSupervisorDeps(structuredLog) : undefined,
+  };
+
+  const loopConfig: OrchestrateLoopConfig = {
+    ...(pollIntervalOverride ? { pollIntervalMs: pollIntervalOverride } : {}),
+    ...(supervisorConfig ? { supervisor: supervisorConfig } : {}),
   };
 
   try {
@@ -485,7 +611,7 @@ export async function cmdOrchestrate(
       orch,
       ctx,
       loopDeps,
-      pollIntervalOverride ? { pollIntervalMs: pollIntervalOverride } : {},
+      loopConfig,
       abortController.signal,
     );
   } finally {
