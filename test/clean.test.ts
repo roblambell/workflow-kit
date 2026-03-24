@@ -272,4 +272,45 @@ describe("cmdClean", () => {
     expect(output).toContain("Cleaned 0 worktree(s)");
     expect(git.removeWorktree as Mock).not.toHaveBeenCalled();
   });
+
+  it("only closes the targeted workspace when cleaning a specific ID", () => {
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".worktrees");
+    // Create worktrees for H-1 (target), H-2, and H-3
+    mkdirSync(join(worktreeDir, "todo-H-1"), { recursive: true });
+    mkdirSync(join(worktreeDir, "todo-H-2"), { recursive: true });
+    mkdirSync(join(worktreeDir, "todo-H-3"), { recursive: true });
+
+    (cmux.isAvailable as Mock).mockReturnValue(true);
+    (cmux.listWorkspaces as Mock).mockReturnValue(
+      "workspace:1 TODO H-1 first task\nworkspace:2 TODO H-2 second task\nworkspace:3 TODO H-3 third task",
+    );
+    (cmux.closeWorkspace as Mock).mockReturnValue(true);
+    (git.isBranchMerged as Mock).mockReturnValue(false);
+
+    captureOutput(() => cmdClean(["H-1"], worktreeDir, repo));
+
+    // Should only close workspace:1 (H-1), not workspace:2 or workspace:3
+    expect(cmux.closeWorkspace as Mock).toHaveBeenCalledTimes(1);
+    expect(cmux.closeWorkspace as Mock).toHaveBeenCalledWith("workspace:1");
+  });
+
+  it("closes all workspaces when no target ID is specified", () => {
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".worktrees");
+    mkdirSync(join(worktreeDir, "todo-H-1"), { recursive: true });
+    mkdirSync(join(worktreeDir, "todo-H-2"), { recursive: true });
+
+    (cmux.isAvailable as Mock).mockReturnValue(true);
+    (cmux.listWorkspaces as Mock).mockReturnValue(
+      "workspace:1 TODO H-CI-1 first\nworkspace:2 TODO H-CI-2 second",
+    );
+    (cmux.closeWorkspace as Mock).mockReturnValue(true);
+    (git.isBranchMerged as Mock).mockReturnValue(true);
+
+    captureOutput(() => cmdClean([], worktreeDir, repo));
+
+    // Should close all todo workspaces when no target is specified
+    expect(cmux.closeWorkspace as Mock).toHaveBeenCalledTimes(2);
+  });
 });

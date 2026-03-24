@@ -95,8 +95,12 @@ export function cmdClean(
 ): void {
   const targetId = args[0] ?? "";
 
-  // Close workspaces first
-  cmdCloseWorkspaces();
+  // Close workspaces — scoped to target when cleaning a specific item
+  if (targetId) {
+    cmdCloseWorkspace(targetId);
+  } else {
+    cmdCloseWorkspaces();
+  }
 
   if (!existsSync(worktreeDir)) {
     console.log("No worktrees to clean");
