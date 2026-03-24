@@ -6,25 +6,6 @@
 
 
 
-### Fix: Parser should warn on skipped items with missing IDs (M-DP-1)
-
-**Priority:** Medium
-**Source:** Eng review M-ENG-3 finding 1.1
-**Depends on:** None
-
-When an item in TODOS.md has no ID (e.g., `### Feat: Item with no ID`), `parseTodos` silently skips it. Add an optional `warn` callback parameter to `parseTodos` (consistent with the DI pattern) that is called when items are skipped due to missing ID, including the line number for diagnostics.
-
-**Test plan:**
-- Unit test: warn callback is invoked with line number when an item has no ID
-- Unit test: parsing continues correctly after warning
-- Unit test: warn is not called for valid items
-
-Acceptance: `parseTodos` accepts an optional warn callback. Callback is invoked with a descriptive message and line number when items are skipped. Existing tests continue to pass (no warn = no change in behavior). New tests cover the warning behavior.
-
-Key files: `core/parser.ts`, `test/parser.test.ts`
-
----
-
 ### Fix: Parser should detect and warn on duplicate IDs (M-DP-2)
 
 **Priority:** Medium
