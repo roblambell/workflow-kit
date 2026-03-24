@@ -7,6 +7,9 @@ import { prList, prView, prChecks, getRepoOwner, apiGet } from "../gh.ts";
 import * as gh from "../gh.ts";
 import type { WatchResult, Transition } from "../types.ts";
 
+/** jq fragment: only count comments/reviews from trusted author associations. */
+export const TRUSTED_ASSOC = '(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")';
+
 /**
  * Check each worktree's PR status (merged/ready/pending/failing/no-pr).
  * Returns tab-separated lines: ID\tPR_NUMBER\tSTATUS
@@ -303,39 +306,39 @@ export async function cmdPrWatch(
       continue;
     }
 
-    // Check for new reviews
+    // Check for new reviews (trusted authors only)
     let newReviews = 0;
     try {
       const result = apiGet(
         projectRoot,
         `repos/${ownerRepo}/pulls/${prNumber}/reviews`,
-        `[.[] | select(.submitted_at > "${since}")] | length`,
+        `[.[] | select(.submitted_at > "${since}" and ${TRUSTED_ASSOC})] | length`,
       );
       newReviews = parseInt(result, 10) || 0;
     } catch {
       // ignore
     }
 
-    // Check for new comments
+    // Check for new comments (trusted authors only)
     let newComments = 0;
     try {
       const result = apiGet(
         projectRoot,
         `repos/${ownerRepo}/issues/${prNumber}/comments`,
-        `[.[] | select(.created_at > "${since}")] | length`,
+        `[.[] | select(.created_at > "${since}" and ${TRUSTED_ASSOC})] | length`,
       );
       newComments = parseInt(result, 10) || 0;
     } catch {
       // ignore
     }
 
-    // Check for new review comments
+    // Check for new review comments (trusted authors only)
     let newReviewComments = 0;
     try {
       const result = apiGet(
         projectRoot,
         `repos/${ownerRepo}/pulls/${prNumber}/comments`,
-        `[.[] | select(.created_at > "${since}")] | length`,
+        `[.[] | select(.created_at > "${since}" and ${TRUSTED_ASSOC})] | length`,
       );
       newReviewComments = parseInt(result, 10) || 0;
     } catch {
@@ -406,12 +409,12 @@ export function cmdPrActivity(
   for (const pr of prs) {
     let activityType = "none";
 
-    // Check for review decisions
+    // Check for review decisions (trusted authors only)
     try {
       const reviewState = apiGet(
         projectRoot,
         `repos/${ownerRepo}/pulls/${pr}/reviews`,
-        `[.[] | select(.submitted_at > "${since}")] | last | .state`,
+        `[.[] | select(.submitted_at > "${since}" and ${TRUSTED_ASSOC})] | last | .state`,
       );
       if (reviewState === "CHANGES_REQUESTED") {
         activityType = "changes_requested";
@@ -422,12 +425,12 @@ export function cmdPrActivity(
       // ignore
     }
 
-    // Check for new comments
+    // Check for new comments (trusted authors only)
     try {
       const result = apiGet(
         projectRoot,
         `repos/${ownerRepo}/issues/${pr}/comments`,
-        `[.[] | select(.created_at > "${since}")] | length`,
+        `[.[] | select(.created_at > "${since}" and ${TRUSTED_ASSOC})] | length`,
       );
       const count = parseInt(result, 10) || 0;
       if (count > 0 && activityType === "none") {
@@ -437,12 +440,12 @@ export function cmdPrActivity(
       // ignore
     }
 
-    // Check for new review comments (inline)
+    // Check for new review comments (trusted authors only, inline)
     try {
       const result = apiGet(
         projectRoot,
         `repos/${ownerRepo}/pulls/${pr}/comments`,
-        `[.[] | select(.created_at > "${since}")] | length`,
+        `[.[] | select(.created_at > "${since}" and ${TRUSTED_ASSOC})] | length`,
       );
       const count = parseInt(result, 10) || 0;
       if (count > 0 && activityType === "none") {

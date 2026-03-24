@@ -23,10 +23,12 @@ import {
   cmdWatchReady,
   cmdAutopilotWatch,
   cmdPrWatch,
+  cmdPrActivity,
   checkPrStatus,
   getWatchReadyState,
   findTransitions,
   findGoneItems,
+  TRUSTED_ASSOC,
 } from "../core/commands/watch.ts";
 
 function captureOutput(fn: () => void): string {
@@ -560,5 +562,92 @@ describe("findGoneItems", () => {
     expect(result).toContain("A-1-1\t10\tready\tgone\n");
     expect(result).toContain("C-3-1\t30\tfailing\tgone\n");
     expect(result).not.toContain("B-2-1");
+  });
+});
+
+// =============================================================================
+// Author association filtering tests
+// =============================================================================
+
+describe("TRUSTED_ASSOC constant", () => {
+  it("includes OWNER, MEMBER, and COLLABORATOR associations", () => {
+    expect(TRUSTED_ASSOC).toContain("OWNER");
+    expect(TRUSTED_ASSOC).toContain("MEMBER");
+    expect(TRUSTED_ASSOC).toContain("COLLABORATOR");
+  });
+
+  it("does not include untrusted associations", () => {
+    expect(TRUSTED_ASSOC).not.toContain("NONE");
+    expect(TRUSTED_ASSOC).not.toContain("FIRST_TIME_CONTRIBUTOR");
+    expect(TRUSTED_ASSOC).not.toContain("CONTRIBUTOR");
+  });
+});
+
+describe("cmdPrActivity author_association filtering", () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => cleanupTempRepos());
+
+  it("passes author_association filter in jq queries", () => {
+    const repo = setupTempRepo();
+
+    // Track all apiGet calls to verify jq filters
+    (gh.apiGet as Mock).mockReturnValue("0");
+
+    captureOutput(() =>
+      cmdPrActivity(["42", "--since", "2026-01-01T00:00:00Z"], repo),
+    );
+
+    // Every apiGet call should include the trusted association filter
+    const calls = (gh.apiGet as Mock).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      const jqFilter = call[2] as string;
+      expect(jqFilter).toContain("author_association");
+      expect(jqFilter).toContain("OWNER");
+      expect(jqFilter).toContain("MEMBER");
+      expect(jqFilter).toContain("COLLABORATOR");
+    }
+  });
+
+  it("reports no activity when only non-collaborator comments exist", () => {
+    const repo = setupTempRepo();
+
+    // apiGet returns "0" for all filtered queries (no trusted comments)
+    (gh.apiGet as Mock).mockReturnValue("0");
+
+    const output = captureOutput(() =>
+      cmdPrActivity(["42", "--since", "2026-01-01T00:00:00Z"], repo),
+    );
+
+    expect(output).toContain("42\tnone");
+  });
+});
+
+describe("cmdPrWatch author_association filtering", () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => cleanupTempRepos());
+
+  it("passes author_association filter in jq queries for activity detection", async () => {
+    const repo = setupTempRepo();
+
+    // Return > 0 count to trigger activity detection on first poll
+    (gh.apiGet as Mock).mockReturnValue("3");
+
+    await captureOutputAsync(() =>
+      cmdPrWatch(
+        ["--pr", "42", "--interval", "0", "--since", "2026-01-01T00:00:00Z"],
+        repo,
+      ),
+    );
+
+    // Check that apiGet calls include author_association filtering
+    const calls = (gh.apiGet as Mock).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      const jqFilter = call[2] as string;
+      if (jqFilter) {
+        expect(jqFilter).toContain("author_association");
+      }
+    }
   });
 });

@@ -136,6 +136,25 @@ export function prComment(
   return result.exitCode === 0;
 }
 
+/** Lock a PR/issue conversation to restrict comments to collaborators. Returns true on success. */
+export function prLock(repoRoot: string, prNumber: number): boolean {
+  let ownerRepo: string;
+  try {
+    ownerRepo = getRepoOwner(repoRoot);
+  } catch {
+    return false;
+  }
+  const result = ghInRepo(repoRoot, [
+    "api",
+    "--method",
+    "PUT",
+    `repos/${ownerRepo}/issues/${prNumber}/lock`,
+    "-f",
+    "lock_reason=resolved",
+  ]);
+  return result.exitCode === 0;
+}
+
 /** Make a gh api GET request, optionally with a jq filter. */
 export function apiGet(
   repoRoot: string,
