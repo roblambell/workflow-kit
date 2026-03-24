@@ -253,7 +253,6 @@ export function parseTodos(
   }
 
   // Derive domainsFile path from todosFile location
-  const projectRoot = join(todosFile, "..", "..");
   const domainsFile = join(
     todosFile,
     "..",

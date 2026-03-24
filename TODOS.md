@@ -6,20 +6,6 @@
 
 
 
-### Refactor: Remove dead `projectRoot` variable in parseTodos (L-DP-3)
-
-**Priority:** Low
-**Source:** Eng review M-ENG-3 finding 1.3
-**Depends on:** None
-
-Line 251 of `core/parser.ts` computes `const projectRoot = join(todosFile, "..", "..")` which is never used. Remove the dead variable.
-
-Acceptance: Dead variable is removed. No behavioral change. Tests pass.
-
-Key files: `core/parser.ts`
-
----
-
 ### Fix: Title regex stripping is too greedy after ID pattern (L-DP-4)
 
 **Priority:** Low
