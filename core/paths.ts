@@ -19,25 +19,25 @@ const BUNDLE_MARKER = join("skills", "work", "SKILL.md");
 /**
  * Check whether a directory looks like a valid ninthwave bundle.
  */
-function isBundleDir(dir: string): boolean {
-  return existsSync(join(dir, BUNDLE_MARKER));
+function isBundleDir(dir: string, checkExists: (path: string) => boolean = existsSync): boolean {
+  return checkExists(join(dir, BUNDLE_MARKER));
 }
 
 /**
  * Resolve from NINTHWAVE_HOME env var.
  */
-function resolveFromEnv(): string | null {
+function resolveFromEnv(checkExists: (path: string) => boolean = existsSync): string | null {
   const home = process.env.NINTHWAVE_HOME;
   if (!home) return null;
   const resolved = resolve(home);
-  return isBundleDir(resolved) ? resolved : null;
+  return isBundleDir(resolved, checkExists) ? resolved : null;
 }
 
 /**
  * Resolve from binary install prefix.
  * If the binary is at <prefix>/bin/ninthwave, look for <prefix>/share/ninthwave/.
  */
-function resolveFromBinaryPrefix(): string | null {
+function resolveFromBinaryPrefix(checkExists: (path: string) => boolean = existsSync): string | null {
   const argv0 = process.argv[0];
   if (!argv0) return null;
 
@@ -47,19 +47,19 @@ function resolveFromBinaryPrefix(): string | null {
 
   const prefix = dirname(binDir);
   const shareDir = join(prefix, "share", "ninthwave");
-  return isBundleDir(shareDir) ? shareDir : null;
+  return isBundleDir(shareDir, checkExists) ? shareDir : null;
 }
 
 /**
  * Resolve by walking up from this source file to find the repo root.
  * Looks for the bundle marker at each ancestor directory.
  */
-function resolveFromDevSource(): string | null {
+function resolveFromDevSource(checkExists: (path: string) => boolean = existsSync): string | null {
   let dir = dirname(resolve(__filename));
   const root = "/";
 
   while (dir !== root) {
-    if (isBundleDir(dir)) return dir;
+    if (isBundleDir(dir, checkExists)) return dir;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
@@ -78,14 +78,16 @@ function resolveFromDevSource(): string | null {
  *
  * @throws {Error} if no valid bundle directory can be found
  */
-export function getBundleDir(): string {
-  const fromEnv = resolveFromEnv();
+export function getBundleDir(
+  checkExists: (path: string) => boolean = existsSync,
+): string {
+  const fromEnv = resolveFromEnv(checkExists);
   if (fromEnv) return fromEnv;
 
-  const fromPrefix = resolveFromBinaryPrefix();
+  const fromPrefix = resolveFromBinaryPrefix(checkExists);
   if (fromPrefix) return fromPrefix;
 
-  const fromDev = resolveFromDevSource();
+  const fromDev = resolveFromDevSource(checkExists);
   if (fromDev) return fromDev;
 
   throw new Error(

@@ -1,16 +1,12 @@
-// Tests for getBundleDir error case (requires vi.mock to override fs).
+// Tests for getBundleDir error case.
+// Uses the checkExists parameter to avoid module-level fs mocking.
 
-import { describe, it, expect, vi } from "vitest";
-
-vi.mock("fs", () => ({
-  existsSync: () => false,
-}));
+import { describe, it, expect } from "vitest";
+import { getBundleDir } from "../core/paths.ts";
 
 describe("getBundleDir error case", () => {
-  it("throws when no valid bundle directory is found", async () => {
-    const { getBundleDir } = await import("../core/paths.ts");
-
-    expect(() => getBundleDir()).toThrow(
+  it("throws when no valid bundle directory is found", () => {
+    expect(() => getBundleDir(() => false)).toThrow(
       "Could not find ninthwave bundle directory",
     );
   });
