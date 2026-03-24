@@ -8,19 +8,6 @@
 
 
 
-### Feat: Add bundle directory resolution module (H-BREW-1)
-
-**Priority:** High
-**Source:** Brew distribution pivot
-**Depends on:** None
-
-Create `core/paths.ts` with a `getBundleDir()` function that resolves the ninthwave resource directory (skills, agents, docs). Resolution chain: (1) `NINTHWAVE_HOME` env var, (2) binary install prefix — if `process.argv[0]` is at `<prefix>/bin/ninthwave`, check `<prefix>/share/ninthwave/`, (3) development fallback — walk up from source file to find repo root containing `skills/work/SKILL.md`. This replaces the `.ninthwave/dir` mechanism and is the foundation for all subsequent brew work.
-
-Acceptance: `getBundleDir()` returns correct path in dev mode (`bun run core/cli.ts`). Returns correct path when `NINTHWAVE_HOME` is set. Tests cover all three resolution paths. Module is exported and importable.
-
-Key files: `core/paths.ts` (new), `test/paths.test.ts` (new)
-
----
 
 ### Feat: Port setup script to TypeScript CLI command (H-BREW-2)
 
@@ -99,19 +86,6 @@ Key files: `README.md`, `CONTRIBUTING.md`, `setup` (delete), `remote-install.sh`
 
 
 
-### Refactor: Extract launchSingleItem from start command (H-ORCH-4)
-
-**Priority:** High
-**Source:** Orchestrator pivot
-**Depends on:** None
-
-Extract the per-item launch logic from `cmdStart` into a standalone `launchSingleItem(item, todosFile, worktreeDir, projectRoot, aiTool)` function that creates one worktree, allocates a partition, and launches one cmux session. Returns `{ worktreePath, workspaceRef }`. The existing `cmdStart` becomes a loop over items calling `launchSingleItem`. The orchestrator needs this to launch items one at a time as WIP slots open.
-
-Acceptance: `launchSingleItem` creates a worktree and launches a session for a single item. `cmdStart` produces identical behavior to before. All existing start tests pass. New tests cover single-item launch.
-
-Key files: `core/commands/start.ts`, `test/start.test.ts`
-
----
 
 ### Feat: Define orchestrator types and state machine (H-ORCH-6)
 
@@ -184,6 +158,7 @@ Key files: `agents/todo-worker.md`
 ---
 
 ## Vision (recurring, 2026-03-23)
+
 
 
 
