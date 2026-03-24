@@ -443,6 +443,67 @@ Acceptance: Test fixture only.
     expect(result.assignments.size).toBe(0);
   });
 
+  it("wildcard-expanded deps are respected in batch ordering", () => {
+    const repo = setupTempRepo();
+    const todosFile = join(repo, "TODOS.md");
+
+    // Three domain items + one item depending on the whole domain via wildcard
+    writeFileSync(
+      todosFile,
+      `# TODOS
+
+## Alpha
+
+### Feat: A1 (H-AL-1)
+
+**Priority:** High
+**Source:** Test
+**Depends on:** None
+
+First alpha item.
+
+Acceptance: Test fixture only.
+
+---
+
+### Feat: A2 (M-AL-2)
+
+**Priority:** Medium
+**Source:** Test
+**Depends on:** None
+
+Second alpha item.
+
+Acceptance: Test fixture only.
+
+---
+
+## Beta
+
+### Feat: After all alpha (H-BE-1)
+
+**Priority:** High
+**Source:** Test
+**Depends on:** AL-*
+
+Depends on all alpha items via wildcard.
+
+Acceptance: Test fixture only.
+
+---
+`,
+    );
+
+    const items = parseTodos(todosFile, join(repo, ".worktrees"));
+    const result = computeBatches(items, ["H-AL-1", "M-AL-2", "H-BE-1"]);
+
+    // Alpha items in batch 1, wildcard-dependent item in batch 2
+    expect(result.batchCount).toBe(2);
+    expect(result.assignments.get("H-AL-1")).toBe(1);
+    expect(result.assignments.get("M-AL-2")).toBe(1);
+    expect(result.assignments.get("H-BE-1")).toBe(2);
+  });
+
   it("external deps are ignored (only selected set matters)", () => {
     const repo = setupTempRepo();
     useFixture(repo, "valid.md");
