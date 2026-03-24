@@ -134,25 +134,6 @@ Key files: `core/cross-repo.ts`, `test/cross-repo.test.ts`
 
 ---
 
-### Fix: Cross-repo index should deduplicate entries on write (L-DP-15)
-
-**Priority:** Low
-**Source:** Eng review M-ENG-3 finding 6.2
-**Depends on:** None
-
-`writeCrossRepoIndex` appends entries without checking for existing entries with the same ID. Add a deduplication check: if an entry with the same ID already exists, update it rather than appending a duplicate.
-
-**Test plan:**
-- Unit test: writing same ID twice results in one entry
-- Unit test: writing different IDs produces separate entries
-- Unit test: existing index operations still work
-
-Acceptance: Duplicate entries are prevented. Writing an existing ID updates the entry. Tests cover deduplication behavior.
-
-Key files: `core/cross-repo.ts`, `test/cross-repo.test.ts`
-
----
-
 ### Feat: Config key validation with unknown key warnings (L-DP-16)
 
 **Priority:** Low
