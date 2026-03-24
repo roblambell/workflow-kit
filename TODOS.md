@@ -14,6 +14,7 @@
 
 
 
+
 ### Docs: Update README and CONTRIBUTING for brew distribution (M-BREW-6)
 
 **Priority:** Medium
@@ -29,6 +30,7 @@ Key files: `README.md`, `CONTRIBUTING.md`, `setup` (delete), `remote-install.sh`
 ---
 
 ## Security Hardening (prompt injection mitigation, 2026-03-24)
+
 
 
 ### Feat: Lock PRs and filter comments by author association (H-SEC-1)
@@ -50,23 +52,8 @@ Key files: `core/gh.ts`, `core/commands/watch.ts`, `agents/todo-worker.md`, `tes
 
 ---
 
-## Developer Experience (dogfood friction, 2026-03-24)
-
-
-### Docs: Document bun test vs vitest mock isolation constraint (D-TEST-1)
-
-**Priority:** Medium
-**Source:** Dogfood friction (H-ORCH-7 CI failure)
-
-Add a testing convention to CLAUDE.md: `bun test` (the CI runner) does not isolate `vi.mock` between test files — mocks leak across files and break unrelated tests. Workers must use dependency injection (pass mock functions directly) instead of `vi.mock` for any module that other test files also import. Only use `vi.mock` when the mocked module is not tested in its own test file.
-
-Acceptance: CLAUDE.md Conventions section includes a testing note about vi.mock isolation. The note explains the bun test vs vitest difference and recommends dependency injection as the default pattern.
-
-Key files: `CLAUDE.md`
-
----
-
 ## Event-Driven Orchestrator (orchestrator pivot, 2026-03-23)
+
 
 
 
@@ -121,6 +108,7 @@ Key files: `agents/todo-worker.md`
 ---
 
 ## Vision (recurring, 2026-03-23)
+
 
 
 
