@@ -18,7 +18,7 @@ No build step — Bun executes TypeScript directly. Changes take effect immediat
 - `core/parser.ts` — TODOS.md parsing and domain normalization
 - `skills/` — SKILL.md files for AI tool integration (/work, /decompose, etc.)
 - `agents/todo-worker.md` — worker agent prompt (copied to all tool directories by setup)
-- `setup` — project setup script (seeds config, symlinks, agents)
+- `core/commands/setup.ts` — project setup command (seeds config, symlinks, agents)
 
 ## Conventions
 

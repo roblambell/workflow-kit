@@ -87,7 +87,7 @@ git pull --ff-only origin main
 After pulling, re-run setup:
 
 ```bash
-"$NINTHWAVE_DIR/setup" --project-dir "$(git rev-parse --show-toplevel)"
+ninthwave setup
 ```
 
 **Vendored installs (no .git):**
@@ -101,7 +101,7 @@ To upgrade a vendored install, re-download from GitHub:
 
 Then re-run setup:
 ```bash
-"$NINTHWAVE_DIR/setup" --project-dir "$(git rev-parse --show-toplevel)"
+ninthwave setup
 ```
 
 ### 4. Report
