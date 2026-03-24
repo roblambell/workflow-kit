@@ -1,7 +1,7 @@
 <h1 align="center">ninthwave</h1>
 
 <p align="center">
-  <strong>Parallel AI sessions. Human-sized PRs.</strong>
+  <strong>From spec to merged PRs. Automatically.</strong>
 </p>
 
 <p align="center">
@@ -11,26 +11,35 @@
   <a href="https://agentskills.io"><img src="https://img.shields.io/badge/Agent%20Skills-standard-purple" alt="Agent Skills" /></a>
 </p>
 
-<!-- PLACEHOLDER: docs/assets/hero-demo.gif
-     Screen recording of cmux showing /work launching 4 parallel sessions.
-     Sidebar shows worker sessions with status progression:
-     Implementing → Testing → PR Created → Merged.
-     15-20 second loop. -->
+<!-- PLACEHOLDER: docs/assets/pipeline-overview.png
+     LEFT: Icons stacked vertically: TODOS.md (markdown icon), Linear, ClickUp, GitHub Issues
+     CENTER: Arrows converge into a cmux screenshot showing orchestrator + 4 worker
+     sessions in the sidebar with colored status indicators
+     RIGHT: GitHub PR list with green merge checkmarks
+     Visual: work items in → parallel sessions → PRs out -->
 <p align="center">
-  <img src="docs/assets/hero-demo.svg" alt="ninthwave: parallel AI coding sessions" width="800" />
+  <img src="docs/assets/pipeline-overview.svg" alt="ninthwave pipeline: work items in, parallel sessions, PRs out" width="800" />
 </p>
 
 ---
 
-**ninthwave is an open-source orchestration layer for AI coding tools.**
+**ninthwave is an open-source orchestration layer for AI coding tools.** It decomposes a feature into reviewable work items, launches parallel AI sessions to implement them, sequences dependencies, monitors CI, and merges — automatically. Each session is a full native instance of Claude Code, OpenCode, or Copilot CLI. You review every PR before it lands.
 
-Your AI coding tool handles one session at a time. A feature with 8 work items means 8 sequential sessions, 8 rounds of waiting for CI, 8 manual PR flows. You become the bottleneck in your own AI-assisted workflow. And when AI tools do produce PRs, they tend to be sprawling changes that are hard to review.
+Your AI tool handles one session at a time. An 8-item feature means 8 sequential sessions, 8 CI waits, 8 manual PR flows. ninthwave runs them in parallel, manages the lifecycle, and lets you focus on review — not orchestration.
 
-**ninthwave** decomposes a feature spec into human-sized work items (~200–400 LOC each), then launches parallel AI coding sessions in [cmux](https://cmux.com). Each is a full native instance of Claude Code, OpenCode, or Copilot CLI — same interface, same capabilities. It sequences dependency ordering, monitors CI, dispatches review feedback, and merges. You review every PR before it lands.
+**Built on [cmux](https://cmux.com), works with tmux.** cmux provides composable primitives — terminal, workspaces, splits, notifications, CLI control — and invites developers to build their own workflows on top. ninthwave is our answer to that call: an orchestration layer that turns those primitives into a structured delivery pipeline. Already using tmux? ninthwave auto-detects it and works out of the box.
 
-Switch into any session mid-flight. ninthwave is the orchestration layer; your tools do the work.
+## What You Get
 
-**Built on [cmux](https://cmux.com), works with tmux.** cmux provides composable primitives — terminal, workspaces, splits, notifications, CLI control — and invites developers to build their own workflows on top. ninthwave is our answer to that call: an orchestration layer that turns those primitives into a parallel AI coding pipeline. Already using tmux? ninthwave auto-detects it and works out of the box.
+- **Decompose any feature** into PR-sized work items (~200-400 LOC) with dependency mapping
+- **Launch parallel AI sessions** — each a full native instance of Claude Code, OpenCode, or Copilot CLI
+- **Automatic CI + merge pipeline** — dependency ordering, CI monitoring, review dispatch, auto-merge
+- **Switch into any session** mid-flight via cmux sidebar or tmux
+- **Friction log + self-improvement** — log what slows you down, decompose fixes, process them automatically
+- **Convention over configuration** — cross-repo, port isolation, domain mapping. Zero config for the common case
+- **Bring your own everything** — your AI tool, your billing, your CI, your task tracker. No lock-in
+
+Works for a solo dev decomposing a weekend feature and a team dividing a quarterly milestone.
 
 ## See It Work
 
@@ -107,14 +116,13 @@ All items merged. Version bump: 1.4.0 → 1.5.0 (CHANGELOG updated)
 
 ## How It Works
 
-<!-- PLACEHOLDER: docs/assets/pipeline-overview.png
-     LEFT: Icons stacked vertically: TODOS.md (markdown icon), Linear, ClickUp, GitHub Issues
-     CENTER: Arrows converge into a cmux screenshot showing orchestrator + 4 worker
-     sessions in the sidebar with colored status indicators
-     RIGHT: GitHub PR list with green merge checkmarks
-     Visual: work items in → parallel sessions → PRs out -->
+<!-- PLACEHOLDER: docs/assets/hero-demo.gif
+     Screen recording of cmux showing /work launching 4 parallel sessions.
+     Sidebar shows worker sessions with status progression:
+     Implementing → Testing → PR Created → Merged.
+     15-20 second loop. -->
 <p align="center">
-  <img src="docs/assets/pipeline-overview.svg" alt="ninthwave pipeline: work items in, parallel sessions, PRs out" width="800" />
+  <img src="docs/assets/hero-demo.svg" alt="ninthwave: parallel AI coding sessions in cmux" width="800" />
 </p>
 
 ### `/decompose`: Spec to Work Items
@@ -124,7 +132,7 @@ All items merged. Version bump: 1.4.0 → 1.5.0 (CHANGELOG updated)
 | **Intake** | Point to a PRD, spec, or describe the feature verbally |
 | **Explore** | Scans the codebase: what exists vs. what needs building |
 | **Architect** | Optional architecture review for complex features |
-| **Decompose** | PR-sized items (~200–400 LOC each), dependencies mapped into batches |
+| **Decompose** | PR-sized items (~200-400 LOC each), dependencies mapped into batches |
 | **Write** | Items written to TODOS.md (or synced to Linear/ClickUp) |
 
 ### `/work`: Orchestrate Parallel Sessions
@@ -136,6 +144,12 @@ All items merged. Version bump: 1.4.0 → 1.5.0 (CHANGELOG updated)
 | **Monitor** | `orchestrate` daemon polls CI, dispatches failures to workers, forwards review feedback, handles rebases |
 | **Merge** | Auto-merge after approval, on CI pass, or confirm each one |
 | **Finalize** | Version bump, changelog, cleanup. Offer to continue with next batch. |
+
+## Self-Improving
+
+ninthwave includes a built-in feedback loop. As you work, log friction — slowdowns, surprises, rough edges. The `/grind` skill reviews your friction log, decomposes actionable items into TODOs, processes them through the same pipeline, and repeats.
+
+Your workflow improves itself. ninthwave uses this loop to develop itself.
 
 ## Quick Start
 
@@ -192,8 +206,6 @@ One developer runs setup. The team gets everything via `git pull`.
 
 **Cross-repo by convention.** Work items can target different repositories via a `Repo:` field. Sibling directories resolve automatically — no config file required.
 
-Works for a solo dev decomposing a weekend feature and a team dividing a quarterly milestone.
-
 ## Using with tmux
 
 ninthwave auto-detects your multiplexer. If cmux is installed, it's preferred. Otherwise, tmux is used automatically.
@@ -240,6 +252,7 @@ All orchestration features work identically — the only difference is the UI.
 |-------|-------------|
 | `/work` | Interactively select work items, then delegate to `ninthwave orchestrate` |
 | `/decompose` | Break a feature spec into PR-sized work items with dependency mapping |
+| `/grind` | Continuous improvement loop: process TODOs, review friction, decompose fixes, repeat |
 | `/todo-preview` | Launch port-isolated dev servers for live testing in worktrees |
 | `/ninthwave-upgrade` | Update ninthwave to the latest version |
 
