@@ -18,7 +18,7 @@ export interface Multiplexer {
   /** Check if the multiplexer backend is available. */
   isAvailable(): boolean;
   /** Launch a new workspace. Returns a ref (e.g., "workspace:1") or null on failure. */
-  launchWorkspace(cwd: string, command: string): string | null;
+  launchWorkspace(cwd: string, command: string, todoId?: string): string | null;
   /** Split a pane in the current workspace. Returns a ref or null on failure. */
   splitPane(command: string): string | null;
   /** Send a message to a workspace. Returns true on success. */
@@ -36,7 +36,7 @@ export class CmuxAdapter implements Multiplexer {
   isAvailable(): boolean {
     return cmux.isAvailable();
   }
-  launchWorkspace(cwd: string, command: string): string | null {
+  launchWorkspace(cwd: string, command: string, _todoId?: string): string | null {
     return cmux.launchWorkspace(cwd, command);
   }
   splitPane(command: string): string | null {
@@ -98,8 +98,9 @@ export class TmuxAdapter implements Multiplexer {
     return result.exitCode === 0;
   }
 
-  launchWorkspace(cwd: string, command: string): string | null {
-    const name = `nw-${++this.counter}`;
+  launchWorkspace(cwd: string, command: string, todoId?: string): string | null {
+    const counter = ++this.counter;
+    const name = todoId ? `nw-${todoId}-${counter}` : `nw-${counter}`;
     const result = this.run("tmux", [
       "new-session",
       "-d",

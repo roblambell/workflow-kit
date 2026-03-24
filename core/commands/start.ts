@@ -119,7 +119,7 @@ function launchAiSession(
       );
   }
 
-  const wsRef = mux.launchWorkspace(worktreePath, cmd);
+  const wsRef = mux.launchWorkspace(worktreePath, cmd, id);
   if (!wsRef) {
     warn(`cmux launch failed for ${id} -- is cmux running?`);
     return null;

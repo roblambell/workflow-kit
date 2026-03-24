@@ -28,8 +28,12 @@ export function closeWorkspacesForIds(
 
   let closed = 0;
   for (const line of workspaces.split("\n")) {
-    const wsMatch = line.match(/workspace:\d+/);
-    const todoMatch = line.match(/TODO\s+([A-Z]+-[A-Za-z0-9]+-[0-9]+)/);
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // cmux format: "workspace:N TODO <ID> <title>"
+    const wsMatch = trimmed.match(/workspace:\d+/);
+    const todoMatch = trimmed.match(/TODO\s+([A-Z]+-[A-Za-z0-9]+-[0-9]+)/);
 
     if (wsMatch && todoMatch && ids.has(todoMatch[1]!)) {
       const wsRef = wsMatch[0]!;
@@ -39,6 +43,20 @@ export function closeWorkspacesForIds(
         closed++;
       } else {
         warn(`Failed to close ${wsRef}`);
+      }
+      continue;
+    }
+
+    // tmux format: session name contains the TODO ID (e.g., "nw-H-WRK-1-1")
+    for (const id of ids) {
+      if (trimmed.includes(id)) {
+        info(`Closing workspace ${trimmed} (${id})`);
+        if (mux.closeWorkspace(trimmed)) {
+          closed++;
+        } else {
+          warn(`Failed to close ${trimmed}`);
+        }
+        break;
       }
     }
   }
