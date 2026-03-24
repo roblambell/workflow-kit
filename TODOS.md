@@ -42,6 +42,42 @@ Key files: `README.md`, `CONTRIBUTING.md`, `setup` (delete), `remote-install.sh`
 
 ---
 
+## Security Hardening (prompt injection mitigation, 2026-03-24)
+
+### Feat: Lock PRs and filter comments by author association (H-SEC-1)
+
+**Priority:** High
+**Source:** Prompt injection risk — public PR comments are an untrusted input channel that agentic workers act on
+
+Lock automated PR conversations immediately after creation to prevent non-collaborators from commenting. Add `author_association` filtering to `cmdPrActivity` and `cmdWaitForActivity` so only comments from `OWNER`, `MEMBER`, or `COLLABORATOR` are reported as activity. Update the worker agent prompt to note that only trusted-origin feedback should be acted on.
+
+Implementation:
+1. Add a `prLock(projectRoot, prNumber)` function to `core/gh.ts` that calls `PUT /repos/{owner}/{repo}/issues/{issue_number}/lock` via `gh api`.
+2. Call `prLock` in the worker's PR creation step (after `gh pr create`) and in the orchestrator's launch action.
+3. In `core/commands/watch.ts`, filter the jq queries in `cmdPrActivity` and `cmdWaitForActivity` to only count comments where `.author_association` is `OWNER`, `MEMBER`, or `COLLABORATOR`.
+4. Update `agents/todo-worker.md` "Review Feedback" section to note that feedback is pre-filtered to trusted collaborators by the toolchain.
+
+Acceptance: PRs opened by workers are locked immediately after creation. `pr-activity` and `wait-for-activity` ignore comments from non-collaborators. `bun test` passes. Manual test: a comment from a non-collaborator on a locked PR is rejected by GitHub; if lock fails gracefully (e.g., insufficient permissions), the author_association filter still blocks untrusted input.
+
+Key files: `core/gh.ts`, `core/commands/watch.ts`, `agents/todo-worker.md`, `test/watch.test.ts`
+
+---
+
+## Developer Experience (dogfood friction, 2026-03-24)
+
+### Docs: Document bun test vs vitest mock isolation constraint (D-TEST-1)
+
+**Priority:** Medium
+**Source:** Dogfood friction (H-ORCH-7 CI failure)
+
+Add a testing convention to CLAUDE.md: `bun test` (the CI runner) does not isolate `vi.mock` between test files — mocks leak across files and break unrelated tests. Workers must use dependency injection (pass mock functions directly) instead of `vi.mock` for any module that other test files also import. Only use `vi.mock` when the mocked module is not tested in its own test file.
+
+Acceptance: CLAUDE.md Conventions section includes a testing note about vi.mock isolation. The note explains the bun test vs vitest difference and recommends dependency injection as the default pattern.
+
+Key files: `CLAUDE.md`
+
+---
+
 ## Event-Driven Orchestrator (orchestrator pivot, 2026-03-23)
 
 
