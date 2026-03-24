@@ -2,6 +2,7 @@
 // adaptive polling, structured logging, and SIGINT handling.
 
 import { describe, it, expect, vi } from "vitest";
+import { join } from "path";
 import {
   orchestrateLoop,
   adaptivePollInterval,
@@ -726,6 +727,65 @@ describe("reconstructState", () => {
     reconstructState(orch, "/nonexistent", "/nonexistent/.worktrees");
 
     expect(orch.getItem("R-1-1")!.state).toBe("queued");
+  });
+
+  it("recovers workspaceRef from live cmux workspaces during reconstruction", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeTodo("H-DF-1"));
+
+    // Create a temp worktree dir to simulate existing worktree
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-test-${Date.now()}`);
+    const wtDir = join(tmpDir, ".worktrees");
+    const wtPath = join(wtDir, "todo-H-DF-1");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    // Mock mux that reports a live workspace matching the item ID
+    const fakeMux = {
+      isAvailable: () => true,
+      launchWorkspace: () => null,
+      sendMessage: () => true,
+      readScreen: () => "",
+      listWorkspaces: () =>
+        "  workspace:29  ✳ TODO H-DF-1: Workers remove their own TODO item",
+      closeWorkspace: () => true,
+    };
+
+    reconstructState(orch, tmpDir, wtDir, fakeMux);
+
+    const item = orch.getItem("H-DF-1")!;
+    expect(item.state).toBe("implementing");
+    expect(item.workspaceRef).toBe("workspace:29");
+
+    // Cleanup
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("leaves workspaceRef undefined when no matching workspace found", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeTodo("H-DF-2"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-test2-${Date.now()}`);
+    const wtDir = join(tmpDir, ".worktrees");
+    const wtPath = join(wtDir, "todo-H-DF-2");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    // Mock mux with no matching workspaces
+    const fakeMux = {
+      isAvailable: () => true,
+      launchWorkspace: () => null,
+      sendMessage: () => true,
+      readScreen: () => "",
+      listWorkspaces: () => "  workspace:1  main",
+      closeWorkspace: () => true,
+    };
+
+    reconstructState(orch, tmpDir, wtDir, fakeMux);
+
+    const item = orch.getItem("H-DF-2")!;
+    expect(item.state).toBe("implementing");
+    expect(item.workspaceRef).toBeUndefined();
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
   });
 });
 

@@ -167,12 +167,21 @@ export function adaptivePollInterval(orch: Orchestrator): number {
 /**
  * Reconstruct orchestrator state from existing worktrees and GitHub PRs.
  * Called on startup to resume after a crash or restart.
+ *
+ * When an item is in "implementing" state (worktree exists, no PR yet),
+ * also recovers the workspaceRef from live cmux workspaces. Without this,
+ * the first poll cycle sees workerAlive=false and immediately marks the
+ * item stuck — even if the worker is actively running.
  */
 export function reconstructState(
   orch: Orchestrator,
   projectRoot: string,
   worktreeDir: string,
+  mux?: Multiplexer,
 ): void {
+  // Pre-fetch workspace list once (avoid per-item shell calls)
+  const workspaceList = mux ? mux.listWorkspaces() : "";
+
   for (const item of orch.getAllItems()) {
     const wtPath = join(worktreeDir, `todo-${item.id}`);
     if (!existsSync(wtPath)) continue;
@@ -181,6 +190,7 @@ export function reconstructState(
     const statusLine = checkPrStatus(item.id, projectRoot);
     if (!statusLine) {
       orch.setState(item.id, "implementing");
+      recoverWorkspaceRef(orch, item.id, workspaceList);
       continue;
     }
 
@@ -210,7 +220,35 @@ export function reconstructState(
       case "no-pr":
       default:
         orch.setState(item.id, "implementing");
+        recoverWorkspaceRef(orch, item.id, workspaceList);
         break;
+    }
+  }
+}
+
+/**
+ * Try to recover the workspaceRef for an implementing item by matching
+ * its TODO ID in the cmux workspace listing.
+ *
+ * Workspace names follow the pattern: "workspace:N  ✳ TODO <ID>: <title>"
+ * so we scan for lines containing the item ID.
+ */
+function recoverWorkspaceRef(
+  orch: Orchestrator,
+  itemId: string,
+  workspaceList: string,
+): void {
+  if (!workspaceList) return;
+
+  for (const line of workspaceList.split("\n")) {
+    if (!line.includes(itemId)) continue;
+    const match = line.match(/workspace:\d+/);
+    if (match) {
+      const orchItem = orch.getItem(itemId);
+      if (orchItem) {
+        orchItem.workspaceRef = match[0];
+      }
+      return;
     }
   }
 }
@@ -606,16 +644,17 @@ export async function cmdOrchestrate(
     orch.addItem(todoMap.get(id)!);
   }
 
+  // Real action dependencies — create mux before state reconstruction so
+  // workspace refs can be recovered from live workspaces.
+  const mux = getMux();
+
   // Reconstruct state from disk + GitHub (crash recovery)
-  reconstructState(orch, projectRoot, worktreeDir);
+  reconstructState(orch, projectRoot, worktreeDir, mux);
 
   // Detect AI tool
   const aiTool = detectAiTool();
 
   const ctx: ExecutionContext = { projectRoot, worktreeDir, todosFile, aiTool };
-
-  // Real action dependencies
-  const mux = getMux();
   const actionDeps: OrchestratorDeps = {
     launchSingleItem,
     cleanSingleWorktree,
