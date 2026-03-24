@@ -156,6 +156,14 @@ EOF
 
 Choose the right PR title prefix based on the change type (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`, `chore:`).
 
+### Enable auto-merge (dogfooding mode)
+
+If the project instruction file indicates dogfooding mode or auto-merge, enable GitHub auto-merge so the PR merges automatically when CI passes:
+
+```bash
+gh pr merge --squash --auto
+```
+
 ### Set Status: PR Created
 
 ```bash
