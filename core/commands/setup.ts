@@ -143,7 +143,7 @@ export function checkPrerequisites(
   };
 }
 
-const SKILLS = ["work", "decompose", "todo-preview", "ninthwave-upgrade"];
+const SKILLS = ["work", "decompose", "grind", "todo-preview", "ninthwave-upgrade"];
 
 const AGENT_TARGETS = [
   { dir: ".claude/agents", filename: "todo-worker.md" },
