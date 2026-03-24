@@ -2,8 +2,9 @@
 // Reads .ninthwave/analytics/*.json files and shows summary statistics
 // with trend arrows comparing the latest run to the overall average.
 
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
-import { BOLD, RESET, GREEN, RED, YELLOW, CYAN, DIM, BLUE } from "../output.ts";
+import { BOLD, RESET, GREEN, RED, YELLOW, CYAN, DIM } from "../output.ts";
 import type { RunMetrics } from "../analytics.ts";
 
 // ── Dependencies (injectable for testing) ─────────────────────────────
@@ -264,7 +265,6 @@ export function analytics(
 
 /** Default IO using real filesystem. */
 function defaultIO(): AnalyticsReadIO {
-  const { existsSync, readdirSync, readFileSync } = require("fs");
   return { existsSync, readdirSync, readFileSync };
 }
 
