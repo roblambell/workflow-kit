@@ -2,34 +2,8 @@
 
 <!-- Format guide: see $(cat .ninthwave/dir)/core/docs/todos-format.md -->
 
-## Brew Distribution (brew install pivot, 2026-03-23)
-
-
-
-
-
-
-
-
-
-
-
-
-### Docs: Update README and CONTRIBUTING for brew distribution (M-BREW-6)
-
-**Priority:** Medium
-**Source:** Brew distribution pivot
-**Depends on:** H-BREW-4
-
-Update README.md installation section: `brew install ninthwave-sh/tap/ninthwave` as primary method, curl one-liner as fallback. Update the getting-started flow to use `ninthwave setup`. Remove references to git-clone installation as the primary path. Update CONTRIBUTING.md for the new development workflow (binary compilation, release process). Remove the bash `setup` script (replaced by `ninthwave setup`). Remove `remote-install.sh` or update it to install via brew.
-
-Acceptance: README shows brew as the primary install method. CONTRIBUTING documents the build/release process. The bash `setup` script is removed. `bun test` passes.
-
-Key files: `README.md`, `CONTRIBUTING.md`, `setup` (delete), `remote-install.sh` (delete or update)
-
----
-
 ## Security Hardening (prompt injection mitigation, 2026-03-24)
+
 
 
 
@@ -53,6 +27,7 @@ Key files: `core/gh.ts`, `core/commands/watch.ts`, `agents/todo-worker.md`, `tes
 ---
 
 ## Event-Driven Orchestrator (orchestrator pivot, 2026-03-23)
+
 
 
 
@@ -108,6 +83,7 @@ Key files: `agents/todo-worker.md`
 ---
 
 ## Vision (recurring, 2026-03-23)
+
 
 
 
