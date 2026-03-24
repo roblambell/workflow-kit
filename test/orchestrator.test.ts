@@ -226,6 +226,21 @@ describe("Orchestrator", () => {
     expect(orch.getItem("H-1-1")!.prNumber).toBe(42);
   });
 
+  it("transitions implementing → merged when PR auto-merges between polls", () => {
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    const actions = orch.processTransitions(
+      snapshotWith([
+        { id: "H-1-1", prNumber: 82, prState: "merged" },
+      ]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("merged");
+    expect(orch.getItem("H-1-1")!.prNumber).toBe(82);
+    expect(actions.some((a) => a.type === "clean" && a.itemId === "H-1-1")).toBe(true);
+  });
+
   it("retries implementing when worker dies without PR and retries remain", () => {
     orch.addItem(makeTodo("H-1-1"));
     orch.setState("H-1-1", "implementing");

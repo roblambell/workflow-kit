@@ -352,6 +352,12 @@ export class Orchestrator {
     item: OrchestratorItem,
     snap: ItemSnapshot | undefined,
   ): Action[] {
+    // If PR was auto-merged between polls, skip straight to merged
+    if (snap?.prState === "merged") {
+      if (snap.prNumber) item.prNumber = snap.prNumber;
+      this.transition(item, "merged");
+      return [{ type: "clean", itemId: item.id }];
+    }
     // If a PR appeared, move to pr-open
     if (snap?.prNumber && snap.prState === "open") {
       item.prNumber = snap.prNumber;
