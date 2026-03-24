@@ -817,6 +817,109 @@ describe("Orchestrator", () => {
       expect(orch.getItem("H-1-1")!.state).toBe("merged");
     });
 
+    // ── post-merge conflict detection ────────────────────────
+
+    it("merge: checks all in-flight sibling PRs for mergeable status", () => {
+      const checkPrMergeable = vi.fn(() => true);
+      const deps = mockDeps({ checkPrMergeable });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.addItem(makeTodo("H-1-2"));
+      orch.addItem(makeTodo("H-1-3"));
+      orch.setState("H-1-1", "merging");
+      orch.getItem("H-1-1")!.prNumber = 42;
+      orch.setState("H-1-2", "ci-pending");
+      orch.getItem("H-1-2")!.prNumber = 43;
+      orch.getItem("H-1-2")!.workspaceRef = "workspace:2";
+      orch.setState("H-1-3", "implementing");
+      orch.getItem("H-1-3")!.prNumber = 44;
+      orch.getItem("H-1-3")!.workspaceRef = "workspace:3";
+
+      orch.executeAction(
+        { type: "merge", itemId: "H-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      // Should check mergeable status for both in-flight sibling PRs
+      expect(checkPrMergeable).toHaveBeenCalledWith(defaultCtx.projectRoot, 43);
+      expect(checkPrMergeable).toHaveBeenCalledWith(defaultCtx.projectRoot, 44);
+      expect(checkPrMergeable).toHaveBeenCalledTimes(2);
+    });
+
+    it("merge: sends rebase message to worker when sibling PR has conflicts", () => {
+      const checkPrMergeable = vi.fn((_, prNum: number) => prNum !== 43);
+      const deps = mockDeps({ checkPrMergeable });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.addItem(makeTodo("H-1-2"));
+      orch.setState("H-1-1", "merging");
+      orch.getItem("H-1-1")!.prNumber = 42;
+      orch.setState("H-1-2", "ci-pending");
+      orch.getItem("H-1-2")!.prNumber = 43;
+      orch.getItem("H-1-2")!.workspaceRef = "workspace:2";
+
+      orch.executeAction(
+        { type: "merge", itemId: "H-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(deps.sendMessage).toHaveBeenCalledWith(
+        "workspace:2",
+        expect.stringContaining("merge conflicts"),
+      );
+    });
+
+    it("merge: logs warning when conflicting PR has dead worker (no workspace ref)", () => {
+      const checkPrMergeable = vi.fn(() => false);
+      const warn = vi.fn();
+      const deps = mockDeps({ checkPrMergeable, warn });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.addItem(makeTodo("H-1-2"));
+      orch.setState("H-1-1", "merging");
+      orch.getItem("H-1-1")!.prNumber = 42;
+      orch.setState("H-1-2", "ci-pending");
+      orch.getItem("H-1-2")!.prNumber = 43;
+      // No workspaceRef — worker is dead
+
+      orch.executeAction(
+        { type: "merge", itemId: "H-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("PR #43"),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("merge conflicts"),
+      );
+      // Should NOT try to send a message to a non-existent workspace
+      expect(deps.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("merge: does not send rebase for non-conflicting sibling PRs", () => {
+      const checkPrMergeable = vi.fn(() => true);
+      const deps = mockDeps({ checkPrMergeable });
+      orch.addItem(makeTodo("H-1-1"));
+      orch.addItem(makeTodo("H-1-2"));
+      orch.setState("H-1-1", "merging");
+      orch.getItem("H-1-1")!.prNumber = 42;
+      orch.setState("H-1-2", "ci-pending");
+      orch.getItem("H-1-2")!.prNumber = 43;
+      orch.getItem("H-1-2")!.workspaceRef = "workspace:2";
+
+      orch.executeAction(
+        { type: "merge", itemId: "H-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      // checkPrMergeable was called, but sendMessage should NOT be called
+      // (the existing dep rebase logic only fires for dependents, and H-1-2 is not a dependent)
+      expect(checkPrMergeable).toHaveBeenCalledWith(defaultCtx.projectRoot, 43);
+      expect(deps.sendMessage).not.toHaveBeenCalled();
+    });
+
     // ── notify-ci-failure ─────────────────────────────────────
 
     it("notify-ci-failure: sends message to worker and posts PR comment", () => {

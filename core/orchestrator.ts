@@ -126,6 +126,10 @@ export interface OrchestratorDeps {
   gitAdd: (repoRoot: string, files: string[]) => void;
   gitCommit: (repoRoot: string, message: string) => void;
   gitPush: (repoRoot: string) => void;
+  /** Check if a PR is mergeable (no conflicts). Returns true if mergeable, false if conflicting. */
+  checkPrMergeable?: (repoRoot: string, prNumber: number) => boolean;
+  /** Log a warning message (for situations that need human attention). */
+  warn?: (message: string) => void;
 }
 
 /** Result of executing a single action. */
@@ -533,7 +537,7 @@ export class Orchestrator {
     }
   }
 
-  /** Merge a PR, pull main, and send rebase requests to dependent workers. */
+  /** Merge a PR, pull main, send rebase requests to dependent workers, and check sibling PRs for conflicts. */
   private executeMerge(
     item: OrchestratorItem,
     action: Action,
@@ -578,6 +582,29 @@ export class Orchestrator {
           other.workspaceRef,
           `Dependency ${item.id} merged. Please rebase onto latest main.`,
         );
+      }
+    }
+
+    // Post-merge conflict detection: check all in-flight sibling PRs for merge conflicts
+    if (deps.checkPrMergeable) {
+      for (const other of this.getAllItems()) {
+        if (other.id === item.id) continue;
+        if (!WIP_STATES.has(other.state)) continue;
+        if (!other.prNumber) continue;
+
+        const mergeable = deps.checkPrMergeable(ctx.projectRoot, other.prNumber);
+        if (!mergeable) {
+          if (other.workspaceRef) {
+            deps.sendMessage(
+              other.workspaceRef,
+              `Sibling PR #${other.prNumber} has merge conflicts after ${item.id} was merged. Please rebase onto latest main.`,
+            );
+          } else {
+            deps.warn?.(
+              `[Orchestrator] PR #${other.prNumber} (${other.id}) has merge conflicts but worker has no workspace reference. Manual rebase needed.`,
+            );
+          }
+        }
       }
     }
 
