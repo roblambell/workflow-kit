@@ -97,25 +97,6 @@ Key files: `core/cross-repo.ts`, `test/cross-repo.test.ts`
 
 ---
 
-### Refactor: Consolidate domain file parsing — normalizeDomain should accept a Map (L-DP-17)
-
-**Priority:** Low
-**Source:** Eng review M-ENG-3 finding 7.3
-**Depends on:** None
-
-`normalizeDomain` reads and parses `domains.conf` directly from disk, duplicating the logic in `loadDomainMappings()`. Refactor `normalizeDomain` to accept a `Map<string, string>` parameter instead of a file path, and have `parseTodos` call `loadDomainMappings` once and pass the result.
-
-**Test plan:**
-- Unit test: normalizeDomain with Map produces same results as with file path
-- Unit test: parseTodos loads domain mappings once and passes them through
-- Integration: existing domain mapping tests pass
-
-Acceptance: Domain file is read once per parse call. `normalizeDomain` accepts a Map. `loadDomainMappings` is the single source of file-parsing logic. All existing tests pass.
-
-Key files: `core/parser.ts`, `core/config.ts`, `test/parser.test.ts`, `test/config.test.ts`
-
----
-
 ## Worker Reliability (eng-review-workers, 2026-03-24)
 
 
