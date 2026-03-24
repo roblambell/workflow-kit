@@ -17,19 +17,6 @@
 
 
 
-### Feat: Implement event loop and orchestrate CLI command (H-ORCH-8)
-
-**Priority:** High
-**Source:** Orchestrator pivot
-**Depends on:** H-ORCH-7, H-ORCH-3
-
-Create `core/commands/orchestrate.ts` with `cmdOrchestrate`. Implements: arg parsing (`--items`, `--merge-strategy`, `--wip-limit`, `--poll-interval`, `--orchestrator-ws`), state reconstruction from existing worktrees/PRs on startup (crash recovery), the main event loop (poll all items, detect transitions, execute actions, check batch progression, adaptive sleep), structured logging to stdout, and graceful SIGINT handling. Wire into `cli.ts`. The adaptive poll interval: 30s when workers active, 120s when waiting for reviews, 10s between batches.
-
-Acceptance: `ninthwave orchestrate --items H-X-1,H-X-2 --merge-strategy asap` processes items through the full lifecycle. Structured log output shows transitions and actions. Graceful shutdown on SIGINT. Can resume after restart (reconstructs state from disk + GitHub). Integration test runs a full batch cycle with mocked dependencies.
-
-Key files: `core/commands/orchestrate.ts` (new), `core/cli.ts`, `test/orchestrate.test.ts` (new)
-
----
 
 ### Docs: Update /work skill to use orchestrate command (M-ORCH-9)
 
@@ -60,6 +47,7 @@ Key files: `agents/todo-worker.md`
 ---
 
 ## Vision (recurring, 2026-03-23)
+
 
 
 
