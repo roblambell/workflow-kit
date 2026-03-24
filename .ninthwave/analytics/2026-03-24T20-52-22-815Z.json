@@ -1,0 +1,52 @@
+{
+  "runTimestamp": "2026-03-24T20:52:22.815Z",
+  "wallClockMs": 264096,
+  "itemsAttempted": 4,
+  "itemsCompleted": 4,
+  "itemsFailed": 0,
+  "mergeStrategy": "asap",
+  "items": [
+    {
+      "id": "H-WRK-3",
+      "state": "done",
+      "ciRetryCount": 0,
+      "retryCount": 0,
+      "tool": "claude",
+      "prNumber": 104,
+      "tokensUsed": null,
+      "costUsd": null
+    },
+    {
+      "id": "H-WRK-2",
+      "state": "done",
+      "ciRetryCount": 0,
+      "retryCount": 0,
+      "tool": "claude",
+      "prNumber": 102,
+      "tokensUsed": null,
+      "costUsd": null
+    },
+    {
+      "id": "L-DP-12",
+      "state": "done",
+      "ciRetryCount": 0,
+      "retryCount": 0,
+      "tool": "claude",
+      "prNumber": 97,
+      "tokensUsed": null,
+      "costUsd": null
+    },
+    {
+      "id": "M-DP-14",
+      "state": "done",
+      "ciRetryCount": 0,
+      "retryCount": 0,
+      "tool": "claude",
+      "prNumber": 95,
+      "tokensUsed": null,
+      "costUsd": null
+    }
+  ],
+  "totalTokensUsed": null,
+  "totalCostUsd": null
+}
