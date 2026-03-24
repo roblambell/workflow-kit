@@ -117,6 +117,13 @@ describe("orchestrateLoop", () => {
     // Action logs were emitted
     expect(logs.some((l) => l.event === "action_execute" && l.action === "launch")).toBe(true);
     expect(logs.some((l) => l.event === "action_execute" && l.action === "merge")).toBe(true);
+
+    // Complete event includes items array
+    const complete = logs.find((l) => l.event === "orchestrate_complete");
+    expect(complete).toBeDefined();
+    const items = complete!.items as Array<{ id: string; state: string; prUrl: string | null }>;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual({ id: "T-1-1", state: "done", prUrl: null });
   });
 
   it("processes dependency chain across batches", async () => {
@@ -180,11 +187,15 @@ describe("orchestrateLoop", () => {
     expect(launchActions.some((l) => l.itemId === "A-1-1")).toBe(true);
     expect(launchActions.some((l) => l.itemId === "A-1-2")).toBe(true);
 
-    // Complete event shows both done
+    // Complete event shows both done with items array
     const complete = logs.find((l) => l.event === "orchestrate_complete");
     expect(complete).toBeDefined();
     expect(complete!.done).toBe(2);
     expect(complete!.stuck).toBe(0);
+    const items = complete!.items as Array<{ id: string; state: string; prUrl: string | null }>;
+    expect(items).toHaveLength(2);
+    expect(items.every((i) => i.state === "done")).toBe(true);
+    expect(items.map((i) => i.id).sort()).toEqual(["A-1-1", "A-1-2"]);
   });
 
   it("respects WIP limit during batch processing", async () => {
@@ -246,6 +257,73 @@ describe("orchestrateLoop", () => {
     expect(launchedItems[1]).toBe("W-1-2");
   });
 
+  it("includes items with prUrl in orchestrate_complete when repoUrl is configured", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("U-1-1"));
+    orch.addItem(makeTodo("U-1-2"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+
+    const buildSnapshot = (o: Orchestrator): PollSnapshot => {
+      cycle++;
+      const readyIds: string[] = [];
+      const items: ItemSnapshot[] = [];
+
+      for (const item of o.getAllItems()) {
+        if (item.state === "queued") {
+          readyIds.push(item.id);
+          continue;
+        }
+        if (item.state === "done" || item.state === "stuck") continue;
+
+        if (item.state === "launching") {
+          items.push({ id: item.id, workerAlive: true });
+        } else if (item.state === "implementing") {
+          // U-1-1 gets a PR, U-1-2 worker dies (no PR → stuck)
+          if (item.id === "U-1-1") {
+            items.push({ id: item.id, prNumber: 42, prState: "open", ciStatus: "pass" });
+          } else {
+            items.push({ id: item.id, workerAlive: false });
+          }
+        } else if (item.state === "merging" || item.state === "merged") {
+          items.push({ id: item.id, prState: "merged" });
+        }
+      }
+
+      return { items, readyIds };
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, {
+      repoUrl: "https://github.com/test-org/test-repo",
+    });
+
+    expect(orch.getItem("U-1-1")!.state).toBe("done");
+    expect(orch.getItem("U-1-2")!.state).toBe("stuck");
+
+    const complete = logs.find((l) => l.event === "orchestrate_complete");
+    expect(complete).toBeDefined();
+    const items = complete!.items as Array<{ id: string; state: string; prUrl: string | null }>;
+    expect(items).toHaveLength(2);
+
+    // U-1-1 has a PR URL (it got merged via PR #42)
+    const item1 = items.find((i) => i.id === "U-1-1")!;
+    expect(item1.state).toBe("done");
+    expect(item1.prUrl).toBe("https://github.com/test-org/test-repo/pull/42");
+
+    // U-1-2 is stuck with no PR
+    const item2 = items.find((i) => i.id === "U-1-2")!;
+    expect(item2.state).toBe("stuck");
+    expect(item2.prUrl).toBeNull();
+  });
+
   it("handles stuck items and completes remaining", async () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
     orch.addItem(makeTodo("S-1-1"));
@@ -298,6 +376,10 @@ describe("orchestrateLoop", () => {
     const complete = logs.find((l) => l.event === "orchestrate_complete");
     expect(complete!.done).toBe(1);
     expect(complete!.stuck).toBe(1);
+    const items = complete!.items as Array<{ id: string; state: string; prUrl: string | null }>;
+    expect(items).toHaveLength(2);
+    expect(items.find((i) => i.id === "S-1-1")!.state).toBe("stuck");
+    expect(items.find((i) => i.id === "S-1-2")!.state).toBe("done");
   });
 
   it("stops on SIGINT and emits shutdown log", async () => {

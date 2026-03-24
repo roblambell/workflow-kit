@@ -21,7 +21,7 @@ import { checkPrStatus } from "./watch.ts";
 import { launchSingleItem, detectAiTool } from "./start.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { cmdMarkDone } from "./mark-done.ts";
-import { prMerge, prComment } from "../gh.ts";
+import { prMerge, prComment, getRepoOwner } from "../gh.ts";
 import { fetchOrigin, ffMerge } from "../git.ts";
 import * as cmux from "../cmux.ts";
 import { die } from "../output.ts";
@@ -251,6 +251,8 @@ export interface OrchestrateLoopConfig {
   pollIntervalMs?: number;
   /** Supervisor configuration (present when supervisor is active). */
   supervisor?: SupervisorConfig;
+  /** GitHub repo URL (e.g., "https://github.com/owner/repo") for constructing PR URLs. */
+  repoUrl?: string;
 }
 
 /**
@@ -311,6 +313,13 @@ export async function orchestrateLoop(
     if (allTerminal) {
       const doneCount = allItems.filter((i) => i.state === "done").length;
       const stuckCount = allItems.filter((i) => i.state === "stuck").length;
+      const itemSummaries = allItems.map((i) => ({
+        id: i.id,
+        state: i.state,
+        prUrl: i.prNumber && config.repoUrl
+          ? `${config.repoUrl}/pull/${i.prNumber}`
+          : null,
+      }));
       wrappedLog({
         ts: new Date().toISOString(),
         level: "info",
@@ -318,6 +327,7 @@ export async function orchestrateLoop(
         done: doneCount,
         stuck: stuckCount,
         total: allItems.length,
+        items: itemSummaries,
       });
       break;
     }
@@ -601,9 +611,19 @@ export async function cmdOrchestrate(
     supervisorDeps: supervisorActive ? createSupervisorDeps(structuredLog) : undefined,
   };
 
+  // Resolve repo URL for PR URL construction in completion event
+  let repoUrl: string | undefined;
+  try {
+    const ownerRepo = getRepoOwner(projectRoot);
+    repoUrl = `https://github.com/${ownerRepo}`;
+  } catch {
+    // Non-fatal — PR URLs will be null in completion event
+  }
+
   const loopConfig: OrchestrateLoopConfig = {
     ...(pollIntervalOverride ? { pollIntervalMs: pollIntervalOverride } : {}),
     ...(supervisorConfig ? { supervisor: supervisorConfig } : {}),
+    ...(repoUrl ? { repoUrl } : {}),
   };
 
   try {
