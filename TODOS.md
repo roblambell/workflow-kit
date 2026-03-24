@@ -113,22 +113,25 @@ Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
 
 ---
 
-### Test: Add single-cycle multi-step chaining test (H-TST-1)
+### Test: Add tests for lock.ts timeout and backoff behavior (M-TST-4)
 
-**Priority:** High
-**Source:** Eng review H-ENG-1 — finding F1
+**Priority:** Medium
+**Source:** Eng review H-ENG-1 — finding F15
 **Depends on:** None
 
-When `handleImplementing` detects a PR, it falls through to `handlePrLifecycle`. An item can chain through implementing → pr-open → ci-passed → merging in one `processTransitions` call with `asap` strategy. This optimization is correct but untested. Add a dedicated test.
+`acquireLock` has exponential backoff (10ms → 200ms cap) and timeout (default 5s) with zero test coverage. Also untested: stale lock detection, PID file contents, and `releaseLock` cleanup. Add comprehensive tests for the lock module.
 
 **Test plan:**
-- Unit test: implementing item with snapshot containing prNumber, prState: "open", ciStatus: "pass" reaches "merging" in one processTransitions call (asap strategy)
-- Unit test: same scenario with "approved" strategy reaches "review-pending"
-- Unit test: same scenario with ciStatus: "pending" reaches "ci-pending" (not further)
+- Unit test: acquireLock succeeds immediately when lock is free
+- Unit test: acquireLock throws after timeout when lock is held
+- Unit test: acquireLock detects stale lock (dead PID) and recovers
+- Unit test: releaseLock cleans up PID file and directory
+- Unit test: isLockStale returns true for missing PID file
+- Unit test: isLockStale returns true for dead process PID
 
-Acceptance: Multi-step chaining from implementing through merge evaluation is tested for all three merge strategies. Tests pass.
+Acceptance: Lock module has comprehensive test coverage including timeout, backoff, stale detection, and cleanup. Tests pass.
 
-Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
+Key files: `core/lock.ts`, `test/lock.test.ts`
 
 ---
 

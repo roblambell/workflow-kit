@@ -2707,6 +2707,79 @@ describe("Orchestrator", () => {
     });
   });
 
+  // ── Multi-step chaining from implementing ────────────────────────
+
+  describe("Multi-step chaining from implementing through merge evaluation", () => {
+    it("asap strategy: implementing → pr-open → ci-passed → merging in one processTransitions call", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap" });
+      orch.addItem(makeTodo("C-1-1"));
+      orch.setState("C-1-1", "implementing");
+
+      const actions = orch.processTransitions(
+        snapshotWith([{
+          id: "C-1-1",
+          prNumber: 100,
+          prState: "open",
+          ciStatus: "pass",
+          workerAlive: true,
+        }]),
+      );
+
+      // Should chain all the way to merging
+      expect(orch.getItem("C-1-1")!.state).toBe("merging");
+      expect(orch.getItem("C-1-1")!.prNumber).toBe(100);
+      // Must emit a merge action
+      const mergeAction = actions.find((a) => a.type === "merge" && a.itemId === "C-1-1");
+      expect(mergeAction).toBeDefined();
+      expect(mergeAction!.prNumber).toBe(100);
+    });
+
+    it("approved strategy: implementing → pr-open → ci-passed → review-pending in one processTransitions call", () => {
+      orch = new Orchestrator({ mergeStrategy: "approved" });
+      orch.addItem(makeTodo("C-2-1"));
+      orch.setState("C-2-1", "implementing");
+
+      const actions = orch.processTransitions(
+        snapshotWith([{
+          id: "C-2-1",
+          prNumber: 101,
+          prState: "open",
+          ciStatus: "pass",
+          workerAlive: true,
+        }]),
+      );
+
+      // Should chain through to review-pending (waiting for approval)
+      expect(orch.getItem("C-2-1")!.state).toBe("review-pending");
+      expect(orch.getItem("C-2-1")!.prNumber).toBe(101);
+      // No merge action should be emitted — still waiting for review
+      expect(actions.some((a) => a.type === "merge")).toBe(false);
+    });
+
+    it("pending CI: implementing → pr-open → ci-pending (stops, does not chain further)", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap" });
+      orch.addItem(makeTodo("C-3-1"));
+      orch.setState("C-3-1", "implementing");
+
+      const actions = orch.processTransitions(
+        snapshotWith([{
+          id: "C-3-1",
+          prNumber: 102,
+          prState: "open",
+          ciStatus: "pending",
+          workerAlive: true,
+        }]),
+      );
+
+      // Should stop at ci-pending — CI hasn't passed yet
+      expect(orch.getItem("C-3-1")!.state).toBe("ci-pending");
+      expect(orch.getItem("C-3-1")!.prNumber).toBe(102);
+      // No merge or notify actions — just waiting
+      expect(actions.some((a) => a.type === "merge")).toBe(false);
+      expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(false);
+    });
+  });
+
   // ── Crash recovery: state reconstruction ─────────────────────────
 
   describe("Crash recovery / state reconstruction", () => {
