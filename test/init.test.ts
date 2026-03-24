@@ -609,9 +609,13 @@ describe("initProject", () => {
     // Scaffolding completed
     expect(existsSync(join(projectDir, ".ninthwave/work"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/domains.conf"))).toBe(true);
-    expect(existsSync(join(projectDir, "TODOS.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/friction/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".gitignore"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/version"))).toBe(true);
+
+    // Init should NOT create TODOS.md
+    expect(existsSync(join(projectDir, "TODOS.md"))).toBe(false);
 
     // Skills symlinked
     for (const skill of ["work", "decompose", "todo-preview", "ninthwave-upgrade"]) {
@@ -651,15 +655,13 @@ describe("initProject", () => {
     expect(detection.mux).toBeNull();
     // Setup still completed
     expect(existsSync(join(projectDir, ".ninthwave/config"))).toBe(true);
-    expect(existsSync(join(projectDir, "TODOS.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/friction/.gitkeep"))).toBe(true);
   });
 
-  it("preserves existing TODOS.md", () => {
+  it("creates .ninthwave/todos/ and .ninthwave/friction/ with .gitkeep files", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
-
-    // Pre-create TODOS.md
-    writeFileSync(join(projectDir, "TODOS.md"), "# My Project\n\n- Task 1\n");
 
     const deps: InitDeps = {
       commandExists: (() => false) as CommandChecker,
@@ -668,9 +670,17 @@ describe("initProject", () => {
 
     initProject(projectDir, bundleDir, deps);
 
-    const content = readFileSync(join(projectDir, "TODOS.md"), "utf-8");
-    expect(content).toContain("My Project");
-    expect(content).toContain("Task 1");
+    // Both directories exist
+    expect(existsSync(join(projectDir, ".ninthwave/todos"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/friction"))).toBe(true);
+
+    // .gitkeep files exist in both
+    expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/friction/.gitkeep"))).toBe(true);
+
+    // .gitkeep files are empty
+    expect(readFileSync(join(projectDir, ".ninthwave/todos/.gitkeep"), "utf-8")).toBe("");
+    expect(readFileSync(join(projectDir, ".ninthwave/friction/.gitkeep"), "utf-8")).toBe("");
   });
 
   it("preserves existing .ninthwave/domains.conf", () => {

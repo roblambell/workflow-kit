@@ -371,7 +371,7 @@ function scaffold(projectDir: string, bundleDir: string): void {
       domainsPath,
       `# Domain mappings for ninthwave
 # Format: pattern=domain_key
-# Patterns are matched case-insensitively against section headers in TODOS.md.
+# Patterns are matched case-insensitively against todo file domain fields.
 # Lines starting with # are comments.
 #
 # Examples:
@@ -383,17 +383,14 @@ function scaffold(projectDir: string, bundleDir: string): void {
     );
   }
 
-  // --- TODOS.md ---
-  const todosPath = join(projectDir, "TODOS.md");
-  if (!existsSync(todosPath)) {
-    writeFileSync(
-      todosPath,
-      `# TODOS
+  // --- .ninthwave/todos/ and .ninthwave/friction/ directories ---
+  const todosDir = join(projectDir, ".ninthwave", "todos");
+  mkdirSync(todosDir, { recursive: true });
+  writeFileSync(join(todosDir, ".gitkeep"), "");
 
-<!-- Format guide: https://github.com/ninthwave-sh/ninthwave/blob/main/core/docs/todos-format.md -->
-`,
-    );
-  }
+  const frictionDir = join(projectDir, ".ninthwave", "friction");
+  mkdirSync(frictionDir, { recursive: true });
+  writeFileSync(join(frictionDir, ".gitkeep"), "");
 
   // --- Skill symlinks ---
   const skillsDir = join(projectDir, ".claude/skills");
@@ -473,7 +470,8 @@ export function initProject(
   scaffold(projectDir, bundleDir);
   console.log(`  .ninthwave/work ${DIM}(CLI shim)${RESET}`);
   console.log(`  .ninthwave/domains.conf`);
-  console.log(`  TODOS.md`);
+  console.log(`  .ninthwave/todos/ ${DIM}(work items)${RESET}`);
+  console.log(`  .ninthwave/friction/ ${DIM}(friction log)${RESET}`);
   console.log(`  .claude/skills/ ${DIM}(symlinks)${RESET}`);
   console.log(`  Agent files ${DIM}(.claude, .opencode, .github)${RESET}`);
   console.log(`  .gitignore`);
@@ -484,7 +482,7 @@ export function initProject(
   console.log();
   console.log("Next steps:");
   console.log("  1. git add -A && git commit -m 'chore: init ninthwave'");
-  console.log("  2. Add work items to TODOS.md");
+  console.log("  2. Add work items to .ninthwave/todos/");
   console.log("  3. Run: ninthwave list");
   console.log();
 

@@ -9,7 +9,7 @@ import { ghInRepo } from "../gh.ts";
 
 export function cmdList(
   args: string[],
-  todosFile: string,
+  todosDir: string,
   worktreeDir: string,
   projectRoot?: string,
 ): void {
@@ -56,7 +56,7 @@ export function cmdList(
   } else if (backend) {
     die(`Unknown backend: ${backend}`);
   } else {
-    items = parseTodos(todosFile, worktreeDir);
+    items = parseTodos(todosDir, worktreeDir);
   }
 
   // Apply filters
@@ -70,10 +70,10 @@ export function cmdList(
     items = items.filter((item) => item.id.includes(filterFeature));
   }
 
-  // Ready filter: only items whose deps are all satisfied (not in TODOS.md)
+  // Ready filter: only items whose deps are all satisfied (not in todo files)
   if (showReady) {
     const allIds = new Set(
-      parseTodos(todosFile, worktreeDir).map((it) => it.id),
+      parseTodos(todosDir, worktreeDir).map((it) => it.id),
     );
     items = items.filter((item) => {
       if (item.dependencies.length === 0) return true;

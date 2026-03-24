@@ -1,34 +1,27 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdirSync, readFileSync, writeFileSync, rmSync } from "fs";
+import { mkdirSync, existsSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { cmdMarkDone } from "../core/commands/mark-done.ts";
 
-const VALID_FIXTURE = readFileSync(
-  join(__dirname, "fixtures", "valid.md"),
-  "utf-8",
-);
-const MULTI_SECTION_FIXTURE = readFileSync(
-  join(__dirname, "fixtures", "multi_section.md"),
-  "utf-8",
-);
-
 let tmpDirs: string[] = [];
 
-function makeTmpDir(): string {
-  const dir = join(
+function makeTodosDir(): string {
+  const base = join(
     require("os").tmpdir(),
     `nw-test-mark-done-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
-  mkdirSync(dir, { recursive: true });
-  tmpDirs.push(dir);
-  return dir;
+  const todosDir = join(base, ".ninthwave", "todos");
+  mkdirSync(todosDir, { recursive: true });
+  tmpDirs.push(base);
+  return todosDir;
 }
 
-function setupTodos(content: string): string {
-  const dir = makeTmpDir();
-  const todosFile = join(dir, "TODOS.md");
-  writeFileSync(todosFile, content);
-  return todosFile;
+function writeTodoFile(todosDir: string, id: string, priority = "medium", domain = "testing"): void {
+  const filename = `2-${domain}--${id}.md`;
+  writeFileSync(
+    join(todosDir, filename),
+    `# Test item (${id})\n\n**Priority:** ${priority}\n**Domain:** ${domain}\n`,
+  );
 }
 
 afterEach(() => {
@@ -43,100 +36,93 @@ afterEach(() => {
 });
 
 describe("cmdMarkDone", () => {
-  it("removes a single item", () => {
-    const todosFile = setupTodos(VALID_FIXTURE);
-    cmdMarkDone(["M-CI-1"], todosFile);
-    const result = readFileSync(todosFile, "utf-8");
-    expect(result).not.toContain("(M-CI-1)");
-    expect(result).not.toContain("Upgrade CI runners");
+  it("deletes a single todo file", () => {
+    const todosDir = makeTodosDir();
+    writeTodoFile(todosDir, "M-CI-1");
+    writeTodoFile(todosDir, "H-CI-2");
+
+    cmdMarkDone(["M-CI-1"], todosDir);
+
+    expect(existsSync(join(todosDir, "2-testing--M-CI-1.md"))).toBe(false);
+    expect(existsSync(join(todosDir, "2-testing--H-CI-2.md"))).toBe(true);
   });
 
-  it("preserves other items after single removal", () => {
-    const todosFile = setupTodos(VALID_FIXTURE);
-    cmdMarkDone(["M-CI-1"], todosFile);
-    const result = readFileSync(todosFile, "utf-8");
-    expect(result).toContain("(H-CI-2)");
-    expect(result).toContain("(C-UO-1)");
-    expect(result).toContain("(H-UO-2)");
+  it("deletes multiple todo files at once", () => {
+    const todosDir = makeTodosDir();
+    writeTodoFile(todosDir, "M-CI-1");
+    writeTodoFile(todosDir, "H-CI-2");
+    writeTodoFile(todosDir, "C-UO-1");
+
+    cmdMarkDone(["M-CI-1", "H-CI-2"], todosDir);
+
+    expect(existsSync(join(todosDir, "2-testing--M-CI-1.md"))).toBe(false);
+    expect(existsSync(join(todosDir, "2-testing--H-CI-2.md"))).toBe(false);
+    expect(existsSync(join(todosDir, "2-testing--C-UO-1.md"))).toBe(true);
   });
 
-  it("preserves section headers with remaining items", () => {
-    const todosFile = setupTodos(VALID_FIXTURE);
-    cmdMarkDone(["M-CI-1"], todosFile);
-    const result = readFileSync(todosFile, "utf-8");
-    expect(result).toContain("Cloud Infrastructure");
-    expect(result).toContain("User Onboarding");
+  it("is idempotent: nonexistent ID is a no-op", () => {
+    const todosDir = makeTodosDir();
+    writeTodoFile(todosDir, "M-CI-1");
+
+    // Should not throw
+    cmdMarkDone(["NONEXISTENT-1"], todosDir);
+
+    // Existing file is untouched
+    expect(existsSync(join(todosDir, "2-testing--M-CI-1.md"))).toBe(true);
   });
 
-  it("removes multiple items at once", () => {
-    const todosFile = setupTodos(VALID_FIXTURE);
-    cmdMarkDone(["M-CI-1", "H-CI-2"], todosFile);
-    const result = readFileSync(todosFile, "utf-8");
-    expect(result).not.toContain("(M-CI-1)");
-    expect(result).not.toContain("(H-CI-2)");
-    expect(result).not.toContain("Upgrade CI runners");
-    expect(result).not.toContain("Flaky connection pool");
-    expect(result).toContain("(C-UO-1)");
-    expect(result).toContain("(H-UO-2)");
-  });
+  it("handles mix of found and not-found IDs", () => {
+    const todosDir = makeTodosDir();
+    writeTodoFile(todosDir, "M-CI-1");
+    writeTodoFile(todosDir, "H-CI-2");
 
-  it("removes section header when all items in section are removed", () => {
-    const todosFile = setupTodos(VALID_FIXTURE);
-    cmdMarkDone(["M-CI-1", "H-CI-2"], todosFile);
-    const result = readFileSync(todosFile, "utf-8");
-    expect(result).not.toContain("Cloud Infrastructure");
-  });
-
-  it("keeps section with remaining items", () => {
-    const todosFile = setupTodos(VALID_FIXTURE);
-    cmdMarkDone(["M-CI-1", "H-CI-2"], todosFile);
-    const result = readFileSync(todosFile, "utf-8");
-    expect(result).toContain("User Onboarding");
-  });
-
-  it("removing all items leaves only the header", () => {
-    const todosFile = setupTodos(VALID_FIXTURE);
-    cmdMarkDone(["M-CI-1", "H-CI-2", "C-UO-1", "H-UO-2"], todosFile);
-    const result = readFileSync(todosFile, "utf-8");
-    expect(result).not.toContain("(M-CI-1)");
-    expect(result).not.toContain("(H-CI-2)");
-    expect(result).not.toContain("(C-UO-1)");
-    expect(result).not.toContain("(H-UO-2)");
-    expect(result).not.toContain("Cloud Infrastructure");
-    expect(result).not.toContain("User Onboarding");
-    expect(result).toContain("# TODOS");
-  });
-
-  it("removes item from second section, preserves first section", () => {
-    const todosFile = setupTodos(MULTI_SECTION_FIXTURE);
-    cmdMarkDone(["H-BE-1"], todosFile);
-    const result = readFileSync(todosFile, "utf-8");
-    expect(result).not.toContain("(H-BE-1)");
-    expect(result).toContain("(H-AL-1)");
-    expect(result).toContain("(M-AL-2)");
-    expect(result).toContain("Section Alpha");
-  });
-
-  it("removes empty second section header", () => {
-    const todosFile = setupTodos(MULTI_SECTION_FIXTURE);
-    cmdMarkDone(["H-BE-1"], todosFile);
-    const result = readFileSync(todosFile, "utf-8");
-    expect(result).not.toContain("Section Beta");
-  });
-
-  it("outputs confirmation message", () => {
-    const todosFile = setupTodos(VALID_FIXTURE);
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (msg: string) => logs.push(msg);
     try {
-      cmdMarkDone(["M-CI-1"], todosFile);
+      cmdMarkDone(["M-CI-1", "GONE-1"], todosDir);
     } finally {
       console.log = origLog;
     }
+
+    expect(existsSync(join(todosDir, "2-testing--M-CI-1.md"))).toBe(false);
+    expect(existsSync(join(todosDir, "2-testing--H-CI-2.md"))).toBe(true);
+
+    const output = logs.join("\n");
+    expect(output).toContain("1 item");
+    expect(output).toContain("M-CI-1");
+    expect(output).toContain("Not found");
+    expect(output).toContain("GONE-1");
+  });
+
+  it("outputs confirmation message", () => {
+    const todosDir = makeTodosDir();
+    writeTodoFile(todosDir, "M-CI-1");
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (msg: string) => logs.push(msg);
+    try {
+      cmdMarkDone(["M-CI-1"], todosDir);
+    } finally {
+      console.log = origLog;
+    }
+
     const output = logs.join("\n");
     expect(output).toContain("Marked");
     expect(output).toContain("1 item");
     expect(output).toContain("M-CI-1");
+  });
+
+  it("marking a previously-deleted ID is silent no-op", () => {
+    const todosDir = makeTodosDir();
+    writeTodoFile(todosDir, "M-CI-1");
+
+    cmdMarkDone(["M-CI-1"], todosDir);
+    expect(existsSync(join(todosDir, "2-testing--M-CI-1.md"))).toBe(false);
+
+    // Mark again — should not throw
+    cmdMarkDone(["M-CI-1"], todosDir);
+    expect(existsSync(join(todosDir, "2-testing--M-CI-1.md"))).toBe(false);
   });
 });

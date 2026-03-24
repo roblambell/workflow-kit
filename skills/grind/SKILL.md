@@ -65,7 +65,7 @@ The user can interrupt at any checkpoint. Between major phases the skill pauses 
 
 **Goal:** Set up the grind loop with sensible defaults, confirm with the user.
 
-1. Run `.ninthwave/work reconcile` to sync TODOS.md with GitHub state.
+1. Run `.ninthwave/work reconcile` to sync todo state with GitHub.
 2. Run `.ninthwave/work list` to get the full picture.
 3. Count items by status: ready, blocked, in-progress, total.
 
@@ -108,16 +108,14 @@ ninthwave orchestrate --items <IDs> --merge-strategy <STRATEGY> --wip-limit <WIP
 
 ## Phase 2: FRICTION REVIEW
 
-**Goal:** Check the friction log for new actionable observations.
+**Goal:** Check friction observations for new actionable items.
 
-1. Check for a friction log at:
-   - `~/.claude/projects/-Users-roblambell-code-ninthwave/memory/project_dogfood_friction.md` (memory system)
-   - `.ninthwave/friction.log` (local fallback)
+1. Check for friction files in `.ninthwave/friction/` directory. Each file is an individual friction observation.
 
-2. If no friction log exists or it's empty, skip to Phase 4.
+2. If the directory doesn't exist or has no files (`ls .ninthwave/friction/` is empty), skip to Phase 4.
 
-3. Read the friction log. Identify entries that:
-   - Don't have corresponding TODOs already in TODOS.md
+3. Read the friction files. Identify entries that:
+   - Don't have corresponding TODOs already in `.ninthwave/todos/`
    - Are actionable (not just observations or already-fixed items)
    - Were logged since the last grind cycle (or all, if first cycle)
 
@@ -136,8 +134,8 @@ ninthwave orchestrate --items <IDs> --merge-strategy <STRATEGY> --wip-limit <WIP
 
 **Goal:** Turn actionable friction into TODO items.
 
-1. For each actionable friction entry, use `/decompose` (invoke the skill or run the equivalent CLI workflow) to break it into TODOS.md items.
-2. Add the new items to TODOS.md **before** any L-VIS vision items so they're processed first.
+1. For each actionable friction entry, use `/decompose` (invoke the skill or run the equivalent CLI workflow) to break it into individual TODO files in `.ninthwave/todos/`.
+2. New items are written as individual files — no ordering within the directory is needed. Dependencies ensure friction TODOs are processed before vision items.
 3. Report what was added: N new items across M domains.
 
 4. Loop back to **Phase 1** to process the newly created friction TODOs.
@@ -148,7 +146,7 @@ ninthwave orchestrate --items <IDs> --merge-strategy <STRATEGY> --wip-limit <WIP
 
 **Goal:** Run the recurring vision item to explore what's next.
 
-1. Check if an L-VIS-* item exists in TODOS.md and is ready (all deps met).
+1. Check if an L-VIS-* item exists in `.ninthwave/todos/` and is ready (all deps met).
 2. If no vision item is ready, report "No vision item ready — cycle complete" and go to Phase 5.
 
 3. AskUserQuestion — "All code and friction items are done. Ready to run the vision exploration (L-VIS-N)? This will review the product state, friction log, and competitive landscape, then decompose new work."
@@ -157,7 +155,7 @@ ninthwave orchestrate --items <IDs> --merge-strategy <STRATEGY> --wip-limit <WIP
    - C) Run vision with scope constraint — limit vision to a specific area
 
 4. Process the vision item via the orchestrator (single item).
-5. After vision completes, reconcile TODOS.md.
+5. After vision completes, reconcile todo state.
 6. Report: what new items were created, what the next iteration looks like.
 
 ---
@@ -218,7 +216,7 @@ At each checkpoint, display:
 
 ## Important Rules
 
-- **Always reconcile before listing.** TODOS.md may be stale.
+- **Always reconcile before listing.** Todo files may be stale.
 - **Auto-merge is the default.** This is dogfooding — tight feedback loops matter.
 - **Supervisor should be on.** It detects anomalies and logs friction automatically.
 - **Worktree isolation is mandatory.** Every worker gets its own worktree.

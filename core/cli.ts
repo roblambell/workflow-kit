@@ -34,6 +34,7 @@ import { cmdOrchestrate } from "./commands/orchestrate.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
 import { cmdAnalytics } from "./commands/analytics.ts";
 import { cmdStop } from "./commands/stop.ts";
+import { cmdMigrateTodos, cmdGenerateTodos } from "./commands/migrate-todos.ts";
 
 // Resolve project root via git
 function getProjectRoot(): string {
@@ -85,7 +86,7 @@ if (command === "version") {
 
 // All other commands need a project root
 const projectRoot = getProjectRoot();
-const todosFile = join(projectRoot, "TODOS.md");
+const todosDir = join(projectRoot, ".ninthwave", "todos");
 const worktreeDir = join(projectRoot, ".worktrees");
 const partitionDir = join(worktreeDir, ".partitions");
 
@@ -137,7 +138,7 @@ if (!command) {
     "  clean-single <ID>                             Clean single worktree (no side effects)",
   );
   console.log(
-    "  mark-done <ID1> [ID2]...                      Remove completed items from TODOS.md",
+    "  mark-done <ID1> [ID2]...                      Remove completed todo files",
   );
   console.log(
     "  merged-ids                                    List IDs of already-merged worktree items",
@@ -173,15 +174,21 @@ if (!command) {
     "  repos                                         List discovered repos",
   );
   console.log(
-    "  reconcile                                     Sync TODOS.md with merged PRs",
+    "  reconcile                                     Sync todo files with merged PRs",
   );
   console.log(
     "  analytics [--all]                             Show orchestration performance trends",
   );
+  console.log(
+    "  migrate-todos                                 Migrate TODOS.md to file-per-todo format",
+  );
+  console.log(
+    "  generate-todos                                Generate TODOS.md from individual todo files",
+  );
   process.exit(0);
 }
 
-// Most commands require TODOS.md — check before dispatching
+// Most commands require the todos directory — check before dispatching
 // (setup and version are handled above before project root resolution)
 const needsTodos = ![
   "repos",
@@ -200,28 +207,30 @@ const needsTodos = ![
   "pr-activity",
   "version-bump",
   "analytics",
+  "migrate-todos",
+  "generate-todos",
 ].includes(command);
 
-// list --backend <name> sources from an external backend, not TODOS.md
+// list --backend <name> sources from an external backend, not the todos directory
 const usesExternalBackend =
   command === "list" && args.includes("--backend");
 
-if (needsTodos && !usesExternalBackend && !existsSync(todosFile)) {
-  die(`TODOS.md not found at ${todosFile}`);
+if (needsTodos && !usesExternalBackend && !existsSync(todosDir)) {
+  die(`Todos directory not found at ${todosDir}`);
 }
 
 switch (command) {
   case "list":
-    cmdList(args, todosFile, worktreeDir, projectRoot);
+    cmdList(args, todosDir, worktreeDir, projectRoot);
     break;
   case "deps":
-    cmdDeps(args, todosFile, worktreeDir);
+    cmdDeps(args, todosDir, worktreeDir);
     break;
   case "conflicts":
-    cmdConflicts(args, todosFile, worktreeDir);
+    cmdConflicts(args, todosDir, worktreeDir);
     break;
   case "batch-order":
-    cmdBatchOrder(args, todosFile, worktreeDir);
+    cmdBatchOrder(args, todosDir, worktreeDir);
     break;
   case "repos":
     cmdRepos(projectRoot);
@@ -237,7 +246,7 @@ switch (command) {
     cmdPartitions(partitionDir);
     break;
   case "start":
-    cmdStart(args, todosFile, worktreeDir, projectRoot);
+    cmdStart(args, todosDir, worktreeDir, projectRoot);
     break;
   case "close-workspaces":
     cmdCloseWorkspaces();
@@ -252,7 +261,7 @@ switch (command) {
     cmdCleanSingle(args, worktreeDir, projectRoot);
     break;
   case "mark-done":
-    cmdMarkDone(args, todosFile);
+    cmdMarkDone(args, todosDir);
     break;
   case "merged-ids":
     cmdMergedIds(worktreeDir, projectRoot);
@@ -276,16 +285,22 @@ switch (command) {
     cmdVersionBump(projectRoot);
     break;
   case "orchestrate":
-    await cmdOrchestrate(args, todosFile, worktreeDir, projectRoot);
+    await cmdOrchestrate(args, todosDir, worktreeDir, projectRoot);
     break;
   case "stop":
     cmdStop(projectRoot);
     break;
   case "reconcile":
-    cmdReconcile(todosFile, worktreeDir, projectRoot);
+    cmdReconcile(todosDir, worktreeDir, projectRoot);
     break;
   case "analytics":
     cmdAnalytics(args, projectRoot);
+    break;
+  case "migrate-todos":
+    cmdMigrateTodos(projectRoot);
+    break;
+  case "generate-todos":
+    cmdGenerateTodos(todosDir, join(projectRoot, "TODOS.md"));
     break;
   default:
     die(`Unknown command: ${command}`);

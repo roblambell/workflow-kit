@@ -29,7 +29,7 @@ v0.1.0 shipped March 2026. Three grind cycles have shipped since then.
 - **Wildcard dependencies** — pattern matching (`MUX-*`, `DF-*`) in dependency declarations.
 - **`/grind` skill** — continuous self-improvement loop (process TODOs → review friction → decompose → repeat).
 
-**Self-developing.** ninthwave dogfoods itself. The friction log has surfaced 14 issues across 2 grind cycles, driving multiple improvements. The L-VIS recurring item in TODOS.md keeps the self-improvement loop running.
+**Self-developing.** ninthwave dogfoods itself. The friction log has surfaced 14 issues across 2 grind cycles, driving multiple improvements. The L-VIS recurring item in `.ninthwave/todos/` keeps the self-improvement loop running.
 
 **Competitive positioning (Q1 2026).** Parallel AI coding exploded: Claude Code Agent Teams (16+ agents), Cursor (8 agents), Superset IDE (10+ agents), dmux, Conductor. All launch parallel sessions. None decompose work, order dependencies, manage CI lifecycle, or orchestrate merges. ninthwave's moat is the integrated pipeline, not session launching. Agent Teams is complementary (intra-task collaboration on one item) while ninthwave is inter-task orchestration (N workers on N items).
 
@@ -117,8 +117,8 @@ An optional advisory layer on top of the deterministic daemon.
 
 ### E. Expand the Surface Area
 
-- **External task backends.** Two categories: (1) Project management — GitHub Issues adapter first (GHI-1, GHI-2 in progress), then Linear, ClickUp. Work items created by humans or planning tools. (2) Observability/alerting — Sentry adapter first, then PagerDuty, CloudWatch. Work items created by production signals. Both use the same three-operation interface: list items, read item, mark done. TODOS.md remains the built-in default.
-- **GitHub Action for CI/CD failures.** `ninthwave-sh/create-todo` — a thin GitHub Action that appends a TODO to TODOS.md when a CD workflow fails. Bridges CI/CD signals into the work queue for teams using TODOS.md without an external task backend.
+- **External task backends.** Two categories: (1) Project management — GitHub Issues adapter first (GHI-1, GHI-2 in progress), then Linear, ClickUp. Work items created by humans or planning tools. (2) Observability/alerting — Sentry adapter first, then PagerDuty, CloudWatch. Work items created by production signals. Both use the same three-operation interface: list items, read item, mark done. `.ninthwave/todos/` is the built-in default.
+- **GitHub Action for CI/CD failures.** `ninthwave-sh/create-todo` — a thin GitHub Action that creates a todo file in `.ninthwave/todos/` when a CD workflow fails. Bridges CI/CD signals into the work queue for teams using file-per-todo without an external task backend.
 - **Multiplexer abstraction.** ~~tmux~~ Done (MUX-3, MUX-4). zellij as the next alternative backend. Three operations to abstract: create session, send message, list sessions. cmux remains the default.
 - **Smarter resource management.** Memory-aware WIP limits based on available RAM. Adaptive scaling under load. Document: each worker consumes ~2-3GB (AI tool + language server + worktree).
 - **Cross-repo maturity.** Monorepo workspace support (pnpm/yarn/turborepo). Dependency ordering across repos.
@@ -135,7 +135,7 @@ What ninthwave will not become:
 
 4. **Not a code review tool.** ninthwave dispatches review feedback to workers. It doesn't perform reviews. It integrates with review skills you bring. The human reviewer is always in the loop.
 
-5. **Not a project management tool.** TODOS.md is a lightweight work queue, not Jira. For teams with existing task management, ninthwave connects via adapters.
+5. **Not a project management tool.** `.ninthwave/todos/` is a lightweight work queue, not Jira. For teams with existing task management, ninthwave connects via adapters.
 
 6. **Not a monolithic agent.** Many small workers plus a deterministic orchestrator is the architecture. It's not a stepping stone to a single agent that handles everything in one session. Decomposition and parallel execution is the point.
 
@@ -151,7 +151,7 @@ ninthwave is feature-complete when:
 - Works with 2+ terminal multiplexers. *(Achieved: cmux + tmux. zellij planned.)*
 - Connects to 2+ task backends. *(In progress — GitHub Issues adapter: GHI-1, GHI-2. Linear adapter planned.)*
 - Connects to 2+ observability/alerting backends (Sentry, PagerDuty). *(Not yet.)*
-- GitHub Action bridges CI/CD failures into TODOS.md. *(Not yet.)*
+- GitHub Action bridges CI/CD failures into todo files. *(Not yet.)*
 - Every decomposed work item has a test plan with tracked outcomes. *(Achieved — test plan field required since v0.1.0. Analytics tracks outcomes per run: ANL-1, ANL-2. Cost tracking in progress: ANL-4.)*
 - Workers run sandboxed by default. *(Not yet.)*
 - Remote session links posted on PRs with auth. *(Not yet.)*
@@ -166,6 +166,6 @@ ninthwave uses itself to develop itself. This is not a metaphor — the v0.1.0 r
 
 The cycle: decompose a feature into TODOs, process them via `ninthwave orchestrate` with auto-merge, review the friction log after each batch, decompose actionable friction into new TODOs, repeat until no actionable friction remains.
 
-The **L-VIS recurring item** in TODOS.md is the mechanism. When all other TODOs complete, L-VIS triggers: review this document against the current state, check the friction log, identify the next most impactful capability, decompose it into TODOs, add a new L-VIS-(N+1) depending on the terminal items. The cycle continues.
+The **L-VIS recurring item** in `.ninthwave/todos/` is the mechanism. When all other TODOs complete, L-VIS triggers: review this document against the current state, check the friction log, identify the next most impactful capability, decompose it into TODOs, add a new L-VIS-(N+1) depending on the terminal items. The cycle continues.
 
 The supervisor layer will eventually automate friction detection during orchestration, making the loop tighter. But the core mechanic — dogfood, log friction, decompose, work, repeat — is already running.

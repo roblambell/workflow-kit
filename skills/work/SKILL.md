@@ -46,9 +46,9 @@ This skill interactively selects TODO items, then delegates all orchestration to
 
 **Goal:** Help the user choose which TODO items to work on and how to process them.
 
-> **Rule: Never trust `list --ready` without reconciling first.** TODOS.md may be stale if PRs were merged outside the orchestrator (manually, by another session, or by GitHub auto-merge). Always reconcile before listing.
+> **Rule: Never trust `list --ready` without reconciling first.** Todo files in `.ninthwave/todos/` may be stale if PRs were merged outside the orchestrator (manually, by another session, or by GitHub auto-merge). Always reconcile before listing.
 
-1. Run `.ninthwave/work reconcile` to sync TODOS.md with GitHub state (marks merged PRs as done, cleans stale worktrees).
+1. Run `.ninthwave/work reconcile` to sync todo state with GitHub (removes files for merged PRs, cleans stale worktrees).
 2. Run `.ninthwave/work list --ready` to get all available items.
 3. Parse the output and present a summary table to the user showing: ID, priority, domain, title, and estimated complexity. Items with a `Repo:` field will indicate which target repo they belong to.
 
@@ -184,7 +184,7 @@ Phase 3 runs automatically after Phase 2 completes. It checks whether more work 
 
 #### Step 1: Reconcile and check for remaining ready items
 
-Run `.ninthwave/work reconcile` to sync TODOS.md with GitHub state — items merged during the batch are marked done, stale worktrees are cleaned, and TODOS.md is committed/pushed. Never trust `list --ready` without reconciling first.
+Run `.ninthwave/work reconcile` to sync todo state with GitHub — files for merged items are removed from `.ninthwave/todos/`, stale worktrees are cleaned, and changes are committed/pushed. Never trust `list --ready` without reconciling first.
 
 Then run `.ninthwave/work list --ready` to see if any items were unblocked by the batch that just completed.
 
@@ -197,8 +197,8 @@ Then run `.ninthwave/work list --ready` to see if any items were unblocked by th
 
 If in dogfooding mode:
 
-1. Read the friction log at `~/.claude/projects/-Users-roblambell-code-ninthwave/memory/project_dogfood_friction.md` (or `.ninthwave/friction.log` if it exists).
-2. Identify any **new actionable entries** — friction items that don't already have corresponding TODOs in `TODOS.md`.
+1. Read friction files from `.ninthwave/friction/` directory. Each file is an individual friction observation.
+2. Identify any **new actionable entries** — friction items that don't already have corresponding TODOs in `.ninthwave/todos/`.
 3. If actionable entries exist, present them to the user:
 
    AskUserQuestion — "Friction log has N new actionable entries. Decompose into TODOs?"

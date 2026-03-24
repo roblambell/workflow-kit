@@ -15,7 +15,7 @@ No build step — Bun executes TypeScript directly. Changes take effect immediat
 
 - `core/cli.ts` — CLI entry point and command dispatcher
 - `core/commands/` — one file per command (list, start, clean, watch, etc.)
-- `core/parser.ts` — TODOS.md parsing and domain normalization
+- `core/parser.ts` — reads `.ninthwave/todos/` directory and domain normalization
 - `skills/` — SKILL.md files for AI tool integration (/work, /decompose, etc.)
 - `agents/todo-worker.md` — worker agent prompt (copied to all tool directories by setup)
 - `core/commands/setup.ts` — project setup command (seeds config, symlinks, agents)
@@ -53,7 +53,7 @@ The full dogfooding cycle runs automatically unless the user explicitly opts out
 
 3. **Review friction.** Read the friction log and run it through `/plan-ceo-review` (scope/ambition) and `/plan-eng-review` (architecture/execution). This ensures friction fixes are well-scoped and well-designed before decomposition.
 
-4. **Decompose friction into TODOs.** Use `/decompose` to break actionable friction into TODO items. Add them to TODOS.md *before* the vision item so they're processed first.
+4. **Decompose friction into TODOs.** Use `/decompose` to break actionable friction into TODO items in `.ninthwave/todos/` so they're processed before the vision item.
 
 5. **Process friction TODOs.** Launch the orchestrator again on the new friction-derived items.
 

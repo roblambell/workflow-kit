@@ -11,13 +11,19 @@ export interface TodoItem {
   dependencies: string[]; // list of dependency IDs
   bundleWith: string[]; // list of bundle IDs
   status: Status;
-  lineNumber: number; // line in TODOS.md where this item starts
-  lineEndNumber: number; // last line of this item's section
+  filePath: string; // path to the individual todo file
   repoAlias: string; // "" | "self" | "hub" | repo name
   rawText: string; // full markdown text of the TODO item
   filePaths: string[]; // extracted file paths mentioned in the item
   testPlan: string; // extracted from **Test plan:** section (empty if not present)
 }
+
+export const PRIORITY_NUM: Record<Priority, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
 
 export interface ProjectConfig {
   locExtensions: string;

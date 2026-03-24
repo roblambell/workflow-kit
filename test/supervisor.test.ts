@@ -41,8 +41,7 @@ function makeTodo(id: string, deps: string[] = []): TodoItem {
     dependencies: deps,
     bundleWith: [],
     status: "open",
-    lineNumber: 1,
-    lineEndNumber: 5,
+    filePath: "",
     repoAlias: "",
     rawText: `## ${id}\nTest todo`,
     filePaths: [],
@@ -70,7 +69,8 @@ function mockSupervisorDeps(overrides?: Partial<SupervisorDeps>): SupervisorDeps
     })),
     now: () => new Date("2026-03-24T12:00:00Z"),
     log: vi.fn(),
-    appendFile: vi.fn(),
+    writeFile: vi.fn(),
+    mkdirSync: vi.fn(),
     ...overrides,
   };
 }
@@ -95,7 +95,7 @@ function mockActionDeps(overrides?: Partial<OrchestratorDeps>): OrchestratorDeps
 const defaultCtx: ExecutionContext = {
   projectRoot: "/tmp/test-project",
   worktreeDir: "/tmp/test-project/.worktrees",
-  todosFile: "/tmp/test-project/TODOS.md",
+  todosDir: "/tmp/test-project/.ninthwave/todos",
   aiTool: "claude",
 };
 
@@ -488,8 +488,10 @@ describe("applySupervisorActions", () => {
 // ── writeFrictionLog ─────────────────────────────────────────────────
 
 describe("writeFrictionLog", () => {
-  it("appends friction observations and process improvements", () => {
-    const appendFile = vi.fn();
+  it("creates individual friction file in friction directory", () => {
+    const writeFile = vi.fn();
+    const mkdir = vi.fn();
+    const fixedNow = new Date("2026-03-24T21:18:31Z");
     const observation: SupervisorObservation = {
       anomalies: [],
       interventions: [],
@@ -497,16 +499,25 @@ describe("writeFrictionLog", () => {
       processImprovements: ["Add lint step to CLAUDE.md"],
     };
 
-    writeFrictionLog(observation, "/tmp/friction.md", appendFile);
+    writeFrictionLog(observation, "/tmp/friction", { writeFile, mkdirSync: mkdir, now: () => fixedNow });
 
-    expect(appendFile).toHaveBeenCalledTimes(1);
-    const written = appendFile.mock.calls[0]![1] as string;
-    expect(written).toContain("[friction] CI takes too long");
-    expect(written).toContain("[improvement] Add lint step to CLAUDE.md");
+    expect(mkdir).toHaveBeenCalledWith("/tmp/friction", { recursive: true });
+    expect(writeFile).toHaveBeenCalledTimes(1);
+
+    const [filePath, content] = writeFile.mock.calls[0]! as [string, string];
+    // Filename follows {timestamp}--supervisor.md convention
+    expect(filePath).toBe("/tmp/friction/2026-03-24T21-18-31Z--supervisor.md");
+    // Content includes YAML front matter and entries
+    expect(content).toContain("source: supervisor");
+    expect(content).toContain("date: 2026-03-24T21:18:31Z");
+    expect(content).toContain("---");
+    expect(content).toContain("- [friction] CI takes too long");
+    expect(content).toContain("- [improvement] Add lint step to CLAUDE.md");
   });
 
-  it("does nothing when no friction or improvements", () => {
-    const appendFile = vi.fn();
+  it("produces NO files when observations and improvements are both empty", () => {
+    const writeFile = vi.fn();
+    const mkdir = vi.fn();
     const observation: SupervisorObservation = {
       anomalies: ["something"],
       interventions: [],
@@ -514,9 +525,27 @@ describe("writeFrictionLog", () => {
       processImprovements: [],
     };
 
-    writeFrictionLog(observation, "/tmp/friction.md", appendFile);
+    writeFrictionLog(observation, "/tmp/friction", { writeFile, mkdirSync: mkdir });
 
-    expect(appendFile).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(mkdir).not.toHaveBeenCalled();
+  });
+
+  it("uses supervisor as source in filename", () => {
+    const writeFile = vi.fn();
+    const mkdir = vi.fn();
+    const fixedNow = new Date("2026-03-24T10:05:00Z");
+    const observation: SupervisorObservation = {
+      anomalies: [],
+      interventions: [],
+      frictionObservations: ["slow pipeline"],
+      processImprovements: [],
+    };
+
+    writeFrictionLog(observation, "/tmp/friction", { writeFile, mkdirSync: mkdir, now: () => fixedNow });
+
+    const [filePath] = writeFile.mock.calls[0]! as [string, string];
+    expect(filePath).toContain("--supervisor.md");
   });
 });
 
@@ -554,7 +583,8 @@ describe("orchestrateLoop with supervisor", () => {
       callLLM,
       now: () => currentTime,
       log: (entry) => logs.push(entry),
-      appendFile: vi.fn(),
+      writeFile: vi.fn(),
+      mkdirSync: vi.fn(),
     };
 
     const buildSnapshot = (): PollSnapshot => {
@@ -638,7 +668,8 @@ describe("orchestrateLoop with supervisor", () => {
       callLLM,
       now: () => currentTime,
       log: (entry) => logs.push(entry),
-      appendFile: vi.fn(),
+      writeFile: vi.fn(),
+      mkdirSync: vi.fn(),
     };
 
     const buildSnapshot = (): PollSnapshot => {
@@ -698,7 +729,8 @@ describe("orchestrateLoop with supervisor", () => {
       callLLM,
       now: () => currentTime,
       log: (entry) => logs.push(entry),
-      appendFile: vi.fn(),
+      writeFile: vi.fn(),
+      mkdirSync: vi.fn(),
     };
 
     const buildSnapshot = (): PollSnapshot => {
@@ -734,14 +766,15 @@ describe("orchestrateLoop with supervisor", () => {
     expect(logs.some((l) => l.event === "supervisor_action" && l.actionType === "send-message")).toBe(true);
   });
 
-  it("writes to friction log when path is configured", async () => {
+  it("writes friction files to friction dir when configured", async () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
     orch.addItem(makeTodo("T-1-1"));
 
     let cycle = 0;
     const logs: LogEntry[] = [];
     let currentTime = new Date("2026-03-24T12:00:00Z");
-    const appendFile = vi.fn();
+    const writeFile = vi.fn();
+    const mkdir = vi.fn();
 
     const callLLM = vi.fn(() => JSON.stringify({
       anomalies: [],
@@ -754,7 +787,8 @@ describe("orchestrateLoop with supervisor", () => {
       callLLM,
       now: () => currentTime,
       log: (entry) => logs.push(entry),
-      appendFile,
+      writeFile,
+      mkdirSync: mkdir,
     };
 
     const buildSnapshot = (): PollSnapshot => {
@@ -778,15 +812,15 @@ describe("orchestrateLoop with supervisor", () => {
       supervisor: {
         intervalMs: 60_000,
         maxLogEntries: 50,
-        frictionLogPath: "/tmp/friction.md",
+        frictionDir: "/tmp/friction",
       },
     };
 
     await orchestrateLoop(orch, defaultCtx, deps, config);
 
-    // Friction log should have been written
-    expect(appendFile).toHaveBeenCalled();
-    const written = appendFile.mock.calls.some(
+    // Friction files should have been written
+    expect(writeFile).toHaveBeenCalled();
+    const written = writeFile.mock.calls.some(
       (call: [string, string]) => call[1].includes("[friction]") || call[1].includes("[improvement]"),
     );
     expect(written).toBe(true);
@@ -848,7 +882,8 @@ describe("orchestrateLoop with supervisor", () => {
       callLLM,
       now: () => currentTime,
       log: (entry) => logs.push(entry),
-      appendFile: vi.fn(),
+      writeFile: vi.fn(),
+      mkdirSync: vi.fn(),
     };
 
     const buildSnapshot = (): PollSnapshot => {

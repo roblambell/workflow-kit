@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   setupTempRepo,
   setupTempRepoPair,
-  useFixture,
+  useFixtureDir,
   cleanupTempRepos,
 } from "./helpers.ts";
 import { join, dirname, basename } from "path";
@@ -22,9 +22,9 @@ describe("cross-repo", () => {
   describe("repo field parsing", () => {
     it("parses all 4 items from cross_repo fixture", () => {
       const repo = setupTempRepo();
-      useFixture(repo, "cross_repo.md");
+      const todosDir = useFixtureDir(repo, "cross_repo.md");
       const items = parseTodos(
-        join(repo, "TODOS.md"),
+        todosDir,
         join(repo, ".worktrees"),
       );
 
@@ -33,9 +33,9 @@ describe("cross-repo", () => {
 
     it("parses repo alias for cross-repo items", () => {
       const repo = setupTempRepo();
-      useFixture(repo, "cross_repo.md");
+      const todosDir = useFixtureDir(repo, "cross_repo.md");
       const items = parseTodos(
-        join(repo, "TODOS.md"),
+        todosDir,
         join(repo, ".worktrees"),
       );
 
@@ -48,9 +48,9 @@ describe("cross-repo", () => {
 
     it("hub-local items have empty repo alias", () => {
       const repo = setupTempRepo();
-      useFixture(repo, "cross_repo.md");
+      const todosDir = useFixtureDir(repo, "cross_repo.md");
       const items = parseTodos(
-        join(repo, "TODOS.md"),
+        todosDir,
         join(repo, ".worktrees"),
       );
 
@@ -60,9 +60,9 @@ describe("cross-repo", () => {
 
     it("valid.md (no Repo fields) still parses 4 items", () => {
       const repo = setupTempRepo();
-      useFixture(repo, "valid.md");
+      const todosDir = useFixtureDir(repo, "valid.md");
       const items = parseTodos(
-        join(repo, "TODOS.md"),
+        todosDir,
         join(repo, ".worktrees"),
       );
 
@@ -71,9 +71,9 @@ describe("cross-repo", () => {
 
     it("M-CI-1 still has correct priority in valid.md", () => {
       const repo = setupTempRepo();
-      useFixture(repo, "valid.md");
+      const todosDir = useFixtureDir(repo, "valid.md");
       const items = parseTodos(
-        join(repo, "TODOS.md"),
+        todosDir,
         join(repo, ".worktrees"),
       );
 
@@ -258,9 +258,9 @@ describe("cross-repo", () => {
   describe("hub fallback", () => {
     it("items without Repo field default to empty alias", () => {
       const repo = setupTempRepo();
-      useFixture(repo, "valid.md");
+      const todosDir = useFixtureDir(repo, "valid.md");
       const items = parseTodos(
-        join(repo, "TODOS.md"),
+        todosDir,
         join(repo, ".worktrees"),
       );
 

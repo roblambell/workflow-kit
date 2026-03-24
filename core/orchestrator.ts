@@ -132,7 +132,7 @@ export interface Action {
 export interface ExecutionContext {
   projectRoot: string;
   worktreeDir: string;
-  todosFile: string;
+  todosDir: string;
   aiTool: string;
 }
 
@@ -140,7 +140,7 @@ export interface ExecutionContext {
 export interface OrchestratorDeps {
   launchSingleItem: (
     item: TodoItem,
-    todosFile: string,
+    todosDir: string,
     worktreeDir: string,
     projectRoot: string,
     aiTool: string,
@@ -160,7 +160,6 @@ export interface OrchestratorDeps {
   checkPrMergeable?: (repoRoot: string, prNumber: number) => boolean;
   /**
    * Daemon-side rebase: fetch origin/main, rebase the branch, and force-push.
-   * Used to auto-resolve TODOS.md-only conflicts without involving the worker.
    * The worktreePath is the path to the worktree where the branch is checked out.
    * Returns true on success, false on failure (caller should fall back to worker rebase).
    */
@@ -692,7 +691,7 @@ export class Orchestrator {
     try {
       const result = deps.launchSingleItem(
         item.todo,
-        ctx.todosFile,
+        ctx.todosDir,
         ctx.worktreeDir,
         ctx.projectRoot,
         ctx.aiTool,
@@ -784,7 +783,7 @@ export class Orchestrator {
               `Sibling PR #${other.prNumber} has merge conflicts after ${item.id} was merged. Please rebase onto latest main.`,
             );
           } else {
-            // Worker is dead — try daemon-side rebase (handles TODOS.md-only conflicts)
+            // Worker is dead — try daemon-side rebase
             const otherBranch = `todo/${other.id}`;
             const otherWorktreePath = join(ctx.worktreeDir, `todo-${other.id}`);
             let daemonSuccess = false;
@@ -894,7 +893,7 @@ export class Orchestrator {
 
   /**
    * Daemon-side rebase: attempt to rebase the branch onto main without worker involvement.
-   * Resolves TODOS.md-only conflicts automatically. Falls back to worker rebase message on failure.
+   * Falls back to worker rebase message on failure.
    */
   private executeDaemonRebase(
     item: OrchestratorItem,

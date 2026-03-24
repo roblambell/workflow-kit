@@ -1,3 +1,5 @@
+> **Note:** This review was written before the file-per-todo migration. TODOS.md references are historical.
+
 # Engineering Review: Worker Lifecycle and Communication
 
 **Reviewed:** 2026-03-24

@@ -207,13 +207,12 @@ export function diffStat(
  * Daemon-side rebase: fetch latest main, rebase the branch onto origin/main,
  * and force-push with --force-with-lease.
  *
- * Used to auto-resolve TODOS.md-only conflicts without involving the worker.
- * During rebase, if a conflict occurs on TODOS.md only, accepts the incoming
- * (main) version and continues. If non-TODOS.md conflicts occur, aborts.
- *
  * Operates via `git -C repoRoot` using the branch that's already checked out
  * in a worktree. The caller should pass the worktree path as repoRoot so the
  * rebase runs in the correct working tree without disrupting the main checkout.
+ *
+ * If the rebase encounters conflicts, aborts and returns false so the caller
+ * can fall back to a worker rebase.
  *
  * Returns true on success, false on failure.
  */
@@ -226,50 +225,9 @@ export function daemonRebase(repoRoot: string, branch: string): boolean {
   const rebaseResult = run("git", ["-C", repoRoot, "rebase", "origin/main"]);
 
   if (rebaseResult.exitCode !== 0) {
-    // Rebase failed — check if only TODOS.md conflicts
-    const conflictCheck = run("git", ["-C", repoRoot, "diff", "--name-only", "--diff-filter=U"]);
-    const conflictFiles = conflictCheck.stdout.split("\n").filter(Boolean);
-
-    if (conflictFiles.length === 1 && conflictFiles[0] === "TODOS.md") {
-      // Accept the incoming (main) version of TODOS.md and continue
-      const checkoutTheirs = run("git", ["-C", repoRoot, "checkout", "--theirs", "TODOS.md"]);
-      if (checkoutTheirs.exitCode !== 0) {
-        run("git", ["-C", repoRoot, "rebase", "--abort"]);
-        return false;
-      }
-      const addResult = run("git", ["-C", repoRoot, "add", "TODOS.md"]);
-      if (addResult.exitCode !== 0) {
-        run("git", ["-C", repoRoot, "rebase", "--abort"]);
-        return false;
-      }
-      // Continue the rebase (use -c core.editor=true to prevent editor from opening).
-      // May need to repeat for multiple conflicting commits.
-      let continueResult = run("git", ["-C", repoRoot, "-c", "core.editor=true", "rebase", "--continue"]);
-      let maxAttempts = 10;
-      while (continueResult.exitCode !== 0 && maxAttempts > 0) {
-        maxAttempts--;
-        // Check if there's another TODOS.md-only conflict
-        const recheckConflicts = run("git", ["-C", repoRoot, "diff", "--name-only", "--diff-filter=U"]);
-        const recheckFiles = recheckConflicts.stdout.split("\n").filter(Boolean);
-        if (recheckFiles.length === 1 && recheckFiles[0] === "TODOS.md") {
-          run("git", ["-C", repoRoot, "checkout", "--theirs", "TODOS.md"]);
-          run("git", ["-C", repoRoot, "add", "TODOS.md"]);
-          continueResult = run("git", ["-C", repoRoot, "-c", "core.editor=true", "rebase", "--continue"]);
-        } else {
-          // Non-TODOS.md conflict appeared — abort
-          run("git", ["-C", repoRoot, "rebase", "--abort"]);
-          return false;
-        }
-      }
-      if (continueResult.exitCode !== 0) {
-        run("git", ["-C", repoRoot, "rebase", "--abort"]);
-        return false;
-      }
-    } else {
-      // Non-TODOS.md conflicts — abort and fall back to worker
-      run("git", ["-C", repoRoot, "rebase", "--abort"]);
-      return false;
-    }
+    // Rebase failed — abort and fall back to worker
+    run("git", ["-C", repoRoot, "rebase", "--abort"]);
+    return false;
   }
 
   // Force-push with lease for safety

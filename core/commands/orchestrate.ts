@@ -691,11 +691,11 @@ function handleActionExecution(
     });
   }
 
-  // After a successful merge, reconcile TODOS.md with GitHub state
+  // After a successful merge, reconcile todo files with GitHub state
   // so list --ready reflects reality for the rest of the run.
   if (action.type === "merge" && result.success && deps.reconcile) {
     try {
-      deps.reconcile(ctx.todosFile, ctx.worktreeDir, ctx.projectRoot);
+      deps.reconcile(ctx.todosDir, ctx.worktreeDir, ctx.projectRoot);
       log({
         ts: new Date().toISOString(),
         level: "info",
@@ -726,8 +726,8 @@ export interface OrchestrateLoopDeps {
   actionDeps: OrchestratorDeps;
   /** Get available free memory in bytes. Defaults to os.freemem(). Injectable for testing. */
   getFreeMem?: () => number;
-  /** Reconcile TODOS.md with GitHub state after merge actions. */
-  reconcile?: (todosFile: string, worktreeDir: string, projectRoot: string) => void;
+  /** Reconcile todo files with GitHub state after merge actions. */
+  reconcile?: (todosDir: string, worktreeDir: string, projectRoot: string) => void;
   /** Supervisor dependencies (injected when supervisor is active). */
   supervisorDeps?: SupervisorDeps;
   /** Webhook notifier for lifecycle events (fire-and-forget). No-op when absent. */
@@ -931,11 +931,11 @@ export async function orchestrateLoop(
           );
 
           // Write friction log if configured
-          if (config.supervisor.frictionLogPath) {
+          if (config.supervisor.frictionDir) {
             writeFrictionLog(
               observation,
-              config.supervisor.frictionLogPath,
-              deps.supervisorDeps.appendFile,
+              config.supervisor.frictionDir,
+              deps.supervisorDeps,
             );
           }
         } catch (e: unknown) {
@@ -1075,7 +1075,7 @@ export function forkDaemon(
 
 export async function cmdOrchestrate(
   args: string[],
-  todosFile: string,
+  todosDir: string,
   worktreeDir: string,
   projectRoot: string,
 ): Promise<void> {
@@ -1085,7 +1085,7 @@ export async function cmdOrchestrate(
   let pollIntervalOverride: number | undefined;
   let supervisorFlag = false;
   let supervisorIntervalSecs: number | undefined;
-  let frictionLogPath: string | undefined;
+  let frictionDir: string | undefined;
   let daemonMode = false;
   let isDaemonChild = false;
 
@@ -1126,7 +1126,7 @@ export async function cmdOrchestrate(
         i += 2;
         break;
       case "--friction-log":
-        frictionLogPath = args[i + 1];
+        frictionDir = args[i + 1];
         i += 2;
         break;
       case "--mux": {
@@ -1193,7 +1193,7 @@ export async function cmdOrchestrate(
   }
 
   // Parse TODO items
-  const allTodos = parseTodos(todosFile, worktreeDir);
+  const allTodos = parseTodos(todosDir, worktreeDir);
   const todoMap = new Map<string, TodoItem>();
   for (const todo of allTodos) {
     todoMap.set(todo.id, todo);
@@ -1202,7 +1202,7 @@ export async function cmdOrchestrate(
   // Validate all items exist
   for (const id of itemIds) {
     if (!todoMap.has(id)) {
-      die(`Item ${id} not found in TODOS.md`);
+      die(`Item ${id} not found in todo files`);
     }
   }
 
@@ -1224,10 +1224,10 @@ export async function cmdOrchestrate(
   // Detect AI tool
   const aiTool = detectAiTool();
 
-  const ctx: ExecutionContext = { projectRoot, worktreeDir, todosFile, aiTool };
+  const ctx: ExecutionContext = { projectRoot, worktreeDir, todosDir, aiTool };
   const actionDeps: OrchestratorDeps = {
-    launchSingleItem: (item, todosFile, worktreeDir, projectRoot, aiTool) =>
-      launchSingleItem(item, todosFile, worktreeDir, projectRoot, aiTool, mux),
+    launchSingleItem: (item, todosDir, worktreeDir, projectRoot, aiTool) =>
+      launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux),
     cleanSingleWorktree,
     prMerge: (repoRoot, prNumber) => prMerge(repoRoot, prNumber),
     prComment: (repoRoot, prNumber, body) => prComment(repoRoot, prNumber, body),
@@ -1263,7 +1263,7 @@ export async function cmdOrchestrate(
         intervalMs: supervisorIntervalSecs
           ? supervisorIntervalSecs * 1000
           : DEFAULT_SUPERVISOR_CONFIG.intervalMs,
-        frictionLogPath,
+        frictionDir,
         maxLogEntries: DEFAULT_SUPERVISOR_CONFIG.maxLogEntries,
       }
     : undefined;
@@ -1274,7 +1274,7 @@ export async function cmdOrchestrate(
       level: "info",
       event: "supervisor_enabled",
       intervalMs: supervisorConfig!.intervalMs,
-      frictionLogPath: frictionLogPath ?? null,
+      frictionDir: frictionDir ?? null,
       autoActivated: !supervisorFlag,
     });
   }

@@ -17,10 +17,10 @@
   <!-- Section label -->
   <text x="110" y="40" text-anchor="middle" fill="#475569" font-family="sans-serif" font-size="13" font-weight="bold">WORK ITEMS</text>
 
-  <!-- TODOS.md -->
+  <!-- Todo Files -->
   <rect x="40" y="60" width="140" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
   <rect x="56" y="74" width="16" height="16" rx="3" fill="#334155" />
-  <text x="88" y="88" fill="#334155" font-family="sans-serif" font-size="13" font-weight="600">TODOS.md</text>
+  <text x="88" y="88" fill="#334155" font-family="sans-serif" font-size="13" font-weight="600">Todo Files</text>
 
   <!-- Linear -->
   <rect x="40" y="114" width="140" height="44" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />

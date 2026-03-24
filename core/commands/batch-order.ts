@@ -124,14 +124,14 @@ export function computeBatches(
 
 export function cmdBatchOrder(
   args: string[],
-  todosFile: string,
+  todosDir: string,
   worktreeDir: string,
 ): void {
   if (args.length < 1)
     die("Usage: ninthwave batch-order <ID1> [ID2...]");
 
   const ids = args;
-  const items = parseTodos(todosFile, worktreeDir);
+  const items = parseTodos(todosDir, worktreeDir);
 
   // Build lookup for display metadata
   const itemMap = new Map<string, TodoItem>();

@@ -47,8 +47,7 @@ function makeTodo(id: string, deps: string[] = []): TodoItem {
     dependencies: deps,
     bundleWith: [],
     status: "open",
-    lineNumber: 1,
-    lineEndNumber: 5,
+    filePath: "",
     repoAlias: "",
     rawText: `## ${id}\nTest todo`,
     filePaths: [],
@@ -86,7 +85,7 @@ function mockAnalyticsIO(): AnalyticsIO & {
 const defaultCtx: ExecutionContext = {
   projectRoot: "/tmp/test-project",
   worktreeDir: "/tmp/test-project/.worktrees",
-  todosFile: "/tmp/test-project/TODOS.md",
+  todosDir: "/tmp/test-project/.ninthwave/todos",
   aiTool: "claude",
 };
 

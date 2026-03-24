@@ -1,6 +1,6 @@
 // `ninthwave setup` — project and global setup command.
 //
-// Project mode (default): seeds .ninthwave/, TODOS.md, skill symlinks, agent copies, .gitignore
+// Project mode (default): seeds .ninthwave/, .ninthwave/todos/, skill symlinks, agent copies, .gitignore
 // Global mode (--global): seeds ~/.claude/skills/ symlinks only
 
 import {
@@ -289,7 +289,7 @@ exit 1
 }
 
 /**
- * Project setup: seed .ninthwave/, TODOS.md, skill symlinks, agent copies, .gitignore.
+ * Project setup: seed .ninthwave/, .ninthwave/todos/, skill symlinks, agent copies, .gitignore.
  *
  * Optional `deps` parameter allows injecting stubs for testing.
  */
@@ -357,7 +357,7 @@ export function setupProject(
       domainsPath,
       `# Domain mappings for ninthwave
 # Format: pattern=domain_key
-# Patterns are matched case-insensitively against section headers in TODOS.md.
+# Patterns are matched case-insensitively against todo file domain fields.
 # Lines starting with # are comments.
 #
 # Examples:
@@ -374,19 +374,14 @@ export function setupProject(
 
   console.log();
 
-  // --- TODOS.md ---
-  const todosPath = join(projectDir, "TODOS.md");
+  // --- .ninthwave/todos/ ---
+  const todosPath = join(projectDir, ".ninthwave/todos");
   if (!existsSync(todosPath)) {
-    writeFileSync(
-      todosPath,
-      `# TODOS
-
-<!-- Format guide: https://github.com/ninthwave-sh/ninthwave/blob/main/core/docs/todos-format.md -->
-`,
-    );
-    console.log("TODOS.md (created)");
+    mkdirSync(todosPath, { recursive: true });
+    writeFileSync(join(todosPath, ".gitkeep"), "");
+    console.log(".ninthwave/todos/ (created)");
   } else {
-    console.log("TODOS.md (exists, skipped)");
+    console.log(".ninthwave/todos/ (exists, skipped)");
   }
 
   console.log();
@@ -458,7 +453,7 @@ export function setupProject(
   console.log("Next steps:");
   console.log("  1. Review: git diff");
   console.log("  2. Commit: git add -A && git commit -m 'chore: set up ninthwave'");
-  console.log("  3. Add work items to TODOS.md and run /work");
+  console.log("  3. Add work items to .ninthwave/todos/ and run /work");
   console.log();
   console.log(`${DIM}Tip: Use ${BOLD}nw${RESET}${DIM} as a short alias for ${BOLD}ninthwave${RESET}${DIM} in daily use.${RESET}`);
 }

@@ -35,9 +35,9 @@ This skill is highly interactive. You MUST use your interactive question tool to
 
 ## Instructions
 
-This skill decomposes a feature spec into work items sized for individual human-reviewable PRs. The items are written to `TODOS.md` in a format compatible with `.ninthwave/work`, ready for processing via `/work`.
+This skill decomposes a feature spec into work items sized for individual human-reviewable PRs. Each item is written as an individual file in `.ninthwave/todos/`, ready for processing via `/work`.
 
-**Prerequisites:** `.ninthwave/work` must exist and be executable. `TODOS.md` must exist at the project root.
+**Prerequisites:** `.ninthwave/work` must exist and be executable. `.ninthwave/todos/` directory must exist.
 
 ---
 
@@ -171,19 +171,30 @@ Show totals and ask for approval. Options: looks good, adjust, re-decompose.
 
 ### Phase 6: WRITE
 
-**Goal:** Add the TODOs to TODOS.md.
+**Goal:** Write each TODO as an individual file in `.ninthwave/todos/`.
 
-1. Read current TODOS.md
+1. Ensure the directory exists: `mkdir -p .ninthwave/todos`
 2. Read the format guide: `cat "$(cat .ninthwave/dir)/core/docs/todos-format.md"`
-3. Add section: `## <Feature Name> (feature decomposition, <YYYY-MM-DD>)`
-4. Write each TODO using this template:
+3. Write each TODO as a separate file. The filename convention is:
+
+   ```
+   {priority_num}-{domain_slug}--{ID}.md
+   ```
+
+   Where `priority_num` is: Critical=1, High=2, Medium=3, Low=4.
+   And `domain_slug` is the domain name in kebab-case (e.g., `worker-reliability`, `cli-ux`).
+
+   Example: `2-worker-reliability--H-WRK-3.md`
+
+4. Each file uses this template:
 
 ```markdown
-### <Type>: <Title> (<ID>)
+# <Type>: <Title> (<ID>)
 
 **Priority:** <Critical|High|Medium|Low>
 **Source:** <origin>
 **Depends on:** <IDs or None>
+**Domain:** <domain name>
 
 <Description — 2-4 sentences.>
 
@@ -195,12 +206,12 @@ Show totals and ask for approval. Options: looks good, adjust, re-decompose.
 Acceptance: <concrete, verifiable conditions>
 
 Key files: `path/to/file.ts`, `path/to/other.ex`
-
----
 ```
 
+   Note: The heading uses `# ` (not `### `). The `**Domain:**` field is required — it was previously inferred from TODOS.md section headers but must now be explicit in each file.
+
 5. Verify every item has a `**Test plan:**` section (non-optional for decomposed items)
-6. Verify parseable: `.ninthwave/work list | grep <feature_code>`
+6. Verify parseable: `ls .ninthwave/todos/` to confirm files were written, then `.ninthwave/work list | grep <feature_code>`
 
 ---
 
@@ -217,4 +228,4 @@ Present summary and connect to `/work` for processing.
 - **PR size discipline:** Split TODOs > ~500 LOC, combine < ~50 LOC
 - **File conflict awareness:** Items in the same batch should not modify the same files
 - **No VERSION/CHANGELOG:** TODOs should not mention modifying these files
-- **Idempotent:** Check for existing TODOs before writing duplicates
+- **Idempotent:** Check `.ninthwave/todos/` for existing files with the same ID before writing duplicates

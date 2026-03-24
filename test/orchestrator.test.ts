@@ -29,8 +29,7 @@ function makeTodo(id: string, deps: string[] = [], priority: Priority = "high"):
     dependencies: deps,
     bundleWith: [],
     status: "open",
-    lineNumber: 1,
-    lineEndNumber: 5,
+    filePath: "",
     repoAlias: "",
     rawText: `## ${id}\nTest todo`,
     filePaths: [],
@@ -52,7 +51,7 @@ function snapshotWith(
 const defaultCtx: ExecutionContext = {
   projectRoot: "/tmp/test-project",
   worktreeDir: "/tmp/test-project/.worktrees",
-  todosFile: "/tmp/test-project/TODOS.md",
+  todosDir: "/tmp/test-project/.ninthwave/todos",
   aiTool: "claude",
 };
 
@@ -815,7 +814,7 @@ describe("Orchestrator", () => {
       expect(result.success).toBe(true);
       expect(deps.launchSingleItem).toHaveBeenCalledWith(
         orch.getItem("H-1-1")!.todo,
-        defaultCtx.todosFile,
+        defaultCtx.todosDir,
         defaultCtx.worktreeDir,
         defaultCtx.projectRoot,
         defaultCtx.aiTool,

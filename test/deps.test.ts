@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { setupTempRepo, useFixture, cleanupTempRepos } from "./helpers.ts";
+import { setupTempRepo, useFixtureDir, cleanupTempRepos } from "./helpers.ts";
 import { join } from "path";
 import { cmdDeps } from "../core/commands/deps.ts";
 
@@ -33,29 +33,27 @@ describe("deps", () => {
 
   it("shows upstream dependencies", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdDeps(["H-CI-2"], todosFile, worktreeDir),
+      cmdDeps(["H-CI-2"], todosDir, worktreeDir),
     );
 
     expect(output).toContain("Dependency chain for H-CI-2");
     expect(output).toContain("Must complete before H-CI-2");
     expect(output).toContain("M-CI-1");
-    // M-CI-1 is still in TODOS.md so it should show as pending
+    // M-CI-1 is still in todos so it should show as pending
     expect(output).toContain("[ ]");
   });
 
   it("shows downstream dependents", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdDeps(["M-CI-1"], todosFile, worktreeDir),
+      cmdDeps(["M-CI-1"], todosDir, worktreeDir),
     );
 
     expect(output).toContain("Items that depend on M-CI-1");
@@ -65,13 +63,12 @@ describe("deps", () => {
 
   it("shows bundle relationships", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     // H-UO-2 bundles with H-CI-2
     const output = captureOutput(() =>
-      cmdDeps(["H-UO-2"], todosFile, worktreeDir),
+      cmdDeps(["H-UO-2"], todosDir, worktreeDir),
     );
 
     expect(output).toContain("Bundle with");
@@ -80,12 +77,11 @@ describe("deps", () => {
 
   it("shows (none) when item has no deps", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdDeps(["C-UO-1"], todosFile, worktreeDir),
+      cmdDeps(["C-UO-1"], todosDir, worktreeDir),
     );
 
     expect(output).toContain("Must complete before C-UO-1");
@@ -94,12 +90,11 @@ describe("deps", () => {
 
   it("errors on unknown ID", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdDeps(["FAKE-99"], todosFile, worktreeDir),
+      cmdDeps(["FAKE-99"], todosDir, worktreeDir),
     );
 
     expect(output).toContain("not found");
@@ -107,13 +102,12 @@ describe("deps", () => {
 
   it("shows reverse bundle (item referenced by another's bundle-with)", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     // H-CI-2 is referenced in H-UO-2's bundle-with field
     const output = captureOutput(() =>
-      cmdDeps(["H-CI-2"], todosFile, worktreeDir),
+      cmdDeps(["H-CI-2"], todosDir, worktreeDir),
     );
 
     expect(output).toContain("Bundle with");

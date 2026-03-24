@@ -285,19 +285,27 @@ export function daemonStateToStatusItems(state: DaemonState): StatusItem[] {
 
 // ─── Data gathering ──────────────────────────────────────────────────────────
 
-/** Try to read TODO titles from TODOS.md. Returns a map of ID → title. */
+/** Try to read TODO titles from .ninthwave/todos/ directory. Returns a map of ID → title. */
 function loadTodoTitles(projectRoot: string): Map<string, string> {
   const titles = new Map<string, string>();
-  const todosFile = join(projectRoot, "TODOS.md");
-  if (!existsSync(todosFile)) return titles;
+  const todosDir = join(projectRoot, ".ninthwave", "todos");
+  if (!existsSync(todosDir)) return titles;
 
   try {
-    const content = readFileSync(todosFile, "utf-8");
-    // Match ### lines with IDs in parens
-    const regex = /^### (.+?) \(([A-Z]-[A-Za-z0-9]+-[0-9]+)/gm;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(content)) !== null) {
-      titles.set(match[2]!, match[1]!.trim());
+    const entries = readdirSync(todosDir).filter((e) => e.endsWith(".md"));
+    for (const entry of entries) {
+      const filePath = join(todosDir, entry);
+      try {
+        const content = readFileSync(filePath, "utf-8");
+        // Extract title from the first # heading
+        const match = content.match(/^# (.+)$/m);
+        if (match) {
+          const id = entry.replace(/\.md$/, "");
+          titles.set(id, match[1]!.trim());
+        }
+      } catch {
+        // skip unreadable files
+      }
     }
   } catch {
     // ignore

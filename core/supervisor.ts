@@ -2,8 +2,7 @@
 // Periodically pipes recent logs + current state into an LLM prompt for judgment.
 // The supervisor is advisory — the daemon continues regardless of supervisor output.
 
-import { existsSync } from "fs";
-import { appendFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { run } from "./shell.ts";
 import type { LogEntry } from "./commands/orchestrate.ts";
@@ -36,8 +35,8 @@ export interface SupervisorObservation {
 export interface SupervisorConfig {
   /** Interval between ticks in milliseconds. Default: 300_000 (5 minutes). */
   intervalMs: number;
-  /** Path to append friction observations. Optional. */
-  frictionLogPath?: string;
+  /** Directory to write individual friction files. Optional. */
+  frictionDir?: string;
   /** Maximum number of log entries to include in the prompt. */
   maxLogEntries: number;
 }
@@ -50,8 +49,10 @@ export interface SupervisorDeps {
   now: () => Date;
   /** Log a structured event. */
   log: (entry: LogEntry) => void;
-  /** Append to a file. */
-  appendFile: (path: string, content: string) => void;
+  /** Write a file. */
+  writeFile: (path: string, content: string) => void;
+  /** Create a directory (recursive). */
+  mkdirSync: (path: string, opts: { recursive: boolean }) => void;
 }
 
 // ── Default LLM caller ──────────────────────────────────────────────
@@ -288,22 +289,37 @@ export function applySupervisorActions(
 }
 
 /**
- * Append friction observations to the friction log file.
+ * Write friction observations as an individual file in the friction directory.
+ * Skips writing entirely when there are no observations or improvements.
  */
 export function writeFrictionLog(
   observation: SupervisorObservation,
-  frictionLogPath: string,
-  appendFile: (path: string, content: string) => void,
+  frictionDir: string,
+  deps: { writeFile: (path: string, content: string) => void; mkdirSync: (path: string, opts: { recursive: boolean }) => void; now?: () => Date },
 ): void {
+  if (
+    observation.frictionObservations.length === 0 &&
+    observation.processImprovements.length === 0
+  ) {
+    return;
+  }
+
+  const now = (deps.now ?? (() => new Date()))();
+  // Drop milliseconds from ISO string for cleaner output
+  const isoDate = now.toISOString().replace(/\.\d{3}Z$/, "Z");
+  // Filesystem-safe timestamp: replace colons with hyphens
+  const safeTimestamp = isoDate.replace(/:/g, "-");
+  const filename = `${safeTimestamp}--supervisor.md`;
+
   const entries = [
     ...observation.frictionObservations.map((f) => `- [friction] ${f}`),
     ...observation.processImprovements.map((p) => `- [improvement] ${p}`),
   ];
 
-  if (entries.length === 0) return;
+  const content = `source: supervisor\ndate: ${isoDate}\n---\n${entries.join("\n")}\n`;
 
-  const header = `\n## Supervisor tick ${new Date().toISOString()}\n`;
-  appendFile(frictionLogPath, header + entries.join("\n") + "\n");
+  deps.mkdirSync(frictionDir, { recursive: true });
+  deps.writeFile(join(frictionDir, filename), content);
 }
 
 /**
@@ -341,6 +357,7 @@ export function createSupervisorDeps(
     callLLM: callClaudeCLI,
     now: () => new Date(),
     log,
-    appendFile: (path, content) => appendFileSync(path, content, "utf-8"),
+    writeFile: (path, content) => writeFileSync(path, content, "utf-8"),
+    mkdirSync: (path, opts) => mkdirSync(path, opts),
   };
 }

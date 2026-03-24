@@ -1,90 +1,44 @@
 // mark-done and merged-ids commands.
 
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
-import { join, basename } from "path";
-import { die, GREEN, RESET } from "../output.ts";
+import { existsSync, readFileSync, readdirSync } from "fs";
+import { join } from "path";
+import { die, GREEN, YELLOW, RESET } from "../output.ts";
 import { isBranchMerged, commitCount } from "../git.ts";
 import { prList } from "../gh.ts";
+import { deleteTodoFile } from "../todo-files.ts";
 
 /**
- * Remove completed items from TODOS.md by ID.
- * Handles section cleanup: removes section headers that become empty.
+ * Remove completed items by deleting their individual todo files.
+ * Idempotent: nonexistent IDs are reported but do not cause errors.
  */
 export function cmdMarkDone(
   args: string[],
-  todosFile: string,
+  todosDir: string,
 ): void {
   if (args.length < 1) die("Usage: ninthwave mark-done <ID1> [ID2...]");
 
-  const ids = new Set(args);
-  const content = readFileSync(todosFile, "utf-8");
-  const lines = content.split("\n");
-  const outputLines: string[] = [];
+  const done: string[] = [];
+  const notFound: string[] = [];
 
-  let pendingSection = "";
-  let pendingLines: string[] = [];
-  let sectionHasItems = false;
-  let skipItem = false;
-  let inItem = false;
-
-  function flushSection(): void {
-    if (pendingSection) {
-      outputLines.push(pendingSection);
-      outputLines.push("");
-      pendingSection = "";
-    }
-    if (pendingLines.length > 0) {
-      outputLines.push(...pendingLines);
-      pendingLines = [];
+  for (const id of args) {
+    if (deleteTodoFile(todosDir, id)) {
+      done.push(id);
+    } else {
+      notFound.push(id);
     }
   }
 
-  for (const line of lines) {
-    // Track section headers (## but not ###)
-    if (line.startsWith("## ") && !line.startsWith("### ")) {
-      pendingSection = line;
-      pendingLines = [];
-      sectionHasItems = false;
-      skipItem = false;
-      inItem = false;
-      continue;
-    }
-
-    // Check item headers
-    if (line.startsWith("### ")) {
-      skipItem = false;
-      inItem = true;
-
-      // Check if this item should be removed
-      for (const id of ids) {
-        if (line.includes(`(${id})`)) {
-          skipItem = true;
-          break;
-        }
-      }
-
-      if (!skipItem) {
-        sectionHasItems = true;
-        flushSection();
-      }
-    }
-
-    // Write line unless we're skipping this item
-    if (!skipItem) {
-      if (pendingSection) {
-        // Buffer lines between section header and first kept item
-        pendingLines.push(line);
-      } else {
-        outputLines.push(line);
-      }
-    }
+  if (done.length > 0) {
+    console.log(
+      `${GREEN}Marked ${done.length} item(s) as done: ${done.join(" ")}${RESET}`,
+    );
   }
 
-  writeFileSync(todosFile, outputLines.join("\n"));
-
-  console.log(
-    `${GREEN}Marked ${ids.size} item(s) as done: ${[...ids].join(" ")}${RESET}`,
-  );
+  if (notFound.length > 0) {
+    console.log(
+      `${YELLOW}Not found (already done?): ${notFound.join(" ")}${RESET}`,
+    );
+  }
 }
 
 /**

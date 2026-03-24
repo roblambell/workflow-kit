@@ -2,8 +2,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { join } from "path";
-import { writeFileSync } from "fs";
-import { setupTempRepo, useFixture, cleanupTempRepos } from "./helpers.ts";
+import { writeFileSync, mkdirSync } from "fs";
+import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 import type { Multiplexer } from "../core/mux.ts";
 
 // Only mock modules that don't have their own test files and aren't
@@ -33,6 +33,99 @@ function createMockMux(): Multiplexer & Record<string, Mock> {
     listWorkspaces: vi.fn(() => ""),
     closeWorkspace: vi.fn(() => true),
   };
+}
+
+/**
+ * Set up a todos directory with individual todo files matching the valid.md fixture.
+ * Returns the path to the todos directory.
+ */
+function setupTodosDir(repo: string): string {
+  const todosDir = join(repo, ".ninthwave", "todos");
+  mkdirSync(todosDir, { recursive: true });
+
+  writeFileSync(
+    join(todosDir, "2-cloud-infrastructure--M-CI-1.md"),
+    [
+      "# Upgrade CI runners (M-CI-1)",
+      "",
+      "**Priority:** Medium",
+      "**Source:** Manual request 2026-03-22",
+      "**Depends on:** None",
+      "**Domain:** cloud-infrastructure",
+      "",
+      "Upgrade test CI runners from 2 to 4 vCPUs for faster execution.",
+      "",
+      "**Test plan:**",
+      "- Verify updated workflow YAML specifies 4 vCPU runner labels",
+      "- Check deploy workflows still reference 2 vCPU runners",
+      "- Edge case: ensure ARM vs x86 platform is unchanged",
+      "",
+      "Acceptance: Test workflows use 4 vCPU runners. Deploy workflows remain on 2 vCPU.",
+      "",
+      "Key files: `.github/workflows/test-api.yml`, `.github/workflows/ci.yml`",
+      "",
+    ].join("\n"),
+  );
+
+  writeFileSync(
+    join(todosDir, "1-cloud-infrastructure--H-CI-2.md"),
+    [
+      "# Flaky connection pool timeout (H-CI-2)",
+      "",
+      "**Priority:** High",
+      "**Source:** Eng review 2026-03-22",
+      "**Depends on:** M-CI-1",
+      "**Domain:** cloud-infrastructure",
+      "",
+      "Fix intermittent connection pool timeout errors in test suite by increasing pool size.",
+      "",
+      "Acceptance: No more timeout errors in CI. Pool size configurable via env var.",
+      "",
+      "Key files: `config/test.exs`",
+      "",
+    ].join("\n"),
+  );
+
+  writeFileSync(
+    join(todosDir, "0-user-onboarding--C-UO-1.md"),
+    [
+      "# Add welcome email (C-UO-1)",
+      "",
+      "**Priority:** Critical",
+      "**Source:** Product review 2026-03-20",
+      "**Depends on:** None",
+      "**Domain:** user-onboarding",
+      "",
+      "Send a welcome email when a new user completes onboarding.",
+      "",
+      "Acceptance: Email sent within 30s of onboarding completion. Email contains user name.",
+      "",
+      "Key files: `lib/onboarding/email.ex`, `lib/mailer.ex`",
+      "",
+    ].join("\n"),
+  );
+
+  writeFileSync(
+    join(todosDir, "1-user-onboarding--H-UO-2.md"),
+    [
+      "# Add onboarding checklist (H-UO-2)",
+      "",
+      "**Priority:** High",
+      "**Source:** Product review 2026-03-20",
+      "**Depends on:** C-UO-1, M-CI-1",
+      "**Bundle with:** H-CI-2",
+      "**Domain:** user-onboarding",
+      "",
+      "Display an onboarding checklist on the dashboard after signup.",
+      "",
+      "Acceptance: Checklist shows on first login. Items check off as completed.",
+      "",
+      "Key files: `lib/onboarding/checklist.ex`, `assets/js/checklist.tsx`",
+      "",
+    ].join("\n"),
+  );
+
+  return todosDir;
 }
 
 function captureOutput(fn: () => void): string {
@@ -126,13 +219,11 @@ describe("cmdStart", () => {
 
   it("dies with no arguments", () => {
     const repo = setupTempRepo();
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
 
-    writeFileSync(todosFile, "# TODOS\n");
-
     const output = captureOutput(() =>
-      cmdStart([], todosFile, worktreeDir, repo),
+      cmdStart([], todosDir, worktreeDir, repo),
     );
 
     expect(output).toContain("Usage");
@@ -140,12 +231,11 @@ describe("cmdStart", () => {
 
   it("dies when item ID not found", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdStart(["NONEXISTENT-1"], todosFile, worktreeDir, repo),
+      cmdStart(["NONEXISTENT-1"], todosDir, worktreeDir, repo),
     );
 
     expect(output).toContain("not found");
@@ -154,12 +244,11 @@ describe("cmdStart", () => {
   it("launches session for a valid item", () => {
     const mockMux = createMockMux();
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdStart(["M-CI-1"], todosFile, worktreeDir, repo, mockMux),
+      cmdStart(["M-CI-1"], todosDir, worktreeDir, repo, mockMux),
     );
 
     expect(output).toContain("Launched 1 session");
@@ -171,12 +260,11 @@ describe("cmdStart", () => {
 
     const mockMux = createMockMux();
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdStart(["M-CI-1"], todosFile, worktreeDir, repo, mockMux),
+      cmdStart(["M-CI-1"], todosDir, worktreeDir, repo, mockMux),
     );
 
     expect(output).toContain("Detected AI tool: opencode");
@@ -199,14 +287,13 @@ describe("launchSingleItem", () => {
   it("creates worktree and launches session for a single item", () => {
     const mockMux = createMockMux();
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(todosFile, worktreeDir);
+    const items = parseTodos(todosDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     const result = captureOutput(() => {
-      const res = launchSingleItem(item, todosFile, worktreeDir, repo, "claude", mockMux);
+      const res = launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
       expect(res).not.toBeNull();
       expect(res!.worktreePath).toContain("todo-M-CI-1");
       expect(res!.workspaceRef).toBe("workspace:1");
@@ -221,14 +308,13 @@ describe("launchSingleItem", () => {
     mockMux.launchWorkspace.mockReturnValueOnce(null);
 
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(todosFile, worktreeDir);
+    const items = parseTodos(todosDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     const result = captureOutput(() => {
-      const res = launchSingleItem(item, todosFile, worktreeDir, repo, "claude", mockMux);
+      const res = launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
       expect(res).toBeNull();
     });
 
@@ -238,14 +324,13 @@ describe("launchSingleItem", () => {
   it("allocates a partition for the item", () => {
     const mockMux = createMockMux();
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(todosFile, worktreeDir);
+    const items = parseTodos(todosDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     const result = captureOutput(() => {
-      launchSingleItem(item, todosFile, worktreeDir, repo, "claude", mockMux);
+      launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
     });
 
     // Partition 1 should be allocated (first available)
@@ -255,15 +340,14 @@ describe("launchSingleItem", () => {
   it("ensures worktree directory is created", () => {
     const mockMux = createMockMux();
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(todosFile, worktreeDir);
+    const items = parseTodos(todosDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     // worktreeDir doesn't exist yet — launchSingleItem should create it
     captureOutput(() => {
-      launchSingleItem(item, todosFile, worktreeDir, repo, "claude", mockMux);
+      launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
     });
 
     const { existsSync } = require("fs");
@@ -273,10 +357,9 @@ describe("launchSingleItem", () => {
   it("logs warning when fetchOrigin fails but still creates worktree", () => {
     const mockMux = createMockMux();
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(todosFile, worktreeDir);
+    const items = parseTodos(todosDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     (fetchOrigin as Mock).mockImplementationOnce(() => {
@@ -284,7 +367,7 @@ describe("launchSingleItem", () => {
     });
 
     const output = captureOutput(() => {
-      const res = launchSingleItem(item, todosFile, worktreeDir, repo, "claude", mockMux);
+      const res = launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
       expect(res).not.toBeNull();
       expect(res!.worktreePath).toContain("todo-M-CI-1");
     });
@@ -298,10 +381,9 @@ describe("launchSingleItem", () => {
   it("logs warning when ffMerge fails but still creates worktree", () => {
     const mockMux = createMockMux();
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(todosFile, worktreeDir);
+    const items = parseTodos(todosDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     (ffMerge as Mock).mockImplementationOnce(() => {
@@ -309,7 +391,7 @@ describe("launchSingleItem", () => {
     });
 
     const output = captureOutput(() => {
-      const res = launchSingleItem(item, todosFile, worktreeDir, repo, "claude", mockMux);
+      const res = launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
       expect(res).not.toBeNull();
       expect(res!.worktreePath).toContain("todo-M-CI-1");
     });
@@ -323,10 +405,9 @@ describe("launchSingleItem", () => {
   it("warning includes actionable context about stale worktree", () => {
     const mockMux = createMockMux();
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(todosFile, worktreeDir);
+    const items = parseTodos(todosDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     (fetchOrigin as Mock).mockImplementationOnce(() => {
@@ -337,7 +418,7 @@ describe("launchSingleItem", () => {
     });
 
     const output = captureOutput(() => {
-      launchSingleItem(item, todosFile, worktreeDir, repo, "claude", mockMux);
+      launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
     });
 
     // Both warnings should appear
@@ -352,14 +433,13 @@ describe("launchSingleItem", () => {
   it("returns correct worktreePath for hub repo items", () => {
     const mockMux = createMockMux();
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(todosFile, worktreeDir);
+    const items = parseTodos(todosDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     captureOutput(() => {
-      const res = launchSingleItem(item, todosFile, worktreeDir, repo, "claude", mockMux);
+      const res = launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
       expect(res).not.toBeNull();
       expect(res!.worktreePath).toBe(join(worktreeDir, "todo-M-CI-1"));
     });
@@ -431,180 +511,119 @@ describe("sanitizeTitle", () => {
 describe("extractTodoText", () => {
   afterEach(() => cleanupTempRepos());
 
-  it("returns full TODO block for a valid ID", () => {
+  /** Helper to create a todos directory with individual todo files. */
+  function createTodosDir(repo: string): string {
+    const todosDir = join(repo, ".ninthwave", "todos");
+    mkdirSync(todosDir, { recursive: true });
+    return todosDir;
+  }
+
+  it("returns full file contents for a valid ID", () => {
     const repo = setupTempRepo();
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = createTodosDir(repo);
+    const fileContent = [
+      "# Fix: Some bug (H-BUG-1)",
+      "",
+      "**Priority:** High",
+      "**Source:** Manual",
+      "**Depends on:** None",
+      "**Domain:** bugs",
+      "",
+      "Description of the bug.",
+      "",
+      "Acceptance: Bug is fixed.",
+      "",
+      "Key files: `src/foo.ts`",
+      "",
+    ].join("\n");
+    writeFileSync(join(todosDir, "1-bugs--H-BUG-1.md"), fileContent);
+    // Another file should not be returned
     writeFileSync(
-      todosFile,
-      [
-        "# TODOS",
-        "",
-        "## Section",
-        "",
-        "### Fix: Some bug (H-BUG-1)",
-        "",
-        "**Priority:** High",
-        "**Source:** Manual",
-        "",
-        "Description of the bug.",
-        "",
-        "Acceptance: Bug is fixed.",
-        "",
-        "Key files: `src/foo.ts`",
-        "",
-        "---",
-        "",
-        "### Feat: Another item (M-FT-2)",
-        "",
-        "**Priority:** Medium",
-        "",
-      ].join("\n"),
+      join(todosDir, "2-features--M-FT-2.md"),
+      "# Feat: Another item (M-FT-2)\n\n**Priority:** Medium\n**Depends on:** None\n**Domain:** features\n",
     );
 
-    const text = extractTodoText(todosFile, "H-BUG-1");
-    expect(text).toContain("### Fix: Some bug (H-BUG-1)");
+    const text = extractTodoText(todosDir, "H-BUG-1");
+    expect(text).toContain("# Fix: Some bug (H-BUG-1)");
     expect(text).toContain("**Priority:** High");
     expect(text).toContain("Description of the bug.");
     expect(text).toContain("Acceptance: Bug is fixed.");
     expect(text).toContain("Key files: `src/foo.ts`");
-    // Should NOT include the next item
+    // Should NOT include the other item
     expect(text).not.toContain("M-FT-2");
     expect(text).not.toContain("Another item");
   });
 
   it("returns empty string when ID is not found", () => {
     const repo = setupTempRepo();
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = createTodosDir(repo);
     writeFileSync(
-      todosFile,
-      [
-        "# TODOS",
-        "",
-        "## Section",
-        "",
-        "### Fix: Some bug (H-BUG-1)",
-        "",
-        "Description.",
-        "",
-      ].join("\n"),
+      join(todosDir, "1-bugs--H-BUG-1.md"),
+      "# Fix: Some bug (H-BUG-1)\n\n**Priority:** High\n**Depends on:** None\n**Domain:** bugs\n",
     );
 
-    const text = extractTodoText(todosFile, "NONEXISTENT-99");
+    const text = extractTodoText(todosDir, "NONEXISTENT-99");
     expect(text).toBe("");
   });
 
-  it("returns first match when duplicate IDs exist", () => {
+  it("returns empty string when todosDir does not exist", () => {
     const repo = setupTempRepo();
-    const todosFile = join(repo, "TODOS.md");
-    writeFileSync(
-      todosFile,
-      [
-        "# TODOS",
-        "",
-        "### Fix: First occurrence (DUP-1)",
-        "",
-        "First description.",
-        "",
-        "---",
-        "",
-        "### Fix: Second occurrence (DUP-1)",
-        "",
-        "Second description.",
-        "",
-      ].join("\n"),
-    );
+    const todosDir = join(repo, ".ninthwave", "todos");
+    // Directory does not exist
 
-    const text = extractTodoText(todosFile, "DUP-1");
-    expect(text).toContain("First occurrence");
-    expect(text).toContain("First description.");
-    // Should stop at the next ### header, so second occurrence is excluded
-    expect(text).not.toContain("Second occurrence");
-    expect(text).not.toContain("Second description.");
+    const text = extractTodoText(todosDir, "H-BUG-1");
+    expect(text).toBe("");
   });
 
-  it("handles malformed headers without parenthesized ID", () => {
+  it("returns correct file for ID that is a prefix of another", () => {
     const repo = setupTempRepo();
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = createTodosDir(repo);
     writeFileSync(
-      todosFile,
-      [
-        "# TODOS",
-        "",
-        "### Fix: Missing ID header",
-        "",
-        "No ID in the header above.",
-        "",
-        "### Fix: Valid item (H-OK-1)",
-        "",
-        "Has a valid ID.",
-        "",
-      ].join("\n"),
+      join(todosDir, "1-bugs--H-BUG-10.md"),
+      "# Fix: Item ten (H-BUG-10)\n\n**Priority:** High\n**Depends on:** None\n**Domain:** bugs\n\nDescription for 10.\n",
+    );
+    writeFileSync(
+      join(todosDir, "1-bugs--H-BUG-1.md"),
+      "# Fix: Item one (H-BUG-1)\n\n**Priority:** High\n**Depends on:** None\n**Domain:** bugs\n\nDescription for 1.\n",
     );
 
-    // Searching for the valid ID should skip malformed headers
-    const text = extractTodoText(todosFile, "H-OK-1");
-    expect(text).toContain("### Fix: Valid item (H-OK-1)");
-    expect(text).toContain("Has a valid ID.");
-    expect(text).not.toContain("Missing ID header");
+    // File-per-todo uses exact suffix matching (--H-BUG-1.md), so H-BUG-1 matches exactly
+    const text = extractTodoText(todosDir, "H-BUG-1");
+    expect(text).toContain("Item one");
+    expect(text).toContain("Description for 1.");
+    expect(text).not.toContain("Item ten");
   });
 
-  it("returns text up to end of file when item is last in file", () => {
+  it("returns file contents including acceptance criteria", () => {
     const repo = setupTempRepo();
-    const todosFile = join(repo, "TODOS.md");
+    const todosDir = createTodosDir(repo);
     writeFileSync(
-      todosFile,
+      join(todosDir, "3-misc--L-LAST-1.md"),
       [
-        "# TODOS",
+        "# Fix: Only item (L-LAST-1)",
         "",
-        "### Fix: Only item (L-LAST-1)",
+        "**Priority:** Low",
+        "**Depends on:** None",
+        "**Domain:** misc",
         "",
         "This is the last item.",
         "",
         "Acceptance: Done.",
+        "",
       ].join("\n"),
     );
 
-    const text = extractTodoText(todosFile, "L-LAST-1");
-    expect(text).toContain("### Fix: Only item (L-LAST-1)");
+    const text = extractTodoText(todosDir, "L-LAST-1");
+    expect(text).toContain("# Fix: Only item (L-LAST-1)");
     expect(text).toContain("This is the last item.");
     expect(text).toContain("Acceptance: Done.");
   });
 
-  it("handles empty TODOS file", () => {
+  it("returns empty string when directory is empty", () => {
     const repo = setupTempRepo();
-    const todosFile = join(repo, "TODOS.md");
-    writeFileSync(todosFile, "");
+    const todosDir = createTodosDir(repo);
 
-    const text = extractTodoText(todosFile, "H-BUG-1");
+    const text = extractTodoText(todosDir, "H-BUG-1");
     expect(text).toBe("");
-  });
-
-  it("matches partial ID prefix correctly (uses parenthesis matching)", () => {
-    const repo = setupTempRepo();
-    const todosFile = join(repo, "TODOS.md");
-    writeFileSync(
-      todosFile,
-      [
-        "# TODOS",
-        "",
-        "### Fix: Item one (H-BUG-10)",
-        "",
-        "Description for 10.",
-        "",
-        "---",
-        "",
-        "### Fix: Item two (H-BUG-1)",
-        "",
-        "Description for 1.",
-        "",
-      ].join("\n"),
-    );
-
-    // The function matches `(${targetId}` — so H-BUG-1 matches both (H-BUG-10) and (H-BUG-1)
-    // because "(H-BUG-1" is a substring of "(H-BUG-10)"
-    // This documents the current behavior (first match wins)
-    const text = extractTodoText(todosFile, "H-BUG-1");
-    expect(text).toContain("Item one");
-    expect(text).toContain("Description for 10.");
   });
 });

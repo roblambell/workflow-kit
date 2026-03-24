@@ -1,13 +1,13 @@
-// Tests for the TODOS.md parser — ported from test/test_parse_todos.sh.
+// Tests for the directory-based TODO parser.
 
 import { describe, it, expect, afterEach } from "vitest";
 import { join } from "path";
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
 import { parseTodos, extractFilePaths, extractTestPlan, normalizeDomain, truncateSlug, expandWildcardDeps } from "../core/parser.ts";
+import { writeTodoFile, todoFilename } from "../core/todo-files.ts";
+import type { TodoItem, Priority } from "../core/types.ts";
 import {
   setupTempRepo,
-  setupTempRepoPair,
-  useFixture,
   cleanupTempRepos,
 } from "./helpers.ts";
 
@@ -15,65 +15,252 @@ afterEach(() => {
   cleanupTempRepos();
 });
 
-describe("parseTodos — valid fixture", () => {
-  it("parses all 4 items from valid fixture", () => {
+/** Helper: create a todos directory inside a temp repo and return its path. */
+function setupTodosDir(repo: string): string {
+  const todosDir = join(repo, ".ninthwave", "todos");
+  mkdirSync(todosDir, { recursive: true });
+  return todosDir;
+}
+
+/** Helper: write a raw markdown todo file directly (for fine-grained control). */
+function writeRawTodoFile(todosDir: string, filename: string, content: string): void {
+  writeFileSync(join(todosDir, filename), content);
+}
+
+/** Helper: create a TodoItem for writeTodoFile. */
+function makeTodoItem(overrides: Partial<TodoItem> & { id: string; priority: Priority; domain: string; title: string }): TodoItem {
+  return {
+    dependencies: [],
+    bundleWith: [],
+    status: "open",
+    filePath: "",
+    repoAlias: "",
+    rawText: "",
+    filePaths: [],
+    testPlan: "",
+    ...overrides,
+  };
+}
+
+describe("parseTodos — valid items", () => {
+  it("parses all 4 items from directory", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Source:** Manual request 2026-03-22
+**Depends on:** None
+**Domain:** cloud-infrastructure
+
+Upgrade test CI runners from 2 to 4 vCPUs for faster execution.
+
+**Test plan:**
+- Verify updated workflow YAML specifies 4 vCPU runner labels
+- Check deploy workflows still reference 2 vCPU runners
+- Edge case: ensure ARM vs x86 platform is unchanged
+
+Acceptance: Test workflows use 4 vCPU runners. Deploy workflows remain on 2 vCPU.
+
+Key files: \`.github/workflows/test-api.yml\`, \`.github/workflows/ci.yml\`
+`);
+
+    writeRawTodoFile(todosDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+
+**Priority:** High
+**Source:** Eng review 2026-03-22
+**Depends on:** M-CI-1
+**Domain:** cloud-infrastructure
+
+Fix intermittent connection pool timeout errors in test suite by increasing pool size.
+
+**Test plan:**
+- Add unit test for pool size env var override
+- Run full test suite to confirm no more timeout errors
+
+Acceptance: No more timeout errors in CI. Pool size configurable via env var.
+
+Key files: \`config/test.exs\`
+`);
+
+    writeRawTodoFile(todosDir, "0-user-onboarding--C-UO-1.md", `# Add welcome email (C-UO-1)
+
+**Priority:** Critical
+**Source:** Product review 2026-03-20
+**Depends on:** None
+**Domain:** user-onboarding
+
+Send a welcome email when a new user completes onboarding.
+
+Acceptance: Email sent within 30s of onboarding completion. Email contains user name.
+
+Key files: \`lib/onboarding/email.ex\`, \`lib/mailer.ex\`
+`);
+
+    writeRawTodoFile(todosDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+
+**Priority:** High
+**Source:** Product review 2026-03-20
+**Depends on:** C-UO-1, M-CI-1
+**Bundle with:** H-CI-2
+**Domain:** user-onboarding
+
+Display an onboarding checklist on the dashboard after signup.
+
+Acceptance: Checklist shows on first login. Items check off as completed.
+
+Key files: \`lib/onboarding/checklist.ex\`, \`assets/js/checklist.tsx\`
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(4);
   });
 
   it("extracts correct IDs", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** cloud-infrastructure
+
+Acceptance: Runners upgraded.
+`);
+
+    writeRawTodoFile(todosDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+
+**Priority:** High
+**Depends on:** M-CI-1
+**Domain:** cloud-infrastructure
+
+Acceptance: Fixed.
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const ids = items.map((i) => i.id);
     expect(ids).toContain("M-CI-1");
     expect(ids).toContain("H-CI-2");
-    expect(ids).toContain("C-UO-1");
-    expect(ids).toContain("H-UO-2");
   });
 
   it("extracts correct priorities", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "0-test--C-UO-1.md", `# Item (C-UO-1)
+
+**Priority:** Critical
+**Depends on:** None
+**Domain:** test
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-CI-1")!.priority).toBe("medium");
     expect(byId.get("H-CI-2")!.priority).toBe("high");
     expect(byId.get("C-UO-1")!.priority).toBe("critical");
-    expect(byId.get("H-UO-2")!.priority).toBe("high");
   });
 
   it("extracts correct titles", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** test
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-CI-1")!.title).toContain("Upgrade CI runners");
-    expect(byId.get("H-CI-2")!.title).toContain(
-      "Flaky connection pool timeout",
-    );
+    expect(byId.get("H-CI-2")!.title).toContain("Flaky connection pool timeout");
   });
 
   it("extracts correct domains", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** cloud-infrastructure
+`);
+
+    writeRawTodoFile(todosDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** user-onboarding
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-CI-1")!.domain).toBe("cloud-infrastructure");
-    expect(byId.get("H-CI-2")!.domain).toBe("cloud-infrastructure");
-    expect(byId.get("C-UO-1")!.domain).toBe("user-onboarding");
     expect(byId.get("H-UO-2")!.domain).toBe("user-onboarding");
   });
 
   it("extracts dependencies", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+
+**Priority:** High
+**Depends on:** M-CI-1
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+
+**Priority:** High
+**Depends on:** C-UO-1, M-CI-1
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
+
+**Priority:** Critical
+**Depends on:** None
+**Domain:** test
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("H-CI-2")!.dependencies).toContain("M-CI-1");
@@ -83,27 +270,72 @@ describe("parseTodos — valid fixture", () => {
 
   it("extracts bundle-with", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    const byId = new Map(items.map((i) => [i.id, i]));
+    const todosDir = setupTodosDir(repo);
 
-    expect(byId.get("H-UO-2")!.bundleWith).toContain("H-CI-2");
+    writeRawTodoFile(todosDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+
+**Priority:** High
+**Depends on:** None
+**Bundle with:** H-CI-2
+**Domain:** test
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    expect(items[0]!.bundleWith).toContain("H-CI-2");
   });
 
   it("all items have open status when no worktrees exist", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** test
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
 
     for (const item of items) {
       expect(item.status).toBe("open");
     }
   });
 
-  it("extracts file paths from valid fixture", () => {
+  it("extracts file paths from Key files line", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+
+Acceptance: Runners upgraded.
+
+Key files: \`.github/workflows/test-api.yml\`, \`.github/workflows/ci.yml\`
+`);
+
+    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** test
+
+Acceptance: Fixed.
+
+Key files: \`config/test.exs\`
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     const mci1Paths = byId.get("M-CI-1")!.filePaths;
@@ -116,281 +348,229 @@ describe("parseTodos — valid fixture", () => {
 
   it("stores raw markdown text per item", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    const byId = new Map(items.map((i) => [i.id, i]));
+    const todosDir = setupTodosDir(repo);
 
-    expect(byId.get("M-CI-1")!.rawText).toContain("Upgrade CI runners");
-    expect(byId.get("M-CI-1")!.rawText).toContain("**Priority:** Medium");
-  });
-
-  it("records line numbers", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-
-    // First item starts at line 5 (### header)
-    expect(items[0]!.lineNumber).toBe(5);
-    expect(items[0]!.lineEndNumber).toBeGreaterThan(items[0]!.lineNumber);
-  });
-});
-
-describe("parseTodos — title extraction preserves non-ID parentheticals", () => {
-  it("preserves extra parentheticals after the ID", () => {
-    const repo = setupTempRepo();
-    const content = `# TODOS
-
-## Database
-
-### Feat: Migration (M-DB-1) (phase 2)
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
-
-Acceptance: Migration runs.
-
----
-`;
-    writeFileSync(join(repo, "TODOS.md"), content);
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    expect(items).toHaveLength(1);
-    expect(items[0]!.title).toBe("Feat: Migration (phase 2)");
-    expect(items[0]!.id).toBe("M-DB-1");
-  });
-
-  it("still strips the ID parenthetical for standard titles", () => {
-    const repo = setupTempRepo();
-    const content = `# TODOS
-
-## Cloud Infrastructure
-
-### Feat: Upgrade CI runners (M-CI-1)
-
-**Priority:** Medium
-**Depends on:** None
+**Domain:** test
 
 Acceptance: Runners upgraded.
+`);
 
----
-`;
-    writeFileSync(join(repo, "TODOS.md"), content);
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    expect(items[0]!.rawText).toContain("Upgrade CI runners");
+    expect(items[0]!.rawText).toContain("**Priority:** Medium");
+  });
+
+  it("sets filePath to the todo file path", () => {
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    expect(items[0]!.filePath).toBe(join(todosDir, "2-test--M-CI-1.md"));
+  });
+});
+
+describe("parseTodos — items with missing optional fields", () => {
+  it("parses item with no dependencies line (defaults to empty array)", () => {
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "1-test--H-BK-1.md", `# Some item (H-BK-1)
+
+**Priority:** High
+**Domain:** test
+
+Description only.
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(1);
-    expect(items[0]!.title).toBe("Feat: Upgrade CI runners");
+    expect(items[0]!.dependencies).toEqual([]);
+  });
+
+  it("skips files without priority (returns null from parseTodoFile)", () => {
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+
+    // No priority line — parseTodoFile returns null
+    writeRawTodoFile(todosDir, "2-test--M-BK-1.md", `# No priority item (M-BK-1)
+
+**Depends on:** None
+**Domain:** test
+
+This item has no Priority line.
+`);
+
+    writeRawTodoFile(todosDir, "2-test--M-BK-2.md", `# Valid item (M-BK-2)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+
+This is valid.
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    // Only the valid item is returned
+    expect(items).toHaveLength(1);
+    expect(items[0]!.id).toBe("M-BK-2");
+  });
+
+  it("skips files without ID in heading", () => {
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+
+    // No ID in heading — parseTodoFile returns null
+    writeRawTodoFile(todosDir, "2-test--no-id.md", `# Item with no ID
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "2-test--M-BK-3.md", `# Valid item after bad one (M-BK-3)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    expect(items).toHaveLength(1);
+    expect(items[0]!.id).toBe("M-BK-3");
   });
 });
 
-describe("parseTodos — malformed fixture", () => {
-  it("skips item with no ID", () => {
+describe("parseTodos — empty directory", () => {
+  it("empty todos directory produces no items", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "malformed.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    const ids = items.map((i) => i.id);
-    expect(ids).not.toContain("");
+    const todosDir = setupTodosDir(repo);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    expect(items).toHaveLength(0);
   });
 
-  it("parses item with missing priority (defaults to medium)", () => {
+  it("non-existent directory produces no items", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "malformed.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    const hbk2 = items.find((i) => i.id === "H-BK-2");
-    expect(hbk2).toBeDefined();
-    // Missing priority defaults to medium
-    expect(hbk2!.priority).toBe("medium");
-  });
+    const todosDir = join(repo, ".ninthwave", "todos");
+    // Don't create the directory
 
-  it("parses valid item after malformed ones", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "malformed.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    const mbk3 = items.find((i) => i.id === "M-BK-3");
-    expect(mbk3).toBeDefined();
-    expect(mbk3!.priority).toBe("medium");
-  });
-
-  it("only 2 items parsed from malformed fixture (no-ID item skipped)", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "malformed.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    expect(items).toHaveLength(2);
-  });
-});
-
-describe("parseTodos — warn callback on skipped items", () => {
-  it("invokes warn with line number when an item has no ID", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "malformed.md");
-    const warnings: Array<{ message: string; lineNumber: number }> = [];
-    const warn = (message: string, lineNumber: number) => {
-      warnings.push({ message, lineNumber });
-    };
-
-    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
-
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]!.lineNumber).toBe(5); // "### Feat: Item with no ID in header" is line 5
-    expect(warnings[0]!.message).toContain("no ID");
-    expect(warnings[0]!.message).toContain("line 5");
-  });
-
-  it("parsing continues correctly after warning", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "malformed.md");
-    const warnings: Array<{ message: string; lineNumber: number }> = [];
-    const warn = (message: string, lineNumber: number) => {
-      warnings.push({ message, lineNumber });
-    };
-
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
-
-    // The no-ID item is skipped but both valid items are still parsed
-    expect(items).toHaveLength(2);
-    expect(items.map((i) => i.id)).toContain("H-BK-2");
-    expect(items.map((i) => i.id)).toContain("M-BK-3");
-  });
-
-  it("warn is not called for valid items", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const warnings: Array<{ message: string; lineNumber: number }> = [];
-    const warn = (message: string, lineNumber: number) => {
-      warnings.push({ message, lineNumber });
-    };
-
-    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
-
-    expect(warnings).toHaveLength(0);
-  });
-
-  it("no warn callback does not change behavior", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "malformed.md");
-
-    // No warn option — should not throw
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    expect(items).toHaveLength(2);
-  });
-
-  it("warn message includes the item title", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "malformed.md");
-    const warnings: Array<{ message: string; lineNumber: number }> = [];
-    const warn = (message: string, lineNumber: number) => {
-      warnings.push({ message, lineNumber });
-    };
-
-    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
-
-    expect(warnings[0]!.message).toContain("Item with no ID in header");
-  });
-});
-
-describe("parseTodos — duplicate ID detection", () => {
-  it("duplicate ID triggers warning via warn callback", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "duplicate_ids.md");
-    const warnings: Array<{ message: string; lineNumber: number }> = [];
-    const warn = (message: string, lineNumber: number) => {
-      warnings.push({ message, lineNumber });
-    };
-
-    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
-
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]!.message).toContain("duplicate ID");
-    expect(warnings[0]!.message).toContain("H-TD-1");
-  });
-
-  it("first item is kept, duplicate is skipped", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "duplicate_ids.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-
-    const td1Items = items.filter((i) => i.id === "H-TD-1");
-    expect(td1Items).toHaveLength(1);
-    // First occurrence is kept — it has priority High
-    expect(td1Items[0]!.priority).toBe("high");
-    expect(td1Items[0]!.title).toContain("First item");
-  });
-
-  it("parsing continues after duplicate is detected", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "duplicate_ids.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-
-    // 3 items in the fixture, but one is a duplicate → 2 items parsed
-    expect(items).toHaveLength(2);
-    expect(items.map((i) => i.id)).toContain("H-TD-1");
-    expect(items.map((i) => i.id)).toContain("M-TD-2");
-  });
-
-  it("warn callback receives the line number of the duplicate", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "duplicate_ids.md");
-    const warnings: Array<{ message: string; lineNumber: number }> = [];
-    const warn = (message: string, lineNumber: number) => {
-      warnings.push({ message, lineNumber });
-    };
-
-    parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"), { warn });
-
-    // The duplicate is at line 16 (### Feat: Duplicate of first item (H-TD-1))
-    expect(warnings[0]!.lineNumber).toBe(16);
-  });
-
-  it("no warn callback does not throw on duplicate", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "duplicate_ids.md");
-
-    // No warn option — should not throw
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    expect(items).toHaveLength(2);
-  });
-});
-
-describe("parseTodos — empty fixture", () => {
-  it("empty TODOS.md produces no items", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "empty.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(0);
   });
 });
 
-describe("parseTodos — multi-section fixture", () => {
-  it("parses items across multiple sections", () => {
+describe("parseTodos — multi-domain items", () => {
+  it("parses items with different domains", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "multi_section.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "1-section-alpha--H-AL-1.md", `# Alpha item one (H-AL-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** section-alpha
+`);
+
+    writeRawTodoFile(todosDir, "2-section-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
+
+**Priority:** Medium
+**Depends on:** H-AL-1
+**Domain:** section-alpha
+`);
+
+    writeRawTodoFile(todosDir, "1-section-beta--H-BE-1.md", `# Beta item one (H-BE-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** section-beta
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(3);
-  });
 
-  it("assigns correct domains from different sections", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "multi_section.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
-
     expect(byId.get("H-AL-1")!.domain).toBe("section-alpha");
     expect(byId.get("M-AL-2")!.domain).toBe("section-alpha");
     expect(byId.get("H-BE-1")!.domain).toBe("section-beta");
   });
 
-  it("extracts cross-section dependencies", () => {
+  it("extracts cross-domain dependencies", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "multi_section.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "1-alpha--H-AL-1.md", `# Alpha item (H-AL-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** alpha
+`);
+
+    writeRawTodoFile(todosDir, "2-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
+
+**Priority:** Medium
+**Depends on:** H-AL-1
+**Domain:** alpha
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-AL-2")!.dependencies).toContain("H-AL-1");
   });
 });
 
-describe("parseTodos — cross-repo fixture", () => {
+describe("parseTodos — cross-repo items", () => {
   it("parses repo aliases", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "cross_repo.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "1-api-service--H-API-1.md", `# Add rate limiting (H-API-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** api-service
+**Repo:** target-repo-a
+
+Acceptance: Rate limiting returns 429 after threshold.
+
+Key files: \`lib/gateway/rate_limiter.ex\`
+`);
+
+    writeRawTodoFile(todosDir, "2-api-service--M-API-2.md", `# Connection pool timeout (M-API-2)
+
+**Priority:** Medium
+**Depends on:** H-API-1
+**Domain:** api-service
+**Repo:** target-repo-a
+`);
+
+    writeRawTodoFile(todosDir, "1-web-app--H-WA-1.md", `# Add onboarding flow (H-WA-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** web-app
+**Repo:** target-repo-b
+`);
+
+    writeRawTodoFile(todosDir, "2-documentation--M-DOC-1.md", `# Update ADR for rate limiting (M-DOC-1)
+
+**Priority:** Medium
+**Depends on:** H-API-1
+**Domain:** documentation
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("H-API-1")!.repoAlias).toBe("target-repo-a");
@@ -400,35 +580,70 @@ describe("parseTodos — cross-repo fixture", () => {
     expect(byId.get("M-DOC-1")!.repoAlias).toBe("");
   });
 
-  it("parses all 4 items from cross-repo fixture", () => {
+  it("parses all items from cross-repo directory", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "cross_repo.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "1-api--H-API-1.md", `# Rate limiting (H-API-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** api
+**Repo:** target-repo-a
+`);
+
+    writeRawTodoFile(todosDir, "2-api--M-API-2.md", `# Pool timeout (M-API-2)
+
+**Priority:** Medium
+**Depends on:** H-API-1
+**Domain:** api
+**Repo:** target-repo-a
+`);
+
+    writeRawTodoFile(todosDir, "1-web--H-WA-1.md", `# Onboarding (H-WA-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** web
+**Repo:** target-repo-b
+`);
+
+    writeRawTodoFile(todosDir, "2-docs--M-DOC-1.md", `# ADR (M-DOC-1)
+
+**Priority:** Medium
+**Depends on:** H-API-1
+**Domain:** docs
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(4);
-  });
-
-  it("assigns domains correctly across sections", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "cross_repo.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    const byId = new Map(items.map((i) => [i.id, i]));
-
-    expect(byId.get("H-API-1")!.domain).toBe("api-service");
-    expect(byId.get("H-WA-1")!.domain).toBe("web-app");
-    expect(byId.get("M-DOC-1")!.domain).toBe("documentation");
   });
 });
 
 describe("parseTodos — in-progress detection", () => {
   it("detects in-progress from worktree directories", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
+
+**Priority:** High
+**Depends on:** M-CI-1
+**Domain:** test
+`);
 
     // Create a worktree dir for M-CI-1
     const wtDir = join(repo, ".worktrees", "todo-M-CI-1");
     mkdirSync(wtDir, { recursive: true });
 
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-CI-1")!.status).toBe("in-progress");
@@ -437,7 +652,21 @@ describe("parseTodos — in-progress detection", () => {
 
   it("detects in-progress from cross-repo index", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+`);
+
+    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
+
+**Priority:** High
+**Depends on:** M-CI-1
+**Domain:** test
+`);
 
     // Create the worktrees dir and cross-repo index
     const wtDir = join(repo, ".worktrees");
@@ -453,25 +682,69 @@ describe("parseTodos — in-progress detection", () => {
       `H-CI-2\ttarget-repo\t${targetPath}\n`,
     );
 
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("H-CI-2")!.status).toBe("in-progress");
   });
 });
 
-describe("parseTodos — circular deps fixture", () => {
+describe("parseTodos — circular deps", () => {
   it("parses all 3 circular dep items", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "circular_deps.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "1-circular--H-CC-1.md", `# Item A depends on B (H-CC-1)
+
+**Priority:** High
+**Depends on:** H-CC-2
+**Domain:** circular
+`);
+
+    writeRawTodoFile(todosDir, "1-circular--H-CC-2.md", `# Item B depends on C (H-CC-2)
+
+**Priority:** High
+**Depends on:** H-CC-3
+**Domain:** circular
+`);
+
+    writeRawTodoFile(todosDir, "1-circular--H-CC-3.md", `# Item C depends on A (H-CC-3)
+
+**Priority:** High
+**Depends on:** H-CC-1
+**Domain:** circular
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(3);
   });
 
   it("captures circular dependency references", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "circular_deps.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "1-circular--H-CC-1.md", `# Item A (H-CC-1)
+
+**Priority:** High
+**Depends on:** H-CC-2
+**Domain:** circular
+`);
+
+    writeRawTodoFile(todosDir, "1-circular--H-CC-2.md", `# Item B (H-CC-2)
+
+**Priority:** High
+**Depends on:** H-CC-3
+**Domain:** circular
+`);
+
+    writeRawTodoFile(todosDir, "1-circular--H-CC-3.md", `# Item C (H-CC-3)
+
+**Priority:** High
+**Depends on:** H-CC-1
+**Domain:** circular
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("H-CC-1")!.dependencies).toContain("H-CC-2");
@@ -667,31 +940,64 @@ describe("extractFilePaths", () => {
   });
 });
 
-describe("parseTodos — test plan extraction from fixture", () => {
+describe("parseTodos — test plan extraction", () => {
   it("extracts test plan from items that have one", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const todosDir = setupTodosDir(repo);
+
+    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** test
+
+**Test plan:**
+- Verify updated workflow YAML specifies 4 vCPU runner labels
+- Check deploy workflows still reference 2 vCPU runners
+- Edge case: ensure ARM vs x86 platform is unchanged
+
+Acceptance: Test workflows use 4 vCPU runners.
+`);
+
+    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** test
+
+**Test plan:**
+- Add unit test for pool size env var override
+- Run full test suite to confirm no more timeout errors
+
+Acceptance: Fixed.
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
-    // M-CI-1 has a test plan
     const mci1Plan = byId.get("M-CI-1")!.testPlan;
     expect(mci1Plan).toContain("4 vCPU runner labels");
     expect(mci1Plan).toContain("ARM vs x86");
 
-    // H-CI-2 has a test plan
     const hci2Plan = byId.get("H-CI-2")!.testPlan;
     expect(hci2Plan).toContain("pool size env var");
   });
 
   it("returns empty string for items without test plan", () => {
     const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    const byId = new Map(items.map((i) => [i.id, i]));
+    const todosDir = setupTodosDir(repo);
 
-    // C-UO-1 has no test plan
-    expect(byId.get("C-UO-1")!.testPlan).toBe("");
+    writeRawTodoFile(todosDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
+
+**Priority:** Critical
+**Depends on:** None
+**Domain:** test
+
+Acceptance: Email sent.
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    expect(items[0]!.testPlan).toBe("");
   });
 });
 
@@ -834,32 +1140,30 @@ describe("expandWildcardDeps", () => {
 describe("parseTodos — wildcard dependencies", () => {
   it("expands wildcard deps during parsing", () => {
     const repo = setupTempRepo();
-    const content = [
-      "## Test Domain",
-      "",
-      "### Feat: First item (H-TD-1)",
-      "**Priority:** High",
-      "**Depends on:** None",
-      "",
-      "---",
-      "",
-      "### Feat: Second item (H-TD-2)",
-      "**Priority:** High",
-      "**Depends on:** None",
-      "",
-      "---",
-      "",
-      "## Other Domain",
-      "",
-      "### Feat: Depends on all TD items (M-OT-1)",
-      "**Priority:** Medium",
-      "**Depends on:** TD-*",
-      "",
-      "---",
-    ].join("\n");
-    writeFileSync(join(repo, "TODOS.md"), content);
+    const todosDir = setupTodosDir(repo);
 
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    writeRawTodoFile(todosDir, "1-test-domain--H-TD-1.md", `# First item (H-TD-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** test-domain
+`);
+
+    writeRawTodoFile(todosDir, "1-test-domain--H-TD-2.md", `# Second item (H-TD-2)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** test-domain
+`);
+
+    writeRawTodoFile(todosDir, "2-other-domain--M-OT-1.md", `# Depends on all TD items (M-OT-1)
+
+**Priority:** Medium
+**Depends on:** TD-*
+**Domain:** other-domain
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     const mot1 = byId.get("M-OT-1")!;
@@ -869,38 +1173,37 @@ describe("parseTodos — wildcard dependencies", () => {
 
   it("mixes literal and wildcard deps", () => {
     const repo = setupTempRepo();
-    const content = [
-      "## Alpha",
-      "",
-      "### Feat: A1 (H-AL-1)",
-      "**Priority:** High",
-      "**Depends on:** None",
-      "",
-      "---",
-      "",
-      "### Feat: A2 (M-AL-2)",
-      "**Priority:** Medium",
-      "**Depends on:** None",
-      "",
-      "---",
-      "",
-      "## Beta",
-      "",
-      "### Feat: B1 (H-BE-1)",
-      "**Priority:** High",
-      "**Depends on:** None",
-      "",
-      "---",
-      "",
-      "### Feat: Depends on A1 and all Beta (M-GA-1)",
-      "**Priority:** Medium",
-      "**Depends on:** H-AL-1, BE-*",
-      "",
-      "---",
-    ].join("\n");
-    writeFileSync(join(repo, "TODOS.md"), content);
+    const todosDir = setupTodosDir(repo);
 
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    writeRawTodoFile(todosDir, "1-alpha--H-AL-1.md", `# A1 (H-AL-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** alpha
+`);
+
+    writeRawTodoFile(todosDir, "2-alpha--M-AL-2.md", `# A2 (M-AL-2)
+
+**Priority:** Medium
+**Depends on:** None
+**Domain:** alpha
+`);
+
+    writeRawTodoFile(todosDir, "1-beta--H-BE-1.md", `# B1 (H-BE-1)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** beta
+`);
+
+    writeRawTodoFile(todosDir, "2-gamma--M-GA-1.md", `# Depends on A1 and all Beta (M-GA-1)
+
+**Priority:** Medium
+**Depends on:** H-AL-1, BE-*
+**Domain:** gamma
+`);
+
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     const mga1 = byId.get("M-GA-1")!;
@@ -910,87 +1213,38 @@ describe("parseTodos — wildcard dependencies", () => {
   });
 });
 
-describe("parseTodos — domain mappings loaded once via loadDomainMappings", () => {
-  it("applies domain mappings from domains.conf to section headers", () => {
+describe("parseTodos — writeTodoFile round-trip", () => {
+  it("items written with writeTodoFile can be parsed back", () => {
     const repo = setupTempRepo();
-    const configDir = join(repo, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "domains.conf"),
-      "infrastructure=infra\nonboarding=onboard\n",
-    );
+    const todosDir = setupTodosDir(repo);
 
-    const content = [
-      "## Cloud Infrastructure",
-      "",
-      "### Feat: Setup CI (H-CI-1)",
-      "**Priority:** High",
-      "**Depends on:** None",
-      "",
-      "---",
-      "",
-      "## User Onboarding",
-      "",
-      "### Feat: Welcome flow (M-UO-1)",
-      "**Priority:** Medium",
-      "**Depends on:** None",
-      "",
-      "---",
-    ].join("\n");
-    writeFileSync(join(repo, "TODOS.md"), content);
+    const item = makeTodoItem({
+      id: "H-RT-1",
+      priority: "high",
+      domain: "round-trip",
+      title: "Round trip test",
+      dependencies: ["M-RT-2"],
+      rawText: `# Round trip test (H-RT-1)
 
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    const byId = new Map(items.map((i) => [i.id, i]));
+**Priority:** High
+**Source:** local
+**Depends on:** M-RT-2
+**Domain:** round-trip
 
-    expect(byId.get("H-CI-1")!.domain).toBe("infra");
-    expect(byId.get("M-UO-1")!.domain).toBe("onboard");
-  });
+Description of the item.
 
-  it("falls back to auto-slugify when no domains.conf exists", () => {
-    const repo = setupTempRepo();
-    const content = [
-      "## Cloud Infrastructure",
-      "",
-      "### Feat: Setup CI (H-CI-1)",
-      "**Priority:** High",
-      "**Depends on:** None",
-      "",
-      "---",
-    ].join("\n");
-    writeFileSync(join(repo, "TODOS.md"), content);
+Acceptance: Item round-trips correctly.
+`,
+    });
 
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    expect(items[0]!.domain).toBe("cloud-infrastructure");
-  });
-});
+    writeTodoFile(todosDir, item);
 
-describe("parseTodos — UTF-8 BOM handling", () => {
-  it("parses correctly when TODOS.md starts with a UTF-8 BOM", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-
-    // Prepend BOM to the fixture file
-    const todosPath = join(repo, "TODOS.md");
-    const original = readFileSync(todosPath, "utf-8");
-    writeFileSync(todosPath, "\uFEFF" + original);
-
-    const items = parseTodos(todosPath, join(repo, ".worktrees"));
-    expect(items).toHaveLength(4);
-
-    // Verify the first section's domain is parsed correctly (not corrupted by BOM)
-    const byId = new Map(items.map((i) => [i.id, i]));
-    expect(byId.get("M-CI-1")!.domain).toBe("cloud-infrastructure");
-  });
-
-  it("parses correctly when TODOS.md has no BOM", () => {
-    const repo = setupTempRepo();
-    useFixture(repo, "valid.md");
-
-    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
-    expect(items).toHaveLength(4);
-
-    const byId = new Map(items.map((i) => [i.id, i]));
-    expect(byId.get("M-CI-1")!.domain).toBe("cloud-infrastructure");
+    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    expect(items).toHaveLength(1);
+    expect(items[0]!.id).toBe("H-RT-1");
+    expect(items[0]!.priority).toBe("high");
+    expect(items[0]!.domain).toBe("round-trip");
+    expect(items[0]!.dependencies).toContain("M-RT-2");
   });
 });
 
@@ -1004,8 +1258,7 @@ function fakeItem(rawText: string) {
     dependencies: [],
     bundleWith: [],
     status: "open" as const,
-    lineNumber: 1,
-    lineEndNumber: 1,
+    filePath: "",
     repoAlias: "",
     rawText,
     filePaths: [],

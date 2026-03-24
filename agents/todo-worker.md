@@ -13,7 +13,7 @@ You are a focused implementation agent. You receive a single TODO item and your 
 Look for `YOUR_TODO_ID`, `YOUR_PARTITION`, and `HUB_ROOT` in the appended system prompt. These tell you:
 - **YOUR_TODO_ID**: The TODO identifier (e.g., `C-2-1`, `H-3-4`)
 - **YOUR_PARTITION**: The test partition number for database and port isolation
-- **HUB_ROOT**: Absolute path to the hub repo where `TODOS.md` and `.ninthwave/` live. For hub-local items, this equals `PROJECT_ROOT`. For cross-repo items, `PROJECT_ROOT` is the target repo while `HUB_ROOT` points back to the orchestrator's repo.
+- **HUB_ROOT**: Absolute path to the hub repo where `.ninthwave/` lives (including `.ninthwave/todos/`). For hub-local items, this equals `PROJECT_ROOT`. For cross-repo items, `PROJECT_ROOT` is the target repo while `HUB_ROOT` points back to the orchestrator's repo.
 
 Read the full TODO details from the appended system prompt, including: title, description, **acceptance criteria**, priority, source, and affected files.
 
@@ -72,7 +72,7 @@ Sometimes a TODO requires no code change. Valid reasons include:
 1. **Verify thoroughly** — read the affected files, run relevant tests, and confirm the TODO's acceptance criteria are already met or not applicable. Document your reasoning.
 2. **Skip Phases 5–6** (no code to commit or test).
 3. **Skip Phase 7** quality review (no diff to review).
-4. **Proceed to Phase 8** — remove your TODO from TODOS.md as usual.
+4. **Proceed to Phase 8** — remove your TODO file as usual.
 5. **Create a no-op PR in Phase 9** using the adjusted template below.
 
 The no-op PR template (replace the standard Phase 9 template):
@@ -82,7 +82,7 @@ gh pr create --title "chore: close TODO YOUR_TODO_ID — no code change needed" 
 ## Summary
 Closes TODO YOUR_TODO_ID: <title>
 
-**No code change needed.** This PR only removes the TODO entry from TODOS.md.
+**No code change needed.** This PR only removes the TODO file from `.ninthwave/todos/`.
 
 ### Rationale
 <Explain why no code change is needed. Be specific:>
@@ -101,7 +101,7 @@ EOF
 )"
 ```
 
-This keeps the orchestrator's PR-based lifecycle working (the orchestrator handles TODOS.md-only PRs the same as any other PR) and provides an audit trail for why the TODO was closed without a code change.
+This keeps the orchestrator's PR-based lifecycle working (the orchestrator handles TODO-file-only PRs the same as any other PR) and provides an audit trail for why the TODO was closed without a code change.
 
 > **Important:** Do not silently skip a TODO. Every TODO must result in a PR — either with code changes or as a no-op with an explanation.
 
@@ -172,17 +172,15 @@ For UI/visual changes, run `/design-review` if available. For bug fixes with UI 
 cmux set-status "todo-YOUR_TODO_ID" "Reviewed" --icon "eye.fill" --color "#7c3aed"
 ```
 
-## 8. Remove Your TODO from TODOS.md
+## 8. Remove Your TODO File
 
-Before creating the PR, remove your `### ... (YOUR_TODO_ID)` block from `TODOS.md` so that merging the PR automatically marks the item as done. This eliminates the need for the orchestrator to push directly to main after merge.
+Before creating the PR, delete your todo file so that merging the PR automatically marks the item as done.
 
-1. Open `${HUB_ROOT}/TODOS.md`
-2. Find your TODO block: the `### ...` heading line containing `(YOUR_TODO_ID)` and all lines below it up to (but not including) the next `### ` heading or `## ` section heading or end of file
-3. Delete the entire block (heading + body + trailing `---` separator if present)
-4. If removing the item leaves a `## ` section with no remaining `### ` items, remove the empty section too (header + any blank lines / comment lines between the header and the next section)
-5. Commit: `git add TODOS.md && git commit -m "chore: remove YOUR_TODO_ID from TODOS.md"`
+1. Delete the file: `rm ${HUB_ROOT}/.ninthwave/todos/*--YOUR_TODO_ID.md`
+2. Verify it's gone: `ls ${HUB_ROOT}/.ninthwave/todos/*--YOUR_TODO_ID.md` should return "No such file"
+3. Commit: `git add ${HUB_ROOT}/.ninthwave/todos/ && git commit -m "chore: remove YOUR_TODO_ID"`
 
-> **Why?** The orchestrator used to push a mark-done commit to main after merge, which caused race conditions with concurrent auto-merges. Having workers include TODO removal in their PR branch eliminates the race entirely. Reconcile still runs as a safety net for edge cases.
+> **Why?** Each TODO is a separate file in `.ninthwave/todos/`. Deleting your file cannot conflict with other workers' changes — they each touch only their own file.
 
 ## 9. Create the PR
 
@@ -252,29 +250,28 @@ cmux set-status "todo-YOUR_TODO_ID" "PR Created" --icon "checkmark.circle.fill" 
 
 ## 10. Dogfooding Friction Log (ninthwave projects only)
 
-If the project being worked on is the ninthwave repo itself (dogfooding mode), log any friction encountered during this TODO's implementation. **Skip this step entirely for non-ninthwave projects.**
+If you encountered friction during this TODO's implementation, log it. **Skip this step entirely if you experienced no friction.**
 
-**Detection:** Check if `skills/work/SKILL.md` exists in the project root. If it does, this is a ninthwave project and friction logging is active.
+**Detection:** Check if `skills/work/SKILL.md` exists in the project root. If it does, this is a ninthwave project and friction logging is active. **Skip this step entirely for non-ninthwave projects.**
 
 ```bash
-# Only run if dogfooding (skills/work/SKILL.md exists in project root)
 if [ -f "${PROJECT_ROOT}/skills/work/SKILL.md" ]; then
-  mkdir -p "${PROJECT_ROOT}/.ninthwave"
-  cat >> "${PROJECT_ROOT}/.ninthwave/friction.log" <<ENTRY
----
+  mkdir -p "${PROJECT_ROOT}/.ninthwave/friction"
+  TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+  cat > "${PROJECT_ROOT}/.ninthwave/friction/${TIMESTAMP}--YOUR_TODO_ID.md" <<ENTRY
 todo: YOUR_TODO_ID
 date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-severity: low|medium|high|none
+severity: low|medium|high
 description: <brief description of friction encountered>
 ENTRY
+  git add "${PROJECT_ROOT}/.ninthwave/friction/" && git commit -m "chore: log friction for YOUR_TODO_ID"
 fi
 ```
 
 When logging friction:
-- **Severity levels:** `none` (no friction observed), `low` (minor annoyance), `medium` (slowed you down noticeably), `high` (blocked or required workaround)
-- If you encountered no friction, append an entry with severity `none` and description "No friction observed"
+- **Severity levels:** `low` (minor annoyance), `medium` (slowed you down noticeably), `high` (blocked or required workaround)
+- **Do NOT log when there was no friction.** Only create an entry when you actually encountered an issue.
 - Be specific: mention the tool, command, or workflow step that caused friction
-- One entry per TODO — keep descriptions concise (1-2 sentences)
 
 ## 11. Idle -- Wait for Orchestrator Daemon
 
@@ -285,7 +282,7 @@ After creating the PR, your implementation work is done. The **orchestrator daem
 - **Cleans up** branches and worktrees after merge
 - **Rebases** branches when they fall behind main
 
-> **Note:** TODO removal from `TODOS.md` happens via your PR branch (step 8), not by the orchestrator. Reconcile runs as a safety net for edge cases where a PR merges without removing its TODO.
+> **Note:** TODO removal (deleting the file from `.ninthwave/todos/`) happens via your PR branch (step 8), not by the orchestrator. Reconcile runs as a safety net for edge cases where a PR merges without removing its TODO file.
 
 You do NOT need to poll, watch, or take any post-PR action. The daemon handles it.
 
@@ -352,7 +349,7 @@ Ignore comments prefixed with `[Orchestrator]` -- these are audit trail entries 
 ## Constraints (CRITICAL)
 
 - **Do NOT modify** `VERSION` or `CHANGELOG.md`
-- **TODOS.md**: Only remove your own `### ... (YOUR_TODO_ID)` block (step 8). Do not modify other items.
+- **TODO files**: Only delete your own file from `.ninthwave/todos/` (step 8). Do not modify other TODO files.
 - **Do NOT expand scope** beyond the TODO. Note related issues in the PR body but don't fix them.
 - **Do NOT run shipping/deploy workflows**. Version bumping is deferred to post-merge.
 - **Keep changes scoped** to files mentioned in the TODO.
