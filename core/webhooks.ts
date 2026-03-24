@@ -57,25 +57,50 @@ export type WebhookNotifyFn = ((
 // ── URL resolution ──────────────────────────────────────────────────────
 
 /**
+ * Validate that a string is a well-formed HTTP(S) URL.
+ * Returns the URL string if valid, or null if invalid.
+ */
+function validateWebhookUrl(
+  raw: string,
+  source: string,
+  logWarn?: (msg: string) => void,
+): string | null {
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      logWarn?.(`Invalid webhook URL from ${source}: unsupported protocol "${parsed.protocol}" (expected http: or https:)`);
+      return null;
+    }
+    return raw;
+  } catch {
+    logWarn?.(`Invalid webhook URL from ${source}: "${raw}" is not a valid URL`);
+    return null;
+  }
+}
+
+/**
  * Resolve webhook URL from environment variable or project config.
  * Precedence: NINTHWAVE_WEBHOOK_URL env var > .ninthwave/config webhook_url field.
+ * Validates URL format — returns null with a warning for invalid URLs.
  *
  * @param projectRoot - Project root for config file lookup (optional).
  * @param env - Environment variables (injectable for testing).
  * @param configLoader - Config loader function (injectable for testing).
+ * @param logWarn - Optional warning logger for invalid URL diagnostics.
  */
 export function resolveWebhookUrl(
   projectRoot?: string,
   env: Record<string, string | undefined> = process.env,
   configLoader: (root: string) => Record<string, string> = loadConfig,
+  logWarn?: (msg: string) => void,
 ): string | null {
   const envUrl = env.NINTHWAVE_WEBHOOK_URL;
-  if (envUrl) return envUrl;
+  if (envUrl) return validateWebhookUrl(envUrl, "NINTHWAVE_WEBHOOK_URL env var", logWarn);
 
   if (projectRoot) {
     try {
       const config = configLoader(projectRoot);
-      if (config.webhook_url) return config.webhook_url;
+      if (config.webhook_url) return validateWebhookUrl(config.webhook_url, "config file", logWarn);
     } catch {
       // Config load failure is non-fatal
     }

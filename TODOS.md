@@ -60,25 +60,6 @@ Key files: `core/analytics.ts`, `test/analytics.test.ts`
 
 ---
 
-### Fix: Validate webhook URL format on resolve (L-DP-11)
-
-**Priority:** Low
-**Source:** Eng review M-ENG-3 finding 4.3
-**Depends on:** None
-
-`resolveWebhookUrl` returns raw strings from env or config without URL validation. Invalid URLs fail at fetch time with unclear errors. Add URL format validation using `new URL()` and return null (with warning) for invalid URLs.
-
-**Test plan:**
-- Unit test: invalid URL string returns null
-- Unit test: valid HTTP/HTTPS URLs pass validation
-- Unit test: existing tests pass
-
-Acceptance: Invalid URLs are caught at resolve time with a descriptive warning. Valid URLs work as before. Tests cover invalid URL scenarios.
-
-Key files: `core/webhooks.ts`, `test/webhooks.test.ts`
-
----
-
 ### Refactor: Pre-compile template keyword regexes at load time (L-DP-12)
 
 **Priority:** Low

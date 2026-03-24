@@ -120,6 +120,73 @@ describe("resolveWebhookUrl", () => {
     const url = resolveWebhookUrl("/tmp/project", {}, fakeConfig);
     expect(url).toBeNull();
   });
+
+  it("returns null and warns for invalid URL from env var", () => {
+    const logWarn = vi.fn();
+    const url = resolveWebhookUrl(
+      undefined,
+      { NINTHWAVE_WEBHOOK_URL: "not-a-url" },
+      undefined as never,
+      logWarn,
+    );
+    expect(url).toBeNull();
+    expect(logWarn).toHaveBeenCalledTimes(1);
+    expect(logWarn).toHaveBeenCalledWith(
+      expect.stringContaining("not-a-url"),
+    );
+  });
+
+  it("returns null and warns for invalid URL from config file", () => {
+    const logWarn = vi.fn();
+    const fakeConfig = vi.fn(() => ({
+      locExtensions: "",
+      webhook_url: "://missing-scheme",
+    }));
+    const url = resolveWebhookUrl("/tmp/project", {}, fakeConfig, logWarn);
+    expect(url).toBeNull();
+    expect(logWarn).toHaveBeenCalledTimes(1);
+    expect(logWarn).toHaveBeenCalledWith(
+      expect.stringContaining("config file"),
+    );
+  });
+
+  it("returns null and warns for non-HTTP protocol (ftp:)", () => {
+    const logWarn = vi.fn();
+    const url = resolveWebhookUrl(
+      undefined,
+      { NINTHWAVE_WEBHOOK_URL: "ftp://files.example.com/hook" },
+      undefined as never,
+      logWarn,
+    );
+    expect(url).toBeNull();
+    expect(logWarn).toHaveBeenCalledTimes(1);
+    expect(logWarn).toHaveBeenCalledWith(
+      expect.stringContaining("unsupported protocol"),
+    );
+  });
+
+  it("accepts valid HTTPS URL from env var", () => {
+    const logWarn = vi.fn();
+    const url = resolveWebhookUrl(
+      undefined,
+      { NINTHWAVE_WEBHOOK_URL: "https://hooks.slack.com/services/T00/B00/xxx" },
+      undefined as never,
+      logWarn,
+    );
+    expect(url).toBe("https://hooks.slack.com/services/T00/B00/xxx");
+    expect(logWarn).not.toHaveBeenCalled();
+  });
+
+  it("accepts valid HTTP URL from config file", () => {
+    const logWarn = vi.fn();
+    const fakeConfig = vi.fn(() => ({
+      locExtensions: "",
+      webhook_url: "http://localhost:8080/webhook",
+    }));
+    const url = resolveWebhookUrl("/tmp/project", {}, fakeConfig, logWarn);
+    expect(url).toBe("http://localhost:8080/webhook");
+    expect(logWarn).not.toHaveBeenCalled();
+  });
 });
 
 // ── formatWebhookText ───────────────────────────────────────────────
