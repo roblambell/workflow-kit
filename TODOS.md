@@ -8,6 +8,7 @@
 
 
 
+
 ### Feat: Auto-detect multiplexer and add --mux flag (M-MUX-3)
 
 **Priority:** Medium
@@ -53,6 +54,7 @@ Key files: `README.md`, `core/commands/setup.ts`, `test/setup.test.ts`
 
 
 
+
 ### Feat: Explore vision, scope next iteration, and decompose into TODOs (L-VIS-4)
 
 **Priority:** Low
@@ -68,6 +70,7 @@ Key files: `TODOS.md`, `CLAUDE.md`, `README.md`, `vision.md`
 ---
 
 ## Dogfood Friction Fixes (friction decomposition, 2026-03-24)
+
 
 
 
@@ -130,26 +133,6 @@ Add `lastCommitTime` to the orchestrator's snapshot builder by running `git log 
 Acceptance: Orchestrator snapshot includes `lastCommitTime` per item. Supervisor prompt shows commit freshness alongside state duration. Supervisor can distinguish active workers (recent commits) from stalled ones (no recent commits). No changes to worker code.
 
 Key files: `core/commands/orchestrate.ts`, `core/supervisor.ts`, `test/orchestrate.test.ts`
-
----
-
-### Feat: Post-merge conflict detection for sibling PRs (M-DF-4)
-
-**Priority:** Medium
-**Source:** Friction #16 — conflicting PR left unnoticed after sibling merged
-**Depends on:** None
-
-After the orchestrator merges a PR, query `gh pr view <number> --json mergeable` for all remaining in-flight PRs (state `implementing` or `ci-pending`). If any PR's mergeable status is `CONFLICTING`, send a rebase message to the worker via `mux.sendMessage()`. If the worker is dead (workspace not alive), log a warning so the supervisor can escalate. This catches the common case where sibling PRs touching overlapping files break each other on merge.
-
-**Test plan:**
-- Unit test: post-merge check queries all in-flight PRs for mergeable status
-- Unit test: conflicting PR triggers rebase message to worker
-- Unit test: dead worker with conflicting PR logs warning instead of sending message
-- Unit test: non-conflicting PRs are left alone
-
-Acceptance: After each merge, orchestrator checks remaining PRs for conflicts. Conflicting PRs get a rebase message sent to their worker. Dead workers with conflicts are logged as warnings. No false positives for PRs that are still mergeable.
-
-Key files: `core/orchestrator.ts`, `test/orchestrator.test.ts`
 
 ---
 
