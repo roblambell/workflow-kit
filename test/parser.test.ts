@@ -135,6 +135,51 @@ describe("parseTodos — valid fixture", () => {
   });
 });
 
+describe("parseTodos — title extraction preserves non-ID parentheticals", () => {
+  it("preserves extra parentheticals after the ID", () => {
+    const repo = setupTempRepo();
+    const content = `# TODOS
+
+## Database
+
+### Feat: Migration (M-DB-1) (phase 2)
+
+**Priority:** Medium
+**Depends on:** None
+
+Acceptance: Migration runs.
+
+---
+`;
+    writeFileSync(join(repo, "TODOS.md"), content);
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    expect(items).toHaveLength(1);
+    expect(items[0]!.title).toBe("Feat: Migration (phase 2)");
+    expect(items[0]!.id).toBe("M-DB-1");
+  });
+
+  it("still strips the ID parenthetical for standard titles", () => {
+    const repo = setupTempRepo();
+    const content = `# TODOS
+
+## Cloud Infrastructure
+
+### Feat: Upgrade CI runners (M-CI-1)
+
+**Priority:** Medium
+**Depends on:** None
+
+Acceptance: Runners upgraded.
+
+---
+`;
+    writeFileSync(join(repo, "TODOS.md"), content);
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    expect(items).toHaveLength(1);
+    expect(items[0]!.title).toBe("Feat: Upgrade CI runners");
+  });
+});
+
 describe("parseTodos — malformed fixture", () => {
   it("skips item with no ID", () => {
     const repo = setupTempRepo();

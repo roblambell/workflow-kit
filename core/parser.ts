@@ -380,7 +380,7 @@ export function parseTodos(
       // Extract title: strip "### ", strip ID parens and suffixes
       title = line.slice(4);
       title = title
-        .replace(/ \([A-Z]*-[A-Za-z0-9]*-[0-9]*.*/, "")
+        .replace(/ \([A-Z]+-[A-Za-z0-9]+-[0-9]+\)/, "")
         .replace(/ \(bundled\)/, "")
         .replace(/ \([0-9]*A\)/, "");
 
