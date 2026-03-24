@@ -2,33 +2,7 @@
 
 <!-- Format guide: see $(cat .ninthwave/dir)/core/docs/todos-format.md -->
 
-## Time-to-Ship Analytics (mid-term, 2026-03-24)
 
-
-
-
-
-
-### Feat: Add ninthwave analytics command to display trends (M-ANL-2)
-
-**Priority:** Medium
-**Source:** CEO roadmap — visible ROI and improvement tracking
-**Depends on:** H-ANL-1
-
-Add `ninthwave analytics` command that reads `.ninthwave/analytics/*.json` files and displays trends: average wall-clock time per run, average items per batch, CI retry rate, total items shipped, items per day. Show last 10 runs by default, `--all` for full history. Colored output with trend arrows (↑↓→) comparing latest run to average.
-
-**Test plan:**
-- Unit test: parses metrics files correctly
-- Unit test: computes averages across multiple runs
-- Unit test: trend arrows show correct direction
-- Unit test: handles single run (no trend) gracefully
-- Unit test: `--all` flag includes all runs
-
-Acceptance: `ninthwave analytics` shows a readable summary of orchestration performance over time. Trends are visible. Output works with piping/grep.
-
-Key files: `core/commands/analytics.ts` (new), `core/cli.ts`, `test/analytics.test.ts`
-
----
 
 ## Vision (recurring, 2026-03-24)
 
