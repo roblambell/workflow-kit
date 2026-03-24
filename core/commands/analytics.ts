@@ -39,8 +39,18 @@ export interface AnalyticsSummary {
 /**
  * Load and parse analytics JSON files from the analytics directory.
  * Returns runs sorted by timestamp (oldest first).
+ *
+ * Validates JSON structure: runTimestamp (string), wallClockMs (number),
+ * items (array where every entry has `id` and `state` strings).
+ * Corrupt or structurally invalid files are skipped. When an `onWarn`
+ * callback is provided, it is called with a diagnostic message for each
+ * skipped file.
  */
-export function loadRuns(analyticsDir: string, io: AnalyticsReadIO): RunMetrics[] {
+export function loadRuns(
+  analyticsDir: string,
+  io: AnalyticsReadIO,
+  onWarn?: (message: string) => void,
+): RunMetrics[] {
   if (!io.existsSync(analyticsDir)) return [];
 
   const files = io.readdirSync(analyticsDir)
@@ -52,12 +62,35 @@ export function loadRuns(analyticsDir: string, io: AnalyticsReadIO): RunMetrics[
     try {
       const content = io.readFileSync(join(analyticsDir, file), "utf-8");
       const parsed = JSON.parse(content) as RunMetrics;
-      // Basic validation
-      if (typeof parsed.runTimestamp === "string" && typeof parsed.wallClockMs === "number") {
-        runs.push(parsed);
+
+      // Basic field validation
+      if (typeof parsed.runTimestamp !== "string" || typeof parsed.wallClockMs !== "number") {
+        onWarn?.(`Skipping ${file}: missing or invalid runTimestamp/wallClockMs`);
+        continue;
       }
+
+      // Structural validation: items array must exist
+      if (!Array.isArray(parsed.items)) {
+        onWarn?.(`Skipping ${file}: missing or invalid items array`);
+        continue;
+      }
+
+      // Structural validation: each item must have id (string) and state (string)
+      const hasInvalidItem = parsed.items.some(
+        (item: unknown) =>
+          typeof item !== "object" ||
+          item === null ||
+          typeof (item as Record<string, unknown>).id !== "string" ||
+          typeof (item as Record<string, unknown>).state !== "string",
+      );
+      if (hasInvalidItem) {
+        onWarn?.(`Skipping ${file}: one or more items missing id or state`);
+        continue;
+      }
+
+      runs.push(parsed);
     } catch {
-      // Skip malformed files silently
+      onWarn?.(`Skipping ${file}: invalid JSON`);
     }
   }
 
