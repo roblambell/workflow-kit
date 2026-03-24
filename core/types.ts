@@ -62,6 +62,10 @@ export const ID_PATTERN = /[A-Z]-[A-Za-z0-9]+-[0-9]+/;
 export const ID_PATTERN_GLOBAL = /[A-Z]-[A-Za-z0-9]+-[0-9]+/g;
 export const ID_IN_PARENS = /\(([A-Z]-[A-Za-z0-9]+-[0-9]+)/;
 
+// Wildcard dependency pattern: matches patterns like "MUX-*", "H-MUX-*", "DF-*"
+// Captures an uppercase start, optional hyphen-separated segments, ending with -*
+export const WILDCARD_DEP_PATTERN = /[A-Z](?:[A-Za-z0-9]*-)*\*/g;
+
 // Default LOC extensions for version-bump
 export const DEFAULT_LOC_EXTENSIONS =
   "*.ex *.exs *.ts *.tsx *.js *.jsx *.py *.go *.rs *.rb *.java *.kt *.swift";

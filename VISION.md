@@ -22,6 +22,8 @@ v0.1.0 shipped March 2026. This is what's real and working:
 
 - **Self-developing.** ninthwave dogfoods itself. The friction log from that process has surfaced 11 issues and driven multiple improvements. The L-VIS recurring item in TODOS.md keeps the self-improvement loop running.
 
+- **Competitive positioning (Q1 2026).** Parallel AI coding exploded: Claude Code Agent Teams (16+ agents), Cursor (8 agents), Superset IDE (10+ agents), dmux, Conductor. All launch parallel sessions. None decompose work, order dependencies, manage CI lifecycle, or orchestrate merges. ninthwave's moat is the integrated pipeline, not session launching. Agent Teams is complementary (intra-task collaboration on one item) while ninthwave is inter-task orchestration (N workers on N items).
+
 ## Principles
 
 1. **Orchestrate around, never wrap.** ninthwave does not proxy AI tool calls, intercept responses, or inject middleware. Workers are full native instances of your AI tool. ninthwave manages what happens before the session starts and after the PR opens. This is the most important principle and the one that differentiates ninthwave from agent frameworks.
@@ -42,17 +44,35 @@ v0.1.0 shipped March 2026. This is what's real and working:
 
 ## What's Next
 
-Five priority areas over the next 6-12 months. Not dated milestones — ordered by dependency and impact.
+Six priority areas over the next 6-12 months. Not dated milestones — ordered by dependency and impact.
 
-### A. Solidify the Foundation
+### A. Solidify the Foundation *(largely achieved)*
 
 Make what exists reliable, well-documented, and pleasant for a solo developer on a single repo.
 
-- Resolve known friction: memory-aware WIP limits, relative symlinks, conflict checker scoping to `Key files:` only, clean command precision (filter by ID, not nuke all), domain slug truncation, worker friction logging in dogfood mode.
-- Complete the orchestrate integration in `/work` (M-ORCH-9) — the skill delegates to the daemon after item selection.
-- First-run experience: `brew install` to a working parallel session in under 10 minutes.
-- Exhaustive state machine testing — the orchestrator has 13 states and multiple transition paths; all must be covered.
-- Test confidence in decompose: every work item gets a `**Test plan:**` field specifying what tests verify it, expected coverage, and edge cases. Workers execute the plan; the orchestrator tracks outcomes.
+- ~~Resolve known friction: domain slug truncation, worker friction logging in dogfood mode.~~ Done. Friction fixes (DF-1 through DF-5) decomposed and in progress.
+- ~~Complete the orchestrate integration in `/work`.~~ Done. Phase 3 continuous delivery loop shipped.
+- First-run experience: `ninthwave init` for zero-config onboarding (INI-1, INI-2 in progress). Goal: any git repo → working parallel session in under 5 minutes with zero manual input.
+- ~~Exhaustive state machine testing.~~ Done (M-TST-1).
+- ~~Test confidence in decompose.~~ Done — `**Test plan:**` field is now required for every work item.
+
+### A-bis. Visibility & Developer Experience *(new, from competitive analysis)*
+
+Make ninthwave's work visible, measurable, and professional-feeling.
+
+- **Terminal status UI** — beautiful real-time display with color-coded agent states, batch progress, and auto-pane in cmux (STU-1, STU-2).
+- **Webhook notifications** — Slack/Discord integration for orchestrator lifecycle events (WHK-1). Team visibility beyond the operator.
+- **Time-to-ship analytics** — structured metrics per run, `ninthwave analytics` command for trends (ANL-1, ANL-2). Data-driven pipeline improvement.
+- **Web dashboard** — local web UI at localhost:9876 for orchestration state visualization (Phase 4).
+
+### A-ter. Decomposition Quality *(new, competitive moat)*
+
+The integrated pipeline (decompose → batch → orchestrate → merge) is ninthwave's moat. Parallel session launching is now commodity (5+ tools do it as of Q1 2026). Decomposition quality determines PR quality.
+
+- **Decomposition templates** — pre-built patterns for common work types: API endpoint, frontend component, database migration (TPL-1).
+- **Self-improving decomposition** — local learning from past orchestration runs. Items touching conflict-prone file pairs get auto-split (Phase 4).
+- **Community learning (opt-in)** — anonymized decomposition quality metrics contributed back to improve the product (Phase 5, SaaS-adjacent).
+- **Wildcard dependencies** — cleaner dependency declarations with pattern matching (WLD-1, already implemented).
 
 ### B. Sandboxed Workers
 
@@ -124,15 +144,15 @@ ninthwave is feature-complete when:
 - A developer goes from spec to merged, reviewed PRs in a single command cycle.
 - The pipeline handles all common failure modes automatically: CI failures, merge conflicts, review feedback, worker crashes, dependency ordering.
 - Works with 3+ AI coding tools. *(Achieved: Claude Code, OpenCode, Copilot CLI.)*
-- Works with 2+ terminal multiplexers. *(Not yet.)*
+- Works with 2+ terminal multiplexers. *(In progress — tmux adapter in TODOS.md.)*
 - Connects to 2+ task backends. *(Not yet.)*
 - Connects to 2+ observability/alerting backends (Sentry, PagerDuty). *(Not yet.)*
 - GitHub Action bridges CI/CD failures into TODOS.md. *(Not yet.)*
-- Every decomposed work item has a test plan with tracked outcomes. *(Not yet.)*
+- Every decomposed work item has a test plan with tracked outcomes. *(Test plan field required since v0.1.0. Outcome tracking via analytics — in progress.)*
 - Workers run sandboxed by default. *(Not yet.)*
 - Remote session links posted on PRs with auth. *(Not yet.)*
 - Resource management is automatic — memory-aware WIP, no manual tuning. *(Not yet.)*
-- Install to working parallel session in under 10 minutes. *(Close.)*
+- Install to working parallel session in under 10 minutes. *(`ninthwave init` in progress — targeting under 5 minutes with zero manual input.)*
 
 After feature-completeness, ninthwave enters maintenance: bug fixes, compatibility updates for new AI tools and platforms, and community-driven extensions.
 

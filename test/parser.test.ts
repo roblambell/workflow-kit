@@ -3,7 +3,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { join } from "path";
 import { mkdirSync, writeFileSync } from "fs";
-import { parseTodos, extractFilePaths, extractTestPlan, normalizeDomain, truncateSlug } from "../core/parser.ts";
+import { parseTodos, extractFilePaths, extractTestPlan, normalizeDomain, truncateSlug, expandWildcardDeps } from "../core/parser.ts";
 import {
   setupTempRepo,
   setupTempRepoPair,
@@ -598,6 +598,130 @@ describe("extractTestPlan", () => {
     const plan = extractTestPlan(raw);
     expect(plan).toContain("First bullet");
     expect(plan).toContain("Second bullet");
+  });
+});
+
+describe("expandWildcardDeps", () => {
+  const allIds = ["H-MUX-1", "M-MUX-2", "L-MUX-3", "H-DF-1", "M-DF-2", "H-INI-1"];
+
+  it("domain wildcard matches all items with that domain code", () => {
+    const result = expandWildcardDeps("MUX-*", allIds, "H-INI-1");
+    expect(result).toContain("H-MUX-1");
+    expect(result).toContain("M-MUX-2");
+    expect(result).toContain("L-MUX-3");
+    expect(result).not.toContain("H-DF-1");
+    expect(result).not.toContain("H-INI-1");
+  });
+
+  it("priority-prefixed wildcard matches only that priority", () => {
+    const result = expandWildcardDeps("H-MUX-*", allIds, "H-INI-1");
+    expect(result).toContain("H-MUX-1");
+    expect(result).not.toContain("M-MUX-2");
+    expect(result).not.toContain("L-MUX-3");
+  });
+
+  it("multiple wildcards in one string", () => {
+    const result = expandWildcardDeps("MUX-*, DF-*", allIds, "H-INI-1");
+    expect(result).toContain("H-MUX-1");
+    expect(result).toContain("M-MUX-2");
+    expect(result).toContain("H-DF-1");
+    expect(result).toContain("M-DF-2");
+    expect(result).not.toContain("H-INI-1");
+  });
+
+  it("does not include self in expanded deps", () => {
+    const result = expandWildcardDeps("MUX-*", allIds, "H-MUX-1");
+    expect(result).not.toContain("H-MUX-1");
+    expect(result).toContain("M-MUX-2");
+  });
+
+  it("returns empty array when no wildcards match", () => {
+    const result = expandWildcardDeps("ZZZ-*", allIds, "H-INI-1");
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns empty array when no wildcards present", () => {
+    const result = expandWildcardDeps("H-MUX-1, H-DF-1", allIds, "H-INI-1");
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe("parseTodos — wildcard dependencies", () => {
+  it("expands wildcard deps during parsing", () => {
+    const repo = setupTempRepo();
+    const content = [
+      "## Test Domain",
+      "",
+      "### Feat: First item (H-TD-1)",
+      "**Priority:** High",
+      "**Depends on:** None",
+      "",
+      "---",
+      "",
+      "### Feat: Second item (H-TD-2)",
+      "**Priority:** High",
+      "**Depends on:** None",
+      "",
+      "---",
+      "",
+      "## Other Domain",
+      "",
+      "### Feat: Depends on all TD items (M-OT-1)",
+      "**Priority:** Medium",
+      "**Depends on:** TD-*",
+      "",
+      "---",
+    ].join("\n");
+    writeFileSync(join(repo, "TODOS.md"), content);
+
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const byId = new Map(items.map((i) => [i.id, i]));
+
+    const mot1 = byId.get("M-OT-1")!;
+    expect(mot1.dependencies).toContain("H-TD-1");
+    expect(mot1.dependencies).toContain("H-TD-2");
+  });
+
+  it("mixes literal and wildcard deps", () => {
+    const repo = setupTempRepo();
+    const content = [
+      "## Alpha",
+      "",
+      "### Feat: A1 (H-AL-1)",
+      "**Priority:** High",
+      "**Depends on:** None",
+      "",
+      "---",
+      "",
+      "### Feat: A2 (M-AL-2)",
+      "**Priority:** Medium",
+      "**Depends on:** None",
+      "",
+      "---",
+      "",
+      "## Beta",
+      "",
+      "### Feat: B1 (H-BE-1)",
+      "**Priority:** High",
+      "**Depends on:** None",
+      "",
+      "---",
+      "",
+      "### Feat: Depends on A1 and all Beta (M-GA-1)",
+      "**Priority:** Medium",
+      "**Depends on:** H-AL-1, BE-*",
+      "",
+      "---",
+    ].join("\n");
+    writeFileSync(join(repo, "TODOS.md"), content);
+
+    const items = parseTodos(join(repo, "TODOS.md"), join(repo, ".worktrees"));
+    const byId = new Map(items.map((i) => [i.id, i]));
+
+    const mga1 = byId.get("M-GA-1")!;
+    expect(mga1.dependencies).toContain("H-AL-1"); // literal
+    expect(mga1.dependencies).toContain("H-BE-1"); // wildcard expanded
+    expect(mga1.dependencies).not.toContain("M-AL-2"); // not matched
   });
 });
 

@@ -6,6 +6,7 @@ import type { TodoItem, Priority } from "./types.ts";
 import {
   ID_IN_PARENS,
   ID_PATTERN_GLOBAL,
+  WILDCARD_DEP_PATTERN,
   CODE_EXTENSIONS,
   CODE_EXTENSIONS_FOR_LINE,
 } from "./types.ts";
@@ -154,6 +155,54 @@ export function extractFilePaths(item: TodoItem): string[] {
   }
 
   return [...paths].sort();
+}
+
+/**
+ * Expand wildcard dependency patterns against a list of item IDs.
+ * Supports patterns like:
+ *   - "MUX-*"   → matches all items containing "-MUX-" (any priority, any number)
+ *   - "H-MUX-*" → matches all items starting with "H-MUX-"
+ *   - "DF-*"    → matches all items containing "-DF-"
+ *
+ * Priority-prefixed patterns (single letter + hyphen + domain + hyphen + *)
+ * match items starting with that exact prefix. Domain-only patterns match
+ * any item containing "-{domain}-" regardless of priority.
+ */
+export function expandWildcardDeps(
+  rawDepText: string,
+  allIds: string[],
+  selfId: string,
+): string[] {
+  const wildcards = rawDepText.match(WILDCARD_DEP_PATTERN);
+  if (!wildcards) return [];
+
+  const expanded = new Set<string>();
+
+  for (const pattern of wildcards) {
+    const prefix = pattern.slice(0, -1); // strip trailing "*"
+
+    // Priority-prefixed if it looks like "X-DOMAIN-" (single letter, hyphen, domain, hyphen)
+    const priorityPrefixMatch = prefix.match(/^([A-Z])-([A-Za-z0-9]+)-$/);
+
+    for (const id of allIds) {
+      if (id === selfId) continue;
+
+      if (priorityPrefixMatch) {
+        // Exact prefix match: "H-MUX-" matches "H-MUX-1", "H-MUX-2"
+        if (id.startsWith(prefix)) {
+          expanded.add(id);
+        }
+      } else {
+        // Domain match: strip trailing "-" from prefix, match "-{domain}-" in ID
+        const domain = prefix.replace(/-$/, "");
+        if (id.includes(`-${domain}-`)) {
+          expanded.add(id);
+        }
+      }
+    }
+  }
+
+  return [...expanded];
 }
 
 /**
@@ -352,6 +401,28 @@ export function parseTodos(
 
   // Emit last item
   emitItem(lines.length);
+
+  // Second pass: expand wildcard dependencies now that all IDs are known
+  const allIds = items.map((item) => item.id);
+  for (const item of items) {
+    // Re-read the raw depends text from the item's rawText
+    const dependsLine = item.rawText
+      .split("\n")
+      .find((l) => l.match(/^\*\*Depends on:\*\*\s+/));
+    if (!dependsLine) continue;
+
+    const rawDeps = dependsLine.replace(/^\*\*Depends on:\*\*\s+/, "");
+    const wildcardExpanded = expandWildcardDeps(rawDeps, allIds, item.id);
+
+    // Merge expanded IDs with existing literal deps, deduplicating
+    const existing = new Set(item.dependencies);
+    for (const dep of wildcardExpanded) {
+      if (!existing.has(dep)) {
+        item.dependencies.push(dep);
+        existing.add(dep);
+      }
+    }
+  }
 
   return items;
 }
