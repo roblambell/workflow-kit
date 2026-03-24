@@ -838,12 +838,14 @@ function mockCommitDeps(overrides?: Partial<AnalyticsCommitDeps>): AnalyticsComm
   gitAdd: ReturnType<typeof vi.fn>;
   getStagedFiles: ReturnType<typeof vi.fn>;
   gitCommit: ReturnType<typeof vi.fn>;
+  gitReset: ReturnType<typeof vi.fn>;
 } {
   return {
     hasChanges: vi.fn(() => true),
     gitAdd: vi.fn(),
     getStagedFiles: vi.fn(() => [".ninthwave/analytics/2026-03-24T10-00-00-000Z.json"]),
     gitCommit: vi.fn(),
+    gitReset: vi.fn(),
     ...overrides,
   };
 }
@@ -891,6 +893,39 @@ describe("commitAnalyticsFiles", () => {
     expect(result.reason).toBe("dirty_index");
     expect(deps.gitAdd).toHaveBeenCalled(); // analytics were staged
     expect(deps.gitCommit).not.toHaveBeenCalled(); // but commit was skipped
+    expect(deps.gitReset).toHaveBeenCalledWith("/project", [".ninthwave/analytics"]);
+  });
+
+  it("unstages analytics files before returning dirty_index", () => {
+    const callOrder: string[] = [];
+    const deps = mockCommitDeps({
+      getStagedFiles: vi.fn(() => {
+        callOrder.push("getStagedFiles");
+        return [
+          ".ninthwave/analytics/2026-03-24T10-00-00-000Z.json",
+          "src/unrelated-file.ts",
+        ];
+      }),
+      gitAdd: vi.fn(() => { callOrder.push("gitAdd"); }),
+      gitReset: vi.fn(() => { callOrder.push("gitReset"); }),
+    });
+
+    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
+
+    expect(result.committed).toBe(false);
+    expect(result.reason).toBe("dirty_index");
+    // gitReset must be called after gitAdd and getStagedFiles
+    expect(callOrder).toEqual(["gitAdd", "getStagedFiles", "gitReset"]);
+    expect(deps.gitReset).toHaveBeenCalledWith("/project", [".ninthwave/analytics"]);
+  });
+
+  it("does not call gitReset on clean commit", () => {
+    const deps = mockCommitDeps();
+
+    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
+
+    expect(result.committed).toBe(true);
+    expect(deps.gitReset).not.toHaveBeenCalled();
   });
 
   it("handles multiple analytics files", () => {

@@ -135,6 +135,11 @@ export function gitAdd(repoRoot: string, files: string[]): void {
   git(repoRoot, ["add", ...files]);
 }
 
+/** Unstage files from the index (git reset -- <files>). */
+export function gitReset(repoRoot: string, files: string[]): void {
+  git(repoRoot, ["reset", "--", ...files]);
+}
+
 /** Create a commit with the given message. */
 export function gitCommit(repoRoot: string, message: string): void {
   git(repoRoot, ["commit", "-m", message]);

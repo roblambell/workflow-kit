@@ -196,6 +196,7 @@ export interface AnalyticsCommitDeps {
   gitAdd: (repoRoot: string, files: string[]) => void;
   getStagedFiles: (repoRoot: string) => string[];
   gitCommit: (repoRoot: string, message: string) => void;
+  gitReset: (repoRoot: string, files: string[]) => void;
 }
 
 export interface CommitAnalyticsResult {
@@ -231,6 +232,8 @@ export function commitAnalyticsFiles(
   const staged = deps.getStagedFiles(projectRoot);
   const nonAnalytics = staged.filter((f) => !f.startsWith(analyticsRelPath));
   if (nonAnalytics.length > 0) {
+    // Unstage analytics files we just added to avoid leaving them staged
+    deps.gitReset(projectRoot, [analyticsRelPath]);
     return { committed: false, reason: "dirty_index" };
   }
 

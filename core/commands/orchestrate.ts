@@ -25,7 +25,7 @@ import { checkPrStatus } from "./watch.ts";
 import { launchSingleItem, detectAiTool } from "./start.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, getRepoOwner } from "../gh.ts";
-import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit } from "../git.ts";
+import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset } from "../git.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
 import { die } from "../output.ts";
@@ -1213,7 +1213,7 @@ export async function cmdOrchestrate(
     supervisorDeps: supervisorActive ? createSupervisorDeps(structuredLog) : undefined,
     notify,
     analyticsIO: { mkdirSync, writeFileSync },
-    analyticsCommit: { hasChanges, gitAdd, getStagedFiles, gitCommit },
+    analyticsCommit: { hasChanges, gitAdd, getStagedFiles, gitCommit, gitReset },
     readScreen: (ref, lines) => mux.readScreen(ref, lines),
     onPollComplete,
   };
