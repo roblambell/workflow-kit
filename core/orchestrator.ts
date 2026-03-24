@@ -163,7 +163,7 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
 // ── Memory-aware WIP limit ──────────────────────────────────────────
 
 /** Estimated memory consumption per worker (Claude Code + language server + worktree). */
-export const BYTES_PER_WORKER = 2.5 * 1024 * 1024 * 1024; // 2.5 GB
+export const BYTES_PER_WORKER = 1 * 1024 * 1024 * 1024; // 1 GB
 
 /**
  * Calculate the memory-aware WIP limit based on available free memory.

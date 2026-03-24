@@ -2702,25 +2702,25 @@ describe("Orchestrator", () => {
     const GB = 1024 * 1024 * 1024;
 
     it("returns correct WIP for various memory scenarios", () => {
-      // 10 GB free → floor(10/2.5) = 4, but configured limit is 5 → 4
-      expect(calculateMemoryWipLimit(5, 10 * GB)).toBe(4);
+      // 10 GB free → floor(10/1) = 10, but configured limit is 5 → 5
+      expect(calculateMemoryWipLimit(5, 10 * GB)).toBe(5);
 
-      // 7.5 GB free → floor(7.5/2.5) = 3
-      expect(calculateMemoryWipLimit(5, 7.5 * GB)).toBe(3);
+      // 3 GB free → floor(3/1) = 3
+      expect(calculateMemoryWipLimit(5, 3 * GB)).toBe(3);
 
-      // 5 GB free → floor(5/2.5) = 2
-      expect(calculateMemoryWipLimit(5, 5 * GB)).toBe(2);
+      // 2 GB free → floor(2/1) = 2
+      expect(calculateMemoryWipLimit(5, 2 * GB)).toBe(2);
 
-      // 2.5 GB free → floor(2.5/2.5) = 1
-      expect(calculateMemoryWipLimit(5, 2.5 * GB)).toBe(1);
+      // 1 GB free → floor(1/1) = 1
+      expect(calculateMemoryWipLimit(5, 1 * GB)).toBe(1);
     });
 
     it("never drops below 1 when configured limit is positive", () => {
-      // 1 GB free → floor(1/2.5) = 0, but minimum is 1
-      expect(calculateMemoryWipLimit(5, 1 * GB)).toBe(1);
+      // 500 MB free → floor(0.5/1) = 0, but minimum is 1
+      expect(calculateMemoryWipLimit(5, 500 * 1024 * 1024)).toBe(1);
 
-      // 500 MB free → floor(0.5/2.5) = 0, but minimum is 1
-      expect(calculateMemoryWipLimit(3, 500 * 1024 * 1024)).toBe(1);
+      // 100 MB free → floor(0.1/1) = 0, but minimum is 1
+      expect(calculateMemoryWipLimit(3, 100 * 1024 * 1024)).toBe(1);
     });
 
     it("handles 0 free memory (still allows 1 worker)", () => {
@@ -2729,10 +2729,10 @@ describe("Orchestrator", () => {
     });
 
     it("respects configured maximum even when memory allows more", () => {
-      // 100 GB free → floor(100/2.5) = 40, but configured limit is 3 → 3
+      // 100 GB free → floor(100/1) = 100, but configured limit is 3 → 3
       expect(calculateMemoryWipLimit(3, 100 * GB)).toBe(3);
 
-      // 50 GB free → floor(50/2.5) = 20, but configured limit is 1 → 1
+      // 50 GB free → floor(50/1) = 50, but configured limit is 1 → 1
       expect(calculateMemoryWipLimit(1, 50 * GB)).toBe(1);
     });
 
@@ -2751,8 +2751,8 @@ describe("Orchestrator", () => {
       expect(calculateMemoryWipLimit(5, 2 * GB, workerSize)).toBe(2);
     });
 
-    it("BYTES_PER_WORKER is 2.5 GB", () => {
-      expect(BYTES_PER_WORKER).toBe(2.5 * GB);
+    it("BYTES_PER_WORKER is 1 GB", () => {
+      expect(BYTES_PER_WORKER).toBe(1 * GB);
     });
   });
 
