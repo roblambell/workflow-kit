@@ -34,6 +34,28 @@ describe("run()", () => {
     expect(result.timedOut).toBeUndefined();
   });
 
+  // ── Whitespace trimming ─────────────────────────────────────────────
+
+  it("trims leading and trailing whitespace from stdout", () => {
+    // printf outputs exact bytes with no trailing newline of its own,
+    // so we can control whitespace precisely
+    const result = run("printf", ["  hello  \\n"]);
+    expect(result.stdout).toBe("hello");
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("trims leading and trailing whitespace from stderr", () => {
+    // Redirect a padded string to stderr via sh -c
+    const result = run("sh", ["-c", "printf '  oops  \\n' >&2; exit 1"]);
+    expect(result.stderr).toBe("oops");
+    expect(result.exitCode).toBe(1);
+  });
+
+  it("trims multiline stdout preserving inner content", () => {
+    const result = run("printf", ["\\n  line1\\n  line2\\n\\n"]);
+    expect(result.stdout).toBe("line1\n  line2");
+  });
+
   // ── Timeout behavior ────────────────────────────────────────────────
 
   it("kills process and returns timeout error when timeout exceeded", () => {
