@@ -38,6 +38,23 @@ function writePid(lockPath: string): void {
   writeFileSync(join(lockPath, PID_FILE), String(process.pid));
 }
 
+/**
+ * Verify that we still own the lock by re-reading the PID file.
+ * Guards against TOCTOU race: two processes both detect a stale lock,
+ * one acquires it, then the other removes it (thinking it's still stale)
+ * and acquires its own. By verifying after write, the first process
+ * detects the theft on its next retry.
+ */
+function verifyPid(lockPath: string): boolean {
+  try {
+    const contents = readFileSync(join(lockPath, PID_FILE), "utf-8").trim();
+    return contents === String(process.pid);
+  } catch {
+    // PID file was deleted between write and verify — lock was stolen
+    return false;
+  }
+}
+
 function removeLockDir(lockPath: string): void {
   const pidFile = join(lockPath, PID_FILE);
   try {
@@ -64,7 +81,11 @@ export function acquireLock(lockPath: string, timeoutMs = 5000): void {
   while (true) {
     if (tryMkdir(lockPath)) {
       writePid(lockPath);
-      return;
+      // Verify we still own the lock (guards against concurrent stale-lock recovery)
+      if (verifyPid(lockPath)) {
+        return;
+      }
+      // Another process stole the lock between write and verify — retry
     }
 
     // Lock exists — check for staleness
@@ -72,7 +93,10 @@ export function acquireLock(lockPath: string, timeoutMs = 5000): void {
       removeLockDir(lockPath);
       if (tryMkdir(lockPath)) {
         writePid(lockPath);
-        return;
+        if (verifyPid(lockPath)) {
+          return;
+        }
+        // Stolen between write and verify — retry
       }
     }
 
