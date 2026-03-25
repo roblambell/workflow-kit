@@ -1,0 +1,24 @@
+{
+  "runTimestamp": "2026-03-25T12:49:59.383Z",
+  "wallClockMs": 429962,
+  "itemsAttempted": 1,
+  "itemsCompleted": 1,
+  "itemsFailed": 0,
+  "mergeStrategy": "asap",
+  "items": [
+    {
+      "id": "M-STA-3",
+      "state": "done",
+      "ciRetryCount": 0,
+      "retryCount": 0,
+      "tool": "claude",
+      "prNumber": 163,
+      "tokensUsed": null,
+      "costUsd": null,
+      "detectionLatencyMs": 0
+    }
+  ],
+  "totalTokensUsed": null,
+  "totalCostUsd": null,
+  "detectionLatency": null
+}
