@@ -223,7 +223,7 @@ describe("buildSandboxCommand", () => {
 
     const result = buildSandboxCommand(config, "claude --agent todo-worker");
     expect(result).toBe(
-      "nono --rw /tmp/worktree --ro /home/user/project --net api.github.com -- claude --agent todo-worker",
+      "nono run --allow /tmp/worktree --read /home/user/project --allow-domain api.github.com -- claude --agent todo-worker",
     );
   });
 
@@ -241,7 +241,7 @@ describe("buildSandboxCommand", () => {
 
     const result = buildSandboxCommand(config, "cmd");
     expect(result).toBe(
-      "nono --rw /rw1 --rw /rw2 --ro /ro1 --ro /ro2 --net host1.com --net host2.com -- cmd",
+      "nono run --allow /rw1 --allow /rw2 --read /ro1 --read /ro2 --allow-domain host1.com --allow-domain host2.com -- cmd",
     );
   });
 
@@ -253,7 +253,7 @@ describe("buildSandboxCommand", () => {
     };
 
     const result = buildSandboxCommand(config, "cmd");
-    expect(result).toBe("nono -- cmd");
+    expect(result).toBe("nono run -- cmd");
   });
 });
 
@@ -303,10 +303,10 @@ describe("wrapWithSandbox", () => {
     const result = wrapWithSandbox("claude --agent", "/tmp/worktree", repo, {
       runner: nonoInstalled(),
     });
-    expect(result).toMatch(/^nono /);
-    expect(result).toContain("--rw /tmp/worktree");
-    expect(result).toContain(`--ro ${repo}`);
-    expect(result).toContain("--net api.github.com");
+    expect(result).toMatch(/^nono run /);
+    expect(result).toContain("--allow /tmp/worktree");
+    expect(result).toContain(`--read ${repo}`);
+    expect(result).toContain("--allow-domain api.github.com");
     expect(result).toContain("-- claude --agent");
   });
 
@@ -321,6 +321,6 @@ describe("wrapWithSandbox", () => {
     const result = wrapWithSandbox("claude --agent", "/tmp/worktree", repo, {
       runner: nonoInstalled(),
     });
-    expect(result).toContain("--net custom.api.com");
+    expect(result).toContain("--allow-domain custom.api.com");
   });
 });

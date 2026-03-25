@@ -190,7 +190,7 @@ export function applySandboxOverrides(
  * Build the nono command prefix for sandboxing a worker command.
  *
  * Produces a command string like:
- *   nono --rw /path/to/worktree --ro /path/to/project --net api.github.com --net registry.npmjs.org -- <original-command>
+ *   nono run --allow /path/to/worktree --read /path/to/project --allow-domain api.github.com -- <original-command>
  *
  * @param config - The sandbox configuration
  * @param command - The original command to wrap
@@ -200,16 +200,16 @@ export function buildSandboxCommand(
   config: SandboxConfig,
   command: string,
 ): string {
-  const parts: string[] = ["nono"];
+  const parts: string[] = ["nono", "run"];
 
   for (const rw of config.paths.readWrite) {
-    parts.push("--rw", rw);
+    parts.push("--allow", rw);
   }
   for (const ro of config.paths.readOnly) {
-    parts.push("--ro", ro);
+    parts.push("--read", ro);
   }
   for (const host of config.network.allowHosts) {
-    parts.push("--net", host);
+    parts.push("--allow-domain", host);
   }
 
   parts.push("--", command);
