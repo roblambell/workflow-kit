@@ -234,6 +234,59 @@ export NINTHWAVE_MUX=tmux
 
 All orchestration features work identically — the only difference is the UI.
 
+## Remote Dashboard
+
+The orchestrator includes a built-in web dashboard for monitoring worker sessions remotely. It's off by default and secure by default.
+
+### Enable
+
+```bash
+# Via CLI flag
+nw orchestrate --items C-UO-1,H-UO-2 --remote
+
+# Via project config (persists)
+echo "remote_sessions=true" >> .ninthwave/config
+```
+
+When enabled, the dashboard starts on a random localhost port with an auto-generated bearer token:
+
+```
+Dashboard: http://localhost:54321?token=abc123...
+```
+
+### What you see
+
+- **Overview** — all items with color-coded states (queued, implementing, ci-passing, merged, etc.), PR links, and age
+- **Session drill-down** — click into any worker to see its terminal output
+- **Auto-refresh** — dashboard updates every 2 seconds
+
+### Expose remotely
+
+The dashboard binds to localhost only. To access it from another machine, use any tunneling tool you prefer:
+
+```bash
+# cloudflared (Cloudflare)
+cloudflared tunnel --url http://localhost:54321
+
+# ngrok
+ngrok http 54321
+
+# SSH tunnel
+ssh -R 80:localhost:54321 your-server
+```
+
+ninthwave doesn't manage tunnels — you bring your own. The dashboard token provides authentication regardless of which tunnel you use.
+
+> **Note:** cloudflared is **not** a prerequisite for ninthwave. It's one of several tunneling options. `nw doctor` lists it as an optional dependency.
+
+### Verify your setup
+
+```bash
+nw doctor
+```
+
+Checks required tools (gh, AI tool, multiplexer, git config), recommended config (project setup, sandbox, pre-commit hook), and optional dependencies (cloudflared for remote access, webhook URL for notifications).
+
 <!-- PLACEHOLDER: docs/assets/pr-feedback-loop.png
      Shows a GitHub PR titled "feat: Add onboarding checklist (H-UO-3)"
      Visible: a reviewer comment requesting a change, a worker comment responding
@@ -274,6 +327,7 @@ All commands work with both `nw` and `ninthwave` (identical behavior):
 | `version-bump` | Bump version and generate changelog from commits |
 | `clean [ID]` | Remove merged worktrees and close workspaces |
 | `orchestrate --items ID1,ID2 [options]` | Orchestrate parallel processing (launch workers, poll CI, merge PRs) |
+| `doctor` | Check environment health (required tools, config, optional dependencies) |
 | `repos` | List discovered repos (sibling dirs + repos.conf) |
 
 ### Expected skills (bring your own)
