@@ -26,7 +26,7 @@ No build step — Bun executes TypeScript directly. Changes take effect immediat
 - Tests live in `test/` using bun's native test runner (vitest-compatible API via `import { describe, it, expect, vi } from "vitest"`)
 - **Mock isolation:** `bun test` does not isolate `vi.mock` between test files — mocks leak across files and break unrelated tests. Prefer dependency injection (pass collaborators as function arguments) over `vi.mock`. Only use `vi.mock` when the mocked module is not imported by any other test file. When in doubt, inject.
 - **Always run `bun test test/`** (scoped to test directory) to avoid picking up tests from `.worktrees/` during orchestration
-- No runtime dependencies beyond Bun — keep it self-contained
+- One external dependency: [nono](https://github.com/nicholasgasior/nono) for worker sandboxing (installed automatically via `brew install ninthwave`). ninthwave gracefully degrades without it — workers run unsandboxed but functional
 - Convention over configuration — sensible defaults, minimal config files
 
 ## Dogfooding Mode
