@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("../core/cmux.ts", () => ({
   isAvailable: vi.fn(() => true),
   launchWorkspace: vi.fn(() => "workspace:42"),
-  splitPane: vi.fn(() => "pane:1"),
+  splitPane: vi.fn(() => "surface:3"),
   sendMessage: vi.fn(() => true),
   readScreen: vi.fn(() => "line1\nline2\nline3\n"),
   listWorkspaces: vi.fn(() => "workspace:1 TODO T-1 test"),
@@ -84,7 +84,7 @@ describe("CmuxAdapter", () => {
   it("delegates splitPane to cmux.splitPane", () => {
     const adapter = new CmuxAdapter();
     const result = adapter.splitPane("ninthwave status --watch");
-    expect(result).toBe("pane:1");
+    expect(result).toBe("surface:3");
     expect(cmux.splitPane).toHaveBeenCalledWith("ninthwave status --watch");
   });
 });
