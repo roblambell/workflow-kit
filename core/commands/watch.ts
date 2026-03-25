@@ -1,12 +1,96 @@
-// Watch/polling commands: watch-ready, autopilot-watch, pr-watch, pr-activity.
+// Watch/polling commands: watch-ready, autopilot-watch, pr-watch, pr-activity, scanExternalPRs.
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { die } from "../output.ts";
-import { prList, prView, prChecks, getRepoOwner, apiGet } from "../gh.ts";
+import { prList, prView, prChecks, getRepoOwner, apiGet, ghInRepo } from "../gh.ts";
 import * as gh from "../gh.ts";
 import type { WatchResult, Transition } from "../types.ts";
 import { listCrossRepoEntries } from "../cross-repo.ts";
+
+// ── External PR scanning ──────────────────────────────────────────────
+
+/** Data returned by scanExternalPRs for each non-ninthwave PR. */
+export interface ExternalPR {
+  prNumber: number;
+  headBranch: string;
+  author: string;
+  isDraft: boolean;
+  headSha: string;
+  authorAssociation: string;
+  labels: string[];
+}
+
+/** Raw shape returned by the GitHub REST API for pull requests. */
+interface GitHubPullRequest {
+  number: number;
+  head: { ref: string; sha: string };
+  user: { login: string };
+  draft: boolean;
+  author_association: string;
+  labels: Array<{ name: string }>;
+}
+
+/** Injectable dependencies for scanExternalPRs, for testing. */
+export interface ScanExternalPRsDeps {
+  ghRunner: (root: string, args: string[]) => { exitCode: number; stdout: string };
+  isAvailable: () => boolean;
+  getOwnerRepo: (repoRoot: string) => string;
+}
+
+const defaultScanDeps: ScanExternalPRsDeps = {
+  ghRunner: ghInRepo,
+  isAvailable: () => gh.isAvailable(),
+  getOwnerRepo: getRepoOwner,
+};
+
+/**
+ * Scan for open PRs not managed by ninthwave (non-`todo/*` branches).
+ * Uses the GitHub REST API to list open PRs with author_association.
+ *
+ * @param repoRoot - Path to the repository root
+ * @param deps - Injectable dependencies for testing
+ */
+export function scanExternalPRs(
+  repoRoot: string,
+  deps: Partial<ScanExternalPRsDeps> = {},
+): ExternalPR[] {
+  const { ghRunner, isAvailable, getOwnerRepo } = { ...defaultScanDeps, ...deps };
+
+  if (!isAvailable()) return [];
+
+  let ownerRepo: string;
+  try {
+    ownerRepo = getOwnerRepo(repoRoot);
+  } catch {
+    return [];
+  }
+
+  const result = ghRunner(repoRoot, [
+    "api",
+    `repos/${ownerRepo}/pulls?state=open&per_page=100`,
+  ]);
+
+  if (result.exitCode !== 0 || !result.stdout) return [];
+
+  try {
+    const prs = JSON.parse(result.stdout) as GitHubPullRequest[];
+
+    return prs
+      .filter((pr) => !pr.head.ref.startsWith("todo/"))
+      .map((pr) => ({
+        prNumber: pr.number,
+        headBranch: pr.head.ref,
+        author: pr.user.login,
+        isDraft: pr.draft,
+        headSha: pr.head.sha,
+        authorAssociation: pr.author_association,
+        labels: pr.labels.map((l) => l.name),
+      }));
+  } catch {
+    return [];
+  }
+}
 
 /** jq fragment: only count comments/reviews from trusted author associations. */
 export const TRUSTED_ASSOC = '(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")';

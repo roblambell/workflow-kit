@@ -189,6 +189,51 @@ export function cleanStateFile(
   }
 }
 
+// ── External review state ────────────────────────────────────────────
+
+export type ExternalReviewState = "detected" | "reviewing" | "reviewed" | "done";
+
+export interface ExternalReviewItem {
+  prNumber: number;
+  headBranch: string;
+  author: string;
+  state: ExternalReviewState;
+  reviewWorkspaceRef?: string;
+  lastReviewedCommit?: string;
+  lastTransition: string;
+}
+
+export function externalReviewsPath(projectRoot: string): string {
+  return join(projectRoot, ".ninthwave", "external-reviews.json");
+}
+
+export function readExternalReviews(
+  projectRoot: string,
+  io: DaemonIO = defaultIO,
+): ExternalReviewItem[] {
+  const filePath = externalReviewsPath(projectRoot);
+  if (!io.existsSync(filePath)) return [];
+  try {
+    const content = io.readFileSync(filePath, "utf-8");
+    return JSON.parse(content) as ExternalReviewItem[];
+  } catch {
+    return [];
+  }
+}
+
+export function writeExternalReviews(
+  projectRoot: string,
+  items: ExternalReviewItem[],
+  io: DaemonIO = defaultIO,
+): void {
+  const filePath = externalReviewsPath(projectRoot);
+  const dir = dirname(filePath);
+  if (!io.existsSync(dir)) {
+    io.mkdirSync(dir, { recursive: true });
+  }
+  io.writeFileSync(filePath, JSON.stringify(items, null, 2), "utf-8");
+}
+
 // ── State serialization from orchestrator items ──────────────────────
 
 export function serializeOrchestratorState(
