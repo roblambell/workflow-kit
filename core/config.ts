@@ -18,6 +18,10 @@ export const KNOWN_CONFIG_KEYS = new Set([
   "pagerduty_service_id",
   "pagerduty_from_email",
   "remote_sessions",
+  "review_enabled",
+  "review_wip_limit",
+  "review_auto_fix",
+  "review_can_approve",
 ]);
 
 /**

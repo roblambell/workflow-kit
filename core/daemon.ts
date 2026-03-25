@@ -21,6 +21,10 @@ export interface DaemonStateItem {
   lastTransition: string;
   ciFailCount: number;
   retryCount: number;
+  /** cmux workspace reference for the review worker session. */
+  reviewWorkspaceRef?: string;
+  /** Whether this item's review has been completed (approved). */
+  reviewCompleted?: boolean;
 }
 
 export interface DaemonState {
@@ -206,6 +210,8 @@ export function serializeOrchestratorState(
       lastTransition: item.lastTransition,
       ciFailCount: item.ciFailCount,
       retryCount: item.retryCount,
+      ...(item.reviewWorkspaceRef ? { reviewWorkspaceRef: item.reviewWorkspaceRef } : {}),
+      ...(item.reviewCompleted ? { reviewCompleted: item.reviewCompleted } : {}),
     })),
   };
 }

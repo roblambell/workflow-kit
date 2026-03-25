@@ -25,7 +25,7 @@ import {
 import { parseTodos } from "../parser.ts";
 import { resolveRepo, getWorktreeInfo } from "../cross-repo.ts";
 import { checkPrStatus } from "./watch.ts";
-import { launchSingleItem, detectAiTool } from "./start.ts";
+import { launchSingleItem, launchReviewWorker, detectAiTool } from "./start.ts";
 import { getWorkerHealthStatus, computeScreenHealth, type ScreenHealthStatus } from "../worker-health.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner } from "../gh.ts";
@@ -206,6 +206,14 @@ export function buildSnapshot(
       }
     }
 
+    // Check review worker health for items in reviewing state
+    if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {
+      snap.workerAlive = isWorkerAlive(
+        { ...orchItem, workspaceRef: orchItem.reviewWorkspaceRef } as OrchestratorItem,
+        mux,
+      );
+    }
+
     // Check worker alive, health, and commit freshness for active items
     if (orchItem.state === "launching" || orchItem.state === "implementing" || orchItem.state === "ci-failed") {
       snap.workerAlive = isWorkerAlive(orchItem, mux);
@@ -308,11 +316,16 @@ export function reconstructState(
   checkPr: (id: string, root: string) => string | null = checkPrStatus,
   daemonState?: DaemonState | null,
 ): void {
-  // Build a lookup map from saved daemon state for restoring persisted counters
-  const savedItems = new Map<string, { ciFailCount: number; retryCount: number }>();
+  // Build a lookup map from saved daemon state for restoring persisted counters and review fields
+  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
-      savedItems.set(si.id, { ciFailCount: si.ciFailCount, retryCount: si.retryCount });
+      savedItems.set(si.id, {
+        ciFailCount: si.ciFailCount,
+        retryCount: si.retryCount,
+        reviewWorkspaceRef: si.reviewWorkspaceRef,
+        reviewCompleted: si.reviewCompleted,
+      });
     }
   }
 
@@ -323,11 +336,13 @@ export function reconstructState(
   const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
 
   for (const item of orch.getAllItems()) {
-    // Restore persisted counters from daemon state (before any state transitions)
+    // Restore persisted counters and review fields from daemon state (before any state transitions)
     const saved = savedItems.get(item.id);
     if (saved) {
       item.ciFailCount = saved.ciFailCount;
       item.retryCount = saved.retryCount;
+      if (saved.reviewWorkspaceRef) item.reviewWorkspaceRef = saved.reviewWorkspaceRef;
+      if (saved.reviewCompleted) item.reviewCompleted = saved.reviewCompleted;
     }
 
     // Check for worktree: cross-repo index first, then hub-local fallback
@@ -1348,6 +1363,10 @@ export async function cmdOrchestrate(
   let noSandbox = false;
   let clickupListId: string | undefined;
   let remoteFlag = false;
+  let reviewEnabled = false;
+  let reviewWipLimit: number | undefined;
+  let reviewAutoFix: "off" | "direct" | "pr" | undefined;
+  let reviewCanApprove = false;
 
   // Parse args
   let i = 0;
@@ -1418,6 +1437,27 @@ export async function cmdOrchestrate(
         remoteFlag = true;
         i += 1;
         break;
+      case "--review":
+        reviewEnabled = true;
+        i += 1;
+        break;
+      case "--review-wip-limit":
+        reviewWipLimit = parseInt(args[i + 1] ?? "2", 10);
+        i += 2;
+        break;
+      case "--review-auto-fix": {
+        const autoFixVal = args[i + 1] ?? "off";
+        if (autoFixVal !== "off" && autoFixVal !== "direct" && autoFixVal !== "pr") {
+          die(`Invalid --review-auto-fix value: "${autoFixVal}". Must be "off", "direct", or "pr".`);
+        }
+        reviewAutoFix = autoFixVal;
+        i += 2;
+        break;
+      }
+      case "--review-can-approve":
+        reviewCanApprove = true;
+        i += 1;
+        break;
       default:
         die(`Unknown option: ${args[i]}`);
     }
@@ -1479,7 +1519,14 @@ export async function cmdOrchestrate(
   }
 
   // Create orchestrator
-  const orch = new Orchestrator({ wipLimit, mergeStrategy });
+  const orch = new Orchestrator({
+    wipLimit,
+    mergeStrategy,
+    ...(reviewEnabled ? { reviewEnabled } : {}),
+    ...(reviewWipLimit !== undefined ? { reviewWipLimit } : {}),
+    ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
+    ...(reviewCanApprove ? { reviewCanApprove } : {}),
+  });
   for (const id of itemIds) {
     orch.addItem(todoMap.get(id)!);
   }
@@ -1549,6 +1596,21 @@ export async function cmdOrchestrate(
     daemonRebase,
     warn: (message) =>
       structuredLog({ ts: new Date().toISOString(), level: "warn", event: "orchestrator_warning", message }),
+    launchReview: (itemId, prNumber, repoRoot) => {
+      const autoFix = orch.config.reviewAutoFix;
+      const result = launchReviewWorker(prNumber, itemId, autoFix, repoRoot, aiTool, mux, { noSandbox });
+      if (!result) return null;
+      return { workspaceRef: result.workspaceRef };
+    },
+    cleanReview: (itemId, reviewWorkspaceRef) => {
+      // Close the review workspace
+      try { mux.closeWorkspace(reviewWorkspaceRef); } catch { /* best-effort */ }
+      // Clean the review worktree if it exists (only for direct/pr modes)
+      try {
+        cleanSingleWorktree(`review-${itemId}`, join(projectRoot, ".worktrees"), projectRoot);
+      } catch { /* best-effort — review worktree may not exist for off mode */ }
+      return true;
+    },
   };
 
   // Graceful SIGINT handling

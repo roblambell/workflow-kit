@@ -209,10 +209,12 @@ export function createNwSymlink(
 
 const SKILLS = ["work", "decompose", "todo-preview", "ninthwave-upgrade"];
 
-const AGENT_TARGETS = [
-  { dir: ".claude/agents", filename: "todo-worker.md" },
-  { dir: ".opencode/agents", filename: "todo-worker.md" },
-  { dir: ".github/agents", filename: "todo-worker.agent.md" },
+const AGENT_SOURCES = ["todo-worker.md", "review-worker.md"];
+
+const AGENT_TARGET_DIRS = [
+  { dir: ".claude/agents", suffix: ".md" },
+  { dir: ".opencode/agents", suffix: ".md" },
+  { dir: ".github/agents", suffix: ".agent.md" },
 ];
 
 /**
@@ -370,16 +372,22 @@ export function setupProject(
 
   // --- Agent files (symlinked to stay in sync with source) ---
   console.log("Agents...");
-  const agentSource = join(bundleDir, "agents", "todo-worker.md");
 
-  for (const target of AGENT_TARGETS) {
-    const targetDir = join(projectDir, target.dir);
-    mkdirSync(targetDir, { recursive: true });
-    const linkPath = join(targetDir, target.filename);
-    if (existsSync(linkPath)) unlinkSync(linkPath);
-    const relTarget = relative(targetDir, agentSource);
-    symlinkSync(relTarget, linkPath);
-    console.log(`  ${target.dir}/${target.filename} -> ${relTarget}`);
+  for (const agentFile of AGENT_SOURCES) {
+    const agentSource = join(bundleDir, "agents", agentFile);
+    if (!existsSync(agentSource)) continue;
+    const baseName = agentFile.replace(/\.md$/, "");
+
+    for (const target of AGENT_TARGET_DIRS) {
+      const targetDir = join(projectDir, target.dir);
+      mkdirSync(targetDir, { recursive: true });
+      const filename = target.suffix === ".agent.md" ? `${baseName}.agent.md` : agentFile;
+      const linkPath = join(targetDir, filename);
+      if (existsSync(linkPath)) unlinkSync(linkPath);
+      const relTarget = relative(targetDir, agentSource);
+      symlinkSync(relTarget, linkPath);
+      console.log(`  ${target.dir}/${filename} -> ${relTarget}`);
+    }
   }
 
   console.log();
