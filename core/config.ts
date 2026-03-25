@@ -13,6 +13,10 @@ export const KNOWN_CONFIG_KEYS = new Set([
   "sandbox_extra_ro_paths",
   "sandbox_extra_hosts",
   "CLICKUP_LIST_ID",
+  "sentry_org",
+  "sentry_project",
+  "pagerduty_service_id",
+  "pagerduty_from_email",
 ]);
 
 /**
