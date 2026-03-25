@@ -2543,3 +2543,351 @@ describe("buildSnapshot screenHealth", () => {
     }).not.toThrow();
   });
 });
+
+// ── Watch mode tests ────────────────────────────────────────────────
+
+describe("orchestrateLoop watch mode", () => {
+  it("does not exit when all items are terminal with --watch", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("W-1-1"));
+
+    let cycle = 0;
+    let scanCallCount = 0;
+    const logs: LogEntry[] = [];
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1:
+          return { items: [], readyIds: ["W-1-1"] };
+        case 2:
+          return { items: [{ id: "W-1-1", workerAlive: true }], readyIds: [] };
+        case 3:
+          return {
+            items: [{ id: "W-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        case 4:
+          return { items: [], readyIds: [] };
+        // After watch detects new item W-1-2
+        case 5:
+          return { items: [], readyIds: ["W-1-2"] };
+        case 6:
+          return { items: [{ id: "W-1-2", workerAlive: true }], readyIds: [] };
+        case 7:
+          return {
+            items: [{ id: "W-1-2", prNumber: 2, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+      scanTodos: () => {
+        scanCallCount++;
+        // On first scan, return the new item
+        if (scanCallCount >= 1) {
+          return [makeTodo("W-1-1"), makeTodo("W-1-2")];
+        }
+        return [makeTodo("W-1-1")];
+      },
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, { watch: true, maxIterations: 200 });
+
+    // Both items should reach done
+    expect(orch.getItem("W-1-1")!.state).toBe("done");
+    expect(orch.getItem("W-1-2")!.state).toBe("done");
+
+    // Watch mode waiting log was emitted
+    expect(logs.some((l) => l.event === "watch_mode_waiting")).toBe(true);
+    const watchLog = logs.find((l) => l.event === "watch_mode_waiting")!;
+    expect(watchLog.message).toBe("All items complete. Watching for new TODOs...");
+
+    // New items detected log was emitted
+    expect(logs.some((l) => l.event === "watch_new_items")).toBe(true);
+    const newItemsLog = logs.find((l) => l.event === "watch_new_items")!;
+    expect(newItemsLog.newIds).toEqual(["W-1-2"]);
+
+    // scanTodos was called
+    expect(scanCallCount).toBeGreaterThan(0);
+  });
+
+  it("without --watch, daemon exits normally when all items are terminal", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("N-1-1"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    let scanCalled = false;
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1:
+          return { items: [], readyIds: ["N-1-1"] };
+        case 2:
+          return { items: [{ id: "N-1-1", workerAlive: true }], readyIds: [] };
+        case 3:
+          return {
+            items: [{ id: "N-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+      scanTodos: () => {
+        scanCalled = true;
+        return [];
+      },
+    };
+
+    // No watch flag — should exit after all done
+    await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 200 });
+
+    expect(orch.getItem("N-1-1")!.state).toBe("done");
+    expect(logs.some((l) => l.event === "orchestrate_complete")).toBe(true);
+    expect(logs.some((l) => l.event === "watch_mode_waiting")).toBe(false);
+    expect(scanCalled).toBe(false);
+  });
+
+  it("uses custom watch interval from --watch-interval", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("I-1-1"));
+
+    let cycle = 0;
+    const sleepDurations: number[] = [];
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1:
+          return { items: [], readyIds: ["I-1-1"] };
+        case 2:
+          return { items: [{ id: "I-1-1", workerAlive: true }], readyIds: [] };
+        case 3:
+          return {
+            items: [{ id: "I-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: (ms) => {
+        sleepDurations.push(ms);
+        return Promise.resolve();
+      },
+      log: () => {},
+      actionDeps: mockActionDeps(),
+      scanTodos: () => [makeTodo("I-1-1")], // Only return existing item, no new ones
+    };
+
+    // maxIterations will limit the watch loop too
+    await orchestrateLoop(
+      orch,
+      defaultCtx,
+      deps,
+      { watch: true, watchIntervalMs: 5_000, maxIterations: 50 },
+    );
+
+    // Verify the watch interval was used (5000ms instead of default 30000)
+    const watchSleeps = sleepDurations.filter((d) => d === 5_000);
+    expect(watchSleeps.length).toBeGreaterThan(0);
+  });
+
+  it("SIGINT cleanly exits watch mode", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("S-1-1"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    const abortController = new AbortController();
+    let inWatchMode = false;
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1:
+          return { items: [], readyIds: ["S-1-1"] };
+        case 2:
+          return { items: [{ id: "S-1-1", workerAlive: true }], readyIds: [] };
+        case 3:
+          return {
+            items: [{ id: "S-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => {
+        // Only abort once we've entered watch mode (detected by watch_mode_waiting log)
+        if (inWatchMode) {
+          abortController.abort();
+        }
+        return Promise.resolve();
+      },
+      log: (entry) => {
+        logs.push(entry);
+        if (entry.event === "watch_mode_waiting") {
+          inWatchMode = true;
+        }
+      },
+      actionDeps: mockActionDeps(),
+      scanTodos: () => [makeTodo("S-1-1")], // No new items
+    };
+
+    await orchestrateLoop(
+      orch,
+      defaultCtx,
+      deps,
+      { watch: true, maxIterations: 200 },
+      abortController.signal,
+    );
+
+    // Should have entered watch mode
+    expect(logs.some((l) => l.event === "watch_mode_waiting")).toBe(true);
+    // Should have shutdown cleanly
+    expect(logs.some((l) => l.event === "shutdown" && l.reason === "watch_aborted")).toBe(true);
+    // Should NOT have found new items (aborted before scan)
+    expect(logs.some((l) => l.event === "watch_new_items")).toBe(false);
+  });
+
+  it("watch mode respects WIP limits for newly discovered items", async () => {
+    const orch = new Orchestrator({ wipLimit: 1, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("L-1-1"));
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    let scanCount = 0;
+
+    // Track each item's progress through lifecycle
+    const itemCycles = new Map<string, number>();
+
+    const buildSnapshot = (o: Orchestrator): PollSnapshot => {
+      cycle++;
+      const readyIds: string[] = [];
+      const items: ItemSnapshot[] = [];
+
+      for (const item of o.getAllItems()) {
+        if (item.state === "queued") {
+          const depsMet = item.todo.dependencies.every((depId) => {
+            const dep = o.getItem(depId);
+            return !dep || dep.state === "done" || dep.state === "merged";
+          });
+          if (depsMet) readyIds.push(item.id);
+          continue;
+        }
+        if (item.state === "done" || item.state === "stuck") continue;
+
+        // Count cycles per item to advance through states
+        const itemCycle = (itemCycles.get(item.id) ?? 0) + 1;
+        itemCycles.set(item.id, itemCycle);
+
+        // Drive items through lifecycle: launching → implementing → pr-open → merge
+        if (item.state === "launching") {
+          items.push({ id: item.id, workerAlive: true });
+        } else if (item.state === "implementing") {
+          // After 1 cycle in implementing, show a PR
+          items.push({ id: item.id, prNumber: 99, prState: "open", ciStatus: "pass" });
+        } else if (item.state === "ci-passed" || item.state === "merging") {
+          // Merge action will be taken, then item goes to done
+        } else {
+          items.push({ id: item.id, workerAlive: true });
+        }
+      }
+
+      return { items, readyIds };
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+      scanTodos: () => {
+        scanCount++;
+        // Return 3 items — but WIP limit is 1, so they should be queued/serial
+        return [makeTodo("L-1-1"), makeTodo("L-1-2"), makeTodo("L-1-3")];
+      },
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, { watch: true, maxIterations: 500 });
+
+    // All items should reach done
+    expect(orch.getItem("L-1-1")!.state).toBe("done");
+    expect(orch.getItem("L-1-2")!.state).toBe("done");
+    expect(orch.getItem("L-1-3")!.state).toBe("done");
+
+    // Watch mode was entered at least once
+    expect(logs.some((l) => l.event === "watch_mode_waiting")).toBe(true);
+    expect(scanCount).toBeGreaterThan(0);
+  });
+
+  it("watch mode default interval is 30 seconds", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap" });
+    orch.addItem(makeTodo("D-1-1"));
+
+    let cycle = 0;
+    const sleepDurations: number[] = [];
+
+    const buildSnapshot = (): PollSnapshot => {
+      cycle++;
+      switch (cycle) {
+        case 1:
+          return { items: [], readyIds: ["D-1-1"] };
+        case 2:
+          return { items: [{ id: "D-1-1", workerAlive: true }], readyIds: [] };
+        case 3:
+          return {
+            items: [{ id: "D-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        default:
+          return { items: [], readyIds: [] };
+      }
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot,
+      sleep: (ms) => {
+        sleepDurations.push(ms);
+        return Promise.resolve();
+      },
+      log: () => {},
+      actionDeps: mockActionDeps(),
+      scanTodos: () => [makeTodo("D-1-1")], // No new items
+    };
+
+    // maxIterations will bound the watch loop
+    await orchestrateLoop(
+      orch,
+      defaultCtx,
+      deps,
+      { watch: true, maxIterations: 50 },
+    );
+
+    // Default watch interval should be 30000ms
+    expect(sleepDurations.some((d) => d === 30_000)).toBe(true);
+  });
+});

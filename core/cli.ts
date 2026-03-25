@@ -81,7 +81,7 @@ export const COMMANDS: ReadonlyArray<[string, string]> = [
   ],
   ["version-bump", "Bump version + changelog"],
   [
-    "orchestrate --items ID1 ID2 ... [--daemon]",
+    "orchestrate --items ID1 ID2 ... [--daemon] [--watch]",
     "Orchestrate parallel processing",
   ],
   ["stop", "Stop the orchestrator daemon"],

@@ -1054,6 +1054,8 @@ export interface OrchestrateLoopDeps {
   statusSync?: StatusSync;
   /** Dependencies for external PR review processing. When present and reviewExternal is enabled, external PRs are scanned and reviewed. */
   externalReviewDeps?: ExternalReviewDeps;
+  /** Scan for TODO files. Required for watch mode — re-scans the todos directory to discover new items. */
+  scanTodos?: () => TodoItem[];
 }
 
 export interface OrchestrateLoopConfig {
@@ -1079,6 +1081,10 @@ export interface OrchestrateLoopConfig {
   maxIterations?: number;
   /** When true, scan for non-ninthwave PRs and spawn review workers for them. */
   reviewExternal?: boolean;
+  /** When true, daemon stays running after all items reach terminal state, watching for new TODO files. */
+  watch?: boolean;
+  /** Polling interval (milliseconds) for watch mode. Default: 30000 (30 seconds). */
+  watchIntervalMs?: number;
 }
 
 /**
@@ -1188,6 +1194,62 @@ export async function orchestrateLoop(
     const allTerminal = allItems.every((i) => i.state === "done" || i.state === "stuck");
     if (allTerminal) {
       handleRunComplete(allItems, orch, ctx, deps, config, wrappedLog, runStartTime, costData);
+
+      // Watch mode: instead of exiting, poll for new TODO files
+      if (config.watch && deps.scanTodos) {
+        const watchInterval = config.watchIntervalMs ?? 30_000;
+        wrappedLog({
+          ts: new Date().toISOString(),
+          level: "info",
+          event: "watch_mode_waiting",
+          message: "All items complete. Watching for new TODOs...",
+          watchIntervalMs: watchInterval,
+        });
+
+        // Poll for new TODOs until we find some or get aborted
+        let foundNew = false;
+        while (!foundNew) {
+          __iterations++;
+          if (config.maxIterations != null && __iterations > config.maxIterations) {
+            break;
+          }
+          if (signal?.aborted) {
+            wrappedLog({ ts: new Date().toISOString(), level: "info", event: "shutdown", reason: "watch_aborted" });
+            return;
+          }
+          await deps.sleep(watchInterval);
+          if (signal?.aborted) {
+            wrappedLog({ ts: new Date().toISOString(), level: "info", event: "shutdown", reason: "watch_aborted" });
+            return;
+          }
+
+          // Re-scan for TODO files
+          const freshTodos = deps.scanTodos();
+          const existingIds = new Set(orch.getAllItems().map((i) => i.id));
+          const newTodos = freshTodos.filter((t) => !existingIds.has(t.id));
+
+          if (newTodos.length > 0) {
+            for (const todo of newTodos) {
+              orch.addItem(todo);
+            }
+            wrappedLog({
+              ts: new Date().toISOString(),
+              level: "info",
+              event: "watch_new_items",
+              newIds: newTodos.map((t) => t.id),
+              count: newTodos.length,
+            });
+            foundNew = true;
+          }
+        }
+        if (foundNew) {
+          // Continue the main loop with newly added items
+          continue;
+        }
+        // maxIterations exceeded in watch loop — fall through to break
+        break;
+      }
+
       break;
     }
 
@@ -1568,6 +1630,8 @@ export async function cmdOrchestrate(
   let reviewAutoFix: "off" | "direct" | "pr" | undefined;
   let reviewCanApprove = false;
   let reviewExternal = false;
+  let watchMode = false;
+  let watchIntervalSecs: number | undefined;
 
   // Parse args
   let i = 0;
@@ -1663,6 +1727,14 @@ export async function cmdOrchestrate(
         reviewExternal = true;
         i += 1;
         break;
+      case "--watch":
+        watchMode = true;
+        i += 1;
+        break;
+      case "--watch-interval":
+        watchIntervalSecs = parseInt(args[i + 1] ?? "30", 10);
+        i += 2;
+        break;
       default:
         die(`Unknown option: ${args[i]}`);
     }
@@ -1705,7 +1777,7 @@ export async function cmdOrchestrate(
 
   if (itemIds.length === 0) {
     die(
-      "Usage: ninthwave orchestrate --items ID1 ID2 ... [--merge-strategy asap|approved|ask] [--wip-limit N] [--poll-interval SECS] [--daemon]",
+      "Usage: ninthwave orchestrate --items ID1 ID2 ... [--merge-strategy asap|approved|ask] [--wip-limit N] [--poll-interval SECS] [--daemon] [--watch] [--watch-interval SECS]",
     );
   }
 
@@ -2002,6 +2074,7 @@ export async function cmdOrchestrate(
     onPollComplete,
     statusSync,
     externalReviewDeps,
+    ...(watchMode ? { scanTodos: () => parseTodos(todosDir, worktreeDir) } : {}),
   };
 
   // Resolve repo URL for PR URL construction in completion event
@@ -2021,6 +2094,8 @@ export async function cmdOrchestrate(
     aiTool,
     ...(dashboardPublicUrl ? { dashboardPublicUrl } : {}),
     ...(reviewExternalEnabled ? { reviewExternal: true } : {}),
+    ...(watchMode ? { watch: true } : {}),
+    ...(watchIntervalSecs !== undefined ? { watchIntervalMs: watchIntervalSecs * 1000 } : {}),
   };
 
   // Close stale status pane from a previous daemon run before launching a new one
