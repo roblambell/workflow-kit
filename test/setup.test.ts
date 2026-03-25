@@ -66,6 +66,13 @@ function createFakeBundle(dir: string): string {
     "# Todo Worker Agent\n",
   );
 
+  // Create nono profile
+  mkdirSync(join(bundleDir, ".nono", "profiles"), { recursive: true });
+  writeFileSync(
+    join(bundleDir, ".nono", "profiles", "claude-worker.json"),
+    '{"extends": "claude-code"}\n',
+  );
+
   // Create VERSION file
   writeFileSync(join(bundleDir, "VERSION"), "0.1.0\n");
 
@@ -252,6 +259,51 @@ describe("checkPrerequisites", () => {
     // Should print actionable auth instructions
     const output = logs.join("\n");
     expect(output).toContain("gh auth login");
+  });
+
+  it("shows nono as detected when available", () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+
+    const commandExists: CommandChecker = () => true; // all commands available
+    const ghAuthCheck: AuthChecker = () => ({
+      authenticated: true,
+      stderr: "",
+    });
+
+    checkPrerequisites(commandExists, ghAuthCheck);
+
+    console.log = origLog;
+
+    const output = logs.join("\n");
+    expect(output).toContain("nono");
+    expect(output).toContain("kernel-level sandbox");
+  });
+
+  it("shows nono as optional when not available", () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+
+    // gh and cmux available, nono not available
+    const commandExists: CommandChecker = (cmd) => cmd === "gh" || cmd === "cmux";
+    const ghAuthCheck: AuthChecker = () => ({
+      authenticated: true,
+      stderr: "",
+    });
+
+    const result = checkPrerequisites(commandExists, ghAuthCheck);
+
+    console.log = origLog;
+
+    // nono is informational, not blocking
+    expect(result.allPresent).toBe(true);
+    expect(result.missing).not.toContain("nono");
+
+    const output = logs.join("\n");
+    expect(output).toContain("nono");
+    expect(output).toContain("optional");
   });
 
   it("does not check gh auth when gh is missing", () => {
@@ -654,6 +706,50 @@ describe("setupGlobal", () => {
       const target = readlinkSync(linkPath);
       expect(target.startsWith("/")).toBe(false);
     }
+  });
+
+  it("symlinks nono profile to user-level ~/.nono/profiles/", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const fakeHome = join(projectDir, "fake-home");
+    mkdirSync(fakeHome, { recursive: true });
+    process.env.HOME = fakeHome;
+
+    setupGlobal(bundleDir);
+
+    const profileLink = join(fakeHome, ".nono/profiles/claude-worker.json");
+    expect(existsSync(profileLink)).toBe(true);
+    expect(lstatSync(profileLink).isSymbolicLink()).toBe(true);
+
+    // Content should be accessible via the symlink
+    const content = readFileSync(profileLink, "utf-8");
+    expect(content).toContain("claude-code");
+  });
+
+  it("skips nono profile symlink if target already exists", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const fakeHome = join(projectDir, "fake-home");
+    mkdirSync(fakeHome, { recursive: true });
+    process.env.HOME = fakeHome;
+
+    // Pre-create the profile
+    mkdirSync(join(fakeHome, ".nono/profiles"), { recursive: true });
+    writeFileSync(
+      join(fakeHome, ".nono/profiles/claude-worker.json"),
+      '{"custom": true}\n',
+    );
+
+    setupGlobal(bundleDir);
+
+    // Should NOT have overwritten
+    const content = readFileSync(
+      join(fakeHome, ".nono/profiles/claude-worker.json"),
+      "utf-8",
+    );
+    expect(content).toBe('{"custom": true}\n');
   });
 
   it("does not create .ninthwave/, todos directory, or agent files", () => {

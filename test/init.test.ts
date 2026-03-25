@@ -16,6 +16,7 @@ import {
   detectMux,
   detectAITools,
   detectRepoType,
+  detectSandbox,
   detectAll,
   generateConfig,
   initProject,
@@ -56,6 +57,13 @@ function createFakeBundle(dir: string): string {
   writeFileSync(
     join(bundleDir, "agents", "todo-worker.md"),
     "# Todo Worker Agent\n",
+  );
+
+  // Create nono profile
+  mkdirSync(join(bundleDir, ".nono", "profiles"), { recursive: true });
+  writeFileSync(
+    join(bundleDir, ".nono", "profiles", "claude-worker.json"),
+    '{"extends": "claude-code"}\n',
   );
 
   // Create VERSION file
@@ -432,6 +440,7 @@ describe("generateConfig", () => {
       mux: "cmux",
       aiTools: ["claude"],
       repoType: "single",
+      sandbox: null,
     };
 
     const config = generateConfig(detection);
@@ -446,6 +455,7 @@ describe("generateConfig", () => {
       mux: "cmux",
       aiTools: [],
       repoType: "single",
+      sandbox: null,
     };
 
     const config = generateConfig(detection);
@@ -461,6 +471,7 @@ describe("generateConfig", () => {
       mux: "tmux",
       aiTools: [],
       repoType: "single",
+      sandbox: null,
     };
 
     const config = generateConfig(detection);
@@ -475,6 +486,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: [],
       repoType: "single",
+      sandbox: null,
     };
 
     const config = generateConfig(detection);
@@ -490,6 +502,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: [],
       repoType: "monorepo",
+      sandbox: null,
     };
 
     const config = generateConfig(detection);
@@ -504,6 +517,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: ["claude", "opencode"],
       repoType: "single",
+      sandbox: null,
     };
 
     const config = generateConfig(detection);
@@ -518,6 +532,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: [],
       repoType: "single",
+      sandbox: null,
     };
 
     const config = generateConfig(detection);
@@ -532,6 +547,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: [],
       repoType: "single",
+      sandbox: null,
     };
 
     const config = generateConfig(detection);
@@ -547,12 +563,66 @@ describe("generateConfig", () => {
       mux: "cmux",
       aiTools: ["claude"],
       repoType: "single",
+      sandbox: null,
     };
 
     const config = generateConfig(detection);
 
     expect(config).toContain("ci_provider=github-actions");
     expect(config).toContain("test_command=bun test");
+  });
+});
+
+// --- detectSandbox ---
+
+describe("detectSandbox", () => {
+  it("detects nono when binary exists on PATH", () => {
+    const deps: InitDeps = {
+      commandExists: ((cmd: string) => cmd === "nono") as CommandChecker,
+    };
+
+    const result = detectSandbox(deps);
+
+    expect(result).toBe("nono");
+  });
+
+  it("returns null when nono is not available", () => {
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+    };
+
+    const result = detectSandbox(deps);
+
+    expect(result).toBeNull();
+  });
+});
+
+// --- detectAll includes sandbox ---
+
+describe("detectAll", () => {
+  it("includes sandbox field in detection result", () => {
+    const projectDir = setupTempRepo();
+    const deps: InitDeps = {
+      commandExists: ((cmd: string) => cmd === "nono") as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    const result = detectAll(projectDir, deps);
+
+    expect(result).toHaveProperty("sandbox");
+    expect(result.sandbox).toBe("nono");
+  });
+
+  it("includes sandbox: null when nono is not available", () => {
+    const projectDir = setupTempRepo();
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    const result = detectAll(projectDir, deps);
+
+    expect(result.sandbox).toBeNull();
   });
 });
 
@@ -767,5 +837,71 @@ describe("initProject", () => {
     expect(output).toContain("github-actions");
     expect(output).toContain("cmux");
     expect(output).toContain("Done!");
+  });
+
+  it("symlinks nono profile from bundle to project", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+
+    const profileLink = join(projectDir, ".nono/profiles/claude-worker.json");
+    expect(existsSync(profileLink)).toBe(true);
+    expect(lstatSync(profileLink).isSymbolicLink()).toBe(true);
+
+    // Content should be accessible via the symlink
+    const content = readFileSync(profileLink, "utf-8");
+    expect(content).toContain("claude-code");
+  });
+
+  it("skips nono profile symlink if target already exists", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    // Pre-create the profile
+    mkdirSync(join(projectDir, ".nono/profiles"), { recursive: true });
+    writeFileSync(
+      join(projectDir, ".nono/profiles/claude-worker.json"),
+      '{"custom": true}\n',
+    );
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+
+    // Should NOT have overwritten
+    const content = readFileSync(
+      join(projectDir, ".nono/profiles/claude-worker.json"),
+      "utf-8",
+    );
+    expect(content).toBe('{"custom": true}\n');
+  });
+
+  it("skips nono profile symlink if bundle has no profile", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    // Remove the nono profile from the bundle
+    const { rmSync } = require("fs");
+    rmSync(join(bundleDir, ".nono"), { recursive: true, force: true });
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    // Should not throw
+    initProject(projectDir, bundleDir, deps);
+
+    // No profile should have been created
+    expect(existsSync(join(projectDir, ".nono/profiles/claude-worker.json"))).toBe(false);
   });
 });
