@@ -148,6 +148,10 @@ describe("KNOWN_CONFIG_KEYS", () => {
     expect(KNOWN_CONFIG_KEYS.has("review_can_approve")).toBe(true);
   });
 
+  it("includes github_token config key", () => {
+    expect(KNOWN_CONFIG_KEYS.has("github_token")).toBe(true);
+  });
+
   it("does not warn on review config keys", () => {
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");
