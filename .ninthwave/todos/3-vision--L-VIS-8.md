@@ -2,7 +2,7 @@
 
 **Priority:** Low
 **Source:** Self-improvement loop
-**Depends on:** REM-*, DX-*, DOC-*
+**Depends on:** H-REM-1, H-REM-2, M-DX-1, L-DOC-3
 **Domain:** vision
 
 This is a recurring meta-item. When all other TODOs are complete, this item triggers a new cycle: (1) Review the current state of ninthwave against the product vision — what's shipped, what's missing, what friction was logged. (2) Read the friction log and identify actionable improvements. (3) Identify the next most impactful capability or refinement. (4) Decompose it into TODO items following the standard format. (5) Add a new copy of this same item (L-VIS-9, etc.) depending on the new terminal items, so the cycle continues.
