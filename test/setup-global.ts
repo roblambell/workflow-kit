@@ -1,9 +1,11 @@
 // Global test safety net. Loaded via bunfig.toml preload.
-// Kills the test process if it runs longer than 90 seconds total.
-// This catches runaway servers, infinite loops, and leaked resources
-// that individual test timeouts cannot catch.
+// Kills the test process if it exceeds time or memory limits.
+// This catches runaway servers, infinite loops, leaked resources,
+// and memory bloat that individual test timeouts cannot catch.
 
 const GLOBAL_TIMEOUT_MS = 90_000;
+const MEMORY_LIMIT_MB = 1_024; // 1 GB RSS ceiling
+const MEMORY_CHECK_INTERVAL_MS = 5_000;
 
 const timer = setTimeout(() => {
   console.error(
@@ -15,6 +17,21 @@ const timer = setTimeout(() => {
 
 // .unref() so the timer doesn't keep the process alive if tests finish normally
 timer.unref();
+
+// Memory watchdog — poll RSS and kill if it exceeds the ceiling.
+// Catches mock leaks, unbounded allocations, and duplicate test processes.
+const memoryWatch = setInterval(() => {
+  const rssMB = process.memoryUsage.rss() / (1024 * 1024);
+  if (rssMB > MEMORY_LIMIT_MB) {
+    console.error(
+      `\n[FATAL] Test suite RSS ${Math.round(rssMB)}MB exceeds ${MEMORY_LIMIT_MB}MB limit. ` +
+        `Likely a memory leak or mock pollution. Killing process.\n`,
+    );
+    process.exit(137); // 137 = OOM-kill convention (128 + SIGKILL)
+  }
+}, MEMORY_CHECK_INTERVAL_MS);
+
+memoryWatch.unref();
 
 // Sentinel for lint-tests.test.ts to verify preload is active
 (globalThis as any).__nw_test_safety_loaded = true;

@@ -74,9 +74,9 @@ export function checkGh(runner: ShellRunner): CheckResult {
   return { status: "pass", message: "gh CLI installed and authenticated" };
 }
 
-/** Check: at least one AI tool available (claude, opencode, github-copilot-cli). */
+/** Check: at least one AI tool available (claude, opencode, copilot). */
 export function checkAiTool(runner: ShellRunner): CheckResult {
-  const tools = ["claude", "opencode", "github-copilot-cli"];
+  const tools = ["claude", "opencode", "copilot"];
   const found: string[] = [];
 
   for (const tool of tools) {
@@ -89,8 +89,8 @@ export function checkAiTool(runner: ShellRunner): CheckResult {
   if (found.length === 0) {
     return {
       status: "fail",
-      message: "No AI tool available (need claude, opencode, or github-copilot-cli)",
-      detail: "Install: brew install claude",
+      message: "No AI tool available (need claude, opencode, or copilot)",
+      detail: "Install: curl -fsSL https://claude.ai/install.sh | bash",
     };
   }
 

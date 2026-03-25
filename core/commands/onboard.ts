@@ -36,19 +36,19 @@ export const AI_TOOLS: AITool[] = [
     name: "Claude Code",
     command: "claude",
     description: "Anthropic's AI coding assistant",
-    installCmd: "npm install -g @anthropic-ai/claude-code",
+    installCmd: "curl -fsSL https://claude.ai/install.sh | bash",
   },
   {
     name: "OpenCode",
     command: "opencode",
     description: "Open-source AI coding tool",
-    installCmd: "go install github.com/opencode-ai/opencode@latest",
+    installCmd: "curl -fsSL https://opencode.ai/install | bash",
   },
   {
     name: "GitHub Copilot",
     command: "copilot",
     description: "GitHub's AI pair programmer",
-    installCmd: "gh extension install github/gh-copilot",
+    installCmd: "npm install -g @github/copilot",
   },
 ];
 

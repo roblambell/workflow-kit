@@ -173,7 +173,7 @@ curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/install
 
 | Dependency | Purpose | Install |
 |------------|---------|---------|
-| AI coding tool | Runs the sessions | [Claude Code](https://claude.ai/download), [OpenCode](https://opencode.ai), or [Copilot CLI](https://docs.github.com/en/copilot) |
+| AI coding tool | Runs the sessions | [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview), [OpenCode](https://opencode.ai), or [Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli) |
 | [cmux](https://cmux.com) **or** [tmux](https://github.com/tmux/tmux) | Parallel terminal sessions | cmux *(recommended)*: `brew install --cask manaflow-ai/cmux/cmux`<br>tmux: `brew install tmux` |
 | [gh](https://cli.github.com) | PR operations | `brew install gh && gh auth login` |
 
