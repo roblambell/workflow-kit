@@ -65,6 +65,10 @@ function createFakeBundle(dir: string): string {
     join(bundleDir, "agents", "todo-worker.md"),
     "# Todo Worker Agent\n",
   );
+  writeFileSync(
+    join(bundleDir, "agents", "review-worker.md"),
+    "# Review Worker Agent\n",
+  );
 
   // Create nono profile
   mkdirSync(join(bundleDir, ".nono", "profiles"), { recursive: true });
@@ -419,6 +423,31 @@ describe("setupProject", () => {
       "utf-8",
     );
     expect(content).toBe("# Todo Worker Agent\n");
+  });
+
+  it("deploys review-worker.md alongside todo-worker.md in all agent directories", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    setupProject(projectDir, bundleDir, allPresentDeps);
+
+    // review-worker.md symlinks
+    expect(
+      existsSync(join(projectDir, ".claude/agents/review-worker.md")),
+    ).toBe(true);
+    expect(
+      existsSync(join(projectDir, ".opencode/agents/review-worker.md")),
+    ).toBe(true);
+    expect(
+      existsSync(join(projectDir, ".github/agents/review-worker.agent.md")),
+    ).toBe(true);
+
+    // Verify content is accessible through symlink
+    const content = readFileSync(
+      join(projectDir, ".claude/agents/review-worker.md"),
+      "utf-8",
+    );
+    expect(content).toBe("# Review Worker Agent\n");
   });
 
   it("creates .gitignore with .worktrees/ entry", () => {

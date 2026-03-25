@@ -140,6 +140,33 @@ describe("KNOWN_CONFIG_KEYS", () => {
     expect(KNOWN_CONFIG_KEYS.has("LOC_EXTENSIONS")).toBe(true);
     expect(KNOWN_CONFIG_KEYS.has("webhook_url")).toBe(true);
   });
+
+  it("includes review config keys", () => {
+    expect(KNOWN_CONFIG_KEYS.has("review_enabled")).toBe(true);
+    expect(KNOWN_CONFIG_KEYS.has("review_wip_limit")).toBe(true);
+    expect(KNOWN_CONFIG_KEYS.has("review_auto_fix")).toBe(true);
+    expect(KNOWN_CONFIG_KEYS.has("review_can_approve")).toBe(true);
+  });
+
+  it("does not warn on review config keys", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config"),
+      "review_enabled=true\nreview_wip_limit=3\nreview_auto_fix=direct\nreview_can_approve=true\n",
+    );
+
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const config = loadConfig(repo);
+      expect(config["review_enabled"]).toBe("true");
+      expect(config["review_auto_fix"]).toBe("direct");
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe("loadDomainMappings", () => {

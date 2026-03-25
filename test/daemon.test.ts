@@ -374,4 +374,64 @@ describe("serializeOrchestratorState", () => {
     );
     expect(state.statusPaneRef).toBeNull();
   });
+
+  it("includes reviewWorkspaceRef and reviewCompleted when present", () => {
+    const item = makeOrchestratorItem("R-1-1", "reviewing", 55);
+    item.reviewWorkspaceRef = "workspace:10";
+    item.reviewCompleted = true;
+
+    const state = serializeOrchestratorState(
+      [item],
+      42,
+      "2026-03-25T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.reviewWorkspaceRef).toBe("workspace:10");
+    expect(state.items[0]!.reviewCompleted).toBe(true);
+  });
+
+  it("omits reviewWorkspaceRef and reviewCompleted when absent", () => {
+    const item = makeOrchestratorItem("R-1-2", "implementing");
+
+    const state = serializeOrchestratorState(
+      [item],
+      42,
+      "2026-03-25T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.reviewWorkspaceRef).toBeUndefined();
+    expect(state.items[0]!.reviewCompleted).toBeUndefined();
+  });
+
+  it("roundtrips reviewWorkspaceRef and reviewCompleted through write/read", () => {
+    const io = createMockIO();
+    const item = makeOrchestratorItem("R-1-3", "reviewing", 77);
+    item.reviewWorkspaceRef = "workspace:5";
+    item.reviewCompleted = false;
+
+    const state = serializeOrchestratorState(
+      [item],
+      99,
+      "2026-03-25T00:00:00.000Z",
+    );
+
+    writeStateFile("/project", state, io);
+    const restored = readStateFile("/project", io);
+
+    expect(restored).not.toBeNull();
+    expect(restored!.items[0]!.reviewWorkspaceRef).toBe("workspace:5");
+    // reviewCompleted is false, so it's omitted from serialization (only truthy values are spread)
+    expect(restored!.items[0]!.reviewCompleted).toBeUndefined();
+
+    // Now test with reviewCompleted = true
+    item.reviewCompleted = true;
+    const state2 = serializeOrchestratorState(
+      [item],
+      99,
+      "2026-03-25T00:00:00.000Z",
+    );
+    writeStateFile("/project", state2, io);
+    const restored2 = readStateFile("/project", io);
+    expect(restored2!.items[0]!.reviewCompleted).toBe(true);
+  });
 });

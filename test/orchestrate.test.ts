@@ -1119,6 +1119,83 @@ describe("reconstructState", () => {
   });
 });
 
+describe("reconstructState review fields", () => {
+  it("restores reviewWorkspaceRef and reviewCompleted from daemon state", () => {
+    const orch = new Orchestrator({ reviewEnabled: true });
+    orch.addItem(makeTodo("RVW-1"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-rvw-${Date.now()}`);
+    const wtDir = join(tmpDir, ".worktrees");
+    const wtPath = join(wtDir, "todo-RVW-1");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const noopCheckPr = () => null;
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T01:00:00Z",
+      items: [
+        {
+          id: "RVW-1",
+          state: "reviewing",
+          prNumber: 42,
+          title: "Test item",
+          lastTransition: "2026-01-01T00:30:00Z",
+          ciFailCount: 0,
+          retryCount: 0,
+          reviewWorkspaceRef: "workspace:10",
+          reviewCompleted: false,
+        },
+      ],
+    };
+
+    reconstructState(orch, tmpDir, wtDir, undefined, noopCheckPr, daemonState);
+
+    const item = orch.getItem("RVW-1")!;
+    expect(item.reviewWorkspaceRef).toBe("workspace:10");
+    // reviewCompleted is false (falsy), so it's not restored
+    expect(item.reviewCompleted).toBeFalsy();
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("restores reviewCompleted: true from daemon state", () => {
+    const orch = new Orchestrator({ reviewEnabled: true });
+    orch.addItem(makeTodo("RVW-2"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-rvwt-${Date.now()}`);
+    const wtDir = join(tmpDir, ".worktrees");
+    const wtPath = join(wtDir, "todo-RVW-2");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const noopCheckPr = () => null;
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T01:00:00Z",
+      items: [
+        {
+          id: "RVW-2",
+          state: "ci-passed",
+          prNumber: 55,
+          title: "Test item",
+          lastTransition: "2026-01-01T00:30:00Z",
+          ciFailCount: 0,
+          retryCount: 0,
+          reviewCompleted: true,
+        },
+      ],
+    };
+
+    reconstructState(orch, tmpDir, wtDir, undefined, noopCheckPr, daemonState);
+
+    const item = orch.getItem("RVW-2")!;
+    expect(item.reviewCompleted).toBe(true);
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
 describe("reconstructState cross-repo", () => {
   it("uses cross-repo index to find worktree paths", () => {
     const orch = new Orchestrator();
