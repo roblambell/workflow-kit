@@ -15,3 +15,6 @@ node_modules/
 
 # Build artifacts
 dist/
+
+# GitHub Actions require compiled dist to be committed
+!actions/*/dist/

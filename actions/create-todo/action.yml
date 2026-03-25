@@ -1,0 +1,43 @@
+name: "ninthwave create-todo"
+description: "Creates a TODO file in .ninthwave/todos/ when a CI/CD workflow fails"
+author: "ninthwave-sh"
+
+inputs:
+  token:
+    description: "GitHub token with repo write access"
+    required: true
+    default: ${{ github.token }}
+  priority:
+    description: "TODO priority (critical, high, medium, low)"
+    required: false
+    default: "high"
+  domain:
+    description: "TODO domain slug"
+    required: false
+    default: "ci"
+  branch:
+    description: "Branch to commit the TODO file to"
+    required: false
+    default: "main"
+  create-pr:
+    description: "Create a PR instead of committing directly to the branch"
+    required: false
+    default: "false"
+
+outputs:
+  todo-id:
+    description: "The generated TODO ID (e.g., H-CI-3)"
+  todo-file:
+    description: "Path to the created TODO file"
+  pr-number:
+    description: "PR number (only set when create-pr is true)"
+  pr-url:
+    description: "PR URL (only set when create-pr is true)"
+
+runs:
+  using: "node20"
+  main: "dist/index.js"
+
+branding:
+  icon: "alert-circle"
+  color: "red"

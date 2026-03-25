@@ -8,7 +8,8 @@
     "build": "bun build --compile core/cli.ts --outfile dist/ninthwave",
     "build:darwin-arm64": "bun build --compile --target=bun-darwin-arm64 core/cli.ts --outfile dist/ninthwave-darwin-arm64",
     "build:darwin-x64": "bun build --compile --target=bun-darwin-x64 core/cli.ts --outfile dist/ninthwave-darwin-x64",
-    "build:linux-x64": "bun build --compile --target=bun-linux-x64 core/cli.ts --outfile dist/ninthwave-linux-x64"
+    "build:linux-x64": "bun build --compile --target=bun-linux-x64 core/cli.ts --outfile dist/ninthwave-linux-x64",
+    "build:action": "bun build actions/create-todo/index.ts --target=node --outfile actions/create-todo/dist/index.js"
   },
   "devDependencies": {
     "@types/bun": "latest",
