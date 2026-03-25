@@ -1,6 +1,6 @@
 // Tests for core/commands/doctor.ts — diagnostic health check command.
 
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
@@ -16,6 +16,7 @@ import {
   checkPreCommitHook,
   checkCloudflared,
   checkWebhookUrl,
+  checkGithubIdentity,
   runDoctor,
   formatDoctorOutput,
   type ShellRunner,
@@ -373,6 +374,115 @@ describe("checkWebhookUrl", () => {
     const result = checkWebhookUrl(repo);
     expect(result.status).toBe("info");
     expect(result.message).toContain("no notifications");
+  });
+});
+
+describe("checkGithubIdentity", () => {
+  let origNwToken: string | undefined;
+
+  beforeEach(() => {
+    origNwToken = process.env.NINTHWAVE_GITHUB_TOKEN;
+    delete process.env.NINTHWAVE_GITHUB_TOKEN;
+  });
+
+  afterEach(() => {
+    if (origNwToken !== undefined) {
+      process.env.NINTHWAVE_GITHUB_TOKEN = origNwToken;
+    } else {
+      delete process.env.NINTHWAVE_GITHUB_TOKEN;
+    }
+  });
+
+  it("returns info when no custom token is configured", () => {
+    const repo = setupTempRepo();
+    const runner = allPassRunner();
+    const result = checkGithubIdentity(repo, runner);
+    expect(result.status).toBe("info");
+    expect(result.message).toContain("No custom GitHub token");
+  });
+
+  it("fails when token is invalid", () => {
+    process.env.NINTHWAVE_GITHUB_TOKEN = "ghp_invalid";
+    const repo = setupTempRepo();
+    const runner = mockRunner({
+      "gh api -i /user": {
+        stdout: "",
+        stderr: "401 Unauthorized",
+        exitCode: 1,
+      },
+    });
+    const result = checkGithubIdentity(repo, runner);
+    expect(result.status).toBe("fail");
+    expect(result.message).toContain("invalid or expired");
+    expect(result.message).toContain("env var");
+  });
+
+  it("passes with all required scopes", () => {
+    process.env.NINTHWAVE_GITHUB_TOKEN = "ghp_valid";
+    const repo = setupTempRepo();
+    const runner = mockRunner({
+      "gh api -i /user": {
+        stdout: 'HTTP/2.0 200 OK\nX-OAuth-Scopes: repo, read:org, workflow\n\n{"login":"bot-user"}',
+        stderr: "",
+        exitCode: 0,
+      },
+    });
+    const result = checkGithubIdentity(repo, runner);
+    expect(result.status).toBe("pass");
+    expect(result.message).toContain("env var");
+    expect(result.message).toContain("bot-user");
+  });
+
+  it("warns when required scopes are missing", () => {
+    process.env.NINTHWAVE_GITHUB_TOKEN = "ghp_limited";
+    const repo = setupTempRepo();
+    const runner = mockRunner({
+      "gh api -i /user": {
+        stdout: 'HTTP/2.0 200 OK\nX-OAuth-Scopes: public_repo\n\n{"login":"user"}',
+        stderr: "",
+        exitCode: 0,
+      },
+    });
+    const result = checkGithubIdentity(repo, runner);
+    expect(result.status).toBe("warn");
+    expect(result.message).toContain("missing scopes");
+    expect(result.message).toContain("repo");
+    expect(result.message).toContain("read:org");
+  });
+
+  it("passes for fine-grained PAT without scope header", () => {
+    process.env.NINTHWAVE_GITHUB_TOKEN = "github_pat_xxx";
+    const repo = setupTempRepo();
+    const runner = mockRunner({
+      "gh api -i /user": {
+        stdout: 'HTTP/2.0 200 OK\nContent-Type: application/json\n\n{"login":"user"}',
+        stderr: "",
+        exitCode: 0,
+      },
+    });
+    const result = checkGithubIdentity(repo, runner);
+    expect(result.status).toBe("pass");
+    expect(result.message).toContain("fine-grained PAT");
+  });
+
+  it("reports config file as source when env var is not set", () => {
+    const repo = setupTempRepo();
+    mkdirSync(join(repo, ".ninthwave"), { recursive: true });
+    writeFileSync(
+      join(repo, ".ninthwave", "config"),
+      "github_token=ghp_from_config\n",
+    );
+    const runner = mockRunner({
+      "gh api -i /user": {
+        stdout: 'HTTP/2.0 200 OK\nX-OAuth-Scopes: repo, read:org\n\n{"login":"config-user"}',
+        stderr: "",
+        exitCode: 0,
+      },
+    });
+    const result = checkGithubIdentity(repo, runner);
+    expect(result.status).toBe("pass");
+    expect(result.message).toContain("config file");
+    expect(result.message).toContain("config-user");
   });
 });
 

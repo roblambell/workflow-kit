@@ -23,6 +23,7 @@ export const KNOWN_CONFIG_KEYS = new Set([
   "review_auto_fix",
   "review_can_approve",
   "review_external",
+  "github_token",
 ]);
 
 /**

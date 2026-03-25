@@ -30,6 +30,7 @@ import {
 import { cmdConflicts } from "./conflicts.ts";
 import { readTodo } from "../todo-files.ts";
 import { wrapWithSandbox } from "../sandbox.ts";
+import { applyGithubToken } from "../gh.ts";
 import type { TodoItem } from "../types.ts";
 
 /**
@@ -484,6 +485,9 @@ export function cmdStart(
     itemMap.set(item.id, item);
   }
   const allIds = new Set(items.map((it) => it.id));
+
+  // Apply custom GitHub token so workers inherit it via environment
+  applyGithubToken(projectRoot);
 
   // Detect AI tool
   const aiTool = detectAiTool();

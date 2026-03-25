@@ -1,13 +1,17 @@
-// Tests for core/gh.ts — prMerge and prComment functions.
+// Tests for core/gh.ts — prMerge, prComment, prLock, and GitHub token resolution.
 // Uses vi.spyOn (not vi.mock) to avoid global module pollution in bun test.
 
-import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
+import { mkdirSync, writeFileSync } from "fs";
+import { join } from "path";
 import * as shell from "../core/shell.ts";
-import { prMerge, prComment, prLock, getRepoOwner } from "../core/gh.ts";
+import { prMerge, prComment, prLock, getRepoOwner, resolveGithubToken, applyGithubToken } from "../core/gh.ts";
+import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 
 const runSpy = vi.spyOn(shell, "run");
 
 beforeEach(() => runSpy.mockReset());
+afterEach(() => cleanupTempRepos());
 afterAll(() => runSpy.mockRestore());
 
 describe("prMerge", () => {
@@ -158,5 +162,132 @@ describe("prLock", () => {
     const result = prLock("/repo", 42);
 
     expect(result).toBe(false);
+  });
+});
+
+// ── resolveGithubToken ──────────────────────────────────────────────
+
+describe("resolveGithubToken", () => {
+  let origEnv: string | undefined;
+
+  beforeEach(() => {
+    origEnv = process.env.NINTHWAVE_GITHUB_TOKEN;
+    delete process.env.NINTHWAVE_GITHUB_TOKEN;
+  });
+
+  afterEach(() => {
+    if (origEnv !== undefined) {
+      process.env.NINTHWAVE_GITHUB_TOKEN = origEnv;
+    } else {
+      delete process.env.NINTHWAVE_GITHUB_TOKEN;
+    }
+  });
+
+  it("returns env var when NINTHWAVE_GITHUB_TOKEN is set", () => {
+    process.env.NINTHWAVE_GITHUB_TOKEN = "ghp_env_token_123";
+    const repo = setupTempRepo();
+    const token = resolveGithubToken(repo);
+    expect(token).toBe("ghp_env_token_123");
+  });
+
+  it("returns config file token when env var is not set", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config"), "github_token=ghp_config_token_456\n");
+
+    const token = resolveGithubToken(repo);
+    expect(token).toBe("ghp_config_token_456");
+  });
+
+  it("env var takes precedence over config file", () => {
+    process.env.NINTHWAVE_GITHUB_TOKEN = "ghp_env_wins";
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config"), "github_token=ghp_config_loses\n");
+
+    const token = resolveGithubToken(repo);
+    expect(token).toBe("ghp_env_wins");
+  });
+
+  it("returns undefined when no custom token is configured", () => {
+    const repo = setupTempRepo();
+    const token = resolveGithubToken(repo);
+    expect(token).toBeUndefined();
+  });
+
+  it("returns undefined when config exists but has no github_token key", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config"), "webhook_url=https://example.com\n");
+
+    const token = resolveGithubToken(repo);
+    expect(token).toBeUndefined();
+  });
+});
+
+// ── applyGithubToken ────────────────────────────────────────────────
+
+describe("applyGithubToken", () => {
+  let origNwToken: string | undefined;
+  let origGhToken: string | undefined;
+
+  beforeEach(() => {
+    origNwToken = process.env.NINTHWAVE_GITHUB_TOKEN;
+    origGhToken = process.env.GH_TOKEN;
+    delete process.env.NINTHWAVE_GITHUB_TOKEN;
+    delete process.env.GH_TOKEN;
+  });
+
+  afterEach(() => {
+    if (origNwToken !== undefined) {
+      process.env.NINTHWAVE_GITHUB_TOKEN = origNwToken;
+    } else {
+      delete process.env.NINTHWAVE_GITHUB_TOKEN;
+    }
+    if (origGhToken !== undefined) {
+      process.env.GH_TOKEN = origGhToken;
+    } else {
+      delete process.env.GH_TOKEN;
+    }
+  });
+
+  it("sets GH_TOKEN when NINTHWAVE_GITHUB_TOKEN is set", () => {
+    process.env.NINTHWAVE_GITHUB_TOKEN = "ghp_apply_test";
+    const repo = setupTempRepo();
+
+    applyGithubToken(repo);
+
+    expect(process.env.GH_TOKEN).toBe("ghp_apply_test");
+  });
+
+  it("sets GH_TOKEN from config file", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config"), "github_token=ghp_from_config\n");
+
+    applyGithubToken(repo);
+
+    expect(process.env.GH_TOKEN).toBe("ghp_from_config");
+  });
+
+  it("does not set GH_TOKEN when no custom token is configured", () => {
+    const repo = setupTempRepo();
+
+    applyGithubToken(repo);
+
+    expect(process.env.GH_TOKEN).toBeUndefined();
+  });
+
+  it("does not overwrite existing GH_TOKEN when no custom token", () => {
+    process.env.GH_TOKEN = "ghp_existing";
+    const repo = setupTempRepo();
+
+    applyGithubToken(repo);
+
+    expect(process.env.GH_TOKEN).toBe("ghp_existing");
   });
 });

@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { GREEN, YELLOW, RED, DIM, BOLD, RESET } from "../output.ts";
 import type { RunResult } from "../types.ts";
+import { resolveGithubToken, applyGithubToken } from "../gh.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -241,6 +242,75 @@ export function checkWebhookUrl(projectRoot: string): CheckResult {
   };
 }
 
+/**
+ * Check: custom GitHub identity configured and scopes validated.
+ * When NINTHWAVE_GITHUB_TOKEN or github_token config is set, verifies the
+ * token is valid and has required scopes (repo, read:org).
+ */
+export function checkGithubIdentity(
+  projectRoot: string,
+  runner: ShellRunner,
+): CheckResult {
+  const token = resolveGithubToken(projectRoot);
+  if (!token) {
+    return {
+      status: "info",
+      message: "No custom GitHub token configured \u2014 using default gh auth",
+    };
+  }
+
+  const source = process.env.NINTHWAVE_GITHUB_TOKEN ? "env var" : "config file";
+
+  // Validate the token by calling the /user endpoint with response headers
+  const result = runner("gh", ["api", "-i", "/user"]);
+  if (result.exitCode !== 0) {
+    return {
+      status: "fail",
+      message: `Custom GitHub token (${source}) is invalid or expired`,
+      detail: result.stderr || "Token authentication failed",
+    };
+  }
+
+  // Parse X-OAuth-Scopes header from the response (classic PATs include this)
+  const scopeMatch = result.stdout.match(/X-OAuth-Scopes:\s*(.+)/i);
+  if (!scopeMatch) {
+    // Fine-grained PATs don't include X-OAuth-Scopes header
+    return {
+      status: "pass",
+      message: `Custom GitHub token configured (${source}) \u2014 fine-grained PAT (scopes not inspectable)`,
+    };
+  }
+
+  const scopes = scopeMatch[1]!.split(",").map((s) => s.trim());
+  const requiredScopes = ["repo", "read:org"];
+  const missing = requiredScopes.filter((s) => !scopes.includes(s));
+
+  if (missing.length > 0) {
+    return {
+      status: "warn",
+      message: `Custom GitHub token (${source}) missing scopes: ${missing.join(", ")}`,
+      detail: `Current scopes: ${scopes.join(", ")}. Required: ${requiredScopes.join(", ")}`,
+    };
+  }
+
+  // Extract username from the JSON body
+  let username = "";
+  try {
+    const bodyStart = result.stdout.indexOf("{");
+    if (bodyStart !== -1) {
+      const body = JSON.parse(result.stdout.slice(bodyStart));
+      username = body.login || "";
+    }
+  } catch {
+    // ignore parse errors
+  }
+
+  return {
+    status: "pass",
+    message: `Custom GitHub token configured (${source}${username ? `, user: ${username}` : ""})`,
+  };
+}
+
 // ── Build check list ─────────────────────────────────────────────────
 
 /** Build the full list of checks with categories. */
@@ -264,6 +334,7 @@ export function buildChecks(
     // Optional
     { category: "Optional", run: () => checkCloudflared(runner) },
     { category: "Optional", run: () => checkWebhookUrl(projectRoot) },
+    { category: "Optional", run: () => checkGithubIdentity(projectRoot, runner) },
   ];
 }
 
@@ -353,6 +424,8 @@ export function formatDoctorOutput(doctor: DoctorResult): string {
  * CLI handler for `ninthwave doctor`.
  */
 export function cmdDoctor(projectRoot: string): void {
+  // Apply custom GitHub token so doctor checks can validate it
+  applyGithubToken(projectRoot);
   const doctor = runDoctor(projectRoot);
   console.log(formatDoctorOutput(doctor));
   process.exit(doctor.exitCode);

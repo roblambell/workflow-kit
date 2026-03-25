@@ -28,7 +28,7 @@ import { checkPrStatus, scanExternalPRs } from "./watch.ts";
 import { launchSingleItem, launchReviewWorker, detectAiTool } from "./start.ts";
 import { getWorkerHealthStatus, computeScreenHealth, type ScreenHealthStatus } from "../worker-health.ts";
 import { cleanSingleWorktree } from "./clean.ts";
-import { prMerge, prComment, checkPrMergeable, getRepoOwner } from "../gh.ts";
+import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken } from "../gh.ts";
 import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset, daemonRebase } from "../git.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
@@ -1796,6 +1796,10 @@ export async function cmdOrchestrate(
       "Usage: ninthwave orchestrate --items ID1 ID2 ... [--merge-strategy asap|approved|ask] [--wip-limit N] [--poll-interval SECS] [--daemon] [--watch] [--watch-interval SECS]",
     );
   }
+
+  // Apply custom GitHub token so daemon and workers use the configured identity
+  applyGithubToken(projectRoot);
+
   const todoMap = new Map<string, TodoItem>();
   for (const todo of allTodos) {
     todoMap.set(todo.id, todo);

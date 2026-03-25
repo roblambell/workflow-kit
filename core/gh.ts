@@ -1,5 +1,6 @@
 import { run } from "./shell.ts";
 import type { RunResult } from "./types.ts";
+import { loadConfig } from "./config.ts";
 
 /** Run a gh command in the context of a specific repo directory. */
 export function ghInRepo(repoRoot: string, args: string[]): RunResult {
@@ -184,4 +185,32 @@ export function apiGet(
     throw new Error(`gh api ${path} failed: ${result.stderr}`);
   }
   return result.stdout;
+}
+
+/**
+ * Resolve the GitHub token to use for gh CLI commands.
+ * Priority: NINTHWAVE_GITHUB_TOKEN env var > github_token config key > undefined (use default gh auth).
+ */
+export function resolveGithubToken(projectRoot: string): string | undefined {
+  const envToken = process.env.NINTHWAVE_GITHUB_TOKEN;
+  if (envToken) return envToken;
+
+  const config = loadConfig(projectRoot);
+  const configToken = config["github_token"];
+  if (configToken) return configToken;
+
+  return undefined;
+}
+
+/**
+ * Apply the resolved GitHub token to process.env.GH_TOKEN.
+ * This makes all gh CLI invocations (daemon + workers) use the custom identity.
+ * Workers inherit GH_TOKEN via environment when launched.
+ * No-op if no custom token is configured — preserves default gh auth behavior.
+ */
+export function applyGithubToken(projectRoot: string): void {
+  const token = resolveGithubToken(projectRoot);
+  if (token) {
+    process.env.GH_TOKEN = token;
+  }
 }
