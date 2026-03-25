@@ -81,8 +81,8 @@ export interface PrerequisiteResult {
   missing: string[];
   /** warnings (e.g. gh not authenticated) */
   warnings: string[];
-  /** detected multiplexer: "cmux", "tmux", or null if none found */
-  detectedMux: "cmux" | "tmux" | null;
+  /** detected multiplexer: "cmux", "zellij", "tmux", or null if none found */
+  detectedMux: "cmux" | "zellij" | "tmux" | null;
 }
 
 /**
@@ -111,20 +111,25 @@ export function checkPrerequisites(
     }
   }
 
-  // Detect multiplexer (cmux preferred, tmux as alternative)
-  let detectedMux: "cmux" | "tmux" | null = null;
+  // Detect multiplexer (cmux preferred, zellij and tmux as alternatives)
+  let detectedMux: "cmux" | "zellij" | "tmux" | null = null;
   if (commandExists("cmux")) {
     detectedMux = "cmux";
     console.log(`  ${GREEN}✓${RESET} cmux ${DIM}(multiplexer — visual sidebar, recommended)${RESET}`);
+  } else if (commandExists("zellij")) {
+    detectedMux = "zellij";
+    console.log(`  ${GREEN}✓${RESET} zellij ${DIM}(multiplexer — tiling terminal)${RESET}`);
+    console.log(`    ${DIM}Tip: Install cmux for a visual sidebar: ${BOLD}brew install --cask manaflow-ai/cmux/cmux${RESET}`);
   } else if (commandExists("tmux")) {
     detectedMux = "tmux";
     console.log(`  ${GREEN}✓${RESET} tmux ${DIM}(multiplexer — headless sessions)${RESET}`);
     console.log(`    ${DIM}Tip: Install cmux for a visual sidebar: ${BOLD}brew install --cask manaflow-ai/cmux/cmux${RESET}`);
   } else {
-    console.log(`  ${RED}✗${RESET} cmux or tmux ${DIM}(terminal multiplexer for parallel sessions)${RESET}`);
+    console.log(`  ${RED}✗${RESET} cmux, zellij, or tmux ${DIM}(terminal multiplexer for parallel sessions)${RESET}`);
     console.log(`    Install cmux (recommended): ${BOLD}brew install --cask manaflow-ai/cmux/cmux${RESET}`);
+    console.log(`    Or install zellij: ${BOLD}brew install zellij${RESET}`);
     console.log(`    Or install tmux: ${BOLD}brew install tmux${RESET}`);
-    missing.push("multiplexer (cmux or tmux)");
+    missing.push("multiplexer (cmux, zellij, or tmux)");
   }
 
   // If gh is present, check authentication
@@ -397,7 +402,7 @@ export function setupProject(
   // --- Summary ---
   console.log("Done! All files are project-level (commit to git).");
   console.log();
-  console.log(`Multiplexer: ${BOLD}${prereqs.detectedMux}${RESET}${prereqs.detectedMux === "tmux" ? ` ${DIM}(install cmux for visual sidebar)${RESET}` : ""}`);
+  console.log(`Multiplexer: ${BOLD}${prereqs.detectedMux}${RESET}${prereqs.detectedMux !== "cmux" ? ` ${DIM}(install cmux for visual sidebar)${RESET}` : ""}`);
   console.log();
   console.log("Next steps:");
   console.log("  1. Review: git diff");

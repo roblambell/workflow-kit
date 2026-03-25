@@ -17,6 +17,7 @@ import * as cmux from "../core/cmux.ts";
 import {
   CmuxAdapter,
   TmuxAdapter,
+  ZellijAdapter,
   detectMuxType,
   getMux,
   waitForReady,
@@ -585,6 +586,11 @@ describe("detectMuxType", () => {
     expect(detectMuxType(deps)).toBe("tmux");
   });
 
+  it("returns zellij when NINTHWAVE_MUX=zellij", () => {
+    const deps = makeDeps({ NINTHWAVE_MUX: "zellij" });
+    expect(detectMuxType(deps)).toBe("zellij");
+  });
+
   it("throws on invalid NINTHWAVE_MUX value", () => {
     const deps = makeDeps({ NINTHWAVE_MUX: "screen" });
     expect(() => detectMuxType(deps)).toThrow(
@@ -606,9 +612,30 @@ describe("detectMuxType", () => {
     expect(detectMuxType(deps)).toBe("cmux");
   });
 
+  it("picks zellij when ZELLIJ_SESSION_NAME is set", () => {
+    const deps = makeDeps({ ZELLIJ_SESSION_NAME: "my-session" });
+    expect(detectMuxType(deps)).toBe("zellij");
+  });
+
   it("picks tmux when TMUX env var is set", () => {
     const deps = makeDeps({ TMUX: "/tmp/tmux-501/default,12345,0" });
     expect(detectMuxType(deps)).toBe("tmux");
+  });
+
+  it("prefers cmux session over zellij session when both present", () => {
+    const deps = makeDeps({
+      CMUX_WORKSPACE_ID: "abc",
+      ZELLIJ_SESSION_NAME: "my-session",
+    });
+    expect(detectMuxType(deps)).toBe("cmux");
+  });
+
+  it("prefers zellij session over tmux session when both present", () => {
+    const deps = makeDeps({
+      ZELLIJ_SESSION_NAME: "my-session",
+      TMUX: "/tmp/tmux-501/default",
+    });
+    expect(detectMuxType(deps)).toBe("zellij");
   });
 
   it("prefers cmux session over tmux session when both present", () => {
@@ -624,14 +651,24 @@ describe("detectMuxType", () => {
     expect(detectMuxType(deps)).toBe("cmux");
   });
 
-  it("falls back to tmux binary when cmux is not available", () => {
+  it("falls back to zellij binary when cmux is not available", () => {
+    const deps = makeDeps({}, ["zellij"]);
+    expect(detectMuxType(deps)).toBe("zellij");
+  });
+
+  it("falls back to tmux binary when cmux and zellij are not available", () => {
     const deps = makeDeps({}, ["tmux"]);
     expect(detectMuxType(deps)).toBe("tmux");
   });
 
-  it("prefers cmux binary over tmux binary", () => {
-    const deps = makeDeps({}, ["cmux", "tmux"]);
+  it("prefers cmux binary over zellij and tmux binaries", () => {
+    const deps = makeDeps({}, ["cmux", "zellij", "tmux"]);
     expect(detectMuxType(deps)).toBe("cmux");
+  });
+
+  it("prefers zellij binary over tmux binary", () => {
+    const deps = makeDeps({}, ["zellij", "tmux"]);
+    expect(detectMuxType(deps)).toBe("zellij");
   });
 
   it("throws when no multiplexer is available", () => {
@@ -657,10 +694,22 @@ describe("getMux", () => {
     expect(mux).toBeInstanceOf(TmuxAdapter);
   });
 
+  it("returns ZellijAdapter when detection picks zellij", () => {
+    const deps = makeDeps({ NINTHWAVE_MUX: "zellij" });
+    const mux = getMux(deps);
+    expect(mux).toBeInstanceOf(ZellijAdapter);
+  });
+
   it("returns TmuxAdapter when inside a tmux session", () => {
     const deps = makeDeps({ TMUX: "/tmp/tmux-501/default,12345,0" });
     const mux = getMux(deps);
     expect(mux).toBeInstanceOf(TmuxAdapter);
+  });
+
+  it("returns ZellijAdapter when inside a zellij session", () => {
+    const deps = makeDeps({ ZELLIJ_SESSION_NAME: "my-session" });
+    const mux = getMux(deps);
+    expect(mux).toBeInstanceOf(ZellijAdapter);
   });
 
   it("returns CmuxAdapter when inside a cmux session", () => {

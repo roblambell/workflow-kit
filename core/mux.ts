@@ -236,8 +236,192 @@ export class TmuxAdapter implements Multiplexer {
   }
 }
 
+/** Configuration options for ZellijAdapter delivery behaviour. */
+export interface ZellijAdapterOptions {
+  sleep?: Sleeper;
+  maxRetries?: number;
+  baseDelayMs?: number;
+}
+
+/**
+ * Adapter that delegates to the zellij CLI.
+ *
+ * Workspaces are zellij tabs within the current session. Tab names use the
+ * `nw-` prefix to avoid collisions with user tabs. The adapter assumes it
+ * is running inside an active zellij session (ZELLIJ_SESSION_NAME is set).
+ *
+ * `sendMessage` uses `write-chars` + `write 10` (Enter byte) with delivery
+ * verification and exponential-backoff retry. `readScreen` dumps the screen
+ * to a temp file via `dump-screen` and reads it back with `cat`.
+ */
+export class ZellijAdapter implements Multiplexer {
+  private run: ShellRunner;
+  private sleep: Sleeper;
+  private maxRetries: number;
+  private baseDelayMs: number;
+  private counter = 0;
+
+  constructor(run?: ShellRunner, options?: ZellijAdapterOptions) {
+    this.run = run ?? defaultRun;
+    this.sleep = options?.sleep ?? defaultSleep;
+    this.maxRetries = options?.maxRetries ?? 3;
+    this.baseDelayMs = options?.baseDelayMs ?? 100;
+  }
+
+  isAvailable(): boolean {
+    const result = this.run("zellij", ["--version"]);
+    return result.exitCode === 0;
+  }
+
+  launchWorkspace(cwd: string, command: string, todoId?: string): string | null {
+    const counter = ++this.counter;
+    const name = todoId ? `nw-${todoId}-${counter}` : `nw-${counter}`;
+
+    const result = this.run("zellij", [
+      "action",
+      "new-tab",
+      "--name",
+      name,
+      "--cwd",
+      cwd,
+    ]);
+    if (result.exitCode !== 0) return null;
+
+    // Type the command into the new tab (which is now focused)
+    this.run("zellij", ["action", "write-chars", `${command}\n`]);
+
+    return name;
+  }
+
+  splitPane(command: string): string | null {
+    const result = this.run("zellij", ["action", "new-pane"]);
+    if (result.exitCode !== 0) return null;
+
+    const ref = `nw-pane-${++this.counter}`;
+
+    // Type the command into the new pane (which is now focused)
+    this.run("zellij", ["action", "write-chars", `${command}\n`]);
+
+    return ref;
+  }
+
+  /**
+   * Send a message to a zellij tab with delivery verification and retry.
+   *
+   * Focuses the target tab by name, writes characters via `write-chars`,
+   * then sends Enter via `write 10`. Verifies delivery by reading the
+   * screen and retries with exponential backoff on failure.
+   */
+  sendMessage(ref: string, message: string): boolean {
+    return sendWithRetry(
+      () => this.attemptSend(ref, message),
+      {
+        sleep: this.sleep,
+        maxRetries: this.maxRetries,
+        baseDelayMs: this.baseDelayMs,
+      },
+    );
+  }
+
+  readScreen(ref: string, lines?: number): string {
+    // Focus the target tab
+    this.run("zellij", ["action", "go-to-tab-name", ref]);
+
+    // Dump screen to a temp file
+    const tmpFile = `/tmp/nw-zellij-screen-${Date.now()}`;
+    const dumpResult = this.run("zellij", [
+      "action",
+      "dump-screen",
+      tmpFile,
+    ]);
+    if (dumpResult.exitCode !== 0) return "";
+
+    // Read the temp file
+    const readResult = this.run("cat", [tmpFile]);
+    // Clean up
+    this.run("rm", ["-f", tmpFile]);
+
+    if (readResult.exitCode !== 0) return "";
+
+    const content = readResult.stdout;
+    if (lines !== undefined) {
+      const allLines = content.split("\n");
+      return allLines.slice(-lines).join("\n");
+    }
+    return content;
+  }
+
+  listWorkspaces(): string {
+    const result = this.run("zellij", ["list-sessions"]);
+    if (result.exitCode !== 0) return "";
+    // Filter to only nw- prefixed sessions to avoid exposing user sessions
+    return result.stdout
+      .split("\n")
+      .filter((s) => s.startsWith("nw-"))
+      .join("\n");
+  }
+
+  closeWorkspace(ref: string): boolean {
+    // Focus the tab and close it
+    const focusResult = this.run("zellij", [
+      "action",
+      "go-to-tab-name",
+      ref,
+    ]);
+    if (focusResult.exitCode !== 0) {
+      // Tab not found — try deleting as a session
+      const deleteResult = this.run("zellij", ["delete-session", ref]);
+      return deleteResult.exitCode === 0;
+    }
+    const closeResult = this.run("zellij", ["action", "close-tab"]);
+    return closeResult.exitCode === 0;
+  }
+
+  // ── Private delivery helpers ─────────────────────────────────────────
+
+  /** Single delivery attempt: focus tab, write-chars, Enter, verify. */
+  private attemptSend(ref: string, message: string): boolean {
+    // Focus the target tab
+    const focusResult = this.run("zellij", [
+      "action",
+      "go-to-tab-name",
+      ref,
+    ]);
+    if (focusResult.exitCode !== 0) return false;
+
+    // Write the message characters
+    const writeResult = this.run("zellij", [
+      "action",
+      "write-chars",
+      message,
+    ]);
+    if (writeResult.exitCode !== 0) return false;
+
+    // Send Enter key (byte 10 = newline)
+    const enterResult = this.run("zellij", ["action", "write", "10"]);
+    if (enterResult.exitCode !== 0) return false;
+
+    this.sleep(100);
+    return this.verifyDelivery(ref, message);
+  }
+
+  /**
+   * Verify that the message was submitted (not stuck in the input field).
+   * Reads the last 3 screen lines and delegates to shared checkDelivery logic.
+   * When the screen can't be read, assumes success.
+   */
+  private verifyDelivery(ref: string, message: string): boolean {
+    const screen = this.readScreen(ref, 3);
+    if (screen === "") {
+      // Can't read screen — assume success
+      return true;
+    }
+    return checkDelivery(screen, message);
+  }
+}
+
 /** Supported multiplexer backends. */
-export type MuxType = "cmux" | "tmux";
+export type MuxType = "cmux" | "zellij" | "tmux";
 
 /** Injectable dependencies for multiplexer detection — enables testing without vi.mock. */
 export interface DetectMuxDeps {
@@ -265,10 +449,12 @@ const defaultDetectDeps: DetectMuxDeps = {
  * Detection chain:
  * 1. NINTHWAVE_MUX env var — explicit override (set by --mux flag)
  * 2. CMUX_WORKSPACE_ID — inside a cmux session
- * 3. TMUX env var — inside a tmux session
- * 4. cmux binary available
- * 5. tmux binary available
- * 6. Error — no multiplexer found
+ * 3. ZELLIJ_SESSION_NAME — inside a zellij session
+ * 4. TMUX env var — inside a tmux session
+ * 5. cmux binary available
+ * 6. zellij binary available
+ * 7. tmux binary available
+ * 8. Error — no multiplexer found
  */
 export function detectMuxType(deps: DetectMuxDeps = defaultDetectDeps): MuxType {
   const { env, checkBinary } = deps;
@@ -276,9 +462,9 @@ export function detectMuxType(deps: DetectMuxDeps = defaultDetectDeps): MuxType 
   // 1. Explicit override via env var (set by --mux CLI flag)
   const override = env.NINTHWAVE_MUX;
   if (override) {
-    if (override !== "cmux" && override !== "tmux") {
+    if (override !== "cmux" && override !== "zellij" && override !== "tmux") {
       throw new Error(
-        `Invalid NINTHWAVE_MUX value: "${override}". Must be "cmux" or "tmux".`,
+        `Invalid NINTHWAVE_MUX value: "${override}". Must be "cmux", "zellij", or "tmux".`,
       );
     }
     return override;
@@ -287,18 +473,24 @@ export function detectMuxType(deps: DetectMuxDeps = defaultDetectDeps): MuxType 
   // 2. Inside a cmux session
   if (env.CMUX_WORKSPACE_ID) return "cmux";
 
-  // 3. Inside a tmux session
+  // 3. Inside a zellij session
+  if (env.ZELLIJ_SESSION_NAME) return "zellij";
+
+  // 4. Inside a tmux session
   if (env.TMUX) return "tmux";
 
-  // 4. cmux binary available
+  // 5. cmux binary available
   if (checkBinary("cmux")) return "cmux";
 
-  // 5. tmux binary available
+  // 6. zellij binary available
+  if (checkBinary("zellij")) return "zellij";
+
+  // 7. tmux binary available
   if (checkBinary("tmux")) return "tmux";
 
-  // 6. No multiplexer found
+  // 8. No multiplexer found
   throw new Error(
-    "No multiplexer available. Install cmux or tmux, or set NINTHWAVE_MUX=cmux|tmux.",
+    "No multiplexer available. Install cmux, zellij, or tmux, or set NINTHWAVE_MUX=cmux|zellij|tmux.",
   );
 }
 
@@ -316,6 +508,8 @@ export function getMux(deps?: DetectMuxDeps): Multiplexer {
     switch (muxType) {
       case "cmux":
         return new CmuxAdapter();
+      case "zellij":
+        return new ZellijAdapter();
       case "tmux":
         return new TmuxAdapter();
     }

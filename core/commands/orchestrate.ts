@@ -1215,8 +1215,8 @@ export async function cmdOrchestrate(
         break;
       case "--mux": {
         const muxValue = args[i + 1];
-        if (muxValue !== "cmux" && muxValue !== "tmux") {
-          die(`Invalid --mux value: "${muxValue ?? ""}". Must be "cmux" or "tmux".`);
+        if (muxValue !== "cmux" && muxValue !== "zellij" && muxValue !== "tmux") {
+          die(`Invalid --mux value: "${muxValue ?? ""}". Must be "cmux", "zellij", or "tmux".`);
         }
         process.env.NINTHWAVE_MUX = muxValue;
         i += 2;

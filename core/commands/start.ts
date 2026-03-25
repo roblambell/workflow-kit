@@ -291,8 +291,8 @@ export function cmdStart(
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--mux") {
       const value = args[i + 1];
-      if (value !== "cmux" && value !== "tmux") {
-        die(`Invalid --mux value: "${value ?? ""}". Must be "cmux" or "tmux".`);
+      if (value !== "cmux" && value !== "zellij" && value !== "tmux") {
+        die(`Invalid --mux value: "${value ?? ""}". Must be "cmux", "zellij", or "tmux".`);
       }
       process.env.NINTHWAVE_MUX = value;
       i++; // skip value
