@@ -29,8 +29,9 @@ export function createWorktree(
   repoRoot: string,
   worktreePath: string,
   branchName: string,
+  startPoint: string = "HEAD",
 ): void {
-  git(repoRoot, ["worktree", "add", worktreePath, "-b", branchName, "HEAD"]);
+  git(repoRoot, ["worktree", "add", worktreePath, "-b", branchName, startPoint]);
 }
 
 /** Remove a git worktree. */
@@ -233,6 +234,38 @@ export function daemonRebase(repoRoot: string, branch: string): boolean {
   // Force-push with lease for safety
   const pushResult = run("git", ["-C", repoRoot, "push", "--force-with-lease", "origin", branch]);
   if (pushResult.exitCode !== 0) return false;
+
+  return true;
+}
+
+/**
+ * Squash-merge-safe rebase using `git rebase --onto`.
+ *
+ * Replays only the commits from `oldBase..branch` onto `newBase`.
+ * This avoids duplicate commits when `oldBase` was squash-merged into `newBase`.
+ *
+ * Example: branch B stacked on branch A, A gets squash-merged to main.
+ *   rebaseOnto(worktreePath, "main", "todo/A", "todo/B")
+ * replays only B's unique commits onto main, skipping A's commits entirely.
+ *
+ * Returns true on success, false on conflict (with clean abort).
+ */
+export function rebaseOnto(
+  worktreePath: string,
+  newBase: string,
+  oldBase: string,
+  branch: string,
+): boolean {
+  const result = run("git", [
+    "-C", worktreePath,
+    "rebase", "--onto", newBase, oldBase, branch,
+  ]);
+
+  if (result.exitCode !== 0) {
+    // Rebase failed (likely conflicts) — abort cleanly
+    run("git", ["-C", worktreePath, "rebase", "--abort"]);
+    return false;
+  }
 
   return true;
 }

@@ -22,6 +22,7 @@ import {
   getProjectRoot,
   gitCommit,
   hasChanges,
+  rebaseOnto,
 } from "../core/git.ts";
 
 /** Helper: run a git command in a temp repo via child_process (for setup). */
@@ -289,6 +290,148 @@ describe("git.ts error handling", () => {
       initWithCommit(repo);
       writeFileSync(`${repo}/init.txt`, "changed");
       expect(hasChanges(repo, ".")).toBe(true);
+    });
+  });
+
+  // ── rebaseOnto() — NOT mocked, tested directly ──────────────────
+
+  describe("rebaseOnto()", () => {
+    it("replays only dependent commits after a squash merge (no duplicate commits)", () => {
+      const repo = setupTempRepo();
+      initWithCommit(repo);
+
+      // Create branch A with a commit
+      gitSetup(repo, "checkout", "-b", "todo/A");
+      writeFileSync(`${repo}/a.txt`, "feature A");
+      gitSetup(repo, "add", ".");
+      gitSetup(repo, "commit", "-m", "A: add feature", "--quiet");
+      const tipA = gitSetup(repo, "rev-parse", "HEAD");
+
+      // Create branch B stacked on A with its own commit
+      gitSetup(repo, "checkout", "-b", "todo/B");
+      writeFileSync(`${repo}/b.txt`, "feature B");
+      gitSetup(repo, "add", ".");
+      gitSetup(repo, "commit", "-m", "B: add feature", "--quiet");
+
+      // Simulate squash-merge of A into main
+      gitSetup(repo, "checkout", "main");
+      gitSetup(repo, "merge", "--squash", "todo/A");
+      gitSetup(repo, "commit", "-m", "squash: A", "--quiet");
+
+      // Now rebase B onto main, skipping A's commits
+      const success = rebaseOnto(repo, "main", tipA, "todo/B");
+      expect(success).toBe(true);
+
+      // Verify B is now on main and has only its own commit (not A's)
+      gitSetup(repo, "checkout", "todo/B");
+      const log = gitSetup(repo, "log", "--oneline", "main..todo/B");
+      const commits = log.split("\n").filter(Boolean);
+      expect(commits).toHaveLength(1);
+      expect(commits[0]).toContain("B: add feature");
+    });
+
+    it("returns true on a clean rebase with no conflicts", () => {
+      const repo = setupTempRepo();
+      initWithCommit(repo);
+
+      // Create a branch with a non-conflicting change
+      gitSetup(repo, "checkout", "-b", "feature");
+      writeFileSync(`${repo}/feature.txt`, "new feature");
+      gitSetup(repo, "add", ".");
+      gitSetup(repo, "commit", "-m", "add feature", "--quiet");
+
+      // Add a commit to main that doesn't conflict
+      gitSetup(repo, "checkout", "main");
+      writeFileSync(`${repo}/other.txt`, "other change");
+      gitSetup(repo, "add", ".");
+      gitSetup(repo, "commit", "-m", "other change", "--quiet");
+      const oldBase = gitSetup(repo, "rev-parse", "main~1");
+
+      const success = rebaseOnto(repo, "main", oldBase, "feature");
+      expect(success).toBe(true);
+    });
+
+    it("returns false on conflict and aborts cleanly", () => {
+      const repo = setupTempRepo();
+      initWithCommit(repo);
+
+      const base = gitSetup(repo, "rev-parse", "HEAD");
+
+      // Create branch with a change to init.txt
+      gitSetup(repo, "checkout", "-b", "conflicting");
+      writeFileSync(`${repo}/init.txt`, "branch version");
+      gitSetup(repo, "add", ".");
+      gitSetup(repo, "commit", "-m", "branch change", "--quiet");
+
+      // Make a conflicting change on main
+      gitSetup(repo, "checkout", "main");
+      writeFileSync(`${repo}/init.txt`, "main version");
+      gitSetup(repo, "add", ".");
+      gitSetup(repo, "commit", "-m", "main change", "--quiet");
+
+      const success = rebaseOnto(repo, "main", base, "conflicting");
+      expect(success).toBe(false);
+
+      // Verify rebase was aborted cleanly — no rebase-apply or rebase-merge dirs
+      const rebaseApply = run("git", ["-C", repo, "rev-parse", "--git-path", "rebase-apply"]);
+      const rebaseMerge = run("git", ["-C", repo, "rev-parse", "--git-path", "rebase-merge"]);
+
+      // The paths are returned but shouldn't exist as directories
+      const { existsSync } = require("fs");
+      expect(existsSync(rebaseApply.stdout)).toBe(false);
+      expect(existsSync(rebaseMerge.stdout)).toBe(false);
+    });
+  });
+
+  // ── createWorktree() startPoint — mocked elsewhere, tested via run() ──
+
+  describe("createWorktree() startPoint (via run)", () => {
+    it("creates a worktree from a specified start point (not HEAD)", () => {
+      const repo = setupTempRepo();
+      initWithCommit(repo);
+
+      // Make a second commit so HEAD differs from the first commit
+      const firstCommit = gitSetup(repo, "rev-parse", "HEAD");
+      writeFileSync(`${repo}/second.txt`, "second");
+      gitSetup(repo, "add", ".");
+      gitSetup(repo, "commit", "-m", "second commit", "--quiet");
+
+      // Create worktree from the first commit (not HEAD)
+      const worktreePath = `${repo}-worktree`;
+      const result = run("git", [
+        "-C", repo,
+        "worktree", "add", worktreePath, "-b", "test-branch", firstCommit,
+      ]);
+      expect(result.exitCode).toBe(0);
+
+      // Verify the worktree's HEAD matches the first commit, not the second
+      const wtHead = run("git", ["-C", worktreePath, "rev-parse", "HEAD"]);
+      expect(wtHead.stdout).toBe(firstCommit);
+
+      // Cleanup worktree
+      run("git", ["-C", repo, "worktree", "remove", worktreePath, "--force"]);
+    });
+
+    it("defaults to HEAD when no startPoint is provided (backward-compatible)", () => {
+      const repo = setupTempRepo();
+      initWithCommit(repo);
+
+      const headCommit = gitSetup(repo, "rev-parse", "HEAD");
+
+      // Create worktree using default startPoint (HEAD)
+      const worktreePath = `${repo}-worktree-default`;
+      const result = run("git", [
+        "-C", repo,
+        "worktree", "add", worktreePath, "-b", "default-branch", "HEAD",
+      ]);
+      expect(result.exitCode).toBe(0);
+
+      // Verify it starts from HEAD
+      const wtHead = run("git", ["-C", worktreePath, "rev-parse", "HEAD"]);
+      expect(wtHead.stdout).toBe(headCommit);
+
+      // Cleanup worktree
+      run("git", ["-C", repo, "worktree", "remove", worktreePath, "--force"]);
     });
   });
 });
