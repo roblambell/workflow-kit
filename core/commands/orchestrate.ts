@@ -4,7 +4,7 @@
 // Supports daemon mode (--daemon) for background operation with state persistence.
 // Optionally runs an LLM supervisor tick for anomaly detection and friction logging.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync } from "fs";
 import { join } from "path";
 import { totalmem, freemem, platform } from "os";
 import { execSync } from "node:child_process";
@@ -358,6 +358,90 @@ function recoverWorkspaceRef(
       return;
     }
   }
+}
+
+// ── Orphaned worktree cleanup ──────────────────────────────────────
+
+/**
+ * Dependencies for cleanOrphanedWorktrees, injectable for testing.
+ */
+export interface CleanOrphanedDeps {
+  /** List todo-* directory names in the worktree dir. */
+  getWorktreeIds(worktreeDir: string): string[];
+  /** List open todo IDs from todo files on disk. */
+  getOpenTodoIds(todosDir: string): string[];
+  /** Clean a single worktree by ID. Returns true if cleaned. */
+  cleanWorktree(id: string, worktreeDir: string, projectRoot: string): boolean;
+  /** Structured logger. */
+  log(entry: LogEntry): void;
+}
+
+/** List todo-* worktree IDs in the worktree directory. */
+function listWorktreeIds(worktreeDir: string): string[] {
+  if (!existsSync(worktreeDir)) return [];
+  try {
+    return readdirSync(worktreeDir)
+      .filter((e) => e.startsWith("todo-"))
+      .map((e) => e.slice(5));
+  } catch {
+    return [];
+  }
+}
+
+/** List open todo IDs from todo files on disk. */
+function listOpenTodoIds(todosDir: string): string[] {
+  if (!existsSync(todosDir)) return [];
+  try {
+    const entries = readdirSync(todosDir).filter((f) => f.endsWith(".md"));
+    const ids: string[] = [];
+    for (const entry of entries) {
+      const match = entry.match(/--([A-Z]-[A-Za-z0-9]+-[0-9]+)\.md$/);
+      if (match) ids.push(match[1]!);
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Clean orphaned todo-* worktrees that have no matching todo file.
+ * A worktree `todo-{ID}` is orphaned if no `*--{ID}.md` file exists
+ * in the todos directory. Non-todo worktrees are left alone.
+ *
+ * Returns the list of IDs that were cleaned.
+ */
+export function cleanOrphanedWorktrees(
+  todosDir: string,
+  worktreeDir: string,
+  projectRoot: string,
+  deps: CleanOrphanedDeps,
+): string[] {
+  const worktreeIds = deps.getWorktreeIds(worktreeDir);
+  if (worktreeIds.length === 0) return [];
+
+  const openTodoIds = new Set(deps.getOpenTodoIds(todosDir));
+  const cleanedIds: string[] = [];
+
+  for (const wtId of worktreeIds) {
+    if (!openTodoIds.has(wtId)) {
+      if (deps.cleanWorktree(wtId, worktreeDir, projectRoot)) {
+        cleanedIds.push(wtId);
+      }
+    }
+  }
+
+  if (cleanedIds.length > 0) {
+    deps.log({
+      ts: new Date().toISOString(),
+      level: "info",
+      event: "orphaned_worktrees_cleaned",
+      cleanedIds,
+      count: cleanedIds.length,
+    });
+  }
+
+  return cleanedIds;
 }
 
 // ── Interruptible sleep ────────────────────────────────────────────
@@ -1215,6 +1299,15 @@ export async function cmdOrchestrate(
   // Real action dependencies — create mux before state reconstruction so
   // workspace refs can be recovered from live workspaces.
   const mux = getMux();
+
+  // Clean orphaned worktrees before state reconstruction so stale worktrees
+  // from previous runs don't confuse reconstructState or count toward WIP.
+  cleanOrphanedWorktrees(todosDir, worktreeDir, projectRoot, {
+    getWorktreeIds: listWorktreeIds,
+    getOpenTodoIds: listOpenTodoIds,
+    cleanWorktree: (id, wtDir, root) => cleanSingleWorktree(id, wtDir, root),
+    log: structuredLog,
+  });
 
   // Reconstruct state from disk + GitHub (crash recovery)
   // Pass saved daemon state so counters (ciFailCount, retryCount) survive restarts

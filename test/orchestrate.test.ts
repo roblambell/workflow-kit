@@ -15,10 +15,12 @@ import {
   isInsideWorkspace,
   isWorkerAlive,
   forkDaemon,
+  cleanOrphanedWorktrees,
   STATUS_PANE_NAME,
   type LogEntry,
   type OrchestrateLoopDeps,
   type EnvAccessor,
+  type CleanOrphanedDeps,
 } from "../core/commands/orchestrate.ts";
 import {
   Orchestrator,
@@ -1907,5 +1909,88 @@ describe("isWorkerAlive", () => {
     const mux = mockMux("nw-M-CI-2-1");
     const item = makeItem("H-WRK-1", "nw-H-WRK-1-1");
     expect(isWorkerAlive(item, mux)).toBe(false);
+  });
+});
+
+// ── cleanOrphanedWorktrees ──────────────────────────────────────────
+
+describe("cleanOrphanedWorktrees", () => {
+  function makeDeps(overrides: Partial<CleanOrphanedDeps> = {}): CleanOrphanedDeps {
+    return {
+      getWorktreeIds: () => [],
+      getOpenTodoIds: () => [],
+      cleanWorktree: () => true,
+      log: () => {},
+      ...overrides,
+    };
+  }
+
+  it("cleans worktrees with no matching todo file", () => {
+    const cleaned: string[] = [];
+    const deps = makeDeps({
+      getWorktreeIds: () => ["M-CI-1", "H-WRK-2"],
+      getOpenTodoIds: () => ["H-WRK-2"], // M-CI-1 has no todo file
+      cleanWorktree: (id) => {
+        cleaned.push(id);
+        return true;
+      },
+    });
+
+    const result = cleanOrphanedWorktrees("/todos", "/worktrees", "/root", deps);
+    expect(result).toEqual(["M-CI-1"]);
+    expect(cleaned).toEqual(["M-CI-1"]);
+  });
+
+  it("preserves worktrees with matching todo file", () => {
+    const cleaned: string[] = [];
+    const deps = makeDeps({
+      getWorktreeIds: () => ["M-CI-1", "H-WRK-2"],
+      getOpenTodoIds: () => ["M-CI-1", "H-WRK-2"],
+      cleanWorktree: (id) => {
+        cleaned.push(id);
+        return true;
+      },
+    });
+
+    const result = cleanOrphanedWorktrees("/todos", "/worktrees", "/root", deps);
+    expect(result).toEqual([]);
+    expect(cleaned).toEqual([]);
+  });
+
+  it("returns empty when no worktrees exist", () => {
+    const deps = makeDeps({
+      getWorktreeIds: () => [],
+      getOpenTodoIds: () => ["M-CI-1"],
+    });
+
+    const result = cleanOrphanedWorktrees("/todos", "/worktrees", "/root", deps);
+    expect(result).toEqual([]);
+  });
+
+  it("logs when orphaned worktrees are cleaned", () => {
+    const logs: LogEntry[] = [];
+    const deps = makeDeps({
+      getWorktreeIds: () => ["M-CI-1", "H-WRK-2"],
+      getOpenTodoIds: () => [],
+      log: (entry) => logs.push(entry),
+    });
+
+    cleanOrphanedWorktrees("/todos", "/worktrees", "/root", deps);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.event).toBe("orphaned_worktrees_cleaned");
+    expect(logs[0]!.count).toBe(2);
+    expect(logs[0]!.cleanedIds).toEqual(["M-CI-1", "H-WRK-2"]);
+  });
+
+  it("does not log when no orphans found", () => {
+    const logs: LogEntry[] = [];
+    const deps = makeDeps({
+      getWorktreeIds: () => ["M-CI-1"],
+      getOpenTodoIds: () => ["M-CI-1"],
+      log: (entry) => logs.push(entry),
+    });
+
+    cleanOrphanedWorktrees("/todos", "/worktrees", "/root", deps);
+    expect(logs).toHaveLength(0);
   });
 });
