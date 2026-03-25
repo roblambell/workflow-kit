@@ -61,6 +61,8 @@ export interface OrchestratorItem {
   detectionLatencyMs?: number;
   /** Last screen output captured when worker died (for diagnostics). */
   lastScreenOutput?: string;
+  /** Base branch for stacked launches (e.g., "todo/H-1-1"). When set, the worker creates its branch from this instead of main. */
+  baseBranch?: string;
 }
 
 export interface OrchestratorConfig {
@@ -76,6 +78,8 @@ export interface OrchestratorConfig {
   launchTimeoutMs: number;
   /** Timeout (ms) for workers with stale commits (no new commits). Default: 60 minutes. */
   activityTimeoutMs: number;
+  /** Enable stacked branch launches. When true, items with a single in-flight dep in a stackable state can launch early. Default: true. */
+  enableStacking: boolean;
 }
 
 // ── Poll snapshot ────────────────────────────────────────────────────
@@ -126,6 +130,8 @@ export interface Action {
   prNumber?: number;
   /** For notify actions, the message to send. */
   message?: string;
+  /** For launch actions, the base branch to stack on (e.g., "todo/H-1-1"). */
+  baseBranch?: string;
 }
 
 // ── Execution context and dependencies ──────────────────────────────
@@ -146,6 +152,7 @@ export interface OrchestratorDeps {
     worktreeDir: string,
     projectRoot: string,
     aiTool: string,
+    baseBranch?: string,
   ) => { worktreePath: string; workspaceRef: string } | null;
   cleanSingleWorktree: (
     id: string,
@@ -187,6 +194,7 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   maxRetries: 1,
   launchTimeoutMs: 30 * 60 * 1000,   // 30 minutes
   activityTimeoutMs: 60 * 60 * 1000, // 60 minutes
+  enableStacking: true,
 };
 
 // ── Memory-aware WIP limit ──────────────────────────────────────────
@@ -222,6 +230,14 @@ const WIP_STATES: Set<OrchestratorItemState> = new Set([
   "ci-pending",
   "ci-passed",
   "ci-failed",
+  "review-pending",
+  "merging",
+]);
+
+// ── Stackable states: dep states that allow a dependent item to launch stacked ──
+
+export const STACKABLE_STATES: Set<OrchestratorItemState> = new Set([
+  "ci-passed",
   "review-pending",
   "merging",
 ]);
@@ -324,6 +340,17 @@ export class Orchestrator {
     for (const item of this.getItemsByState("queued")) {
       if (snapshot.readyIds.includes(item.id)) {
         this.transition(item, "ready");
+      }
+    }
+
+    // Stacked branch promotion: promote queued items that can stack on an in-flight dep
+    if (this.config.enableStacking) {
+      for (const item of this.getItemsByState("queued")) {
+        const result = this.canStackLaunch(item);
+        if (result.canStack) {
+          item.baseBranch = result.baseBranch;
+          this.transition(item, "ready");
+        }
       }
     }
 
@@ -675,7 +702,7 @@ export class Orchestrator {
 
     switch (action.type) {
       case "launch":
-        return this.executeLaunch(item, ctx, deps);
+        return this.executeLaunch(item, action, ctx, deps);
       case "merge":
         return this.executeMerge(item, action, ctx, deps);
       case "notify-ci-failure":
@@ -696,6 +723,7 @@ export class Orchestrator {
   /** Launch a worker for an item. Stores workspaceRef on success, marks stuck or schedules retry on failure. */
   private executeLaunch(
     item: OrchestratorItem,
+    action: Action,
     ctx: ExecutionContext,
     deps: OrchestratorDeps,
   ): ActionResult {
@@ -706,6 +734,7 @@ export class Orchestrator {
         ctx.worktreeDir,
         ctx.projectRoot,
         ctx.aiTool,
+        action.baseBranch,
       );
       if (!result) {
         if (item.retryCount < this.config.maxRetries) {
@@ -1035,6 +1064,48 @@ export class Orchestrator {
     return actions.filter((a) => a.type !== "merge" || a.itemId === keepId);
   }
 
+  /**
+   * Check if a queued item can be launched stacked on an in-flight dependency.
+   * Returns { canStack: true, baseBranch } when the item has exactly one in-flight
+   * dep in a stackable state (ci-passed, review-pending, merging) and all other
+   * deps are done or merged. Pure function of config + internal state.
+   */
+  canStackLaunch(item: OrchestratorItem): { canStack: true; baseBranch: string } | { canStack: false } {
+    if (!this.config.enableStacking) return { canStack: false };
+
+    const deps = item.todo.dependencies;
+    if (deps.length === 0) return { canStack: false };
+
+    let stackableDep: OrchestratorItem | undefined;
+
+    for (const depId of deps) {
+      const dep = this.items.get(depId);
+      if (!dep) return { canStack: false }; // unknown dep — can't stack
+
+      if (dep.state === "done" || dep.state === "merged") {
+        continue; // this dep is finished
+      }
+
+      if (STACKABLE_STATES.has(dep.state)) {
+        if (stackableDep) {
+          // More than one in-flight dep in stackable state — can't stack
+          return { canStack: false };
+        }
+        stackableDep = dep;
+      } else {
+        // Dep is in a non-stackable, non-done state (e.g., implementing, queued)
+        return { canStack: false };
+      }
+    }
+
+    if (!stackableDep) {
+      // All deps are done/merged — this should be in readyIds, not stacked
+      return { canStack: false };
+    }
+
+    return { canStack: true, baseBranch: `todo/${stackableDep.id}` };
+  }
+
   /** Launch ready items up to WIP limit. Returns launch actions. */
   private launchReadyItems(): Action[] {
     const actions: Action[] = [];
@@ -1044,7 +1115,11 @@ export class Orchestrator {
     for (let i = 0; i < Math.min(readyItems.length, slotsAvailable); i++) {
       const item = readyItems[i]!;
       this.transition(item, "launching");
-      actions.push({ type: "launch", itemId: item.id });
+      const action: Action = { type: "launch", itemId: item.id };
+      if (item.baseBranch) {
+        action.baseBranch = item.baseBranch;
+      }
+      actions.push(action);
     }
 
     return actions;

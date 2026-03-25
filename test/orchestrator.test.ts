@@ -818,6 +818,7 @@ describe("Orchestrator", () => {
         defaultCtx.worktreeDir,
         defaultCtx.projectRoot,
         defaultCtx.aiTool,
+        undefined, // baseBranch (no stacking)
       );
       expect(orch.getItem("H-1-1")!.workspaceRef).toBe("workspace:1");
     });
@@ -3855,6 +3856,290 @@ describe("Orchestrator", () => {
       expect(item.state).toBe("merging");
       expect(item.eventTime).toBe(eventTime);
       expect(item.detectionLatencyMs).toBeGreaterThanOrEqual(3900);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // H-STK-3: Stacked branch awareness
+  // ══════════════════════════════════════════════════════════════════════
+
+  describe("Stacked branch awareness", () => {
+    // ── canStackLaunch ──────────────────────────────────────────────
+
+    describe("canStackLaunch", () => {
+      it("returns canStack: true when single dep is in ci-passed", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(true);
+        if (result.canStack) {
+          expect(result.baseBranch).toBe("todo/A-1-1");
+        }
+      });
+
+      it("returns canStack: true when single dep is in review-pending", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "review-pending");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(true);
+        if (result.canStack) {
+          expect(result.baseBranch).toBe("todo/A-1-1");
+        }
+      });
+
+      it("returns canStack: true when single dep is in merging", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(true);
+        if (result.canStack) {
+          expect(result.baseBranch).toBe("todo/A-1-1");
+        }
+      });
+
+      it("returns canStack: false when multiple deps are in-flight", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2"));
+        orch.addItem(makeTodo("A-1-3", ["A-1-1", "A-1-2"]));
+        orch.setState("A-1-1", "ci-passed");
+        orch.setState("A-1-2", "ci-passed");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-3")!);
+        expect(result.canStack).toBe(false);
+      });
+
+      it("returns canStack: false when all deps are done (should use readyIds instead)", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "done");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(false);
+      });
+
+      it("returns canStack: false when stacking is disabled", () => {
+        orch = new Orchestrator({ enableStacking: false });
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(false);
+      });
+
+      it("returns canStack: true with mixed done + one in-flight dep", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2"));
+        orch.addItem(makeTodo("A-1-3", ["A-1-1", "A-1-2"]));
+        orch.setState("A-1-1", "done");
+        orch.setState("A-1-2", "ci-passed");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-3")!);
+        expect(result.canStack).toBe(true);
+        if (result.canStack) {
+          expect(result.baseBranch).toBe("todo/A-1-2");
+        }
+      });
+
+      it("returns canStack: false when dep is in implementing (not stackable)", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "implementing");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(false);
+      });
+
+      it("returns canStack: false when dep is in queued", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(false);
+      });
+
+      it("returns canStack: false when dep is in ci-pending", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-pending");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(false);
+      });
+
+      it("returns canStack: false when dep is in ci-failed", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-failed");
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(false);
+      });
+
+      it("returns canStack: false when item has no dependencies", () => {
+        orch.addItem(makeTodo("A-1-1"));
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-1")!);
+        expect(result.canStack).toBe(false);
+      });
+
+      it("returns canStack: false when dep is unknown (not tracked)", () => {
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"])); // A-1-1 not added
+
+        const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
+        expect(result.canStack).toBe(false);
+      });
+    });
+
+    // ── processTransitions stacking promotion ─────────────────────────
+
+    describe("processTransitions stacking", () => {
+      it("promotes stackable-ready items and sets baseBranch", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+        orch.getItem("A-1-1")!.prNumber = 42;
+
+        // A-1-2 is queued, dep A-1-1 is in ci-passed (stackable)
+        // Not in readyIds because dep isn't done yet
+        const actions = orch.processTransitions(emptySnapshot());
+
+        const item = orch.getItem("A-1-2")!;
+        expect(item.state).toBe("launching");
+        expect(item.baseBranch).toBe("todo/A-1-1");
+        expect(actions.some((a) => a.type === "launch" && a.itemId === "A-1-2")).toBe(true);
+      });
+
+      it("does not promote when stacking is disabled", () => {
+        orch = new Orchestrator({ enableStacking: false });
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+
+        orch.processTransitions(emptySnapshot());
+
+        expect(orch.getItem("A-1-2")!.state).toBe("queued");
+      });
+
+      it("normal readyIds promotion still works alongside stacking", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2"));
+        orch.addItem(makeTodo("A-1-3", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+
+        // A-1-2 is in readyIds (no deps). A-1-3 is stack-promoted.
+        const actions = orch.processTransitions(emptySnapshot(["A-1-2"]));
+
+        expect(orch.getItem("A-1-2")!.state).toBe("launching");
+        expect(orch.getItem("A-1-2")!.baseBranch).toBeUndefined();
+        expect(orch.getItem("A-1-3")!.state).toBe("launching");
+        expect(orch.getItem("A-1-3")!.baseBranch).toBe("todo/A-1-1");
+        expect(actions.filter((a) => a.type === "launch")).toHaveLength(2);
+      });
+
+      it("does not double-promote items already promoted via readyIds", () => {
+        orch = new Orchestrator({ wipLimit: 0 }); // prevent auto-launch
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "done");
+
+        // A-1-2 in readyIds because dep is done
+        orch.processTransitions(emptySnapshot(["A-1-2"]));
+
+        // Should be ready (not launched due to wipLimit: 0), no baseBranch set
+        expect(orch.getItem("A-1-2")!.state).toBe("ready");
+        expect(orch.getItem("A-1-2")!.baseBranch).toBeUndefined();
+      });
+    });
+
+    // ── launchReadyItems includes baseBranch ──────────────────────────
+
+    describe("launchReadyItems includes baseBranch", () => {
+      it("launch action includes baseBranch for stacked items", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+
+        const actions = orch.processTransitions(emptySnapshot());
+
+        const launchAction = actions.find((a) => a.type === "launch" && a.itemId === "A-1-2");
+        expect(launchAction).toBeDefined();
+        expect(launchAction!.baseBranch).toBe("todo/A-1-1");
+      });
+
+      it("launch action omits baseBranch for non-stacked items", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        const actions = orch.processTransitions(emptySnapshot(["A-1-1"]));
+
+        const launchAction = actions.find((a) => a.type === "launch" && a.itemId === "A-1-1");
+        expect(launchAction).toBeDefined();
+        expect(launchAction!.baseBranch).toBeUndefined();
+      });
+    });
+
+    // ── executeLaunch passes baseBranch ───────────────────────────────
+
+    describe("executeLaunch passes baseBranch", () => {
+      it("passes baseBranch through to deps.launchSingleItem", () => {
+        const deps = mockDeps();
+        orch.addItem(makeTodo("A-1-1"));
+        orch.setState("A-1-1", "launching");
+
+        orch.executeAction(
+          { type: "launch", itemId: "A-1-1", baseBranch: "todo/A-1-0" },
+          defaultCtx,
+          deps,
+        );
+
+        expect(deps.launchSingleItem).toHaveBeenCalledWith(
+          orch.getItem("A-1-1")!.todo,
+          defaultCtx.todosDir,
+          defaultCtx.worktreeDir,
+          defaultCtx.projectRoot,
+          defaultCtx.aiTool,
+          "todo/A-1-0",
+        );
+      });
+
+      it("passes undefined baseBranch for non-stacked launch", () => {
+        const deps = mockDeps();
+        orch.addItem(makeTodo("A-1-1"));
+        orch.setState("A-1-1", "launching");
+
+        orch.executeAction(
+          { type: "launch", itemId: "A-1-1" },
+          defaultCtx,
+          deps,
+        );
+
+        expect(deps.launchSingleItem).toHaveBeenCalledWith(
+          orch.getItem("A-1-1")!.todo,
+          defaultCtx.todosDir,
+          defaultCtx.worktreeDir,
+          defaultCtx.projectRoot,
+          defaultCtx.aiTool,
+          undefined,
+        );
+      });
+    });
+
+    // ── enableStacking config ────────────────────────────────────────
+
+    describe("enableStacking config", () => {
+      it("defaults to true", () => {
+        expect(orch.config.enableStacking).toBe(true);
+      });
+
+      it("can be disabled via config", () => {
+        orch = new Orchestrator({ enableStacking: false });
+        expect(orch.config.enableStacking).toBe(false);
+      });
     });
   });
 });
