@@ -98,6 +98,8 @@ export interface ItemSnapshot {
   isMergeable?: boolean;
   /** Whether the worker session is alive. */
   workerAlive?: boolean;
+  /** Worker health status from screen inspection (loading, prompt, processing, stalled, error). */
+  workerHealth?: "loading" | "prompt" | "processing" | "stalled" | "error";
   /** ISO timestamp of the most recent commit on the worktree branch, or null if none beyond base. */
   lastCommitTime?: string | null;
   /** Timestamp from the external system for the current state (ISO string).
