@@ -36,7 +36,93 @@ import { cmdAnalytics } from "./commands/analytics.ts";
 import { cmdStop } from "./commands/stop.ts";
 import { cmdMigrateTodos, cmdGenerateTodos } from "./commands/migrate-todos.ts";
 
-// Resolve project root via git
+// ── Help definitions ─────────────────────────────────────────────────
+
+/** [usage, description] pairs for all commands. */
+export const COMMANDS: ReadonlyArray<[string, string]> = [
+  ["init", "Auto-detect and initialize ninthwave (zero input)"],
+  ["setup [--global]", "Set up ninthwave in a project or globally"],
+  ["version", "Print ninthwave version"],
+  [
+    "list [--priority P] [--domain D] [--feature F] [--ready] [--backend B]",
+    "List TODO items",
+  ],
+  ["deps <ID>", "Show dependency chain"],
+  ["conflicts <ID1> <ID2>...", "Check file conflicts"],
+  ["batch-order <ID1> [ID2]...", "Group items into dependency batches"],
+  ["start <ID1> [ID2]... [--mux cmux|tmux]", "Launch parallel sessions"],
+  [
+    "status [--watch]",
+    "Show active worktrees (--watch: refresh every 5s)",
+  ],
+  ["close-workspaces", "Close all cmux todo workspaces"],
+  ["close-workspace <ID>", "Close cmux workspace for a single item"],
+  ["clean [ID]", "Clean up worktrees + close all workspaces"],
+  ["clean-single <ID>", "Clean single worktree (no side effects)"],
+  ["mark-done <ID1> [ID2]...", "Remove completed todo files"],
+  ["merged-ids", "List IDs of already-merged worktree items"],
+  ["partitions", "Show partition allocation"],
+  ["watch-ready", "Check which PRs are merge-ready"],
+  [
+    "autopilot-watch [--interval N] [--state-file F]",
+    "Block until item status changes",
+  ],
+  [
+    "pr-watch --pr N [--interval N] [--since T]",
+    "Block until PR has new activity",
+  ],
+  ["ci-failures <PR>", "Show failing CI check details"],
+  [
+    "pr-activity <PR1> [PR2]... [--since T]",
+    "Check for new comments/reviews",
+  ],
+  ["version-bump", "Bump version + changelog"],
+  [
+    "orchestrate --items ID1 ID2 ... [--daemon]",
+    "Orchestrate parallel processing",
+  ],
+  ["stop", "Stop the orchestrator daemon"],
+  ["repos", "List discovered repos"],
+  ["reconcile", "Sync todo files with merged PRs"],
+  ["analytics [--all]", "Show orchestration performance trends"],
+  ["migrate-todos", "Migrate TODOS.md to file-per-todo format"],
+  ["generate-todos", "Generate TODOS.md from individual todo files"],
+];
+
+const HELP_PAD = 48;
+
+/** Print full usage help. */
+export function printHelp(): void {
+  console.log("Usage: nw <command> [options]");
+  console.log("       ninthwave <command> [options]");
+  console.log();
+  console.log("Commands:");
+  for (const [usage, desc] of COMMANDS) {
+    const prefix = `  ${usage}`;
+    if (prefix.length >= HELP_PAD) {
+      console.log(prefix);
+      console.log(`${" ".repeat(HELP_PAD)}${desc}`);
+    } else {
+      console.log(`${prefix.padEnd(HELP_PAD)}${desc}`);
+    }
+  }
+}
+
+/** Print help for a single command. */
+export function printCommandHelp(cmd: string): void {
+  const entry = COMMANDS.find(([usage]) => usage.split(" ")[0] === cmd);
+  if (entry) {
+    const [usage, desc] = entry;
+    console.log(`Usage: ninthwave ${usage}`);
+    console.log();
+    console.log(desc);
+  } else {
+    die(`Unknown command: ${cmd}`);
+  }
+}
+
+// ── Project root resolution ──────────────────────────────────────────
+
 function getProjectRoot(): string {
   const result = run("git", [
     "rev-parse",
@@ -50,13 +136,17 @@ function getProjectRoot(): string {
   return result.stdout.replace(/\/.git$/, "");
 }
 
-// Commands that don't need a project root
-const NO_PROJECT_COMMANDS = ["setup", "init", "version"];
+// ── Argument parsing ─────────────────────────────────────────────────
 
-const command = process.argv[2] ?? "";
+const rawCommand = process.argv[2] ?? "";
 const args = process.argv.slice(3);
 
-// Handle commands that don't need a project root
+// Normalize flag-style invocations to subcommands
+const command =
+  rawCommand === "--version" || rawCommand === "-v" ? "version" : rawCommand;
+
+// ── Commands that don't need a project root ──────────────────────────
+
 if (command === "init") {
   cmdInit();
   process.exit(0);
@@ -84,112 +174,27 @@ if (command === "version") {
   process.exit(0);
 }
 
-// All other commands need a project root
+// Handle --help / -h / no args (before project root — works outside git repos)
+if (!command || command === "--help" || command === "-h") {
+  printHelp();
+  process.exit(0);
+}
+
+// Handle <command> --help / -h
+if (args.includes("--help") || args.includes("-h")) {
+  printCommandHelp(command);
+  process.exit(0);
+}
+
+// ── Commands that need a project root ────────────────────────────────
+
 const projectRoot = getProjectRoot();
 const todosDir = join(projectRoot, ".ninthwave", "todos");
 const worktreeDir = join(projectRoot, ".worktrees");
 const partitionDir = join(worktreeDir, ".partitions");
 
-if (!command) {
-  console.log("Usage: nw <command> [options]");
-  console.log("       ninthwave <command> [options]");
-  console.log();
-  console.log("Commands:");
-  console.log(
-    "  init                                          Auto-detect and initialize ninthwave (zero input)",
-  );
-  console.log(
-    "  setup [--global]                              Set up ninthwave in a project or globally",
-  );
-  console.log(
-    "  version                                       Print ninthwave version",
-  );
-  console.log(
-    '  list [--priority P] [--domain D] [--feature F] [--ready] [--backend B]',
-  );
-  console.log(
-    "                                                List TODO items",
-  );
-  console.log(
-    "  deps <ID>                                     Show dependency chain",
-  );
-  console.log(
-    "  conflicts <ID1> <ID2>...                      Check file conflicts",
-  );
-  console.log(
-    "  batch-order <ID1> [ID2]...                    Group items into dependency batches",
-  );
-  console.log(
-    "  start <ID1> [ID2]... [--mux cmux|tmux]        Launch parallel sessions",
-  );
-  console.log(
-    "  status [--watch]                              Show active worktrees (--watch: refresh every 5s)",
-  );
-  console.log(
-    "  close-workspaces                              Close all cmux todo workspaces",
-  );
-  console.log(
-    "  close-workspace <ID>                          Close cmux workspace for a single item",
-  );
-  console.log(
-    "  clean [ID]                                    Clean up worktrees + close all workspaces",
-  );
-  console.log(
-    "  clean-single <ID>                             Clean single worktree (no side effects)",
-  );
-  console.log(
-    "  mark-done <ID1> [ID2]...                      Remove completed todo files",
-  );
-  console.log(
-    "  merged-ids                                    List IDs of already-merged worktree items",
-  );
-  console.log(
-    "  partitions                                    Show partition allocation",
-  );
-  console.log(
-    "  watch-ready                                   Check which PRs are merge-ready",
-  );
-  console.log(
-    "  autopilot-watch [--interval N] [--state-file F]  Block until item status changes",
-  );
-  console.log(
-    "  pr-watch --pr N [--interval N] [--since T]    Block until PR has new activity",
-  );
-  console.log(
-    "  ci-failures <PR>                              Show failing CI check details",
-  );
-  console.log(
-    "  pr-activity <PR1> [PR2]... [--since T]        Check for new comments/reviews",
-  );
-  console.log(
-    "  version-bump                                  Bump version + changelog",
-  );
-  console.log(
-    "  orchestrate --items ID1 ID2 ... [--daemon]     Orchestrate parallel processing",
-  );
-  console.log(
-    "  stop                                          Stop the orchestrator daemon",
-  );
-  console.log(
-    "  repos                                         List discovered repos",
-  );
-  console.log(
-    "  reconcile                                     Sync todo files with merged PRs",
-  );
-  console.log(
-    "  analytics [--all]                             Show orchestration performance trends",
-  );
-  console.log(
-    "  migrate-todos                                 Migrate TODOS.md to file-per-todo format",
-  );
-  console.log(
-    "  generate-todos                                Generate TODOS.md from individual todo files",
-  );
-  process.exit(0);
-}
-
 // Most commands require the todos directory — check before dispatching
-// (setup and version are handled above before project root resolution)
+// (setup, version, init, and help are handled above before project root resolution)
 const needsTodos = ![
   "repos",
   "partitions",
