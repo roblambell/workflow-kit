@@ -56,8 +56,8 @@ export const COMMANDS: ReadonlyArray<[string, string]> = [
   ["batch-order <ID1> [ID2]...", "Group items into dependency batches"],
   ["start <ID1> [ID2]... [--mux cmux|tmux]", "Launch parallel sessions"],
   [
-    "status [--watch]",
-    "Show active worktrees (--watch: refresh every 5s)",
+    "status [--watch] [--flat]",
+    "Show active worktrees (--watch: refresh, --flat: no tree)",
   ],
   ["close-workspaces", "Close all cmux todo workspaces"],
   ["close-workspace <ID>", "Close cmux workspace for a single item"],
@@ -273,13 +273,15 @@ switch (command) {
   case "repos":
     cmdRepos(projectRoot);
     break;
-  case "status":
+  case "status": {
+    const flatFlag = args.includes("--flat");
     if (args.includes("--watch")) {
-      await cmdStatusWatch(worktreeDir, projectRoot);
+      await cmdStatusWatch(worktreeDir, projectRoot, 5_000, undefined, flatFlag);
     } else {
-      cmdStatus(worktreeDir, projectRoot);
+      cmdStatus(worktreeDir, projectRoot, flatFlag);
     }
     break;
+  }
   case "partitions":
     cmdPartitions(partitionDir);
     break;

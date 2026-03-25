@@ -20,8 +20,12 @@ import {
   pad,
   mapDaemonItemState,
   daemonStateToStatusItems,
+  buildDependencyTree,
+  formatTreeRows,
+  formatTreeItemRow,
   type StatusItem,
   type ItemState,
+  type TreeNode,
 } from "../core/commands/status.ts";
 import type { DaemonState } from "../core/daemon.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
@@ -1124,6 +1128,428 @@ describe("cmdStatusWatch line clearing", () => {
   });
 });
 
+// ─── Dependency tree building ─────────────────────────────────────────────────
+
+describe("buildDependencyTree", () => {
+  it("returns all items as flat when none have dependencies", () => {
+    const items = [
+      makeItem("A-1", "merged", "Item A"),
+      makeItem("B-1", "implementing", "Item B"),
+    ];
+    const { trees, flat } = buildDependencyTree(items);
+    expect(trees).toHaveLength(0);
+    expect(flat).toHaveLength(2);
+  });
+
+  it("builds a simple chain into a tree", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root"),
+      makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
+    ];
+    const { trees, flat } = buildDependencyTree(items);
+    expect(trees).toHaveLength(1);
+    expect(flat).toHaveLength(0);
+    expect(trees[0]!.item.id).toBe("A-1");
+    expect(trees[0]!.children).toHaveLength(1);
+    expect(trees[0]!.children[0]!.item.id).toBe("A-2");
+  });
+
+  it("builds a deep chain", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root"),
+      makeItem("A-2", "merged", "Child 1", null, 3600000, ["A-1"]),
+      makeItem("A-3", "implementing", "Child 2", null, 3600000, ["A-2"]),
+      makeItem("A-4", "queued", "Child 3", null, 3600000, ["A-3"]),
+    ];
+    const { trees, flat } = buildDependencyTree(items);
+    expect(trees).toHaveLength(1);
+    expect(flat).toHaveLength(0);
+    const root = trees[0]!;
+    expect(root.item.id).toBe("A-1");
+    expect(root.children[0]!.item.id).toBe("A-2");
+    expect(root.children[0]!.children[0]!.item.id).toBe("A-3");
+    expect(root.children[0]!.children[0]!.children[0]!.item.id).toBe("A-4");
+  });
+
+  it("handles multiple children per parent", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root"),
+      makeItem("A-2", "implementing", "Child 1", null, 3600000, ["A-1"]),
+      makeItem("A-3", "queued", "Child 2", null, 3600000, ["A-1"]),
+    ];
+    const { trees, flat } = buildDependencyTree(items);
+    expect(trees).toHaveLength(1);
+    expect(trees[0]!.children).toHaveLength(2);
+    const childIds = trees[0]!.children.map((c) => c.item.id);
+    expect(childIds).toContain("A-2");
+    expect(childIds).toContain("A-3");
+  });
+
+  it("separates multiple independent trees", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root A"),
+      makeItem("A-2", "implementing", "Child A", null, 3600000, ["A-1"]),
+      makeItem("B-1", "merged", "Root B"),
+      makeItem("B-2", "queued", "Child B", null, 3600000, ["B-1"]),
+    ];
+    const { trees, flat } = buildDependencyTree(items);
+    expect(trees).toHaveLength(2);
+    expect(flat).toHaveLength(0);
+  });
+
+  it("treats items with out-of-set deps as flat", () => {
+    const items = [
+      makeItem("A-1", "implementing", "Item A", null, 3600000, ["X-1"]),
+      makeItem("B-1", "queued", "Item B"),
+    ];
+    const { trees, flat } = buildDependencyTree(items);
+    expect(trees).toHaveLength(0);
+    expect(flat).toHaveLength(2);
+  });
+
+  it("mixes tree items and flat items", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root"),
+      makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
+      makeItem("B-1", "queued", "Flat item"),
+    ];
+    const { trees, flat } = buildDependencyTree(items);
+    expect(trees).toHaveLength(1);
+    expect(flat).toHaveLength(1);
+    expect(flat[0]!.id).toBe("B-1");
+  });
+
+  it("picks first in-set dependency as parent when multiple deps", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root A"),
+      makeItem("B-1", "merged", "Root B"),
+      makeItem("C-1", "implementing", "Multi-dep", null, 3600000, ["A-1", "B-1"]),
+    ];
+    const { trees, flat } = buildDependencyTree(items);
+    // C-1 should be child of A-1 (first in-set dep)
+    expect(trees.length).toBeGreaterThanOrEqual(1);
+    const rootA = trees.find((t) => t.item.id === "A-1");
+    expect(rootA).toBeDefined();
+    expect(rootA!.children.some((c) => c.item.id === "C-1")).toBe(true);
+  });
+});
+
+// ─── Tree row formatting ─────────────────────────────────────────────────────
+
+describe("formatTreeItemRow", () => {
+  it("renders root item (depth 0) without tree prefix", () => {
+    const item = makeItem("A-1", "merged", "Root item");
+    const row = stripAnsi(formatTreeItemRow(item, 0, [], true, 80));
+    expect(row).toContain("A-1");
+    expect(row).toContain("Merged");
+    expect(row).toContain("Root item");
+    expect(row).not.toContain("├");
+    expect(row).not.toContain("└");
+    expect(row).not.toContain("│");
+  });
+
+  it("renders depth-1 last child with └── prefix", () => {
+    const item = makeItem("A-2", "implementing", "Child item");
+    const row = stripAnsi(formatTreeItemRow(item, 1, [], true, 80));
+    expect(row).toContain("└──");
+    expect(row).toContain("A-2");
+    expect(row).toContain("Child item");
+  });
+
+  it("renders depth-1 non-last child with ├── prefix", () => {
+    const item = makeItem("A-2", "implementing", "Child item");
+    const row = stripAnsi(formatTreeItemRow(item, 1, [], false, 80));
+    expect(row).toContain("├──");
+    expect(row).toContain("A-2");
+  });
+
+  it("renders depth-2 with continuation line", () => {
+    const item = makeItem("A-3", "queued", "Grandchild");
+    // Parent was not last → should show │ continuation
+    const row = stripAnsi(formatTreeItemRow(item, 2, [false], true, 80));
+    expect(row).toContain("│");
+    expect(row).toContain("└──");
+    expect(row).toContain("A-3");
+  });
+
+  it("renders depth-2 with space when parent was last", () => {
+    const item = makeItem("A-3", "queued", "Grandchild");
+    const row = stripAnsi(formatTreeItemRow(item, 2, [true], true, 80));
+    expect(row).not.toContain("│");
+    expect(row).toContain("└──");
+    expect(row).toContain("A-3");
+  });
+
+  it("preserves state icon and color for all states", () => {
+    const states: ItemState[] = ["merged", "implementing", "ci-failed", "queued"];
+    for (const state of states) {
+      const item = makeItem("X-1", state, "Test");
+      const row = stripAnsi(formatTreeItemRow(item, 1, [], true, 80));
+      expect(row).toContain(stateIcon(state));
+    }
+  });
+
+  it("adjusts title width for deeper items", () => {
+    const item = makeItem("A-1", "merged", "This is a long title for narrow test");
+    // At depth 3, prefix is 12 chars, so titleWidth = max(6, 60 - 48 - 12) = 6
+    const row = stripAnsi(formatTreeItemRow(item, 3, [false, false], true, 60));
+    expect(row).toContain("A-1");
+    // Title should be truncated
+    expect(row).not.toContain("This is a long title for narrow test");
+  });
+});
+
+describe("formatTreeRows", () => {
+  it("renders a simple chain with connector characters", () => {
+    const trees: TreeNode[] = [{
+      item: makeItem("A-1", "merged", "Root"),
+      children: [{
+        item: makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
+        children: [],
+      }],
+    }];
+    const lines = formatTreeRows(trees, 80);
+    const plain = lines.map(stripAnsi);
+    expect(plain).toHaveLength(2);
+    expect(plain[0]).toContain("A-1");
+    expect(plain[0]).not.toContain("└");
+    expect(plain[1]).toContain("└──");
+    expect(plain[1]).toContain("A-2");
+  });
+
+  it("renders multiple children with ├── and └──", () => {
+    const trees: TreeNode[] = [{
+      item: makeItem("A-1", "merged", "Root"),
+      children: [
+        { item: makeItem("A-2", "implementing", "Child 1", null, 3600000, ["A-1"]), children: [] },
+        { item: makeItem("A-3", "queued", "Child 2", null, 3600000, ["A-1"]), children: [] },
+      ],
+    }];
+    const lines = formatTreeRows(trees, 80);
+    const plain = lines.map(stripAnsi);
+    expect(plain).toHaveLength(3);
+    expect(plain[1]).toContain("├──");
+    expect(plain[2]).toContain("└──");
+  });
+
+  it("renders deep chain with continuation lines", () => {
+    const trees: TreeNode[] = [{
+      item: makeItem("A-1", "merged", "Root"),
+      children: [{
+        item: makeItem("A-2", "merged", "Child"),
+        children: [{
+          item: makeItem("A-3", "implementing", "Grandchild"),
+          children: [{
+            item: makeItem("A-4", "queued", "Great-grandchild"),
+            children: [],
+          }],
+        }],
+      }],
+    }];
+    const lines = formatTreeRows(trees, 80);
+    const plain = lines.map(stripAnsi);
+    expect(plain).toHaveLength(4);
+    expect(plain[0]).toContain("A-1");
+    expect(plain[1]).toContain("└──");
+    expect(plain[1]).toContain("A-2");
+    expect(plain[2]).toContain("└──");
+    expect(plain[2]).toContain("A-3");
+    expect(plain[3]).toContain("└──");
+    expect(plain[3]).toContain("A-4");
+  });
+
+  it("separates independent trees with blank line", () => {
+    const trees: TreeNode[] = [
+      {
+        item: makeItem("A-1", "merged", "Tree A root"),
+        children: [{ item: makeItem("A-2", "implementing", "Tree A child"), children: [] }],
+      },
+      {
+        item: makeItem("B-1", "merged", "Tree B root"),
+        children: [{ item: makeItem("B-2", "queued", "Tree B child"), children: [] }],
+      },
+    ];
+    const lines = formatTreeRows(trees, 80);
+    // Should have: A-1, A-2, blank, B-1, B-2
+    expect(lines).toHaveLength(5);
+    expect(stripAnsi(lines[2]!)).toBe("");
+  });
+});
+
+// ─── formatStatusTable with dependency trees ──────────────────────────────────
+
+describe("formatStatusTable tree rendering", () => {
+  it("renders dependency chain as indented tree", () => {
+    const items = [
+      makeItem("H-PRX-4", "merged", "Add session CA", 123, 3600000),
+      makeItem("H-PRX-5", "merged", "Add Cedar policy", 124, 3600000, ["H-PRX-4"]),
+      makeItem("H-PRX-6", "queued", "Add credential injection", null, 3600000, ["H-PRX-5"]),
+      makeItem("H-PRX-7", "queued", "proxy-launcher", null, 3600000, ["H-PRX-6"]),
+    ];
+    const output = stripAnsi(formatStatusTable(items, 100));
+    expect(output).toContain("H-PRX-4");
+    expect(output).toContain("H-PRX-5");
+    expect(output).toContain("H-PRX-6");
+    expect(output).toContain("H-PRX-7");
+    // Tree chars should appear
+    expect(output).toContain("└──");
+  });
+
+  it("root items (no deps) render at top level", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root"),
+      makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
+    ];
+    const output = stripAnsi(formatStatusTable(items, 80));
+    const lines = output.split("\n");
+    const rootLine = lines.find((l) => l.includes("A-1") && l.includes("Merged"));
+    expect(rootLine).toBeDefined();
+    // Root line should NOT contain tree connectors
+    expect(rootLine).not.toContain("├");
+    expect(rootLine).not.toContain("└");
+  });
+
+  it("items with no dependencies render in flat list", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root"),
+      makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
+      makeItem("B-1", "queued", "Independent"),
+    ];
+    const output = stripAnsi(formatStatusTable(items, 80));
+    expect(output).toContain("A-1");
+    expect(output).toContain("A-2");
+    expect(output).toContain("B-1");
+  });
+
+  it("multiple independent trees render separately", () => {
+    const items = [
+      makeItem("A-1", "merged", "Tree A root"),
+      makeItem("A-2", "implementing", "Tree A child", null, 3600000, ["A-1"]),
+      makeItem("B-1", "merged", "Tree B root"),
+      makeItem("B-2", "queued", "Tree B child", null, 3600000, ["B-1"]),
+    ];
+    const output = stripAnsi(formatStatusTable(items, 100));
+    expect(output).toContain("A-1");
+    expect(output).toContain("A-2");
+    expect(output).toContain("B-1");
+    expect(output).toContain("B-2");
+    // Both should have tree connectors
+    const lines = output.split("\n");
+    const treeLines = lines.filter((l) => l.includes("└──") || l.includes("├──"));
+    expect(treeLines.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("--flat flag forces flat rendering", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root"),
+      makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
+      makeItem("A-3", "queued", "Grandchild", null, 3600000, ["A-2"]),
+    ];
+    const output = stripAnsi(formatStatusTable(items, 80, undefined, true));
+    // Should not have tree connectors
+    expect(output).not.toContain("├──");
+    expect(output).not.toContain("└──");
+    expect(output).not.toContain("│");
+    // Items should still be present
+    expect(output).toContain("A-1");
+    expect(output).toContain("A-2");
+    expect(output).toContain("A-3");
+  });
+
+  it("state icons and colors preserved in tree view", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root"),
+      makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
+    ];
+    const output = stripAnsi(formatStatusTable(items, 80));
+    expect(output).toContain("✓"); // merged icon
+    expect(output).toContain("▸"); // implementing icon
+    expect(output).toContain("Merged");
+    expect(output).toContain("Implementing");
+  });
+
+  it("wide terminal: columns align properly for root items", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root item with long title", 42),
+      makeItem("A-2", "implementing", "Child item", null, 3600000, ["A-1"]),
+    ];
+    const output = formatStatusTable(items, 120);
+    const lines = output.split("\n");
+    for (const line of lines) {
+      const plain = stripAnsi(line);
+      expect(plain.length).toBeLessThanOrEqual(120);
+    }
+  });
+
+  it("narrow terminal: output degrades gracefully", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root item"),
+      makeItem("A-2", "implementing", "Child 1", null, 3600000, ["A-1"]),
+      makeItem("A-3", "queued", "Grandchild", null, 3600000, ["A-2"]),
+    ];
+    // Very narrow terminal
+    const output = formatStatusTable(items, 50);
+    const lines = output.split("\n");
+    // Should not crash or produce empty lines where content is expected
+    const contentLines = lines.filter((l) => stripAnsi(l).trim().length > 0);
+    expect(contentLines.length).toBeGreaterThan(0);
+    // Items should still appear
+    const plain = stripAnsi(output);
+    expect(plain).toContain("A-1");
+    expect(plain).toContain("A-2");
+    expect(plain).toContain("A-3");
+  });
+
+  it("includes progress and summary in tree mode", () => {
+    const items = [
+      makeItem("A-1", "merged", "Root"),
+      makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
+    ];
+    const output = stripAnsi(formatStatusTable(items, 80));
+    expect(output).toContain("Progress:");
+    expect(output).toContain("Total:");
+  });
+});
+
+// ─── daemonStateToStatusItems with dependencies ───────────────────────────────
+
+describe("daemonStateToStatusItems with dependencies", () => {
+  it("includes dependencies from daemon state", () => {
+    const now = Date.now();
+    const state: DaemonState = {
+      pid: 123,
+      startedAt: "2026-03-24T10:00:00.000Z",
+      updatedAt: "2026-03-24T10:05:00.000Z",
+      items: [
+        {
+          id: "A-1",
+          state: "merged",
+          prNumber: 100,
+          title: "Root",
+          lastTransition: new Date(now - 60000).toISOString(),
+          ciFailCount: 0,
+          retryCount: 0,
+        },
+        {
+          id: "A-2",
+          state: "implementing",
+          prNumber: null,
+          title: "Child",
+          lastTransition: new Date(now - 60000).toISOString(),
+          ciFailCount: 0,
+          retryCount: 0,
+          dependencies: ["A-1"],
+        },
+      ],
+    };
+
+    const items = daemonStateToStatusItems(state);
+    expect(items).toHaveLength(2);
+    expect(items[0]!.dependencies).toEqual([]);
+    expect(items[1]!.dependencies).toEqual(["A-1"]);
+  });
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeItem(
@@ -1132,6 +1558,7 @@ function makeItem(
   title: string = "",
   prNumber: number | null = null,
   ageMs: number = 3600000,
+  dependencies: string[] = [],
 ): StatusItem {
-  return { id, title, state, prNumber, ageMs, repoLabel: "" };
+  return { id, title, state, prNumber, ageMs, repoLabel: "", dependencies };
 }

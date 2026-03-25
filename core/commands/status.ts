@@ -41,6 +41,14 @@ export interface StatusItem {
   repoLabel: string;
   /** Descriptive reason for failure, displayed alongside ci-failed/stuck states. */
   failureReason?: string;
+  dependencies?: string[];
+}
+
+// ─── Dependency tree types ────────────────────────────────────────────────────
+
+export interface TreeNode {
+  item: StatusItem;
+  children: TreeNode[];
 }
 
 // ─── Pure formatting functions (testable) ────────────────────────────────────
@@ -237,6 +245,130 @@ export function formatQueuedItemRow(item: StatusItem, titleWidth: number): strin
   return `  ${DIM}${icon} ${id}${label} ${pr} ${age} ${title}${repo}${RESET}`;
 }
 
+// ─── Dependency tree building ─────────────────────────────────────────────────
+
+/**
+ * Build dependency trees from StatusItems.
+ * Items linked by dependencies form parent→child trees.
+ * An item's parent is the first dependency ID that exists in the current item set.
+ * Items with no dependency relationships are returned as flat.
+ */
+export function buildDependencyTree(items: StatusItem[]): {
+  trees: TreeNode[];
+  flat: StatusItem[];
+} {
+  const itemMap = new Map<string, StatusItem>();
+  for (const item of items) {
+    itemMap.set(item.id, item);
+  }
+
+  // Create tree nodes for all items
+  const nodeMap = new Map<string, TreeNode>();
+  for (const item of items) {
+    nodeMap.set(item.id, { item, children: [] });
+  }
+
+  // Link children to parents: an item's parent is its first in-set dependency
+  const hasParent = new Set<string>();
+  for (const item of items) {
+    const deps = item.dependencies ?? [];
+    const parentId = deps.find((d) => itemMap.has(d));
+    if (parentId) {
+      hasParent.add(item.id);
+      nodeMap.get(parentId)!.children.push(nodeMap.get(item.id)!);
+    }
+  }
+
+  // Separate roots (have dependents) from flat items (no dep relationships)
+  const trees: TreeNode[] = [];
+  const flat: StatusItem[] = [];
+
+  for (const item of items) {
+    if (hasParent.has(item.id)) continue; // already linked as child
+    const node = nodeMap.get(item.id)!;
+    if (node.children.length > 0) {
+      trees.push(node);
+    } else {
+      flat.push(item);
+    }
+  }
+
+  return { trees, flat };
+}
+
+/**
+ * Format a single tree item row with tree-drawing prefix.
+ * depth=0 items have no prefix (roots). depth>0 items get connector characters.
+ */
+export function formatTreeItemRow(
+  item: StatusItem,
+  depth: number,
+  ancestorIsLast: boolean[],
+  isLast: boolean,
+  termWidth: number,
+): string {
+  const fixedWidth = 48;
+  const prefixWidth = depth > 0 ? depth * 4 : 0;
+  const titleWidth = Math.max(6, termWidth - fixedWidth - prefixWidth);
+
+  // Build tree prefix
+  let prefix = "";
+  if (depth > 0) {
+    for (const parentIsLast of ancestorIsLast) {
+      prefix += parentIsLast ? "    " : "│   ";
+    }
+    prefix += isLast ? "└── " : "├── ";
+  }
+
+  const icon = stateIcon(item.state);
+  const id = pad(item.id, 12);
+  const color = stateColor(item.state);
+  const label = pad(stateLabel(item.state), 14);
+  const pr = item.prNumber ? pad(`#${item.prNumber}`, 7) : pad("-", 7);
+  const age = pad(formatAge(item.ageMs), 8);
+  const title = truncateTitle(item.title || item.id, titleWidth);
+  const repo = item.repoLabel ? ` ${DIM}[${item.repoLabel}]${RESET}` : "";
+
+  if (item.state === "queued") {
+    return `  ${DIM}${prefix}${icon} ${id}${label} ${pr} ${age} ${title}${repo}${RESET}`;
+  }
+  return `  ${prefix ? `${DIM}${prefix}${RESET}` : ""}${color}${icon}${RESET} ${id}${color}${label}${RESET} ${pr} ${age} ${title}${repo}`;
+}
+
+/**
+ * Render dependency trees as formatted rows with tree-drawing characters.
+ * Uses ├──, └──, │ for visual structure.
+ */
+export function formatTreeRows(
+  trees: TreeNode[],
+  termWidth: number,
+): string[] {
+  const lines: string[] = [];
+
+  function renderNode(
+    node: TreeNode,
+    depth: number,
+    ancestorIsLast: boolean[],
+    isLast: boolean,
+  ): void {
+    lines.push(formatTreeItemRow(node.item, depth, ancestorIsLast, isLast, termWidth));
+
+    for (let i = 0; i < node.children.length; i++) {
+      const childIsLast = i === node.children.length - 1;
+      // At depth 0 (root), don't propagate to ancestorIsLast since root has no prefix
+      const nextAncestors = depth > 0 ? [...ancestorIsLast, isLast] : [];
+      renderNode(node.children[i]!, depth + 1, nextAncestors, childIsLast);
+    }
+  }
+
+  for (let i = 0; i < trees.length; i++) {
+    if (i > 0) lines.push(""); // blank line between separate trees
+    renderNode(trees[i]!, 0, [], true);
+  }
+
+  return lines;
+}
+
 /**
  * Format the complete status table from a list of StatusItems.
  * Returns a multi-line string ready for console output.
@@ -246,6 +378,7 @@ export function formatStatusTable(
   items: StatusItem[],
   termWidth: number = 80,
   wipLimit?: number,
+  flat: boolean = false,
 ): string {
   const lines: string[] = [];
 
@@ -261,11 +394,6 @@ export function formatStatusTable(
     return lines.join("\n");
   }
 
-  // Split items into active and queued groups
-  const activeItems = items.filter((i) => i.state !== "queued" && i.state !== "merged");
-  const queuedItems = items.filter((i) => i.state === "queued");
-  const mergedItems = items.filter((i) => i.state === "merged");
-
   // Column widths: 2 indent + 2 icon+space + 12 ID + 14 state + 1 + 7 PR + 1 + 8 age + 1 + title
   // = 48 fixed + title
   const fixedWidth = 48;
@@ -279,31 +407,82 @@ export function formatStatusTable(
   const sep = `  ${DIM}${"─".repeat(Math.min(termWidth - 2, 78))}${RESET}`;
   lines.push(sep);
 
-  // Active items at top (not merged, not queued)
-  for (const item of activeItems) {
-    lines.push(formatItemRow(item, titleWidth));
-  }
+  // Check if any items have dependency relationships
+  const hasDeps = !flat && items.some((i) => (i.dependencies ?? []).length > 0);
 
-  // Merged items
-  for (const item of mergedItems) {
-    lines.push(formatItemRow(item, titleWidth));
-  }
+  if (hasDeps) {
+    // Tree mode: render items with dependency relationships as trees,
+    // and items without dependencies as a flat list
+    const { trees, flat: flatItems } = buildDependencyTree(items);
 
-  // Queue section with header
-  if (queuedItems.length > 0) {
-    const activeCount = activeItems.length;
-    let queueHeader = `Queue (${queuedItems.length} waiting`;
-    if (wipLimit !== undefined) {
-      queueHeader += `, ${activeCount}/${wipLimit} WIP slots active`;
+    // Render dependency trees
+    if (trees.length > 0) {
+      lines.push(...formatTreeRows(trees, termWidth));
     }
-    queueHeader += ")";
 
-    lines.push("");
-    lines.push(`  ${DIM}${queueHeader}${RESET}`);
-    lines.push(sep);
+    // Render flat items (no dependency relationships) in grouped format
+    const flatActive = flatItems.filter((i) => i.state !== "queued" && i.state !== "merged");
+    const flatMerged = flatItems.filter((i) => i.state === "merged");
+    const flatQueued = flatItems.filter((i) => i.state === "queued");
 
-    for (const item of queuedItems) {
-      lines.push(formatQueuedItemRow(item, titleWidth));
+    for (const item of flatActive) {
+      lines.push(formatItemRow(item, titleWidth));
+    }
+    for (const item of flatMerged) {
+      lines.push(formatItemRow(item, titleWidth));
+    }
+
+    // Queue section for flat queued items only (tree queued items are in trees)
+    if (flatQueued.length > 0) {
+      const activeCount = items.filter(
+        (i) => i.state !== "queued" && i.state !== "merged",
+      ).length;
+      let queueHeader = `Queue (${flatQueued.length} waiting`;
+      if (wipLimit !== undefined) {
+        queueHeader += `, ${activeCount}/${wipLimit} WIP slots active`;
+      }
+      queueHeader += ")";
+
+      lines.push("");
+      lines.push(`  ${DIM}${queueHeader}${RESET}`);
+      lines.push(sep);
+
+      for (const item of flatQueued) {
+        lines.push(formatQueuedItemRow(item, titleWidth));
+      }
+    }
+  } else {
+    // Flat mode (original behavior): split into active, merged, and queued groups
+    const activeItems = items.filter((i) => i.state !== "queued" && i.state !== "merged");
+    const queuedItems = items.filter((i) => i.state === "queued");
+    const mergedItems = items.filter((i) => i.state === "merged");
+
+    // Active items at top (not merged, not queued)
+    for (const item of activeItems) {
+      lines.push(formatItemRow(item, titleWidth));
+    }
+
+    // Merged items
+    for (const item of mergedItems) {
+      lines.push(formatItemRow(item, titleWidth));
+    }
+
+    // Queue section with header
+    if (queuedItems.length > 0) {
+      const activeCount = activeItems.length;
+      let queueHeader = `Queue (${queuedItems.length} waiting`;
+      if (wipLimit !== undefined) {
+        queueHeader += `, ${activeCount}/${wipLimit} WIP slots active`;
+      }
+      queueHeader += ")";
+
+      lines.push("");
+      lines.push(`  ${DIM}${queueHeader}${RESET}`);
+      lines.push(sep);
+
+      for (const item of queuedItems) {
+        lines.push(formatQueuedItemRow(item, titleWidth));
+      }
     }
   }
 
@@ -361,16 +540,22 @@ export function daemonStateToStatusItems(state: DaemonState): StatusItem[] {
     ageMs: Date.now() - new Date(item.lastTransition).getTime(),
     repoLabel: "",
     failureReason: item.failureReason,
+    dependencies: item.dependencies ?? [],
   }));
 }
 
 // ─── Data gathering ──────────────────────────────────────────────────────────
 
-/** Try to read TODO titles from .ninthwave/todos/ directory. Returns a map of ID → title. */
-function loadTodoTitles(projectRoot: string): Map<string, string> {
-  const titles = new Map<string, string>();
+interface TodoMetadata {
+  title: string;
+  dependencies: string[];
+}
+
+/** Try to read TODO metadata from .ninthwave/todos/ directory. Returns a map of ID → metadata. */
+function loadTodoMetadata(projectRoot: string): Map<string, TodoMetadata> {
+  const metadata = new Map<string, TodoMetadata>();
   const todosDir = join(projectRoot, ".ninthwave", "todos");
-  if (!existsSync(todosDir)) return titles;
+  if (!existsSync(todosDir)) return metadata;
 
   try {
     const entries = readdirSync(todosDir).filter((e) => e.endsWith(".md"));
@@ -379,10 +564,23 @@ function loadTodoTitles(projectRoot: string): Map<string, string> {
       try {
         const content = readFileSync(filePath, "utf-8");
         // Extract title from the first # heading
-        const match = content.match(/^# (.+)$/m);
-        if (match) {
+        const titleMatch = content.match(/^# (.+)$/m);
+        if (titleMatch) {
           const id = entry.replace(/\.md$/, "");
-          titles.set(id, match[1]!.trim());
+          // Extract dependencies from **Depends on:** line
+          const deps: string[] = [];
+          const depsMatch = content.match(/^\*\*Depends on:\*\*\s+(.+)$/m);
+          if (depsMatch) {
+            const depsStr = depsMatch[1]!;
+            if (depsStr.toLowerCase() !== "none" && depsStr !== "-") {
+              const idMatches = depsStr.match(/[A-Z]-[A-Za-z0-9]+-[0-9]+/g);
+              if (idMatches) deps.push(...idMatches);
+            }
+          }
+          metadata.set(id, {
+            title: titleMatch[1]!.trim(),
+            dependencies: deps,
+          });
         }
       } catch {
         // skip unreadable files
@@ -392,7 +590,7 @@ function loadTodoTitles(projectRoot: string): Map<string, string> {
     // ignore
   }
 
-  return titles;
+  return metadata;
 }
 
 /** Determine item state from git/gh data. */
@@ -542,6 +740,7 @@ export async function cmdStatusWatch(
   projectRoot: string,
   intervalMs: number = 5_000,
   signal?: AbortSignal,
+  flat: boolean = false,
 ): Promise<void> {
   while (!signal?.aborted) {
     // Move cursor to top-left (no full-screen clear — avoids flicker)
@@ -549,7 +748,7 @@ export async function cmdStatusWatch(
     // Write status content with clear-to-end-of-line (\x1B[K) after each line
     // to prevent stale characters from previous renders bleeding through
     // when lines become shorter between refreshes
-    const content = renderStatus(worktreeDir, projectRoot);
+    const content = renderStatus(worktreeDir, projectRoot, flat);
     process.stdout.write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
     // Clear from cursor to end of screen (removes stale trailing lines)
     process.stdout.write("\x1B[J");
@@ -575,7 +774,7 @@ export async function cmdStatusWatch(
  * Render the full status output as a string (no side effects).
  * Used by both cmdStatus (prints it) and cmdStatusWatch (writes it flicker-free).
  */
-export function renderStatus(worktreeDir: string, projectRoot: string): string {
+export function renderStatus(worktreeDir: string, projectRoot: string, flat: boolean = false): string {
   const lines: string[] = [];
 
   // Fast path: read state file (written by orchestrator in both daemon and interactive mode)
@@ -590,7 +789,7 @@ export function renderStatus(worktreeDir: string, projectRoot: string): string {
     if (isFresh || daemonPid !== null) {
       const items = daemonStateToStatusItems(daemonState);
       const termWidth = getTerminalWidth();
-      lines.push(formatStatusTable(items, termWidth, daemonState.wipLimit));
+      lines.push(formatStatusTable(items, termWidth, daemonState.wipLimit, flat));
 
       // Show dashboard URL when active
       if (daemonState.dashboardUrl) {
@@ -614,7 +813,7 @@ export function renderStatus(worktreeDir: string, projectRoot: string): string {
     return lines.join("\n") + "\n";
   }
 
-  const titles = loadTodoTitles(projectRoot);
+  const todoMeta = loadTodoMetadata(projectRoot);
   const items: StatusItem[] = [];
 
   // Hub-local worktrees
@@ -626,13 +825,15 @@ export function renderStatus(worktreeDir: string, projectRoot: string): string {
       if (!existsSync(wtDir)) continue;
       const id = entry.slice(5); // strip "todo-"
       const { state, prNumber } = determineItemState(id, projectRoot);
+      const meta = todoMeta.get(id);
       items.push({
         id,
-        title: titles.get(id) ?? "",
+        title: meta?.title ?? "",
         state,
         prNumber,
         ageMs: getWorktreeAge(wtDir),
         repoLabel: "",
+        dependencies: meta?.dependencies ?? [],
       });
     }
   } catch {
@@ -652,22 +853,24 @@ export function renderStatus(worktreeDir: string, projectRoot: string): string {
       if (!idxId || !idxRepo || !idxPath) continue;
       if (!existsSync(idxPath)) continue;
       const { state, prNumber } = determineItemState(idxId, idxRepo);
+      const meta = todoMeta.get(idxId);
       items.push({
         id: idxId,
-        title: titles.get(idxId) ?? "",
+        title: meta?.title ?? "",
         state,
         prNumber,
         ageMs: getWorktreeAge(idxPath),
         repoLabel: basename(idxRepo),
+        dependencies: meta?.dependencies ?? [],
       });
     }
   }
 
-  return formatStatusTable(items, getTerminalWidth()) + "\n";
+  return formatStatusTable(items, getTerminalWidth(), undefined, flat) + "\n";
 }
 
-export function cmdStatus(worktreeDir: string, projectRoot: string): void {
-  process.stdout.write(renderStatus(worktreeDir, projectRoot));
+export function cmdStatus(worktreeDir: string, projectRoot: string, flat: boolean = false): void {
+  process.stdout.write(renderStatus(worktreeDir, projectRoot, flat));
 }
 
 export function cmdPartitions(partitionDir: string): void {

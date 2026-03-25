@@ -27,6 +27,8 @@ export interface DaemonStateItem {
   reviewCompleted?: boolean;
   /** Descriptive reason for failure (e.g., "launch-failed: repo not found", "ci-failed: test timeout"). */
   failureReason?: string;
+  /** Dependency IDs for this item (omitted when empty). */
+  dependencies?: string[];
 }
 
 export interface DaemonState {
@@ -260,6 +262,7 @@ export function serializeOrchestratorState(
       ...(item.reviewWorkspaceRef ? { reviewWorkspaceRef: item.reviewWorkspaceRef } : {}),
       ...(item.reviewCompleted ? { reviewCompleted: item.reviewCompleted } : {}),
       ...(item.failureReason ? { failureReason: item.failureReason } : {}),
+      ...(item.todo.dependencies.length > 0 ? { dependencies: item.todo.dependencies } : {}),
     })),
   };
 }
