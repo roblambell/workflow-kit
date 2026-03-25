@@ -17,6 +17,15 @@ export type WorkerHealthStatus =
   | "stalled"     // Has content but no recognizable activity indicators
   | "error";      // Error indicators detected on screen
 
+/** Stall-detection health status derived from worker screen content. */
+export type ScreenHealthStatus =
+  | "healthy"             // Worker is actively processing or just started
+  | "stalled-empty"       // Prompt visible with no input — worker idle
+  | "stalled-permission"  // Permission prompt (Y/n dialog) waiting for approval
+  | "stalled-error"       // Error or crash output detected
+  | "stalled-unchanged"   // Screen content unchanged across consecutive polls
+  | "unknown";            // readScreen unavailable or threw
+
 /** Sleep function signature for dependency injection. */
 export type Sleeper = (ms: number) => void;
 
@@ -68,6 +77,17 @@ const ERROR_INDICATORS = [
   "spawn Unknown system error",
 ];
 
+/** Indicators that a permission/approval dialog is waiting. */
+const PERMISSION_INDICATORS = [
+  "(Y/n)",
+  "(y/N)",
+  "Allow ",       // "Allow tool_name?" prompts
+  "approve",
+  "permission",
+  "Yes / No",
+  "(Y)es / (N)o",
+];
+
 // ── Pure screen-parsing functions ────────────────────────────────────
 
 /**
@@ -99,6 +119,79 @@ export function isWorkerInError(screenContent: string): boolean {
   return ERROR_INDICATORS.some((indicator) =>
     screenContent.includes(indicator),
   );
+}
+
+/**
+ * Detect if a permission/approval dialog is visible on screen.
+ */
+export function isPermissionPrompt(screenContent: string): boolean {
+  if (!screenContent.trim()) return false;
+  return PERMISSION_INDICATORS.some((indicator) =>
+    screenContent.includes(indicator),
+  );
+}
+
+/**
+ * Simple string hash for comparing screen content across polls.
+ * Not cryptographic — just needs to detect changes.
+ */
+export function simpleHash(str: string): string {
+  let hash = 0;
+  const trimmed = str.trim();
+  for (let i = 0; i < trimmed.length; i++) {
+    hash = ((hash << 5) - hash + trimmed.charCodeAt(i)) | 0;
+  }
+  return hash.toString(36);
+}
+
+/**
+ * Compute screen health status for stall detection.
+ *
+ * Uses the screen content + orchestrator item state to classify the
+ * worker's health into actionable categories. Mutates orchItem to track
+ * unchanged screen state across polls.
+ *
+ * @param screenContent - Raw screen content from readScreen
+ * @param orchItem - The orchestrator item (mutated: lastScreenHash, unchangedCount)
+ * @param unchangedThreshold - Number of consecutive unchanged polls before declaring stalled (default 3)
+ */
+export function computeScreenHealth(
+  screenContent: string,
+  orchItem: { lastScreenHash?: string; unchangedCount?: number },
+  unchangedThreshold: number = 3,
+): ScreenHealthStatus {
+  if (!screenContent.trim()) return "unknown";
+
+  // Check error first (highest priority)
+  if (isWorkerInError(screenContent)) return "stalled-error";
+
+  // Check permission prompt
+  if (isPermissionPrompt(screenContent)) return "stalled-permission";
+
+  // If actively processing, worker is healthy
+  if (isWorkerProcessing(screenContent)) {
+    orchItem.lastScreenHash = simpleHash(screenContent);
+    orchItem.unchangedCount = 0;
+    return "healthy";
+  }
+
+  // If prompt visible with no processing indicators, worker is idle
+  if (isInputPromptVisible(screenContent)) return "stalled-empty";
+
+  // Check for unchanged screen across polls
+  const hash = simpleHash(screenContent);
+  if (orchItem.lastScreenHash === hash) {
+    orchItem.unchangedCount = (orchItem.unchangedCount ?? 0) + 1;
+    if (orchItem.unchangedCount >= unchangedThreshold) {
+      return "stalled-unchanged";
+    }
+  } else {
+    orchItem.lastScreenHash = hash;
+    orchItem.unchangedCount = 0;
+  }
+
+  // Has content, not recognizable as stalled — assume healthy
+  return "healthy";
 }
 
 /**

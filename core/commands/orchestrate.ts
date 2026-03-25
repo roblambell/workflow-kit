@@ -26,7 +26,7 @@ import { parseTodos } from "../parser.ts";
 import { resolveRepo, getWorktreeInfo } from "../cross-repo.ts";
 import { checkPrStatus } from "./watch.ts";
 import { launchSingleItem, detectAiTool } from "./start.ts";
-import { checkWorkerHealth } from "../worker-health.ts";
+import { getWorkerHealthStatus, computeScreenHealth } from "../worker-health.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner } from "../gh.ts";
 import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset, daemonRebase } from "../git.ts";
@@ -209,27 +209,34 @@ export function buildSnapshot(
     // Check worker alive, health, and commit freshness for active items
     if (orchItem.state === "launching" || orchItem.state === "implementing" || orchItem.state === "ci-failed") {
       snap.workerAlive = isWorkerAlive(orchItem, mux);
-      // Screen-based health check: detect loading, prompt (stuck), processing, stalled, error
+      // Screen-based health check: read once, derive both workerHealth and screenHealth
       if (orchItem.workspaceRef) {
-        snap.workerHealth = checkWorkerHealth(mux, orchItem.workspaceRef);
-        // Record screen samples for health-check tuning (H-HLT-1 data collection)
         try {
           const rawScreen = mux.readScreen(orchItem.workspaceRef, 30);
-          if (rawScreen.trim()) {
-            const samplesDir = join(projectRoot, ".ninthwave");
-            const samplesFile = join(samplesDir, "health-samples.jsonl");
-            const sample = JSON.stringify({
-              t: new Date().toISOString(),
-              id: orchItem.id,
-              state: orchItem.state,
-              health: snap.workerHealth,
-              alive: snap.workerAlive,
-              lines: rawScreen.split("\n").filter((l: string) => l.trim()).length,
-              screen: rawScreen.slice(0, 2000),
-            });
-            appendFileSync(samplesFile, sample + "\n");
-          }
-        } catch { /* best-effort — don't break polling */ }
+          snap.workerHealth = getWorkerHealthStatus(rawScreen);
+          snap.screenHealth = computeScreenHealth(rawScreen, orchItem);
+          // Record screen samples for health-check tuning (best-effort, separate try/catch)
+          try {
+            if (rawScreen.trim()) {
+              const samplesDir = join(projectRoot, ".ninthwave");
+              const samplesFile = join(samplesDir, "health-samples.jsonl");
+              const sample = JSON.stringify({
+                t: new Date().toISOString(),
+                id: orchItem.id,
+                state: orchItem.state,
+                health: snap.workerHealth,
+                screenHealth: snap.screenHealth,
+                alive: snap.workerAlive,
+                lines: rawScreen.split("\n").filter((l: string) => l.trim()).length,
+                screen: rawScreen.slice(0, 2000),
+              });
+              appendFileSync(samplesFile, sample + "\n");
+            }
+          } catch { /* best-effort — don't break polling */ }
+        } catch {
+          // readScreen threw — graceful degradation
+          snap.screenHealth = "unknown";
+        }
       }
       const commitTime = getLastCommitTime(repoRoot, `todo/${orchItem.id}`);
       snap.lastCommitTime = commitTime;

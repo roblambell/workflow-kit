@@ -8,12 +8,16 @@ import {
   isInputPromptVisible,
   isWorkerProcessing,
   isWorkerInError,
+  isPermissionPrompt,
+  simpleHash,
+  computeScreenHealth,
   getWorkerHealthStatus,
   checkWorkerHealth,
   waitForInputPrompt,
   verifySendProcessing,
   sendWithReadyWait,
   type WorkerHealthStatus,
+  type ScreenHealthStatus,
 } from "../core/worker-health.ts";
 import type { Multiplexer } from "../core/mux.ts";
 
@@ -529,5 +533,176 @@ describe("sendWithReadyWait", () => {
       verifyMaxAttempts: 1,
     });
     expect(result).toBe(true);
+  });
+});
+
+// ── isPermissionPrompt (H-HLT-1) ────────────────────────────────────
+
+describe("isPermissionPrompt", () => {
+  it("detects (Y/n) dialog", () => {
+    const screen = "Allow tool_name? (Y/n)";
+    expect(isPermissionPrompt(screen)).toBe(true);
+  });
+
+  it("detects (y/N) dialog", () => {
+    const screen = "Continue? (y/N)";
+    expect(isPermissionPrompt(screen)).toBe(true);
+  });
+
+  it("detects 'Allow ' prefix", () => {
+    const screen = "Allow Bash(git status)?";
+    expect(isPermissionPrompt(screen)).toBe(true);
+  });
+
+  it("detects 'Yes / No' pattern", () => {
+    const screen = "Do you want to proceed? Yes / No";
+    expect(isPermissionPrompt(screen)).toBe(true);
+  });
+
+  it("detects '(Y)es / (N)o' pattern", () => {
+    const screen = "Apply changes? (Y)es / (N)o";
+    expect(isPermissionPrompt(screen)).toBe(true);
+  });
+
+  it("returns false for empty screen", () => {
+    expect(isPermissionPrompt("")).toBe(false);
+  });
+
+  it("returns false for whitespace-only screen", () => {
+    expect(isPermissionPrompt("  \n  ")).toBe(false);
+  });
+
+  it("returns false for normal processing output", () => {
+    const screen = "⠋ Thinking...\nReading file\nDone";
+    expect(isPermissionPrompt(screen)).toBe(false);
+  });
+});
+
+// ── simpleHash ───────────────────────────────────────────────────────
+
+describe("simpleHash", () => {
+  it("returns same hash for identical strings", () => {
+    expect(simpleHash("hello world")).toBe(simpleHash("hello world"));
+  });
+
+  it("returns different hashes for different strings", () => {
+    expect(simpleHash("hello")).not.toBe(simpleHash("world"));
+  });
+
+  it("trims whitespace before hashing", () => {
+    expect(simpleHash("  hello  ")).toBe(simpleHash("hello"));
+  });
+
+  it("returns consistent hash for empty trimmed content", () => {
+    expect(simpleHash("")).toBe(simpleHash("   "));
+  });
+});
+
+// ── computeScreenHealth (H-HLT-1) ───────────────────────────────────
+
+describe("computeScreenHealth", () => {
+  it("returns 'unknown' for empty screen", () => {
+    const item = {};
+    expect(computeScreenHealth("", item)).toBe("unknown");
+  });
+
+  it("returns 'unknown' for whitespace-only screen", () => {
+    const item = {};
+    expect(computeScreenHealth("  \n  ", item)).toBe("unknown");
+  });
+
+  it("returns 'stalled-error' for error output", () => {
+    const item = {};
+    expect(computeScreenHealth("Error: something broke\nStack trace\nLine3", item)).toBe("stalled-error");
+  });
+
+  it("returns 'stalled-permission' for permission prompt", () => {
+    const item = {};
+    expect(computeScreenHealth("Allow Bash(rm -rf)? (Y/n)\nLine2\nLine3", item)).toBe("stalled-permission");
+  });
+
+  it("returns 'healthy' for processing output", () => {
+    const item = {};
+    expect(computeScreenHealth("⠋ Thinking about the request\nLine2\nLine3", item)).toBe("healthy");
+  });
+
+  it("returns 'stalled-empty' for idle prompt", () => {
+    const item = {};
+    expect(computeScreenHealth("Welcome to Claude\nProject: test\n❯ ", item)).toBe("stalled-empty");
+  });
+
+  it("returns 'stalled-unchanged' after threshold unchanged polls", () => {
+    const item: { lastScreenHash?: string; unchangedCount?: number } = {};
+    const staticScreen = "Some static content\nLine 2\nLine 3\nLine 4";
+
+    // First poll — records hash, returns healthy
+    const result1 = computeScreenHealth(staticScreen, item);
+    expect(result1).toBe("healthy");
+    expect(item.lastScreenHash).toBeDefined();
+
+    // Second poll — same content, count=1
+    const result2 = computeScreenHealth(staticScreen, item);
+    expect(result2).toBe("healthy");
+    expect(item.unchangedCount).toBe(1);
+
+    // Third poll — same content, count=2
+    const result3 = computeScreenHealth(staticScreen, item);
+    expect(result3).toBe("healthy");
+    expect(item.unchangedCount).toBe(2);
+
+    // Fourth poll — count hits threshold (3), returns stalled-unchanged
+    const result4 = computeScreenHealth(staticScreen, item);
+    expect(result4).toBe("stalled-unchanged");
+    expect(item.unchangedCount).toBe(3);
+  });
+
+  it("resets unchanged count when screen content changes", () => {
+    const item: { lastScreenHash?: string; unchangedCount?: number } = {};
+
+    computeScreenHealth("Content A\nLine2\nLine3\nLine4", item);
+    computeScreenHealth("Content A\nLine2\nLine3\nLine4", item);
+    expect(item.unchangedCount).toBe(1);
+
+    // Screen changes — reset
+    computeScreenHealth("Content B\nLine2\nLine3\nLine4", item);
+    expect(item.unchangedCount).toBe(0);
+  });
+
+  it("resets unchanged count when processing starts", () => {
+    const item: { lastScreenHash?: string; unchangedCount?: number } = {};
+
+    // Build up some unchanged count
+    computeScreenHealth("Static content\nLine2\nLine3\nLine4", item);
+    computeScreenHealth("Static content\nLine2\nLine3\nLine4", item);
+    expect(item.unchangedCount).toBe(1);
+
+    // Processing starts — resets count
+    computeScreenHealth("⠋ Thinking...\nLine2\nLine3", item);
+    expect(item.unchangedCount).toBe(0);
+  });
+
+  it("error takes priority over permission", () => {
+    const item = {};
+    // Screen with both error and permission indicators
+    const screen = "Error: something broke\nAllow tool? (Y/n)";
+    expect(computeScreenHealth(screen, item)).toBe("stalled-error");
+  });
+
+  it("permission takes priority over processing", () => {
+    const item = {};
+    // Screen with permission and processing indicators
+    const screen = "⠋ Thinking\nAllow Bash(test)? (Y/n)";
+    expect(computeScreenHealth(screen, item)).toBe("stalled-permission");
+  });
+
+  it("respects custom unchanged threshold", () => {
+    const item: { lastScreenHash?: string; unchangedCount?: number } = {};
+    const staticScreen = "Static\nLine2\nLine3\nLine4";
+
+    computeScreenHealth(staticScreen, item, 2);
+    computeScreenHealth(staticScreen, item, 2);
+    // At threshold=2, the second unchanged poll should trigger stalled-unchanged
+    const result = computeScreenHealth(staticScreen, item, 2);
+    expect(result).toBe("stalled-unchanged");
   });
 });

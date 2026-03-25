@@ -2338,3 +2338,131 @@ describe("executeClean readScreen diagnostics", () => {
     expect(cycles).toBeLessThan(100);
   });
 });
+
+// ── buildSnapshot screenHealth (H-HLT-1) ────────────────────────────
+
+describe("buildSnapshot screenHealth", () => {
+  const noOpCheckPr = () => null;
+  const noOpCommitTime = () => null;
+
+  function mockMux(workspaces: string = "", screenContent: string = ""): Multiplexer {
+    return {
+      isAvailable: () => true,
+      launchWorkspace: () => null,
+      splitPane: () => null,
+      sendMessage: () => true,
+      readScreen: () => screenContent,
+      listWorkspaces: () => workspaces,
+      closeWorkspace: () => true,
+    };
+  }
+
+  it("sets screenHealth to stalled-empty when screen shows empty prompt", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("BSH-1-1"));
+    orch.setState("BSH-1-1", "implementing");
+    orch.getItem("BSH-1-1")!.workspaceRef = "workspace:1";
+
+    const screenContent = "\n  ❯\n\n";
+    const mux = mockMux("workspace:1", screenContent);
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, noOpCommitTime, noOpCheckPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "BSH-1-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.screenHealth).toBe("stalled-empty");
+  });
+
+  it("sets screenHealth to stalled-permission when screen shows Y/n dialog", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("BSH-2-1"));
+    orch.setState("BSH-2-1", "implementing");
+    orch.getItem("BSH-2-1")!.workspaceRef = "workspace:2";
+
+    const screenContent = "Allow tool_name? (Y/n)\nSome context above\n";
+    const mux = mockMux("workspace:2", screenContent);
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, noOpCommitTime, noOpCheckPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "BSH-2-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.screenHealth).toBe("stalled-permission");
+  });
+
+  it("sets screenHealth to healthy when screen shows active processing", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("BSH-3-1"));
+    orch.setState("BSH-3-1", "implementing");
+    orch.getItem("BSH-3-1")!.workspaceRef = "workspace:3";
+
+    const screenContent = "⠋ Thinking about the implementation...\nReading file core/main.ts\n";
+    const mux = mockMux("workspace:3", screenContent);
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, noOpCommitTime, noOpCheckPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "BSH-3-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.screenHealth).toBe("healthy");
+  });
+
+  it("sets screenHealth to stalled-error when screen shows error output", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("BSH-4-1"));
+    orch.setState("BSH-4-1", "implementing");
+    orch.getItem("BSH-4-1")!.workspaceRef = "workspace:4";
+
+    const screenContent = "Error: FATAL crash detected\nStack trace follows\n";
+    const mux = mockMux("workspace:4", screenContent);
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, noOpCommitTime, noOpCheckPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "BSH-4-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.screenHealth).toBe("stalled-error");
+  });
+
+  it("sets screenHealth to unknown when readScreen throws", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("BSH-5-1"));
+    orch.setState("BSH-5-1", "implementing");
+    orch.getItem("BSH-5-1")!.workspaceRef = "workspace:5";
+
+    const mux: Multiplexer = {
+      isAvailable: () => true,
+      launchWorkspace: () => null,
+      splitPane: () => null,
+      sendMessage: () => true,
+      readScreen: () => { throw new Error("readScreen unavailable"); },
+      listWorkspaces: () => "workspace:5",
+      closeWorkspace: () => true,
+    };
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, noOpCommitTime, noOpCheckPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "BSH-5-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.screenHealth).toBe("unknown");
+  });
+
+  it("does not crash when readScreen throws", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("BSH-6-1"));
+    orch.setState("BSH-6-1", "implementing");
+    orch.getItem("BSH-6-1")!.workspaceRef = "workspace:6";
+
+    const mux: Multiplexer = {
+      isAvailable: () => true,
+      launchWorkspace: () => null,
+      splitPane: () => null,
+      sendMessage: () => true,
+      readScreen: () => { throw new Error("connection lost"); },
+      listWorkspaces: () => "workspace:6",
+      closeWorkspace: () => true,
+    };
+
+    // Should not throw
+    expect(() => {
+      buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, noOpCommitTime, noOpCheckPr);
+    }).not.toThrow();
+  });
+});

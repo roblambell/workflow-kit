@@ -5569,4 +5569,219 @@ describe("Orchestrator", () => {
       expect(orch.reviewWipCount).toBe(1);
     });
   });
+
+  // ── Screen health stall detection (H-HLT-1) ────────────────────
+
+  describe("screen health stall detection", () => {
+    it("emits send-message with 'Start' when screenHealth is stalled-empty", () => {
+      orch.addItem(makeTodo("SH-1-1"));
+      orch.setState("SH-1-1", "implementing");
+      const item = orch.getItem("SH-1-1")!;
+      item.workspaceRef = "workspace:1";
+
+      const actions = orch.processTransitions(
+        snapshotWith([{
+          id: "SH-1-1",
+          workerAlive: true,
+          screenHealth: "stalled-empty",
+        }]),
+      );
+
+      const sendActions = actions.filter((a) => a.type === "send-message");
+      expect(sendActions).toHaveLength(1);
+      expect(sendActions[0]!.itemId).toBe("SH-1-1");
+      expect(sendActions[0]!.message).toBe("Start");
+    });
+
+    it("emits send-message for stalled-permission", () => {
+      orch.addItem(makeTodo("SH-2-1"));
+      orch.setState("SH-2-1", "implementing");
+      const item = orch.getItem("SH-2-1")!;
+      item.workspaceRef = "workspace:2";
+
+      const actions = orch.processTransitions(
+        snapshotWith([{
+          id: "SH-2-1",
+          workerAlive: true,
+          screenHealth: "stalled-permission",
+        }]),
+      );
+
+      const sendActions = actions.filter((a) => a.type === "send-message");
+      expect(sendActions).toHaveLength(1);
+      expect(sendActions[0]!.message).toContain("Permission prompt");
+    });
+
+    it("emits send-message for stalled-error", () => {
+      orch.addItem(makeTodo("SH-3-1"));
+      orch.setState("SH-3-1", "implementing");
+      const item = orch.getItem("SH-3-1")!;
+      item.workspaceRef = "workspace:3";
+
+      const actions = orch.processTransitions(
+        snapshotWith([{
+          id: "SH-3-1",
+          workerAlive: true,
+          screenHealth: "stalled-error",
+        }]),
+      );
+
+      const sendActions = actions.filter((a) => a.type === "send-message");
+      expect(sendActions).toHaveLength(1);
+      expect(sendActions[0]!.message).toContain("Error detected");
+    });
+
+    it("emits send-message for stalled-unchanged", () => {
+      orch.addItem(makeTodo("SH-4-1"));
+      orch.setState("SH-4-1", "implementing");
+      const item = orch.getItem("SH-4-1")!;
+      item.workspaceRef = "workspace:4";
+
+      const actions = orch.processTransitions(
+        snapshotWith([{
+          id: "SH-4-1",
+          workerAlive: true,
+          screenHealth: "stalled-unchanged",
+        }]),
+      );
+
+      const sendActions = actions.filter((a) => a.type === "send-message");
+      expect(sendActions).toHaveLength(1);
+      expect(sendActions[0]!.message).toContain("not changed");
+    });
+
+    it("does NOT emit send-message for healthy screenHealth", () => {
+      orch.addItem(makeTodo("SH-5-1"));
+      orch.setState("SH-5-1", "implementing");
+      const item = orch.getItem("SH-5-1")!;
+      item.workspaceRef = "workspace:5";
+
+      const actions = orch.processTransitions(
+        snapshotWith([{
+          id: "SH-5-1",
+          workerAlive: true,
+          screenHealth: "healthy",
+        }]),
+      );
+
+      const sendActions = actions.filter((a) => a.type === "send-message");
+      expect(sendActions).toHaveLength(0);
+    });
+
+    it("does NOT emit send-message for unknown screenHealth", () => {
+      orch.addItem(makeTodo("SH-6-1"));
+      orch.setState("SH-6-1", "implementing");
+      const item = orch.getItem("SH-6-1")!;
+      item.workspaceRef = "workspace:6";
+
+      const actions = orch.processTransitions(
+        snapshotWith([{
+          id: "SH-6-1",
+          workerAlive: true,
+          screenHealth: "unknown",
+        }]),
+      );
+
+      const sendActions = actions.filter((a) => a.type === "send-message");
+      expect(sendActions).toHaveLength(0);
+    });
+
+    it("deduplicates nudges — second consecutive stall poll does NOT emit another send-message", () => {
+      orch.addItem(makeTodo("SH-7-1"));
+      orch.setState("SH-7-1", "implementing");
+      const item = orch.getItem("SH-7-1")!;
+      item.workspaceRef = "workspace:7";
+
+      // First poll — should emit nudge
+      const actions1 = orch.processTransitions(
+        snapshotWith([{
+          id: "SH-7-1",
+          workerAlive: true,
+          screenHealth: "stalled-empty",
+        }]),
+      );
+      expect(actions1.filter((a) => a.type === "send-message")).toHaveLength(1);
+      expect(item.stallDetectedAt).toBeDefined();
+
+      // Second poll — same stall, should NOT emit another nudge
+      const actions2 = orch.processTransitions(
+        snapshotWith([{
+          id: "SH-7-1",
+          workerAlive: true,
+          screenHealth: "stalled-empty",
+        }]),
+      );
+      expect(actions2.filter((a) => a.type === "send-message")).toHaveLength(0);
+    });
+
+    it("clears stallDetectedAt when worker recovers to healthy", () => {
+      orch.addItem(makeTodo("SH-8-1"));
+      orch.setState("SH-8-1", "implementing");
+      const item = orch.getItem("SH-8-1")!;
+      item.workspaceRef = "workspace:8";
+
+      // First poll — stall detected
+      orch.processTransitions(
+        snapshotWith([{
+          id: "SH-8-1",
+          workerAlive: true,
+          screenHealth: "stalled-empty",
+        }]),
+      );
+      expect(item.stallDetectedAt).toBeDefined();
+
+      // Second poll — worker recovered
+      orch.processTransitions(
+        snapshotWith([{
+          id: "SH-8-1",
+          workerAlive: true,
+          screenHealth: "healthy",
+        }]),
+      );
+      expect(item.stallDetectedAt).toBeUndefined();
+
+      // Third poll — stall again → should emit new nudge (fresh stall)
+      const actions3 = orch.processTransitions(
+        snapshotWith([{
+          id: "SH-8-1",
+          workerAlive: true,
+          screenHealth: "stalled-empty",
+        }]),
+      );
+      expect(actions3.filter((a) => a.type === "send-message")).toHaveLength(1);
+    });
+
+    it("executeSendMessage sends message to worker via deps", () => {
+      orch.addItem(makeTodo("SH-9-1"));
+      orch.setState("SH-9-1", "implementing");
+      const item = orch.getItem("SH-9-1")!;
+      item.workspaceRef = "workspace:9";
+
+      const deps = mockDeps();
+      const result = orch.executeAction(
+        { type: "send-message", itemId: "SH-9-1", message: "Start" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(deps.sendMessage).toHaveBeenCalledWith("workspace:9", "Start");
+    });
+
+    it("executeSendMessage fails gracefully when no workspaceRef", () => {
+      orch.addItem(makeTodo("SH-10-1"));
+      orch.setState("SH-10-1", "implementing");
+      // No workspaceRef set
+
+      const deps = mockDeps();
+      const result = orch.executeAction(
+        { type: "send-message", itemId: "SH-10-1", message: "Start" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("No workspace reference");
+    });
+  });
 });
