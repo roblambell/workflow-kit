@@ -4442,5 +4442,327 @@ describe("Orchestrator", () => {
         expect(resumeAction).toBeUndefined();
       });
     });
+
+    // ── Stack comment integration (M-STK-6) ────────────────────────────
+
+    describe("buildStackChain", () => {
+      it("builds [A, B] chain when B is stacked on A", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 11;
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        const chain = orch.buildStackChain("A-1-2");
+
+        expect(chain).toEqual([
+          { id: "A-1-1", prNumber: 10, title: "TODO A-1-1" },
+          { id: "A-1-2", prNumber: 11, title: "TODO A-1-2" },
+        ]);
+      });
+
+      it("builds [A, B, C] chain for three-level stack", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.addItem(makeTodo("A-1-3", ["A-1-2"]));
+        orch.setState("A-1-1", "review-pending");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 11;
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.setState("A-1-3", "ci-pending");
+        orch.getItem("A-1-3")!.prNumber = 12;
+        orch.getItem("A-1-3")!.baseBranch = "todo/A-1-2";
+
+        const chain = orch.buildStackChain("A-1-3");
+
+        expect(chain).toEqual([
+          { id: "A-1-1", prNumber: 10, title: "TODO A-1-1" },
+          { id: "A-1-2", prNumber: 11, title: "TODO A-1-2" },
+          { id: "A-1-3", prNumber: 12, title: "TODO A-1-3" },
+        ]);
+      });
+
+      it("returns same chain regardless of which item you start from", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 11;
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        const fromTop = orch.buildStackChain("A-1-2");
+        const fromBottom = orch.buildStackChain("A-1-1");
+
+        expect(fromTop).toEqual(fromBottom);
+      });
+
+      it("excludes merged/done items from the chain", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merged");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 11;
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        const chain = orch.buildStackChain("A-1-2");
+
+        expect(chain).toEqual([
+          { id: "A-1-2", prNumber: 11, title: "TODO A-1-2" },
+        ]);
+      });
+
+      it("excludes items without PR numbers", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "implementing");
+        // A-1-2 has no prNumber yet
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        const chain = orch.buildStackChain("A-1-1");
+
+        expect(chain).toEqual([
+          { id: "A-1-1", prNumber: 10, title: "TODO A-1-1" },
+        ]);
+      });
+
+      it("returns empty array for unknown item", () => {
+        const chain = orch.buildStackChain("nonexistent");
+        expect(chain).toEqual([]);
+      });
+
+      it("returns single-item chain for non-stacked item", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.setState("A-1-1", "ci-passed");
+        orch.getItem("A-1-1")!.prNumber = 10;
+
+        const chain = orch.buildStackChain("A-1-1");
+
+        expect(chain).toEqual([
+          { id: "A-1-1", prNumber: 10, title: "TODO A-1-1" },
+        ]);
+      });
+    });
+
+    describe("stack comment sync on PR open", () => {
+      it("emits sync-stack-comments action when stacked item transitions to pr-open", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "implementing");
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        const actions = orch.processTransitions(
+          snapshotWith([
+            { id: "A-1-1", prNumber: 10, prState: "open", ciStatus: "pass" },
+            { id: "A-1-2", prNumber: 11, prState: "open", workerAlive: true },
+          ]),
+        );
+
+        expect(orch.getItem("A-1-2")!.state).toBe("pr-open");
+        const syncAction = actions.find(
+          (a) => a.type === "sync-stack-comments" && a.itemId === "A-1-2",
+        );
+        expect(syncAction).toBeDefined();
+      });
+
+      it("does NOT emit sync-stack-comments for non-stacked items", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.setState("A-1-1", "implementing");
+        orch.getItem("A-1-1")!.workspaceRef = "workspace:1";
+        // No baseBranch — not stacked
+
+        const actions = orch.processTransitions(
+          snapshotWith([
+            { id: "A-1-1", prNumber: 10, prState: "open", workerAlive: true },
+          ]),
+        );
+
+        expect(orch.getItem("A-1-1")!.state).toBe("pr-open");
+        const syncAction = actions.find(
+          (a) => a.type === "sync-stack-comments",
+        );
+        expect(syncAction).toBeUndefined();
+      });
+
+      it("executeSyncStackComments calls deps.syncStackComments with correct chain", () => {
+        const syncStackComments = vi.fn();
+        const deps = mockDeps({ syncStackComments });
+
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-passed");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "pr-open");
+        orch.getItem("A-1-2")!.prNumber = 11;
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        const result = orch.executeAction(
+          { type: "sync-stack-comments", itemId: "A-1-2" },
+          defaultCtx,
+          deps,
+        );
+
+        expect(result.success).toBe(true);
+        expect(syncStackComments).toHaveBeenCalledTimes(1);
+        expect(syncStackComments).toHaveBeenCalledWith("main", [
+          { id: "A-1-1", prNumber: 10, title: "TODO A-1-1" },
+          { id: "A-1-2", prNumber: 11, title: "TODO A-1-2" },
+        ]);
+      });
+
+      it("executeSyncStackComments is no-op when syncStackComments dep not wired", () => {
+        const deps = mockDeps(); // no syncStackComments
+
+        orch.addItem(makeTodo("A-1-1"));
+        orch.setState("A-1-1", "pr-open");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.getItem("A-1-1")!.baseBranch = "todo/X-1-1";
+
+        const result = orch.executeAction(
+          { type: "sync-stack-comments", itemId: "A-1-1" },
+          defaultCtx,
+          deps,
+        );
+
+        expect(result.success).toBe(true);
+      });
+
+      it("executeSyncStackComments skips single-item chains", () => {
+        const syncStackComments = vi.fn();
+        const deps = mockDeps({ syncStackComments });
+
+        orch.addItem(makeTodo("A-1-1"));
+        orch.setState("A-1-1", "pr-open");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        // No baseBranch, no one stacked on it — chain is [A-1-1] (length 1)
+
+        const result = orch.executeAction(
+          { type: "sync-stack-comments", itemId: "A-1-1" },
+          defaultCtx,
+          deps,
+        );
+
+        expect(result.success).toBe(true);
+        expect(syncStackComments).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("stack comment sync on merge", () => {
+      it("executeMerge calls syncStackComments on remaining chain after restacking", () => {
+        const syncStackComments = vi.fn();
+        const rebaseOnto = vi.fn(() => true);
+        const forcePush = vi.fn(() => true);
+        const deps = mockDeps({ syncStackComments, rebaseOnto, forcePush });
+
+        // A → B → C: A is merging, B stacked on A, C stacked on B
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.addItem(makeTodo("A-1-3", ["A-1-2"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 11;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.setState("A-1-3", "ci-pending");
+        orch.getItem("A-1-3")!.prNumber = 12;
+        orch.getItem("A-1-3")!.baseBranch = "todo/A-1-2";
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 10 },
+          defaultCtx,
+          deps,
+        );
+
+        // syncStackComments should be called with the remaining chain [B, C]
+        expect(syncStackComments).toHaveBeenCalledTimes(1);
+        expect(syncStackComments).toHaveBeenCalledWith("main", [
+          { id: "A-1-2", prNumber: 11, title: "TODO A-1-2" },
+          { id: "A-1-3", prNumber: 12, title: "TODO A-1-3" },
+        ]);
+      });
+
+      it("executeMerge does NOT call syncStackComments for non-stacked merges", () => {
+        const syncStackComments = vi.fn();
+        const deps = mockDeps({ syncStackComments });
+
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 11;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        // No baseBranch — not stacked
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 10 },
+          defaultCtx,
+          deps,
+        );
+
+        expect(syncStackComments).not.toHaveBeenCalled();
+      });
+
+      it("executeMerge skips syncStackComments when restack fails (conflict)", () => {
+        const syncStackComments = vi.fn();
+        const rebaseOnto = vi.fn(() => false); // conflict
+        const forcePush = vi.fn(() => true);
+        const deps = mockDeps({ syncStackComments, rebaseOnto, forcePush });
+
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 11;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 10 },
+          defaultCtx,
+          deps,
+        );
+
+        // Restack failed — don't sync comments (worker needs to resolve manually)
+        expect(syncStackComments).not.toHaveBeenCalled();
+      });
+
+      it("executeMerge skips syncStackComments when only one item remains after restack", () => {
+        const syncStackComments = vi.fn();
+        const rebaseOnto = vi.fn(() => true);
+        const forcePush = vi.fn(() => true);
+        const deps = mockDeps({ syncStackComments, rebaseOnto, forcePush });
+
+        // A → B (simple 2-item stack). After A merges, B is alone.
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 10;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 11;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 10 },
+          defaultCtx,
+          deps,
+        );
+
+        // Chain is just [B] after A merged — single item, no stack to show
+        expect(syncStackComments).not.toHaveBeenCalled();
+      });
+    });
   });
 });

@@ -121,7 +121,8 @@ export type ActionType =
   | "clean"
   | "rebase"
   | "daemon-rebase"
-  | "retry";
+  | "retry"
+  | "sync-stack-comments";
 
 export interface Action {
   type: ActionType;
@@ -185,6 +186,12 @@ export interface OrchestratorDeps {
   rebaseOnto?: (worktreePath: string, newBase: string, oldBase: string, branch: string) => boolean;
   /** Force-push the current branch in a worktree. Returns true on success. */
   forcePush?: (worktreePath: string) => boolean;
+  /**
+   * Sync stack navigation comments on all PRs in a stack.
+   * Injected (not imported) for test isolation. Production binds this to
+   * syncStackComments from core/stack-comments.ts with a real GhCommentClient.
+   */
+  syncStackComments?: (baseBranch: string, stack: Array<{ prNumber: number; title: string }>) => void;
 }
 
 /** Result of executing a single action. */
@@ -493,8 +500,14 @@ export class Orchestrator {
     if (snap?.prNumber && snap.prState === "open") {
       item.prNumber = snap.prNumber;
       this.transition(item, "pr-open", snap?.eventTime);
+      const actions: Action[] = [];
+      // Stacked PR just opened — sync stack navigation comments on all PRs in the chain
+      if (item.baseBranch) {
+        actions.push({ type: "sync-stack-comments", itemId: item.id });
+      }
       // Fall through to handle CI status in the same cycle
-      return this.handlePrLifecycle(item, snap);
+      actions.push(...this.handlePrLifecycle(item, snap));
+      return actions;
     }
     // If worker died without a PR, retry or mark stuck
     if (snap && snap.workerAlive === false && !snap.prNumber) {
@@ -766,6 +779,8 @@ export class Orchestrator {
         return this.executeDaemonRebase(item, action, ctx, deps);
       case "retry":
         return this.executeRetry(item, ctx, deps);
+      case "sync-stack-comments":
+        return this.executeSyncStackComments(item, deps);
     }
   }
 
@@ -848,6 +863,7 @@ export class Orchestrator {
     // These items had baseBranch set to the merged dep's branch — replay only
     // their unique commits onto main, avoiding duplicate commits from squash merge.
     const restackedIds = new Set<string>();
+    const successfulRestacks = new Set<string>();
     const depBranch = `todo/${item.id}`;
 
     for (const other of this.getAllItems()) {
@@ -877,6 +893,7 @@ export class Orchestrator {
         if (success) {
           deps.forcePush(otherWorktreePath);
           other.baseBranch = undefined; // no longer stacked
+          successfulRestacks.add(other.id);
         } else {
           // Conflict — send worker manual rebase instructions
           if (other.workspaceRef) {
@@ -953,6 +970,20 @@ export class Orchestrator {
           }
         }
         // Not conflicting — skip, no action needed
+      }
+    }
+
+    // Update stack navigation comments on remaining stacked PRs.
+    // After restacking, the merged item is gone and the chain has changed.
+    if (deps.syncStackComments && successfulRestacks.size > 0) {
+      const synced = new Set<string>();
+      for (const id of successfulRestacks) {
+        const chain = this.buildStackChain(id);
+        if (chain.length < 2) continue; // single item — no stack to show
+        const rootKey = chain[0]!.id;
+        if (synced.has(rootKey)) continue; // already synced this chain
+        synced.add(rootKey);
+        deps.syncStackComments("main", chain);
       }
     }
 
@@ -1137,6 +1168,33 @@ export class Orchestrator {
     return { success: true };
   }
 
+  /** Sync stack navigation comments on all PRs in the item's stack chain. */
+  private executeSyncStackComments(
+    item: OrchestratorItem,
+    deps: OrchestratorDeps,
+  ): ActionResult {
+    if (!deps.syncStackComments) {
+      return { success: true }; // no-op when not wired
+    }
+
+    const chain = this.buildStackChain(item.id);
+    if (chain.length < 2) {
+      return { success: true }; // single item — no stack to show
+    }
+
+    // Base branch: the root item's baseBranch (if still stacked) or "main"
+    const rootItem = this.items.get(chain[0]!.id);
+    const baseBranch = rootItem?.baseBranch ?? "main";
+
+    try {
+      deps.syncStackComments(baseBranch, chain);
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { success: false, error: `Stack comment sync failed: ${msg}` };
+    }
+  }
+
   /**
    * Priority-ordered merge queue: if multiple merge actions are pending,
    * keep only the highest-priority one. Revert deferred items from "merging"
@@ -1210,6 +1268,51 @@ export class Orchestrator {
     }
 
     return { canStack: true, baseBranch: `todo/${stackableDep.id}` };
+  }
+
+  /**
+   * Build the ordered stack chain containing the given item.
+   * Walks up via baseBranch to find the root, then walks down to find all
+   * stacked descendants. Returns entries from bottom (closest to base) to top.
+   * Only includes active items with a PR number (merged/done items are excluded).
+   */
+  buildStackChain(itemId: string): Array<{ id: string; prNumber: number; title: string }> {
+    const item = this.items.get(itemId);
+    if (!item) return [];
+
+    // Walk up from item to root (root = item with no baseBranch or whose dep is unknown)
+    const upVisited = new Set<string>();
+    let root: OrchestratorItem = item;
+    upVisited.add(root.id);
+
+    while (root.baseBranch) {
+      const depId = root.baseBranch.replace(/^todo\//, "");
+      const dep = this.items.get(depId);
+      if (!dep || upVisited.has(dep.id)) break;
+      upVisited.add(dep.id);
+      root = dep;
+    }
+
+    // Walk down from root to build the full linear chain (separate visited set)
+    const chain: OrchestratorItem[] = [root];
+    const downVisited = new Set<string>([root.id]);
+    let current = root;
+
+    for (;;) {
+      const parentBranch = `todo/${current.id}`;
+      const child = this.getAllItems().find(
+        (i) => i.baseBranch === parentBranch && !downVisited.has(i.id),
+      );
+      if (!child) break;
+      downVisited.add(child.id);
+      chain.push(child);
+      current = child;
+    }
+
+    // Filter to active items with PRs (exclude merged/done — their PRs are closed)
+    return chain
+      .filter((i) => i.prNumber != null && i.state !== "done" && i.state !== "merged")
+      .map((i) => ({ id: i.id, prNumber: i.prNumber!, title: i.todo.title }));
   }
 
   /** Launch ready items up to WIP limit. Returns launch actions. */
