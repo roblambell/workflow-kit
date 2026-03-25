@@ -182,7 +182,7 @@ What ninthwave will not become:
 
 3. **Not a CI/CD replacement.** ninthwave monitors your CI pipeline. It doesn't run tests or build code. The worker runs tests locally; CI is the authoritative check.
 
-4. **Not a code review tool.** ninthwave dispatches review feedback to workers. It doesn't perform reviews. It integrates with review skills you bring. The human reviewer is always in the loop.
+4. **Not a code review tool.** ninthwave orchestrates review workers — it dispatches them against PRs and manages their lifecycle — but the review logic itself lives in the review worker agent prompt (`agents/review-worker.md`), not in the orchestrator. ninthwave never parses diffs, classifies findings, or decides what's a blocker. The human reviewer is always in the loop.
 
 5. **Not a project management tool.** `.ninthwave/todos/` is a lightweight work queue, not Jira. For teams with existing task management, ninthwave connects via adapters.
 
