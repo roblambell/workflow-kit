@@ -9,6 +9,7 @@ import { DEFAULT_LOC_EXTENSIONS } from "./types.ts";
 export const KNOWN_CONFIG_KEYS = new Set([
   "LOC_EXTENSIONS",
   "webhook_url",
+  "sandbox_enabled",
   "sandbox_extra_rw_paths",
   "sandbox_extra_ro_paths",
   "sandbox_extra_hosts",

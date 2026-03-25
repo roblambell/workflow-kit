@@ -243,20 +243,40 @@ export function wrapWithSandbox(
 ): string {
   const { disabled = false, runner, warnFn } = options;
 
-  // 1. Opt-out: --no-sandbox
+  // Sandbox is opt-IN for now — the default nono policy is too restrictive
+  // (claude needs write access to ~/.claude, temp dirs, etc.).
+  // Enable via .ninthwave/config: sandbox_enabled=true
+  // TODO: Create a proper nono profile for claude workers.
   if (disabled) return command;
 
-  // 2. Check nono availability
+  // Check if explicitly opted in via config
+  const configPath = join(projectRoot, ".ninthwave", "config");
+  let explicitlyEnabled = false;
+  if (existsSync(configPath)) {
+    const content = readFileSync(configPath, "utf-8");
+    for (const line of content.split("\n")) {
+      const eqIdx = line.indexOf("=");
+      if (eqIdx === -1) continue;
+      const key = line.slice(0, eqIdx).trim();
+      const val = line.slice(eqIdx + 1).trim().replace(/^["']/, "").replace(/["']$/, "");
+      if (key === "sandbox_enabled" && val === "true") {
+        explicitlyEnabled = true;
+      }
+    }
+  }
+  if (!explicitlyEnabled) return command;
+
+  // Check nono availability
   if (!isNonoAvailable(runner)) {
     warnOnceNoSandbox(warnFn);
     return command;
   }
 
-  // 3. Build config
+  // Build config
   const config = buildDefaultConfig(worktreePath, projectRoot);
   const finalConfig = applySandboxOverrides(projectRoot, config);
 
-  // 4. Wrap
+  // Wrap
   return buildSandboxCommand(finalConfig, command);
 }
 

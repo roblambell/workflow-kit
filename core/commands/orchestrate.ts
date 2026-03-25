@@ -1359,6 +1359,7 @@ export async function cmdOrchestrate(
     prComment: (repoRoot, prNumber, body) => prComment(repoRoot, prNumber, body),
     sendMessage: (ref, msg) => mux.sendMessage(ref, msg),
     closeWorkspace: (ref) => mux.closeWorkspace(ref),
+    readScreen: (ref, lines) => mux.readScreen(ref, lines),
     fetchOrigin,
     ffMerge,
     checkPrMergeable,

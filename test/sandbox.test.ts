@@ -274,9 +274,23 @@ describe("wrapWithSandbox", () => {
     expect(result).toBe("claude --agent");
   });
 
-  it("returns original command when nono not installed and warns once", () => {
+  it("returns original command when sandbox not explicitly enabled", () => {
     const warnings: string[] = [];
     const result = wrapWithSandbox("claude --agent", "/wt", "/proj", {
+      runner: nonoInstalled(),
+      warnFn: (msg) => warnings.push(msg),
+    });
+    expect(result).toBe("claude --agent");
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("returns original command when nono not installed and warns once", () => {
+    const repo = setupTempRepo();
+    mkdirSync(join(repo, ".ninthwave"), { recursive: true });
+    writeFileSync(join(repo, ".ninthwave", "config"), "sandbox_enabled=true\n");
+
+    const warnings: string[] = [];
+    const result = wrapWithSandbox("claude --agent", "/wt", repo, {
       runner: nonoMissing(),
       warnFn: (msg) => warnings.push(msg),
     });
@@ -286,20 +300,27 @@ describe("wrapWithSandbox", () => {
   });
 
   it("warns only once across multiple calls when nono missing", () => {
+    const repo = setupTempRepo();
+    mkdirSync(join(repo, ".ninthwave"), { recursive: true });
+    writeFileSync(join(repo, ".ninthwave", "config"), "sandbox_enabled=true\n");
+
     const warnings: string[] = [];
-    wrapWithSandbox("cmd1", "/wt", "/proj", {
+    wrapWithSandbox("cmd1", "/wt", repo, {
       runner: nonoMissing(),
       warnFn: (msg) => warnings.push(msg),
     });
-    wrapWithSandbox("cmd2", "/wt", "/proj", {
+    wrapWithSandbox("cmd2", "/wt", repo, {
       runner: nonoMissing(),
       warnFn: (msg) => warnings.push(msg),
     });
     expect(warnings).toHaveLength(1);
   });
 
-  it("wraps command with nono when available", () => {
+  it("wraps command with nono when explicitly enabled", () => {
     const repo = setupTempRepo();
+    mkdirSync(join(repo, ".ninthwave"), { recursive: true });
+    writeFileSync(join(repo, ".ninthwave", "config"), "sandbox_enabled=true\n");
+
     const result = wrapWithSandbox("claude --agent", "/tmp/worktree", repo, {
       runner: nonoInstalled(),
     });
@@ -315,7 +336,7 @@ describe("wrapWithSandbox", () => {
     mkdirSync(join(repo, ".ninthwave"), { recursive: true });
     writeFileSync(
       join(repo, ".ninthwave", "config"),
-      "sandbox_extra_hosts=custom.api.com\n",
+      "sandbox_enabled=true\nsandbox_extra_hosts=custom.api.com\n",
     );
 
     const result = wrapWithSandbox("claude --agent", "/tmp/worktree", repo, {

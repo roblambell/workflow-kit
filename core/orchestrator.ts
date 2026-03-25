@@ -59,6 +59,8 @@ export interface OrchestratorItem {
   detectedTime?: string;
   /** Detection latency in milliseconds (detectedTime - eventTime). */
   detectionLatencyMs?: number;
+  /** Last screen output captured when worker died (for diagnostics). */
+  lastScreenOutput?: string;
 }
 
 export interface OrchestratorConfig {
@@ -164,6 +166,8 @@ export interface OrchestratorDeps {
    * Returns true on success, false on failure (caller should fall back to worker rebase).
    */
   daemonRebase?: (worktreePath: string, branch: string) => boolean;
+  /** Read the last N lines of a worker's terminal screen for diagnostics. */
+  readScreen?: (workspaceRef: string, lines?: number) => string;
   /** Log a warning message (for situations that need human attention). */
   warn?: (message: string) => void;
 }
@@ -858,6 +862,17 @@ export class Orchestrator {
     ctx: ExecutionContext,
     deps: OrchestratorDeps,
   ): ActionResult {
+    // Read screen before closing — capture error output for stuck diagnostics
+    if (item.workspaceRef && deps.readScreen) {
+      try {
+        const screen = deps.readScreen(item.workspaceRef, 50);
+        if (screen) {
+          item.lastScreenOutput = screen;
+          deps.warn?.(`[${item.id}] Permanently stuck. Screen output:\n${screen}`);
+        }
+      } catch { /* best-effort */ }
+    }
+
     const workspaceClosed = item.workspaceRef
       ? deps.closeWorkspace(item.workspaceRef)
       : null; // null = not attempted (no workspace to close)
@@ -947,6 +962,17 @@ export class Orchestrator {
     ctx: ExecutionContext,
     deps: OrchestratorDeps,
   ): ActionResult {
+    // Read screen before closing — capture error output for diagnostics
+    if (item.workspaceRef && deps.readScreen) {
+      try {
+        const screen = deps.readScreen(item.workspaceRef, 50);
+        if (screen) {
+          item.lastScreenOutput = screen;
+          deps.warn?.(`[${item.id}] Worker died. Screen output:\n${screen}`);
+        }
+      } catch { /* best-effort */ }
+    }
+
     // Close the old workspace if it exists
     if (item.workspaceRef) {
       deps.closeWorkspace(item.workspaceRef);
