@@ -5,7 +5,8 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { BOLD, RESET, GREEN, RED, YELLOW, CYAN, DIM } from "../output.ts";
-import type { RunMetrics } from "../analytics.ts";
+import type { RunMetrics, DetectionLatencyStats } from "../analytics.ts";
+import { computeDetectionLatency } from "../analytics.ts";
 
 // ── Dependencies (injectable for testing) ─────────────────────────────
 
@@ -31,6 +32,8 @@ export interface AnalyticsSummary {
   totalTokensUsed: number | null;
   /** Total cost in USD across all runs. Null when no cost data is available. */
   totalCostUsd: number | null;
+  /** Aggregate detection latency across all runs. Null when no latency data. */
+  detectionLatency: DetectionLatencyStats | null;
   runs: RunMetrics[];
 }
 
@@ -114,6 +117,7 @@ export function computeSummary(runs: RunMetrics[]): AnalyticsSummary {
       latestCiRetryRate: 0,
       totalTokensUsed: null,
       totalCostUsd: null,
+      detectionLatency: null,
       runs: [],
     };
   }
@@ -152,6 +156,14 @@ export function computeSummary(runs: RunMetrics[]): AnalyticsSummary {
     ? runsWithCost.reduce((sum, r) => sum + r.totalCostUsd!, 0)
     : null;
 
+  // Aggregate detection latency across all runs — collect all per-item latencies
+  const allLatencies = runs.flatMap((r) =>
+    r.items
+      .map((i) => i.detectionLatencyMs)
+      .filter((ms): ms is number => ms != null && ms > 0),
+  );
+  const detectionLatency = computeDetectionLatency(allLatencies);
+
   return {
     totalRuns: runs.length,
     totalItemsShipped,
@@ -164,6 +176,7 @@ export function computeSummary(runs: RunMetrics[]): AnalyticsSummary {
     latestCiRetryRate,
     totalTokensUsed,
     totalCostUsd,
+    detectionLatency,
     runs,
   };
 }
@@ -290,6 +303,17 @@ export function formatAnalytics(summary: AnalyticsSummary, showAll: boolean): st
   }
   if (summary.totalTokensUsed != null) {
     lines.push(`  ${CYAN}Total tokens:${RESET}         ${formatTokens(summary.totalTokensUsed)}`);
+  }
+
+  // Detection latency — only shown when latency data exists
+  if (summary.detectionLatency) {
+    const dl = summary.detectionLatency;
+    const slowTag = dl.slowDetection ? `  ${RED}⚠ slow detection${RESET}` : "";
+    lines.push(
+      `  ${CYAN}Detection latency:${RESET}    ` +
+      `p50=${formatDuration(dl.p50Ms)}  p95=${formatDuration(dl.p95Ms)}  max=${formatDuration(dl.maxMs)}` +
+      `  ${DIM}(${dl.sampleCount} samples)${RESET}${slowTag}`,
+    );
   }
 
   lines.push("");

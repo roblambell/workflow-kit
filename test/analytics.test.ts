@@ -7,10 +7,14 @@ import {
   writeRunMetrics,
   commitAnalyticsFiles,
   parseCostSummary,
+  percentile,
+  computeDetectionLatency,
+  SLOW_DETECTION_THRESHOLD_MS,
   type RunMetrics,
   type AnalyticsIO,
   type AnalyticsCommitDeps,
   type CostSummary,
+  type DetectionLatencyStats,
 } from "../core/analytics.ts";
 import {
   loadRuns,
@@ -513,6 +517,7 @@ function makeRun(overrides: Partial<RunMetrics> = {}): RunMetrics {
     ],
     totalTokensUsed: null,
     totalCostUsd: null,
+    detectionLatency: null,
     ...overrides,
   };
 }
@@ -1650,5 +1655,377 @@ describe("orchestrateLoop cost capture", () => {
     expect(written.items[0]!.costUsd).toBeNull();
     expect(written.totalTokensUsed).toBeNull();
     expect(written.totalCostUsd).toBeNull();
+  });
+});
+
+// ── percentile helper ──────────────────────────────────────────────
+
+describe("percentile", () => {
+  it("returns 0 for empty array", () => {
+    expect(percentile([], 50)).toBe(0);
+  });
+
+  it("returns the single value for single-element array", () => {
+    expect(percentile([42], 50)).toBe(42);
+    expect(percentile([42], 95)).toBe(42);
+  });
+
+  it("computes p50 (median) correctly for odd-length array", () => {
+    expect(percentile([10, 20, 30, 40, 50], 50)).toBe(30);
+  });
+
+  it("computes p50 (median) correctly for even-length array", () => {
+    // nearest-rank: ceil(0.5 * 4) - 1 = 1 → index 1
+    expect(percentile([10, 20, 30, 40], 50)).toBe(20);
+  });
+
+  it("computes p95 correctly", () => {
+    const sorted = Array.from({ length: 100 }, (_, i) => (i + 1) * 100);
+    // p95: ceil(0.95 * 100) - 1 = 94 → value 9500
+    expect(percentile(sorted, 95)).toBe(9500);
+  });
+
+  it("returns max for p100", () => {
+    expect(percentile([1, 2, 3, 4, 5], 100)).toBe(5);
+  });
+});
+
+// ── computeDetectionLatency ────────────────────────────────────────
+
+describe("computeDetectionLatency", () => {
+  it("returns null for empty latency array", () => {
+    expect(computeDetectionLatency([])).toBeNull();
+  });
+
+  it("computes percentiles for a single value", () => {
+    const stats = computeDetectionLatency([5000])!;
+    expect(stats.p50Ms).toBe(5000);
+    expect(stats.p95Ms).toBe(5000);
+    expect(stats.maxMs).toBe(5000);
+    expect(stats.sampleCount).toBe(1);
+    expect(stats.slowDetection).toBe(false);
+  });
+
+  it("computes p50, p95, and max correctly for multiple values", () => {
+    // 20 values: 1000, 2000, ..., 20000
+    const latencies = Array.from({ length: 20 }, (_, i) => (i + 1) * 1000);
+    const stats = computeDetectionLatency(latencies)!;
+
+    expect(stats.p50Ms).toBe(10000); // ceil(0.5 * 20) - 1 = 9 → 10000
+    expect(stats.p95Ms).toBe(19000); // ceil(0.95 * 20) - 1 = 18 → 19000
+    expect(stats.maxMs).toBe(20000);
+    expect(stats.sampleCount).toBe(20);
+  });
+
+  it("flags slow detection when p95 exceeds threshold", () => {
+    // All values above 60s
+    const latencies = [61_000, 62_000, 63_000, 64_000, 65_000];
+    const stats = computeDetectionLatency(latencies)!;
+
+    expect(stats.slowDetection).toBe(true);
+    expect(stats.p95Ms).toBeGreaterThan(SLOW_DETECTION_THRESHOLD_MS);
+  });
+
+  it("does not flag slow detection when p95 is below threshold", () => {
+    const latencies = [1000, 2000, 3000, 4000, 5000];
+    const stats = computeDetectionLatency(latencies)!;
+
+    expect(stats.slowDetection).toBe(false);
+    expect(stats.p95Ms).toBeLessThanOrEqual(SLOW_DETECTION_THRESHOLD_MS);
+  });
+
+  it("uses custom threshold when provided", () => {
+    const latencies = [5000, 6000, 7000, 8000, 9000];
+    // Default threshold (60s): not slow
+    expect(computeDetectionLatency(latencies)!.slowDetection).toBe(false);
+    // Custom threshold (4s): slow
+    expect(computeDetectionLatency(latencies, 4000)!.slowDetection).toBe(true);
+  });
+
+  it("sorts latencies before computing percentiles", () => {
+    // Unsorted input — should still compute correctly
+    const latencies = [50000, 10000, 30000, 20000, 40000];
+    const stats = computeDetectionLatency(latencies)!;
+
+    expect(stats.p50Ms).toBe(30000);
+    expect(stats.maxMs).toBe(50000);
+  });
+});
+
+// ── collectRunMetrics with detection latency ─────────────────────────
+
+describe("collectRunMetrics with detection latency", () => {
+  const config: OrchestratorConfig = {
+    wipLimit: 4,
+    mergeStrategy: "asap",
+    maxCiRetries: 2,
+  };
+
+  it("includes latency percentiles when items have detectionLatencyMs", () => {
+    const items: OrchestratorItem[] = [
+      {
+        id: "T-1-1",
+        todo: makeTodo("T-1-1"),
+        state: "done",
+        ciFailCount: 0,
+        lastTransition: new Date().toISOString(),
+        detectionLatencyMs: 5000,
+      },
+      {
+        id: "T-1-2",
+        todo: makeTodo("T-1-2"),
+        state: "done",
+        ciFailCount: 0,
+        lastTransition: new Date().toISOString(),
+        detectionLatencyMs: 15000,
+      },
+      {
+        id: "T-1-3",
+        todo: makeTodo("T-1-3"),
+        state: "done",
+        ciFailCount: 0,
+        lastTransition: new Date().toISOString(),
+        detectionLatencyMs: 45000,
+      },
+    ];
+
+    const metrics = collectRunMetrics(
+      items,
+      config,
+      "2026-03-24T10:00:00.000Z",
+      "2026-03-24T10:05:00.000Z",
+      "claude",
+    );
+
+    expect(metrics.detectionLatency).not.toBeNull();
+    expect(metrics.detectionLatency!.sampleCount).toBe(3);
+    expect(metrics.detectionLatency!.p50Ms).toBe(15000);
+    expect(metrics.detectionLatency!.maxMs).toBe(45000);
+    expect(metrics.detectionLatency!.slowDetection).toBe(false);
+  });
+
+  it("flags slow detection when p95 exceeds 60s", () => {
+    const items: OrchestratorItem[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `T-1-${i + 1}`,
+      todo: makeTodo(`T-1-${i + 1}`),
+      state: "done" as const,
+      ciFailCount: 0,
+      lastTransition: new Date().toISOString(),
+      // Most items fast, but top items slow: values 5000, 10000, ..., 100000
+      detectionLatencyMs: (i + 1) * 5000,
+    }));
+
+    const metrics = collectRunMetrics(
+      items,
+      config,
+      "2026-03-24T10:00:00.000Z",
+      "2026-03-24T10:05:00.000Z",
+      "claude",
+    );
+
+    expect(metrics.detectionLatency).not.toBeNull();
+    // p95 of [5000, 10000, ..., 100000] = 95000 > 60000
+    expect(metrics.detectionLatency!.p95Ms).toBeGreaterThan(60_000);
+    expect(metrics.detectionLatency!.slowDetection).toBe(true);
+  });
+
+  it("returns null detectionLatency when no items have latency data", () => {
+    const items: OrchestratorItem[] = [
+      {
+        id: "T-1-1",
+        todo: makeTodo("T-1-1"),
+        state: "done",
+        ciFailCount: 0,
+        lastTransition: new Date().toISOString(),
+        // No detectionLatencyMs
+      },
+    ];
+
+    const metrics = collectRunMetrics(
+      items,
+      config,
+      "2026-03-24T10:00:00.000Z",
+      "2026-03-24T10:05:00.000Z",
+      "claude",
+    );
+
+    expect(metrics.detectionLatency).toBeNull();
+  });
+
+  it("includes per-item detectionLatencyMs in item metrics", () => {
+    const items: OrchestratorItem[] = [
+      {
+        id: "T-1-1",
+        todo: makeTodo("T-1-1"),
+        state: "done",
+        ciFailCount: 0,
+        lastTransition: new Date().toISOString(),
+        detectionLatencyMs: 12345,
+      },
+      {
+        id: "T-1-2",
+        todo: makeTodo("T-1-2"),
+        state: "done",
+        ciFailCount: 0,
+        lastTransition: new Date().toISOString(),
+        // No latency data
+      },
+    ];
+
+    const metrics = collectRunMetrics(
+      items,
+      config,
+      "2026-03-24T10:00:00.000Z",
+      "2026-03-24T10:05:00.000Z",
+      "claude",
+    );
+
+    expect(metrics.items[0]!.detectionLatencyMs).toBe(12345);
+    expect(metrics.items[1]!.detectionLatencyMs).toBeUndefined();
+  });
+
+  it("skips zero-value latencies (no real detection delay)", () => {
+    const items: OrchestratorItem[] = [
+      {
+        id: "T-1-1",
+        todo: makeTodo("T-1-1"),
+        state: "done",
+        ciFailCount: 0,
+        lastTransition: new Date().toISOString(),
+        detectionLatencyMs: 0, // No delay — should be excluded
+      },
+    ];
+
+    const metrics = collectRunMetrics(
+      items,
+      config,
+      "2026-03-24T10:00:00.000Z",
+      "2026-03-24T10:05:00.000Z",
+      "claude",
+    );
+
+    // Zero latencies are excluded → no samples → null
+    expect(metrics.detectionLatency).toBeNull();
+  });
+});
+
+// ── computeSummary with detection latency ────────────────────────────
+
+describe("computeSummary with detection latency", () => {
+  it("aggregates detection latency from per-item data across runs", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        runTimestamp: "2026-03-24T10:00:00.000Z",
+        items: [
+          { id: "A", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 10000 },
+          { id: "B", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 20000 },
+        ],
+      }),
+      makeRun({
+        runTimestamp: "2026-03-25T10:00:00.000Z",
+        items: [
+          { id: "C", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 30000 },
+        ],
+      }),
+    ];
+
+    const summary = computeSummary(runs);
+    expect(summary.detectionLatency).not.toBeNull();
+    expect(summary.detectionLatency!.sampleCount).toBe(3);
+    expect(summary.detectionLatency!.p50Ms).toBe(20000);
+    expect(summary.detectionLatency!.maxMs).toBe(30000);
+  });
+
+  it("returns null detectionLatency when no items have latency data", () => {
+    const runs: RunMetrics[] = [
+      makeRun({ items: [{ id: "A", state: "done", ciRetryCount: 0, tool: "claude" }] }),
+    ];
+
+    const summary = computeSummary(runs);
+    expect(summary.detectionLatency).toBeNull();
+  });
+
+  it("returns null detectionLatency for zero runs", () => {
+    const summary = computeSummary([]);
+    expect(summary.detectionLatency).toBeNull();
+  });
+
+  it("flags slow detection across aggregated items", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        items: [
+          { id: "A", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 70000 },
+          { id: "B", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 80000 },
+        ],
+      }),
+    ];
+
+    const summary = computeSummary(runs);
+    expect(summary.detectionLatency!.slowDetection).toBe(true);
+  });
+});
+
+// ── formatAnalytics with detection latency ───────────────────────────
+
+describe("formatAnalytics with detection latency", () => {
+  it("shows detection latency when latency data exists", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        items: [
+          { id: "A", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 5000 },
+          { id: "B", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 15000 },
+        ],
+      }),
+    ];
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    expect(output).toContain("Detection latency");
+    expect(output).toContain("p50=");
+    expect(output).toContain("p95=");
+    expect(output).toContain("max=");
+    expect(output).toContain("2 samples");
+  });
+
+  it("shows slow detection warning when p95 exceeds threshold", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        items: [
+          { id: "A", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 70000 },
+          { id: "B", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 80000 },
+        ],
+      }),
+    ];
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    expect(output).toContain("slow detection");
+  });
+
+  it("hides detection latency when no latency data exists", () => {
+    const runs: RunMetrics[] = [
+      makeRun(),
+    ];
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    expect(output).not.toContain("Detection latency");
+    expect(output).not.toContain("slow detection");
+  });
+
+  it("does not show slow detection warning when p95 is below threshold", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        items: [
+          { id: "A", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 5000 },
+          { id: "B", state: "done", ciRetryCount: 0, tool: "claude", detectionLatencyMs: 10000 },
+        ],
+      }),
+    ];
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    expect(output).toContain("Detection latency");
+    expect(output).not.toContain("slow detection");
   });
 });

@@ -18,6 +18,22 @@ export interface ItemMetric {
   tokensUsed?: number | null;
   /** Total cost in USD for this item's worker session. Null when cost data is unavailable. */
   costUsd?: number | null;
+  /** Detection latency in milliseconds for this item's last transition. */
+  detectionLatencyMs?: number;
+}
+
+/** Aggregate detection latency percentiles for a run. */
+export interface DetectionLatencyStats {
+  /** Median detection latency in milliseconds. */
+  p50Ms: number;
+  /** 95th percentile detection latency in milliseconds. */
+  p95Ms: number;
+  /** Maximum detection latency in milliseconds. */
+  maxMs: number;
+  /** Number of transitions with latency measurements. */
+  sampleCount: number;
+  /** True when p95 exceeds the slow detection threshold (default 60s). */
+  slowDetection: boolean;
 }
 
 export interface RunMetrics {
@@ -39,6 +55,47 @@ export interface RunMetrics {
   totalTokensUsed: number | null;
   /** Aggregate cost in USD across all items. Null when no cost data is available. */
   totalCostUsd: number | null;
+  /** Detection latency percentiles for this run. Null when no latency data is available. */
+  detectionLatency: DetectionLatencyStats | null;
+}
+
+// ── Detection latency helpers ─────────────────────────────────────────
+
+/** Default threshold (ms) above which p95 detection latency is flagged as slow. */
+export const SLOW_DETECTION_THRESHOLD_MS = 60_000; // 60 seconds
+
+/**
+ * Compute a percentile value from a sorted array of numbers.
+ * Uses nearest-rank method. Returns 0 for empty arrays.
+ */
+export function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const index = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, index)]!;
+}
+
+/**
+ * Compute detection latency stats from item latency values.
+ * Returns null when no items have latency data.
+ */
+export function computeDetectionLatency(
+  latencies: number[],
+  thresholdMs: number = SLOW_DETECTION_THRESHOLD_MS,
+): DetectionLatencyStats | null {
+  if (latencies.length === 0) return null;
+
+  const sorted = [...latencies].sort((a, b) => a - b);
+  const p50Ms = percentile(sorted, 50);
+  const p95Ms = percentile(sorted, 95);
+  const maxMs = sorted[sorted.length - 1]!;
+
+  return {
+    p50Ms,
+    p95Ms,
+    maxMs,
+    sampleCount: sorted.length,
+    slowDetection: p95Ms > thresholdMs,
+  };
 }
 
 // ── Cost/token parsing ────────────────────────────────────────────────
@@ -124,8 +181,15 @@ export function collectRunMetrics(
       ...(item.prNumber != null ? { prNumber: item.prNumber } : {}),
       tokensUsed: cost?.tokensUsed ?? null,
       costUsd: cost?.costUsd ?? null,
+      ...(item.detectionLatencyMs != null ? { detectionLatencyMs: item.detectionLatencyMs } : {}),
     };
   });
+
+  // Compute detection latency percentiles from items that have latency data
+  const latencies = allItems
+    .map((item) => item.detectionLatencyMs)
+    .filter((ms): ms is number => ms != null && ms > 0);
+  const detectionLatency = computeDetectionLatency(latencies);
 
   // Aggregate totals — null when no items have cost data
   const itemsWithTokens = items.filter((i) => i.tokensUsed != null);
@@ -148,6 +212,7 @@ export function collectRunMetrics(
     items,
     totalTokensUsed,
     totalCostUsd,
+    detectionLatency,
   };
 }
 
