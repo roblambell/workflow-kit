@@ -177,6 +177,14 @@ export interface OrchestratorDeps {
   readScreen?: (workspaceRef: string, lines?: number) => string;
   /** Log a warning message (for situations that need human attention). */
   warn?: (message: string) => void;
+  /**
+   * Squash-merge-safe rebase using `git rebase --onto`.
+   * Replays only the commits from `oldBase..branch` onto `newBase`.
+   * Returns true on success, false on conflict (with clean abort).
+   */
+  rebaseOnto?: (worktreePath: string, newBase: string, oldBase: string, branch: string) => boolean;
+  /** Force-push the current branch in a worktree. Returns true on success. */
+  forcePush?: (worktreePath: string) => boolean;
 }
 
 /** Result of executing a single action. */
@@ -389,43 +397,84 @@ export class Orchestrator {
     snap: ItemSnapshot | undefined,
     now: Date,
   ): Action[] {
+    const prevState = item.state;
+    let actions: Action[];
+
     switch (item.state) {
       case "queued":
       case "ready":
         // Handled in bulk in processTransitions
-        return [];
+        actions = [];
+        break;
 
       case "launching":
         if (snap?.workerAlive) {
           this.transition(item, "implementing", snap?.eventTime);
+          actions = [];
         } else if (snap?.workerAlive === false) {
-          return this.stuckOrRetry(item);
+          actions = this.stuckOrRetry(item);
+        } else {
+          actions = [];
         }
-        return [];
+        break;
 
       case "implementing":
-        return this.handleImplementing(item, snap, now);
+        actions = this.handleImplementing(item, snap, now);
+        break;
 
       case "pr-open":
       case "ci-pending":
       case "ci-passed":
       case "ci-failed":
-        return this.handlePrLifecycle(item, snap);
+        actions = this.handlePrLifecycle(item, snap);
+        break;
 
       case "review-pending":
-        return this.handleReviewPending(item, snap);
+        actions = this.handleReviewPending(item, snap);
+        break;
 
       case "merging":
-        return this.handleMerging(item, snap);
+        actions = this.handleMerging(item, snap);
+        break;
 
       case "merged":
         this.transition(item, "done");
-        return [];
+        actions = [];
+        break;
 
       case "done":
       case "stuck":
-        return [];
+        actions = [];
+        break;
     }
+
+    // Stuck dep pause: notify stacked dependents when this item goes stuck
+    if (this.config.enableStacking && item.state === "stuck" && prevState !== "stuck") {
+      for (const other of this.getAllItems()) {
+        if (other.baseBranch !== `todo/${item.id}`) continue;
+        if (!other.workspaceRef) continue;
+        actions.push({
+          type: "rebase",
+          itemId: other.id,
+          message: `[ORCHESTRATOR] Pause: dependency ${item.id} is stuck. Your stacked branch cannot proceed until it is resolved. Please wait.`,
+        });
+      }
+    }
+
+    // Dep recovery: notify stacked dependents when this item recovers from ci-failed to ci-pending
+    if (this.config.enableStacking && prevState === "ci-failed" && item.state === "ci-pending") {
+      for (const other of this.getAllItems()) {
+        if (other.baseBranch !== `todo/${item.id}`) continue;
+        if (!other.workspaceRef) continue;
+        actions.push({
+          type: "rebase",
+          itemId: other.id,
+          message: `[ORCHESTRATOR] Resume: dependency ${item.id} CI is back to pending. Please rebase onto todo/${item.id} and continue.`,
+        });
+      }
+    }
+
+    return actions;
   }
 
   /** Handle implementing state. */
@@ -795,11 +844,66 @@ export class Orchestrator {
       // Non-fatal — main will be pulled on next cycle
     }
 
-    // Send rebase requests to dependent items in WIP states
+    // Restack stacked dependents using rebaseOnto (squash-merge safe).
+    // These items had baseBranch set to the merged dep's branch — replay only
+    // their unique commits onto main, avoiding duplicate commits from squash merge.
+    const restackedIds = new Set<string>();
+    const depBranch = `todo/${item.id}`;
+
     for (const other of this.getAllItems()) {
       if (other.id === item.id) continue;
       if (!other.todo.dependencies.includes(item.id)) continue;
       if (!WIP_STATES.has(other.state)) continue;
+      if (!other.baseBranch) continue; // not stacked — handled below
+
+      restackedIds.add(other.id);
+
+      const otherWorktreePath = join(ctx.worktreeDir, `todo-${other.id}`);
+      const otherBranch = `todo/${other.id}`;
+
+      if (!deps.rebaseOnto || !deps.forcePush) {
+        // rebaseOnto or forcePush not available — send worker manual rebase instructions
+        if (other.workspaceRef) {
+          deps.sendMessage(
+            other.workspaceRef,
+            `[ORCHESTRATOR] Restack Required: dependency ${item.id} was squash-merged. Run: git rebase --onto main ${depBranch} ${otherBranch} && git push --force-with-lease`,
+          );
+        }
+        continue;
+      }
+
+      try {
+        const success = deps.rebaseOnto(otherWorktreePath, "main", depBranch, otherBranch);
+        if (success) {
+          deps.forcePush(otherWorktreePath);
+          other.baseBranch = undefined; // no longer stacked
+        } else {
+          // Conflict — send worker manual rebase instructions
+          if (other.workspaceRef) {
+            deps.sendMessage(
+              other.workspaceRef,
+              `[ORCHESTRATOR] Restack Conflict: dependency ${item.id} was squash-merged but rebase --onto had conflicts. Run manually: git rebase --onto main ${depBranch} ${otherBranch}`,
+            );
+          }
+        }
+      } catch {
+        // Unexpected error — fall back to worker message
+        if (other.workspaceRef) {
+          deps.sendMessage(
+            other.workspaceRef,
+            `[ORCHESTRATOR] Restack Required: dependency ${item.id} was squash-merged. Run: git rebase --onto main ${depBranch} ${otherBranch} && git push --force-with-lease`,
+          );
+        }
+      }
+    }
+
+    // Send rebase requests to non-stacked dependent items in WIP states.
+    // Stacked items were handled above via rebaseOnto — skip them.
+    for (const other of this.getAllItems()) {
+      if (other.id === item.id) continue;
+      if (!other.todo.dependencies.includes(item.id)) continue;
+      if (!WIP_STATES.has(other.state)) continue;
+      if (restackedIds.has(other.id)) continue;
       if (other.workspaceRef) {
         deps.sendMessage(
           other.workspaceRef,
@@ -810,10 +914,12 @@ export class Orchestrator {
 
     // Post-merge daemon-rebase: proactively rebase ALL in-flight sibling PRs.
     // This eliminates most conflicts before workers notice, reducing CI churn.
+    // Skip restacked items — they were already rebased with --onto above.
     for (const other of this.getAllItems()) {
       if (other.id === item.id) continue;
       if (!WIP_STATES.has(other.state)) continue;
       if (!other.prNumber) continue;
+      if (restackedIds.has(other.id)) continue;
 
       const otherBranch = `todo/${other.id}`;
       const otherWorktreePath = join(ctx.worktreeDir, `todo-${other.id}`);

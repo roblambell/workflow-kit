@@ -4141,5 +4141,306 @@ describe("Orchestrator", () => {
         expect(orch.config.enableStacking).toBe(false);
       });
     });
+
+    // ── Post-merge restacking (H-STK-5) ──────────────────────────────
+
+    describe("post-merge restacking", () => {
+      it("executeMerge restacks stacked dep with rebaseOnto and force-pushes", () => {
+        const rebaseOnto = vi.fn(() => true);
+        const forcePush = vi.fn(() => true);
+        const deps = mockDeps({ rebaseOnto, forcePush });
+
+        // A-1-1 is merging, A-1-2 depends on it and is stacked
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 43;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 42 },
+          defaultCtx,
+          deps,
+        );
+
+        // rebaseOnto called with correct args
+        expect(rebaseOnto).toHaveBeenCalledWith(
+          `${defaultCtx.worktreeDir}/todo-A-1-2`,
+          "main",
+          "todo/A-1-1",
+          "todo/A-1-2",
+        );
+        // Force-pushed after successful rebase
+        expect(forcePush).toHaveBeenCalledWith(
+          `${defaultCtx.worktreeDir}/todo-A-1-2`,
+        );
+        // baseBranch cleared — no longer stacked
+        expect(orch.getItem("A-1-2")!.baseBranch).toBeUndefined();
+      });
+
+      it("executeMerge sends conflict message when rebaseOnto fails", () => {
+        const rebaseOnto = vi.fn(() => false); // conflict
+        const forcePush = vi.fn(() => true);
+        const deps = mockDeps({ rebaseOnto, forcePush });
+
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 43;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 42 },
+          defaultCtx,
+          deps,
+        );
+
+        // rebaseOnto was called but returned false (conflict)
+        expect(rebaseOnto).toHaveBeenCalledTimes(1);
+        // Force-push should NOT have been called
+        expect(forcePush).not.toHaveBeenCalled();
+        // Worker gets conflict message with manual rebase instructions
+        expect(deps.sendMessage).toHaveBeenCalledWith(
+          "workspace:2",
+          expect.stringContaining("Restack Conflict"),
+        );
+        expect(deps.sendMessage).toHaveBeenCalledWith(
+          "workspace:2",
+          expect.stringContaining("git rebase --onto main"),
+        );
+      });
+
+      it("executeMerge non-stacked dep gets existing rebase behavior unchanged", () => {
+        const rebaseOnto = vi.fn(() => true);
+        const forcePush = vi.fn(() => true);
+        const daemonRebase = vi.fn(() => true);
+        const deps = mockDeps({ rebaseOnto, forcePush, daemonRebase });
+
+        // A-1-1 merging, A-1-2 depends on it but NOT stacked (no baseBranch)
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 43;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        // No baseBranch — not stacked
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 42 },
+          defaultCtx,
+          deps,
+        );
+
+        // rebaseOnto should NOT be called for non-stacked items
+        expect(rebaseOnto).not.toHaveBeenCalled();
+        expect(forcePush).not.toHaveBeenCalled();
+        // Non-stacked dep gets generic rebase message
+        expect(deps.sendMessage).toHaveBeenCalledWith(
+          "workspace:2",
+          expect.stringContaining("Dependency A-1-1 merged"),
+        );
+        // And gets daemon-rebase treatment as a sibling
+        expect(daemonRebase).toHaveBeenCalledWith(
+          `${defaultCtx.worktreeDir}/todo-A-1-2`,
+          "todo/A-1-2",
+        );
+      });
+
+      it("executeMerge stacked items skip generic rebase message loop", () => {
+        const rebaseOnto = vi.fn(() => true);
+        const forcePush = vi.fn(() => true);
+        const deps = mockDeps({ rebaseOnto, forcePush });
+
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 43;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 42 },
+          defaultCtx,
+          deps,
+        );
+
+        // sendMessage should NOT be called — stacked item was handled by rebaseOnto
+        // (no generic "Dependency merged" message, no conflict fallback message)
+        expect(deps.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it("executeMerge stacked items skip daemon-rebase-all loop", () => {
+        const rebaseOnto = vi.fn(() => true);
+        const forcePush = vi.fn(() => true);
+        const daemonRebase = vi.fn(() => true);
+        const deps = mockDeps({ rebaseOnto, forcePush, daemonRebase });
+
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 43;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 42 },
+          defaultCtx,
+          deps,
+        );
+
+        // daemonRebase should NOT be called for stacked items (handled by rebaseOnto)
+        expect(daemonRebase).not.toHaveBeenCalled();
+      });
+
+      it("executeMerge falls back to worker message when rebaseOnto dep not injected", () => {
+        // No rebaseOnto or forcePush injected
+        const deps = mockDeps();
+
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "merging");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.prNumber = 43;
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        orch.executeAction(
+          { type: "merge", itemId: "A-1-1", prNumber: 42 },
+          defaultCtx,
+          deps,
+        );
+
+        // Worker gets manual rebase instructions since rebaseOnto not available
+        expect(deps.sendMessage).toHaveBeenCalledWith(
+          "workspace:2",
+          expect.stringContaining("Restack Required"),
+        );
+        expect(deps.sendMessage).toHaveBeenCalledWith(
+          "workspace:2",
+          expect.stringContaining("git rebase --onto main"),
+        );
+      });
+    });
+
+    // ── Stuck dep pause/resume (H-STK-5) ─────────────────────────────
+
+    describe("stuck dep pause/resume", () => {
+      it("sends pause message to stacked dependent when dep goes stuck", () => {
+        // A-1-1 is the dep (ci-failed), A-1-2 is stacked on it
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-failed");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.getItem("A-1-1")!.ciFailCount = 10; // exceeds maxCiRetries
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        // A-1-1 is ci-failed and over retry limit → will go stuck
+        const actions = orch.processTransitions(
+          snapshotWith([
+            { id: "A-1-1", prNumber: 42, prState: "open", ciStatus: "fail" },
+            { id: "A-1-2", prNumber: 43, prState: "open", ciStatus: "pending" },
+          ]),
+        );
+
+        expect(orch.getItem("A-1-1")!.state).toBe("stuck");
+        // Should have a rebase action for A-1-2 with pause message
+        const pauseAction = actions.find(
+          (a) => a.itemId === "A-1-2" && a.message?.includes("Pause"),
+        );
+        expect(pauseAction).toBeDefined();
+        expect(pauseAction!.message).toContain("dependency A-1-1 is stuck");
+      });
+
+      it("does not send pause message to non-stacked dependents", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-failed");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.getItem("A-1-1")!.ciFailCount = 10;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        // No baseBranch — not stacked
+
+        const actions = orch.processTransitions(
+          snapshotWith([
+            { id: "A-1-1", prNumber: 42, prState: "open", ciStatus: "fail" },
+            { id: "A-1-2", prNumber: 43, prState: "open", ciStatus: "pending" },
+          ]),
+        );
+
+        expect(orch.getItem("A-1-1")!.state).toBe("stuck");
+        // Should NOT have a pause action for A-1-2
+        const pauseAction = actions.find(
+          (a) => a.itemId === "A-1-2" && a.message?.includes("Pause"),
+        );
+        expect(pauseAction).toBeUndefined();
+      });
+
+      it("sends resume message to stacked dependent when dep recovers from ci-failed to ci-pending", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-failed");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.getItem("A-1-1")!.ciFailCount = 1;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+
+        // A-1-1 recovers: ci-failed → ci-pending (CI restarted)
+        const actions = orch.processTransitions(
+          snapshotWith([
+            { id: "A-1-1", prNumber: 42, prState: "open", ciStatus: "pending" },
+            { id: "A-1-2", prNumber: 43, prState: "open", ciStatus: "pending" },
+          ]),
+        );
+
+        expect(orch.getItem("A-1-1")!.state).toBe("ci-pending");
+        // Should have a rebase action for A-1-2 with resume message
+        const resumeAction = actions.find(
+          (a) => a.itemId === "A-1-2" && a.message?.includes("Resume"),
+        );
+        expect(resumeAction).toBeDefined();
+        expect(resumeAction!.message).toContain("dependency A-1-1 CI is back to pending");
+      });
+
+      it("does not send resume message to non-stacked dependents", () => {
+        orch.addItem(makeTodo("A-1-1"));
+        orch.addItem(makeTodo("A-1-2", ["A-1-1"]));
+        orch.setState("A-1-1", "ci-failed");
+        orch.getItem("A-1-1")!.prNumber = 42;
+        orch.getItem("A-1-1")!.ciFailCount = 1;
+        orch.setState("A-1-2", "ci-pending");
+        orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+        // No baseBranch — not stacked
+
+        const actions = orch.processTransitions(
+          snapshotWith([
+            { id: "A-1-1", prNumber: 42, prState: "open", ciStatus: "pending" },
+            { id: "A-1-2", prNumber: 43, prState: "open", ciStatus: "pending" },
+          ]),
+        );
+
+        expect(orch.getItem("A-1-1")!.state).toBe("ci-pending");
+        // Should NOT have a resume action for A-1-2
+        const resumeAction = actions.find(
+          (a) => a.itemId === "A-1-2" && a.message?.includes("Resume"),
+        );
+        expect(resumeAction).toBeUndefined();
+      });
+    });
   });
 });
