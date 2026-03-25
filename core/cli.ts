@@ -34,6 +34,7 @@ import { cmdOrchestrate } from "./commands/orchestrate.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
 import { cmdAnalytics } from "./commands/analytics.ts";
 import { cmdStop } from "./commands/stop.ts";
+import { cmdRetry } from "./commands/retry.ts";
 import { cmdMigrateTodos, cmdGenerateTodos } from "./commands/migrate-todos.ts";
 import { shouldOnboard, cmdOnboard } from "./commands/onboard.ts";
 import { cmdDoctor } from "./commands/doctor.ts";
@@ -85,6 +86,7 @@ export const COMMANDS: ReadonlyArray<[string, string]> = [
     "Orchestrate parallel processing",
   ],
   ["stop", "Stop the orchestrator daemon"],
+  ["retry <ID> [ID2...]", "Retry stuck/done items (reset to queued)"],
   ["repos", "List discovered repos"],
   ["reconcile", "Sync todo files with merged PRs"],
   ["analytics [--all]", "Show orchestration performance trends"],
@@ -227,6 +229,7 @@ const needsTodos = ![
   "partitions",
   "status",
   "stop",
+  "retry",
   "close-workspaces",
   "close-workspace",
   "clean",
@@ -324,6 +327,9 @@ switch (command) {
     break;
   case "stop":
     cmdStop(projectRoot);
+    break;
+  case "retry":
+    cmdRetry(args, worktreeDir, projectRoot);
     break;
   case "reconcile":
     cmdReconcile(todosDir, worktreeDir, projectRoot);
