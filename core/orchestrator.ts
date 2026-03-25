@@ -27,12 +27,13 @@ export type OrchestratorItemState =
   | "ci-passed"
   | "ci-failed"
   | "review-pending"
+  | "reviewing"
   | "merging"
   | "merged"
   | "done"
   | "stuck";
 
-export type MergeStrategy = "asap" | "approved" | "ask";
+export type MergeStrategy = "asap" | "approved" | "ask" | "reviewed";
 
 // ── Interfaces ───────────────────────────────────────────────────────
 
@@ -66,6 +67,10 @@ export interface OrchestratorItem {
   baseBranch?: string;
   /** Absolute path to the repo where the PR lives. For hub-local items, equals projectRoot. For cross-repo items, points to the target repo. */
   resolvedRepoRoot?: string;
+  /** cmux workspace reference for the review worker session. */
+  reviewWorkspaceRef?: string;
+  /** Whether this item's review has been completed (approved). Resets on CI regression. */
+  reviewCompleted?: boolean;
 }
 
 export interface OrchestratorConfig {
@@ -83,6 +88,14 @@ export interface OrchestratorConfig {
   activityTimeoutMs: number;
   /** Enable stacked branch launches. When true, items with a single in-flight dep in a stackable state can launch early. Default: true. */
   enableStacking: boolean;
+  /** Enable review worker after CI passes. When true, items go through a reviewing state before merge. Default: false. */
+  reviewEnabled: boolean;
+  /** Max concurrent review workers. Tracked independently from main wipLimit. Default: 2. */
+  reviewWipLimit: number;
+  /** How the review worker handles requested fixes: off (report only), direct (push fixes), pr (open fix PR). Default: "off". */
+  reviewAutoFix: "off" | "direct" | "pr";
+  /** Whether the review worker can approve PRs on behalf of the orchestrator. Default: false. */
+  reviewCanApprove: boolean;
 }
 
 // ── Poll snapshot ────────────────────────────────────────────────────
@@ -127,7 +140,9 @@ export type ActionType =
   | "rebase"
   | "daemon-rebase"
   | "retry"
-  | "sync-stack-comments";
+  | "sync-stack-comments"
+  | "launch-review"
+  | "clean-review";
 
 export interface Action {
   type: ActionType;
@@ -197,6 +212,16 @@ export interface OrchestratorDeps {
    * syncStackComments from core/stack-comments.ts with a real GhCommentClient.
    */
   syncStackComments?: (baseBranch: string, stack: Array<{ prNumber: number; title: string }>) => void;
+  /**
+   * Launch a review worker for a PR. Returns a workspace reference on success.
+   * Actual logic lives in H-RVW-3; stub for now.
+   */
+  launchReview?: (itemId: string, prNumber: number, repoRoot: string) => { workspaceRef: string } | null;
+  /**
+   * Clean up a review worker session and workspace.
+   * Actual logic lives in H-RVW-3; stub for now.
+   */
+  cleanReview?: (itemId: string, reviewWorkspaceRef: string) => boolean;
 }
 
 /** Result of executing a single action. */
@@ -215,6 +240,10 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   launchTimeoutMs: 30 * 60 * 1000,   // 30 minutes
   activityTimeoutMs: 60 * 60 * 1000, // 60 minutes
   enableStacking: true,
+  reviewEnabled: false,
+  reviewWipLimit: 2,
+  reviewAutoFix: "off",
+  reviewCanApprove: false,
 };
 
 // ── Memory-aware WIP limit ──────────────────────────────────────────
@@ -334,6 +363,16 @@ export class Orchestrator {
     return Math.max(0, this.effectiveWipLimit - this.wipCount);
   }
 
+  /** Count of items currently in the reviewing state (tracked independently from main WIP). */
+  get reviewWipCount(): number {
+    return this.getItemsByState("reviewing").length;
+  }
+
+  /** How many more review workers can be launched without exceeding reviewWipLimit. */
+  get reviewWipSlots(): number {
+    return Math.max(0, this.config.reviewWipLimit - this.reviewWipCount);
+  }
+
   /**
    * Pure state machine transition function.
    * Takes a poll snapshot (external state) and returns actions to execute.
@@ -401,6 +440,10 @@ export class Orchestrator {
       : 0;
     // Clear rebase flag on any state change — the worker pushed or CI restarted
     item.rebaseRequested = false;
+    // Reset reviewCompleted on CI regression — requires fresh review after fixes
+    if (state === "ci-pending" || state === "ci-failed") {
+      item.reviewCompleted = false;
+    }
   }
 
   /** Transition a single item based on its snapshot. Returns actions. */
@@ -439,6 +482,10 @@ export class Orchestrator {
       case "ci-passed":
       case "ci-failed":
         actions = this.handlePrLifecycle(item, snap);
+        break;
+
+      case "reviewing":
+        actions = this.handleReviewing(item, snap);
         break;
 
       case "review-pending":
@@ -683,6 +730,63 @@ export class Orchestrator {
     return actions;
   }
 
+  /**
+   * Handle reviewing state.
+   * Review worker is active — check for review outcome, CI regression, external merge, or worker death.
+   */
+  private handleReviewing(
+    item: OrchestratorItem,
+    snap: ItemSnapshot | undefined,
+  ): Action[] {
+    const actions: Action[] = [];
+
+    // External merge takes priority
+    if (snap?.prState === "merged") {
+      this.transition(item, "merged", snap?.eventTime);
+      actions.push({ type: "clean", itemId: item.id });
+      if (item.reviewWorkspaceRef) {
+        actions.push({ type: "clean-review", itemId: item.id });
+      }
+      return actions;
+    }
+
+    // CI regression during review → transition to ci-failed, clean up review worker
+    if (snap?.ciStatus === "fail") {
+      this.transition(item, "ci-failed", snap?.eventTime);
+      item.ciFailCount++;
+      actions.push({ type: "clean-review", itemId: item.id });
+      actions.push({
+        type: "notify-ci-failure",
+        itemId: item.id,
+        prNumber: item.prNumber,
+        message: "[ORCHESTRATOR] CI Fix Request: CI failed during review — please investigate and fix.",
+      });
+      return actions;
+    }
+
+    // Review APPROVED → set reviewCompleted, transition back to ci-passed (evaluateMerge handles merge)
+    if (snap?.reviewDecision === "APPROVED") {
+      item.reviewCompleted = true;
+      this.transition(item, "ci-passed", snap?.eventTime);
+      // Chain through evaluateMerge to handle merge in the same cycle
+      actions.push(...this.evaluateMerge(item, snap, snap?.eventTime));
+      return actions;
+    }
+
+    // Review CHANGES_REQUESTED → transition to review-pending, notify worker
+    if (snap?.reviewDecision === "CHANGES_REQUESTED") {
+      this.transition(item, "review-pending", snap?.eventTime);
+      actions.push({
+        type: "notify-review",
+        itemId: item.id,
+        message: "[ORCHESTRATOR] Review Feedback: Review worker requested changes — please address.",
+      });
+      return actions;
+    }
+
+    return actions;
+  }
+
   /** Handle merging state. */
   private handleMerging(
     item: OrchestratorItem,
@@ -705,6 +809,23 @@ export class Orchestrator {
     eventTime?: string,
   ): Action[] {
     const actions: Action[] = [];
+
+    // Review gate: when review is enabled and item hasn't been reviewed yet,
+    // transition to reviewing state and launch a review worker instead of merging.
+    if (this.config.reviewEnabled && !item.reviewCompleted) {
+      if (item.state !== "reviewing") {
+        if (this.reviewWipSlots > 0) {
+          this.transition(item, "reviewing", eventTime);
+          actions.push({
+            type: "launch-review",
+            itemId: item.id,
+            prNumber: item.prNumber,
+          });
+        }
+        // else: no review slots available, stay in ci-passed until a slot opens
+      }
+      return actions;
+    }
 
     switch (this.config.mergeStrategy) {
       case "asap":
@@ -744,6 +865,23 @@ export class Orchestrator {
         if (item.state !== "review-pending") {
           this.transition(item, "review-pending", eventTime);
         }
+        break;
+
+      case "reviewed":
+        // Merge after AI review completes (review gate in evaluateMerge handles reviewing state).
+        // Once reviewCompleted is true, merge like asap.
+        if (snap?.reviewDecision === "CHANGES_REQUESTED") {
+          if (item.state !== "review-pending") {
+            this.transition(item, "review-pending", eventTime);
+          }
+          break;
+        }
+        this.transition(item, "merging", eventTime);
+        actions.push({
+          type: "merge",
+          itemId: item.id,
+          prNumber: item.prNumber,
+        });
         break;
     }
 
@@ -786,6 +924,10 @@ export class Orchestrator {
         return this.executeRetry(item, ctx, deps);
       case "sync-stack-comments":
         return this.executeSyncStackComments(item, deps);
+      case "launch-review":
+        return this.executeLaunchReview(item, action, ctx, deps);
+      case "clean-review":
+        return this.executeCleanReview(item, deps);
     }
   }
 
@@ -1232,6 +1374,56 @@ export class Orchestrator {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       return { success: false, error: `Stack comment sync failed: ${msg}` };
+    }
+  }
+
+  /** Launch a review worker for a PR. Stores reviewWorkspaceRef on success. */
+  private executeLaunchReview(
+    item: OrchestratorItem,
+    action: Action,
+    ctx: ExecutionContext,
+    deps: OrchestratorDeps,
+  ): ActionResult {
+    if (!deps.launchReview) {
+      return { success: true }; // no-op when not wired (stub for H-RVW-3)
+    }
+
+    const prNum = action.prNumber ?? item.prNumber;
+    if (!prNum) {
+      return { success: false, error: `No PR number for review launch of ${item.id}` };
+    }
+
+    const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
+    try {
+      const result = deps.launchReview(item.id, prNum, repoRoot);
+      if (result) {
+        item.reviewWorkspaceRef = result.workspaceRef;
+      }
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { success: false, error: `Review launch failed for ${item.id}: ${msg}` };
+    }
+  }
+
+  /** Clean up a review worker session. */
+  private executeCleanReview(
+    item: OrchestratorItem,
+    deps: OrchestratorDeps,
+  ): ActionResult {
+    if (!deps.cleanReview || !item.reviewWorkspaceRef) {
+      item.reviewWorkspaceRef = undefined;
+      return { success: true }; // no-op when not wired or no review workspace
+    }
+
+    try {
+      deps.cleanReview(item.id, item.reviewWorkspaceRef);
+      item.reviewWorkspaceRef = undefined;
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      item.reviewWorkspaceRef = undefined;
+      return { success: false, error: `Review cleanup failed for ${item.id}: ${msg}` };
     }
   }
 

@@ -4953,4 +4953,620 @@ describe("Orchestrator", () => {
       );
     });
   });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // H-RVW-1: Review state transitions
+  // ══════════════════════════════════════════════════════════════════════
+
+  describe("Review state transitions (H-RVW-1)", () => {
+    // ── reviewEnabled=false backward compatibility ────────────────────
+
+    it("ci-passed with reviewEnabled=false uses existing merge logic (backward compat)", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: false });
+      orch.addItem(makeTodo("R-1-1"));
+      orch.setState("R-1-1", "pr-open");
+      orch.getItem("R-1-1")!.prNumber = 42;
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-1-1", ciStatus: "pass", prState: "open" }]),
+      );
+
+      expect(orch.getItem("R-1-1")!.state).toBe("merging");
+      expect(actions.some((a) => a.type === "merge")).toBe(true);
+      expect(actions.some((a) => a.type === "launch-review")).toBe(false);
+    });
+
+    it("DEFAULT_CONFIG has reviewEnabled=false", () => {
+      expect(DEFAULT_CONFIG.reviewEnabled).toBe(false);
+      expect(DEFAULT_CONFIG.reviewWipLimit).toBe(2);
+      expect(DEFAULT_CONFIG.reviewAutoFix).toBe("off");
+      expect(DEFAULT_CONFIG.reviewCanApprove).toBe(false);
+    });
+
+    // ── ci-passed + reviewEnabled=true → reviewing ───────────────────
+
+    it("ci-passed + reviewEnabled=true emits launch-review, transitions to reviewing", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-2-1"));
+      orch.setState("R-2-1", "pr-open");
+      orch.getItem("R-2-1")!.prNumber = 42;
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-2-1", ciStatus: "pass", prState: "open" }]),
+      );
+
+      expect(orch.getItem("R-2-1")!.state).toBe("reviewing");
+      const launchReviewActions = actions.filter((a) => a.type === "launch-review");
+      expect(launchReviewActions).toHaveLength(1);
+      expect(launchReviewActions[0]!.itemId).toBe("R-2-1");
+      expect(launchReviewActions[0]!.prNumber).toBe(42);
+      // Should NOT emit merge action
+      expect(actions.some((a) => a.type === "merge")).toBe(false);
+    });
+
+    it("ci-passed + reviewEnabled=true works with approved merge strategy", () => {
+      orch = new Orchestrator({ mergeStrategy: "approved", reviewEnabled: true });
+      orch.addItem(makeTodo("R-2-2"));
+      orch.setState("R-2-2", "pr-open");
+      orch.getItem("R-2-2")!.prNumber = 43;
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-2-2", ciStatus: "pass", prState: "open" }]),
+      );
+
+      expect(orch.getItem("R-2-2")!.state).toBe("reviewing");
+      expect(actions.some((a) => a.type === "launch-review")).toBe(true);
+    });
+
+    // ── reviewing + APPROVED → ci-passed → merge ─────────────────────
+
+    it("reviewing + APPROVED sets reviewCompleted, back to ci-passed, then merges (asap)", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-3-1"));
+      orch.setState("R-3-1", "reviewing");
+      orch.getItem("R-3-1")!.prNumber = 42;
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-3-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
+      );
+
+      expect(orch.getItem("R-3-1")!.reviewCompleted).toBe(true);
+      // Should chain through to merging since reviewCompleted is now true
+      expect(orch.getItem("R-3-1")!.state).toBe("merging");
+      expect(actions.some((a) => a.type === "merge")).toBe(true);
+    });
+
+    it("reviewing + APPROVED chains through reviewed merge strategy to merge", () => {
+      orch = new Orchestrator({ mergeStrategy: "reviewed", reviewEnabled: true });
+      orch.addItem(makeTodo("R-3-2"));
+      orch.setState("R-3-2", "reviewing");
+      orch.getItem("R-3-2")!.prNumber = 43;
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-3-2", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
+      );
+
+      expect(orch.getItem("R-3-2")!.reviewCompleted).toBe(true);
+      expect(orch.getItem("R-3-2")!.state).toBe("merging");
+      expect(actions.some((a) => a.type === "merge")).toBe(true);
+    });
+
+    // ── reviewing + CHANGES_REQUESTED → review-pending + notify ──────
+
+    it("reviewing + CHANGES_REQUESTED transitions to review-pending + notify-review", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-4-1"));
+      orch.setState("R-4-1", "reviewing");
+      orch.getItem("R-4-1")!.prNumber = 42;
+      orch.getItem("R-4-1")!.workspaceRef = "workspace:1";
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-4-1", ciStatus: "pass", prState: "open", reviewDecision: "CHANGES_REQUESTED" }]),
+      );
+
+      expect(orch.getItem("R-4-1")!.state).toBe("review-pending");
+      const notifyActions = actions.filter((a) => a.type === "notify-review");
+      expect(notifyActions).toHaveLength(1);
+      expect(notifyActions[0]!.message).toContain("Review");
+    });
+
+    // ── reviewing + PR merged externally → merged + clean + clean-review ─
+
+    it("reviewing + PR merged externally transitions to merged + clean + clean-review", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-5-1"));
+      orch.setState("R-5-1", "reviewing");
+      orch.getItem("R-5-1")!.prNumber = 42;
+      orch.getItem("R-5-1")!.reviewWorkspaceRef = "review-workspace:1";
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-5-1", prState: "merged" }]),
+      );
+
+      expect(orch.getItem("R-5-1")!.state).toBe("merged");
+      expect(actions.some((a) => a.type === "clean" && a.itemId === "R-5-1")).toBe(true);
+      expect(actions.some((a) => a.type === "clean-review" && a.itemId === "R-5-1")).toBe(true);
+    });
+
+    it("reviewing + PR merged without reviewWorkspaceRef does not emit clean-review", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-5-2"));
+      orch.setState("R-5-2", "reviewing");
+      orch.getItem("R-5-2")!.prNumber = 43;
+      // No reviewWorkspaceRef
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-5-2", prState: "merged" }]),
+      );
+
+      expect(orch.getItem("R-5-2")!.state).toBe("merged");
+      expect(actions.some((a) => a.type === "clean" && a.itemId === "R-5-2")).toBe(true);
+      expect(actions.some((a) => a.type === "clean-review")).toBe(false);
+    });
+
+    // ── reviewing + CI regression → ci-failed + clean-review ─────────
+
+    it("CI regression during reviewing transitions to ci-failed + clean-review", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-6-1"));
+      orch.setState("R-6-1", "reviewing");
+      orch.getItem("R-6-1")!.prNumber = 42;
+      orch.getItem("R-6-1")!.reviewWorkspaceRef = "review-workspace:1";
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-6-1", ciStatus: "fail", prState: "open" }]),
+      );
+
+      expect(orch.getItem("R-6-1")!.state).toBe("ci-failed");
+      expect(orch.getItem("R-6-1")!.ciFailCount).toBe(1);
+      expect(actions.some((a) => a.type === "clean-review")).toBe(true);
+      expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
+    });
+
+    // ── reviewWipLimit ───────────────────────────────────────────────
+
+    it("reviewing respects reviewWipLimit (no launch when slots full)", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true, reviewWipLimit: 1 });
+      orch.addItem(makeTodo("R-7-1"));
+      orch.addItem(makeTodo("R-7-2"));
+      orch.setState("R-7-1", "reviewing"); // occupies 1 review slot
+      orch.getItem("R-7-1")!.prNumber = 42;
+      orch.setState("R-7-2", "pr-open");
+      orch.getItem("R-7-2")!.prNumber = 43;
+
+      const actions = orch.processTransitions(
+        snapshotWith([
+          { id: "R-7-1", ciStatus: "pass", prState: "open" },
+          { id: "R-7-2", ciStatus: "pass", prState: "open" },
+        ]),
+      );
+
+      // R-7-2 should stay in ci-passed (not reviewing) because review slots are full
+      expect(orch.getItem("R-7-2")!.state).toBe("ci-passed");
+      expect(actions.filter((a) => a.type === "launch-review")).toHaveLength(0);
+    });
+
+    it("reviewing WIP slot frees up when review completes", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true, reviewWipLimit: 1 });
+      orch.addItem(makeTodo("R-7-3"));
+      orch.addItem(makeTodo("R-7-4"));
+
+      // R-7-3 is in reviewing state
+      orch.setState("R-7-3", "reviewing");
+      orch.getItem("R-7-3")!.prNumber = 44;
+
+      // R-7-4 is in ci-passed waiting for review
+      orch.setState("R-7-4", "ci-passed");
+      orch.getItem("R-7-4")!.prNumber = 45;
+
+      // R-7-3 gets approved → frees review slot → ci-passed
+      // R-7-4 should then be able to enter reviewing
+      const actions = orch.processTransitions(
+        snapshotWith([
+          { id: "R-7-3", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" },
+          { id: "R-7-4", ciStatus: "pass", prState: "open" },
+        ]),
+      );
+
+      // R-7-3 should chain through: reviewing → ci-passed → merging (reviewCompleted=true)
+      expect(orch.getItem("R-7-3")!.state).toBe("merging");
+      // R-7-4: items are processed sequentially, R-7-3 freed its slot...
+      // but R-7-4 is processed in transitionItem as ci-passed (the handlePrLifecycle)
+      // which calls evaluateMerge which checks reviewWipSlots
+      // At this point R-7-3 is no longer in reviewing state, so reviewWipCount=0
+      expect(orch.getItem("R-7-4")!.state).toBe("reviewing");
+      expect(actions.some((a) => a.type === "launch-review" && a.itemId === "R-7-4")).toBe(true);
+    });
+
+    // ── reviewing does NOT count toward normal WIP limit ─────────────
+
+    it("reviewing does NOT count toward normal WIP limit", () => {
+      orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-8-1"));
+      orch.addItem(makeTodo("R-8-2"));
+      orch.addItem(makeTodo("R-8-3"));
+
+      orch.setState("R-8-1", "reviewing"); // should NOT count toward wipLimit
+      orch.getItem("R-8-1")!.prNumber = 42;
+      orch.setState("R-8-2", "implementing"); // counts as 1 WIP
+      orch.setState("R-8-3", "ready");
+
+      const actions = orch.processTransitions(
+        snapshotWith([
+          { id: "R-8-1", ciStatus: "pass", prState: "open" },
+          { id: "R-8-2", workerAlive: true },
+        ]),
+      );
+
+      // R-8-3 should be launched — only 1 main WIP item, limit is 2
+      expect(orch.getItem("R-8-3")!.state).toBe("launching");
+      expect(actions.some((a) => a.type === "launch" && a.itemId === "R-8-3")).toBe(true);
+    });
+
+    it("wipCount does not include reviewing items", () => {
+      orch = new Orchestrator({ wipLimit: 5, reviewEnabled: true });
+      orch.addItem(makeTodo("R-8-4"));
+      orch.addItem(makeTodo("R-8-5"));
+      orch.setState("R-8-4", "implementing");
+      orch.setState("R-8-5", "reviewing");
+
+      expect(orch.wipCount).toBe(1); // only implementing counts
+      expect(orch.reviewWipCount).toBe(1); // reviewing is tracked separately
+    });
+
+    // ── reviewCompleted resets on CI regression ──────────────────────
+
+    it("reviewCompleted resets to false on ci-failed transition", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-9-1"));
+      orch.setState("R-9-1", "ci-passed");
+      orch.getItem("R-9-1")!.prNumber = 42;
+      orch.getItem("R-9-1")!.reviewCompleted = true;
+
+      // CI regresses
+      orch.processTransitions(
+        snapshotWith([{ id: "R-9-1", ciStatus: "fail", prState: "open" }]),
+      );
+
+      expect(orch.getItem("R-9-1")!.state).toBe("ci-failed");
+      expect(orch.getItem("R-9-1")!.reviewCompleted).toBe(false);
+    });
+
+    it("reviewCompleted resets to false on ci-pending transition", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-9-2"));
+      orch.setState("R-9-2", "ci-failed");
+      orch.getItem("R-9-2")!.ciFailCount = 1;
+      orch.getItem("R-9-2")!.reviewCompleted = true;
+
+      // CI restarts
+      orch.processTransitions(
+        snapshotWith([{ id: "R-9-2", ciStatus: "pending", prState: "open" }]),
+      );
+
+      expect(orch.getItem("R-9-2")!.state).toBe("ci-pending");
+      expect(orch.getItem("R-9-2")!.reviewCompleted).toBe(false);
+    });
+
+    it("reviewCompleted reset enables fresh review after CI fix cycle", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-9-3"));
+      orch.setState("R-9-3", "ci-passed");
+      orch.getItem("R-9-3")!.prNumber = 42;
+      orch.getItem("R-9-3")!.reviewCompleted = true; // was reviewed before
+
+      // CI fails → reviewCompleted resets
+      orch.processTransitions(
+        snapshotWith([{ id: "R-9-3", ciStatus: "fail", prState: "open" }]),
+      );
+      expect(orch.getItem("R-9-3")!.reviewCompleted).toBe(false);
+
+      // CI recovers → should go through reviewing again (not straight to merge)
+      orch.processTransitions(
+        snapshotWith([{ id: "R-9-3", ciStatus: "pass", prState: "open" }]),
+      );
+      expect(orch.getItem("R-9-3")!.state).toBe("reviewing");
+    });
+
+    // ── reviewed merge strategy end-to-end ───────────────────────────
+
+    it("reviewed merge strategy: full cycle ci-passed → reviewing → ci-passed → merging", () => {
+      orch = new Orchestrator({ mergeStrategy: "reviewed", reviewEnabled: true });
+      orch.addItem(makeTodo("R-10-1"));
+      orch.setState("R-10-1", "pr-open");
+      orch.getItem("R-10-1")!.prNumber = 42;
+
+      // CI passes → should enter reviewing (review gate fires)
+      const actions1 = orch.processTransitions(
+        snapshotWith([{ id: "R-10-1", ciStatus: "pass", prState: "open" }]),
+      );
+      expect(orch.getItem("R-10-1")!.state).toBe("reviewing");
+      expect(actions1.some((a) => a.type === "launch-review")).toBe(true);
+
+      // Review approves → should chain through ci-passed → merging
+      const actions2 = orch.processTransitions(
+        snapshotWith([{ id: "R-10-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
+      );
+      expect(orch.getItem("R-10-1")!.reviewCompleted).toBe(true);
+      expect(orch.getItem("R-10-1")!.state).toBe("merging");
+      expect(actions2.some((a) => a.type === "merge")).toBe(true);
+    });
+
+    // ── review WIP tracking independence ─────────────────────────────
+
+    it("reviewWipCount and reviewWipSlots track independently from main WIP", () => {
+      orch = new Orchestrator({ wipLimit: 3, reviewEnabled: true, reviewWipLimit: 2 });
+      orch.addItem(makeTodo("R-11-1"));
+      orch.addItem(makeTodo("R-11-2"));
+      orch.addItem(makeTodo("R-11-3"));
+      orch.addItem(makeTodo("R-11-4"));
+      orch.addItem(makeTodo("R-11-5"));
+
+      orch.setState("R-11-1", "implementing");
+      orch.setState("R-11-2", "ci-pending");
+      orch.setState("R-11-3", "reviewing");
+      orch.setState("R-11-4", "reviewing");
+      orch.setState("R-11-5", "ready");
+
+      expect(orch.wipCount).toBe(2); // implementing + ci-pending
+      expect(orch.wipSlots).toBe(1); // 3 - 2
+      expect(orch.reviewWipCount).toBe(2); // 2 reviewing
+      expect(orch.reviewWipSlots).toBe(0); // 2 - 2
+    });
+
+    // ── reviewing stays reviewing when no outcome yet ────────────────
+
+    it("reviewing stays reviewing when no review decision", () => {
+      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch.addItem(makeTodo("R-12-1"));
+      orch.setState("R-12-1", "reviewing");
+      orch.getItem("R-12-1")!.prNumber = 42;
+
+      const actions = orch.processTransitions(
+        snapshotWith([{ id: "R-12-1", ciStatus: "pass", prState: "open" }]),
+      );
+
+      expect(orch.getItem("R-12-1")!.state).toBe("reviewing");
+      expect(actions).toHaveLength(0);
+    });
+
+    // ── executeAction: launch-review ─────────────────────────────────
+
+    it("executeAction: launch-review calls deps.launchReview and stores reviewWorkspaceRef", () => {
+      const launchReview = vi.fn(() => ({ workspaceRef: "review-workspace:1" }));
+      const deps = mockDeps({ launchReview });
+      orch.addItem(makeTodo("R-13-1"));
+      orch.setState("R-13-1", "reviewing");
+      orch.getItem("R-13-1")!.prNumber = 42;
+
+      const result = orch.executeAction(
+        { type: "launch-review", itemId: "R-13-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(launchReview).toHaveBeenCalledWith("R-13-1", 42, defaultCtx.projectRoot);
+      expect(orch.getItem("R-13-1")!.reviewWorkspaceRef).toBe("review-workspace:1");
+    });
+
+    it("executeAction: launch-review succeeds as no-op when dep not wired", () => {
+      const deps = mockDeps(); // no launchReview dep
+      orch.addItem(makeTodo("R-13-2"));
+      orch.setState("R-13-2", "reviewing");
+      orch.getItem("R-13-2")!.prNumber = 43;
+
+      const result = orch.executeAction(
+        { type: "launch-review", itemId: "R-13-2", prNumber: 43 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+    });
+
+    it("executeAction: launch-review fails when no PR number", () => {
+      const launchReview = vi.fn(() => ({ workspaceRef: "review-workspace:1" }));
+      const deps = mockDeps({ launchReview });
+      orch.addItem(makeTodo("R-13-3"));
+      orch.setState("R-13-3", "reviewing");
+      // No prNumber
+
+      const result = orch.executeAction(
+        { type: "launch-review", itemId: "R-13-3" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("No PR number");
+    });
+
+    it("executeAction: launch-review handles launchReview throw", () => {
+      const launchReview = vi.fn(() => { throw new Error("review agent crash"); });
+      const deps = mockDeps({ launchReview });
+      orch.addItem(makeTodo("R-13-4"));
+      orch.setState("R-13-4", "reviewing");
+      orch.getItem("R-13-4")!.prNumber = 44;
+
+      const result = orch.executeAction(
+        { type: "launch-review", itemId: "R-13-4", prNumber: 44 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("review agent crash");
+    });
+
+    // ── executeAction: clean-review ──────────────────────────────────
+
+    it("executeAction: clean-review calls deps.cleanReview and clears reviewWorkspaceRef", () => {
+      const cleanReview = vi.fn(() => true);
+      const deps = mockDeps({ cleanReview });
+      orch.addItem(makeTodo("R-14-1"));
+      orch.setState("R-14-1", "ci-failed");
+      orch.getItem("R-14-1")!.reviewWorkspaceRef = "review-workspace:1";
+
+      const result = orch.executeAction(
+        { type: "clean-review", itemId: "R-14-1" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(cleanReview).toHaveBeenCalledWith("R-14-1", "review-workspace:1");
+      expect(orch.getItem("R-14-1")!.reviewWorkspaceRef).toBeUndefined();
+    });
+
+    it("executeAction: clean-review succeeds as no-op when dep not wired", () => {
+      const deps = mockDeps(); // no cleanReview dep
+      orch.addItem(makeTodo("R-14-2"));
+      orch.setState("R-14-2", "ci-failed");
+      orch.getItem("R-14-2")!.reviewWorkspaceRef = "review-workspace:2";
+
+      const result = orch.executeAction(
+        { type: "clean-review", itemId: "R-14-2" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(orch.getItem("R-14-2")!.reviewWorkspaceRef).toBeUndefined();
+    });
+
+    it("executeAction: clean-review handles cleanReview throw", () => {
+      const cleanReview = vi.fn(() => { throw new Error("cleanup failed"); });
+      const deps = mockDeps({ cleanReview });
+      orch.addItem(makeTodo("R-14-3"));
+      orch.setState("R-14-3", "ci-failed");
+      orch.getItem("R-14-3")!.reviewWorkspaceRef = "review-workspace:3";
+
+      const result = orch.executeAction(
+        { type: "clean-review", itemId: "R-14-3" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("cleanup failed");
+      // reviewWorkspaceRef should still be cleared even on error
+      expect(orch.getItem("R-14-3")!.reviewWorkspaceRef).toBeUndefined();
+    });
+
+    // ── Exhaustive state coverage for reviewing ──────────────────────
+
+    describe("Exhaustive reviewing transitions", () => {
+      it("reviewing → merged when PR externally merged", () => {
+        orch = new Orchestrator({ reviewEnabled: true });
+        orch.addItem(makeTodo("RX-1"));
+        orch.setState("RX-1", "reviewing");
+        orch.getItem("RX-1")!.prNumber = 42;
+        orch.getItem("RX-1")!.reviewWorkspaceRef = "review-workspace:1";
+
+        const actions = orch.processTransitions(
+          snapshotWith([{ id: "RX-1", prState: "merged" }]),
+        );
+
+        expect(orch.getItem("RX-1")!.state).toBe("merged");
+        expect(actions.some((a) => a.type === "clean")).toBe(true);
+        expect(actions.some((a) => a.type === "clean-review")).toBe(true);
+      });
+
+      it("reviewing → ci-failed on CI regression", () => {
+        orch = new Orchestrator({ reviewEnabled: true });
+        orch.addItem(makeTodo("RX-2"));
+        orch.setState("RX-2", "reviewing");
+        orch.getItem("RX-2")!.prNumber = 43;
+
+        const actions = orch.processTransitions(
+          snapshotWith([{ id: "RX-2", ciStatus: "fail", prState: "open" }]),
+        );
+
+        expect(orch.getItem("RX-2")!.state).toBe("ci-failed");
+        expect(actions.some((a) => a.type === "clean-review")).toBe(true);
+        expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
+      });
+
+      it("reviewing → ci-passed → merging on APPROVED (asap)", () => {
+        orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+        orch.addItem(makeTodo("RX-3"));
+        orch.setState("RX-3", "reviewing");
+        orch.getItem("RX-3")!.prNumber = 44;
+
+        const actions = orch.processTransitions(
+          snapshotWith([{ id: "RX-3", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
+        );
+
+        expect(orch.getItem("RX-3")!.state).toBe("merging");
+        expect(orch.getItem("RX-3")!.reviewCompleted).toBe(true);
+        expect(actions.some((a) => a.type === "merge")).toBe(true);
+      });
+
+      it("reviewing → review-pending on CHANGES_REQUESTED", () => {
+        orch = new Orchestrator({ reviewEnabled: true });
+        orch.addItem(makeTodo("RX-4"));
+        orch.setState("RX-4", "reviewing");
+        orch.getItem("RX-4")!.prNumber = 45;
+
+        const actions = orch.processTransitions(
+          snapshotWith([{ id: "RX-4", ciStatus: "pass", prState: "open", reviewDecision: "CHANGES_REQUESTED" }]),
+        );
+
+        expect(orch.getItem("RX-4")!.state).toBe("review-pending");
+        expect(actions.some((a) => a.type === "notify-review")).toBe(true);
+      });
+
+      it("reviewing stays reviewing with no snapshot", () => {
+        orch = new Orchestrator({ reviewEnabled: true });
+        orch.addItem(makeTodo("RX-5"));
+        orch.setState("RX-5", "reviewing");
+        orch.getItem("RX-5")!.prNumber = 46;
+
+        const actions = orch.processTransitions(emptySnapshot());
+
+        expect(orch.getItem("RX-5")!.state).toBe("reviewing");
+        expect(actions).toHaveLength(0);
+      });
+    });
+
+    // ── All existing state count test updated for reviewing ──────────
+
+    it("fresh orchestrator handles all 14 states (including reviewing) without errors", () => {
+      orch = new Orchestrator({ wipLimit: 10, reviewEnabled: true });
+      const allStates: OrchestratorItemState[] = [
+        "queued", "ready", "launching", "implementing", "pr-open",
+        "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing",
+        "merging", "merged", "done", "stuck",
+      ];
+
+      allStates.forEach((state, i) => {
+        orch.addItem(makeTodo(`RV-${i + 1}`));
+        orch.setState(`RV-${i + 1}`, state);
+      });
+
+      expect(allStates).toHaveLength(14);
+      expect(() => {
+        orch.processTransitions(emptySnapshot());
+      }).not.toThrow();
+    });
+
+    it("all WIP states still count correctly (reviewing excluded)", () => {
+      orch = new Orchestrator({ wipLimit: 10, reviewEnabled: true });
+      const wipStates: OrchestratorItemState[] = [
+        "launching", "implementing", "pr-open", "ci-pending",
+        "ci-passed", "ci-failed", "review-pending", "merging",
+      ];
+      wipStates.forEach((state, i) => {
+        orch.addItem(makeTodo(`WR-${i + 1}`));
+        orch.setState(`WR-${i + 1}`, state);
+      });
+      // Add reviewing item — should NOT count
+      orch.addItem(makeTodo("WR-9"));
+      orch.setState("WR-9", "reviewing");
+
+      expect(orch.wipCount).toBe(8);
+      expect(orch.reviewWipCount).toBe(1);
+    });
+  });
 });
