@@ -26,7 +26,7 @@ import { parseTodos } from "../parser.ts";
 import { resolveRepo, getWorktreeInfo } from "../cross-repo.ts";
 import { checkPrStatus } from "./watch.ts";
 import { launchSingleItem, detectAiTool } from "./start.ts";
-import { getWorkerHealthStatus, computeScreenHealth } from "../worker-health.ts";
+import { getWorkerHealthStatus, computeScreenHealth, type ScreenHealthStatus } from "../worker-health.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner } from "../gh.ts";
 import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset, daemonRebase } from "../git.ts";
@@ -1140,10 +1140,21 @@ export async function orchestrateLoop(
 
       if (elapsed >= effectiveInterval) {
         try {
+          // Extract screen health from latest snapshot for supervisor context
+          const screenHealthByItem = new Map<string, ScreenHealthStatus>();
+          if (snapshot) {
+            for (const snapItem of snapshot.items) {
+              if (snapItem.screenHealth) {
+                screenHealthByItem.set(snapItem.id, snapItem.screenHealth);
+              }
+            }
+          }
+
           const observation = supervisorTick(
             supervisorState,
             orch.getAllItems(),
             deps.supervisorDeps,
+            screenHealthByItem.size > 0 ? screenHealthByItem : undefined,
           );
 
           // Apply suggested actions (send messages to workers)

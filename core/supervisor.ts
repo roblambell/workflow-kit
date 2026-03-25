@@ -7,6 +7,7 @@ import { join } from "path";
 import { run } from "./shell.ts";
 import type { LogEntry } from "./commands/orchestrate.ts";
 import type { OrchestratorItem } from "./orchestrator.ts";
+import type { ScreenHealthStatus } from "./worker-health.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -85,6 +86,7 @@ export function buildSupervisorPrompt(
   items: OrchestratorItem[],
   elapsedByItem: Map<string, number>,
   now: Date = new Date(),
+  screenHealthByItem?: Map<string, ScreenHealthStatus>,
 ): string {
   const logSection = recentLogs.length > 0
     ? recentLogs.map((l) => JSON.stringify(l)).join("\n")
@@ -105,13 +107,30 @@ export function buildSupervisorPrompt(
         line += `, lastCommit=none`;
       }
     }
+    // Include screen health when available
+    const health = screenHealthByItem?.get(item.id);
+    if (health) line += `, screenHealth=${health}`;
     return line;
   }).join("\n");
+
+  // Build screen health distribution summary when data is available
+  let healthSummary = "";
+  if (screenHealthByItem && screenHealthByItem.size > 0) {
+    const counts = new Map<string, number>();
+    for (const status of screenHealthByItem.values()) {
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+    }
+    const parts: string[] = [];
+    for (const [status, count] of counts) {
+      parts.push(`${count} ${status}`);
+    }
+    healthSummary = `\n\n## Screen Health Summary\n${parts.join(", ")}`;
+  }
 
   return `You are an engineering supervisor reviewing a parallel AI coding pipeline.
 
 ## Current Item States
-${itemSection}
+${itemSection}${healthSummary}
 
 ## Recent Log Entries (since last tick)
 ${logSection}
@@ -120,7 +139,7 @@ ${logSection}
 
 Analyze the pipeline state and respond with a JSON object (no markdown fencing) containing:
 
-1. "anomalies": string[] — Anything stuck or abnormal. Use commit freshness (lastCommit) to distinguish active workers (recent commits) from stalled ones (no recent commits). A worker in "implementing" for 8 min with commits 2 min ago is healthy; one with no commits for 8 min is likely stuck. Also flag CI cycling on the same error, a PR open with no activity, etc.
+1. "anomalies": string[] — Anything stuck or abnormal. Use commit freshness (lastCommit) to distinguish active workers (recent commits) from stalled ones (no recent commits). A worker in "implementing" for 8 min with commits 2 min ago is healthy; one with no commits for 8 min is likely stuck. Use screenHealth to detect subtler issues: a worker with screenHealth=stalled-empty that was already nudged but hasn't recovered after 5 minutes likely needs escalation. If all workers show stalled screen health, suspect an environment problem rather than individual worker issues. Also flag CI cycling on the same error, a PR open with no activity, etc.
 
 2. "interventions": { type: "send-message" | "adjust-wip" | "escalate", itemId?: string, message?: string, wipLimit?: number, reason?: string }[] — Concrete actions to unstick the pipeline. Only suggest when clearly warranted.
 
@@ -215,6 +234,7 @@ export function supervisorTick(
   state: SupervisorState,
   items: OrchestratorItem[],
   deps: SupervisorDeps,
+  screenHealthByItem?: Map<string, ScreenHealthStatus>,
 ): SupervisorObservation {
   const now = deps.now();
   const empty: SupervisorObservation = {
@@ -237,6 +257,7 @@ export function supervisorTick(
     items,
     elapsedByItem,
     now,
+    screenHealthByItem,
   );
 
   let response: string;

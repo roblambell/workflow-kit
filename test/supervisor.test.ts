@@ -231,6 +231,111 @@ describe("buildSupervisorPrompt", () => {
     expect(prompt).toContain("commit freshness");
     expect(prompt).toContain("lastCommit");
   });
+
+  // ── Screen health tests (M-HLT-2) ──────────────────────────────────
+
+  it("includes screenHealth in item lines when data is provided", () => {
+    const items = [
+      makeItem("H-1-1", "implementing"),
+      makeItem("H-1-2", "implementing"),
+    ];
+
+    const elapsed = new Map<string, number>();
+    elapsed.set("H-1-1", 300_000);
+    elapsed.set("H-1-2", 600_000);
+
+    const screenHealth = new Map<string, import("../core/worker-health.ts").ScreenHealthStatus>();
+    screenHealth.set("H-1-1", "healthy");
+    screenHealth.set("H-1-2", "stalled-empty");
+
+    const prompt = buildSupervisorPrompt([], items, elapsed, new Date(), screenHealth);
+
+    expect(prompt).toContain("H-1-1:");
+    expect(prompt).toContain("screenHealth=healthy");
+    expect(prompt).toContain("H-1-2:");
+    expect(prompt).toContain("screenHealth=stalled-empty");
+  });
+
+  it("includes screen health distribution summary", () => {
+    const items = [
+      makeItem("H-2-1", "implementing"),
+      makeItem("H-2-2", "implementing"),
+      makeItem("H-2-3", "implementing"),
+      makeItem("H-2-4", "implementing"),
+    ];
+
+    const elapsed = new Map<string, number>();
+    for (const item of items) elapsed.set(item.id, 300_000);
+
+    const screenHealth = new Map<string, import("../core/worker-health.ts").ScreenHealthStatus>();
+    screenHealth.set("H-2-1", "healthy");
+    screenHealth.set("H-2-2", "healthy");
+    screenHealth.set("H-2-3", "healthy");
+    screenHealth.set("H-2-4", "stalled-empty");
+
+    const prompt = buildSupervisorPrompt([], items, elapsed, new Date(), screenHealth);
+
+    expect(prompt).toContain("Screen Health Summary");
+    expect(prompt).toContain("3 healthy");
+    expect(prompt).toContain("1 stalled-empty");
+  });
+
+  it("works without screen health data (backward compat)", () => {
+    const items = [makeItem("H-3-1", "implementing")];
+    const elapsed = new Map<string, number>();
+    elapsed.set("H-3-1", 300_000);
+
+    // No screenHealthByItem passed
+    const prompt = buildSupervisorPrompt([], items, elapsed);
+
+    expect(prompt).toContain("H-3-1: state=implementing");
+    // Item line should not have screenHealth (instructions text may mention it)
+    const itemLine = prompt.split("\n").find((l: string) => l.includes("H-3-1:"));
+    expect(itemLine).not.toContain("screenHealth=");
+    expect(prompt).not.toContain("Screen Health Summary");
+  });
+
+  it("omits screenHealth for items not in the health map", () => {
+    const items = [
+      makeItem("H-4-1", "implementing"),
+      makeItem("H-4-2", "ci-pending"),
+    ];
+
+    const elapsed = new Map<string, number>();
+    elapsed.set("H-4-1", 300_000);
+    elapsed.set("H-4-2", 120_000);
+
+    // Only H-4-1 has screen health
+    const screenHealth = new Map<string, import("../core/worker-health.ts").ScreenHealthStatus>();
+    screenHealth.set("H-4-1", "stalled-permission");
+
+    const prompt = buildSupervisorPrompt([], items, elapsed, new Date(), screenHealth);
+
+    expect(prompt).toContain("screenHealth=stalled-permission");
+    // H-4-2 line should not have screenHealth
+    const h42Line = prompt.split("\n").find((l: string) => l.includes("H-4-2:"));
+    expect(h42Line).toBeDefined();
+    expect(h42Line).not.toContain("screenHealth=");
+  });
+
+  it("prompt instructions reference screenHealth for anomaly detection", () => {
+    const prompt = buildSupervisorPrompt([], [], new Map());
+
+    expect(prompt).toContain("screenHealth");
+    expect(prompt).toContain("stalled-empty");
+    expect(prompt).toContain("escalation");
+  });
+
+  it("omits distribution summary when screenHealth map is empty", () => {
+    const items = [makeItem("H-5-1", "implementing")];
+    const elapsed = new Map<string, number>();
+    elapsed.set("H-5-1", 300_000);
+
+    const emptyHealth = new Map<string, import("../core/worker-health.ts").ScreenHealthStatus>();
+    const prompt = buildSupervisorPrompt([], items, elapsed, new Date(), emptyHealth);
+
+    expect(prompt).not.toContain("Screen Health Summary");
+  });
 });
 
 // ── parseSupervisorResponse ──────────────────────────────────────────
@@ -461,6 +566,55 @@ describe("supervisorTick", () => {
     supervisorTick(state, [item], deps);
 
     expect(capturedPrompt).toContain("elapsed=15min");
+  });
+
+  it("passes screen health data through to prompt", () => {
+    let capturedPrompt = "";
+    const callLLM = vi.fn((prompt: string) => {
+      capturedPrompt = prompt;
+      return JSON.stringify({
+        anomalies: [],
+        interventions: [],
+        frictionObservations: [],
+        processImprovements: [],
+      });
+    });
+
+    const deps = mockSupervisorDeps({ callLLM });
+    const state = makeState();
+    const items = [makeItem("SH-1-1", "implementing")];
+
+    const screenHealth = new Map<string, import("../core/worker-health.ts").ScreenHealthStatus>();
+    screenHealth.set("SH-1-1", "stalled-error");
+
+    supervisorTick(state, items, deps, screenHealth);
+
+    expect(capturedPrompt).toContain("screenHealth=stalled-error");
+  });
+
+  it("works without screen health data (backward compat)", () => {
+    let capturedPrompt = "";
+    const callLLM = vi.fn((prompt: string) => {
+      capturedPrompt = prompt;
+      return JSON.stringify({
+        anomalies: [],
+        interventions: [],
+        frictionObservations: [],
+        processImprovements: [],
+      });
+    });
+
+    const deps = mockSupervisorDeps({ callLLM });
+    const state = makeState();
+    const items = [makeItem("SH-2-1", "implementing")];
+
+    // No screen health passed
+    supervisorTick(state, items, deps);
+
+    expect(capturedPrompt).toContain("SH-2-1: state=implementing");
+    // Item line should not have screenHealth (instructions text may mention it)
+    const itemLine = capturedPrompt.split("\n").find((l: string) => l.includes("SH-2-1:"));
+    expect(itemLine).not.toContain("screenHealth=");
   });
 });
 
