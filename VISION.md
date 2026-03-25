@@ -10,7 +10,7 @@ ninthwave is that orchestration layer. It doesn't write code. It manages the pip
 
 ## What Exists Today
 
-v0.1.0 shipped March 2026. Five grind cycles (0-4) have shipped since then.
+v0.1.0 shipped March 2026. Six grind cycles (0-5) have shipped since then.
 
 **Core pipeline (v0.1.0):**
 - **Decompose + orchestrate pipeline.** `/decompose` breaks a spec into batched work items (~200-400 LOC each). `ninthwave orchestrate` runs an event-driven daemon that launches workers, monitors CI and PR state, merges, cleans up, and recovers from crashes. The full cycle: spec in, merged PRs out.
@@ -43,11 +43,20 @@ v0.1.0 shipped March 2026. Five grind cycles (0-4) have shipped since then.
 
 **Shipped in grind cycle 4 (Phase A-quinquies):**
 - **CLI polish** — `--version`/`-v` and `--help`/`-h` flags (CLI-2).
-- **nono default sandboxing** — kernel-level worker isolation via Seatbelt (macOS) and Landlock (Linux), zero-config (SBX-1).
+- **nono default sandboxing** — kernel-level worker isolation via Seatbelt (macOS) and Landlock (Linux), zero-config (SBX-1). Profile distribution via init/setup (SBX-3, SBX-4). Sandbox fix for profile creation (SBX-2).
+- **Interactive onboarding** — guided first-run onboarding flow with project detection (ONB-1). Sandbox awareness step in onboarding (ONB-2).
+- **zellij multiplexer adapter** — alternative multiplexer backend: create session, send message, list sessions (ZLJ-1).
+- **ClickUp task backend** — external task backend adapter alongside GitHub Issues (CKU-1).
+- **GitHub Action create-todo** — `ninthwave-sh/create-todo` action creates todo files when CD workflows fail (GHA-1).
 - **Stacked branch execution** — items with in-flight dependencies launch early from the dependency's branch instead of waiting for merge. Squash-merge-safe `rebaseOnto()` restacks automatically post-merge. Stack navigation comments on PRs show the full dependency chain with links (STK-1 through STK-6).
 - **CI failure detection fix** — `gh pr checks` field name correction (`link` not `detailsUrl`) that was silently breaking all CI status detection, plus notification delivery hardening with retry on failure.
 - **Status UX improvements** — flicker-free status refresh, status pane reuse on daemon restart, full queue and WIP info display (STA-1 through STA-3).
-- **Observability backends** — Sentry and PagerDuty task backend adapters for external issue tracking (SNT-1, PGD-1).
+
+**Shipped in grind cycle 5 (Phase A-sexies):**
+- **Sentry task backend** — read Sentry issues as work items, sync status, resolve on merge (SNT-1).
+- **PagerDuty task backend** — read PagerDuty incidents as work items, acknowledge/resolve on merge (PGD-1).
+- **CLI observability integration** — `ninthwave list` and `ninthwave init` wired to Sentry and PagerDuty backends (OBS-1).
+- **Friction log auto-commit** — `/work` delivery loop auto-commits friction entries (FRC-1).
 
 **Self-developing.** ninthwave dogfoods itself. The friction log has surfaced 24 issues across 4 grind cycles, driving improvements from poll interval tuning to the file-per-todo migration. The L-VIS recurring item in `.ninthwave/todos/` keeps the self-improvement loop running.
 
@@ -73,7 +82,7 @@ v0.1.0 shipped March 2026. Five grind cycles (0-4) have shipped since then.
 
 ## What's Next
 
-Priority areas ordered by dependency and impact. Phases A through A-quater are complete.
+Priority areas ordered by dependency and impact. Phases A through A-sexies are complete.
 
 ### A. Solidify the Foundation *(complete)*
 
@@ -91,16 +100,13 @@ Priority areas ordered by dependency and impact. Phases A through A-quater are c
 
 ~~Make ninthwave reliable enough for daily use without manual intervention.~~ Done. Analytics persistence (ANL-3), memory-aware WIP (WIP-1), cost/token tracking (ANL-4), GitHub Issues adapter (GHI-1, GHI-2), daemon mode (DAE-1), and worker retry (RET-1) all shipped. Detection latency tracking, daemon-side auto-rebase, file-per-todo migration, and priority-ordered merge queue also shipped as friction-driven improvements.
 
-### A-quinquies. Surface Area & Onboarding *(current — grind cycle 4)*
+### ~~A-quinquies. Surface Area & Onboarding~~ *(complete)*
 
-Expand ninthwave's reach: more multiplexers, more task backends, better onboarding, and sandboxed workers by default.
+~~Expand ninthwave's reach: more multiplexers, more task backends, better onboarding, and sandboxed workers by default.~~ Done. CLI polish (CLI-2), nono sandboxing with profile distribution (SBX-1 through SBX-4), interactive onboarding with sandbox awareness (ONB-1, ONB-2), zellij adapter (ZLJ-1), ClickUp adapter (CKU-1), GitHub Action (GHA-1), stacked branch execution (STK-1 through STK-6), and status UX improvements (STA-1 through STA-3) all shipped.
 
-- ~~**CLI polish** — `--version`/`-v` and `--help`/`-h` flags (CLI-2).~~ Done.
-- ~~**nono default sandboxing** — kernel-level worker isolation via Seatbelt/Landlock, zero-config (SBX-1).~~ Done.
-- **Interactive onboarding flow** — guided setup with project detection and configuration (ONB-1).
-- **zellij multiplexer adapter** — alternative multiplexer backend, three operations: create session, send message, list sessions (ZLJ-1).
-- **ClickUp task backend** — second external task backend after GitHub Issues (CKU-1).
-- **GitHub Action create-todo** — `ninthwave-sh/create-todo` action that creates todo files when CD workflows fail (GHA-1).
+### ~~A-sexies. Production Signal Pipeline~~ *(complete)*
+
+~~Wire production observability tools into the work queue so production incidents become work items automatically.~~ Done. Sentry task backend adapter (SNT-1), PagerDuty task backend adapter (PGD-1), and CLI integration for both backends in `list` and `init` commands (OBS-1) all shipped. Friction log auto-commit (FRC-1) also shipped.
 
 ### B. Sandboxed Workers
 
@@ -141,9 +147,9 @@ An optional advisory layer on top of the deterministic daemon.
 
 ### E. Expand the Surface Area
 
-- **External task backends.** Two categories: (1) Project management — GitHub Issues adapter shipped (GHI-1, GHI-2), ClickUp in progress (CKU-1), then Linear. Work items created by humans or planning tools. (2) Observability/alerting — Sentry adapter first, then PagerDuty, CloudWatch. Work items created by production signals. Both use the same three-operation interface: list items, read item, mark done. `.ninthwave/todos/` is the built-in default.
-- **GitHub Action for CI/CD failures.** `ninthwave-sh/create-todo` — a thin GitHub Action that creates a todo file in `.ninthwave/todos/` when a CD workflow fails. Bridges CI/CD signals into the work queue for teams using file-per-todo without an external task backend.
-- **Multiplexer abstraction.** ~~tmux~~ Done (MUX-3, MUX-4). zellij as the next alternative backend. Three operations to abstract: create session, send message, list sessions. cmux remains the default.
+- **External task backends.** Two categories: (1) Project management — GitHub Issues adapter shipped (GHI-1, GHI-2), ClickUp shipped (CKU-1), Linear remaining. Work items created by humans or planning tools. (2) Observability/alerting — Sentry shipped (SNT-1), PagerDuty shipped (PGD-1), CloudWatch remaining. Work items created by production signals. Both use the same three-operation interface: list items, read item, mark done. `.ninthwave/todos/` is the built-in default.
+- **GitHub Action for CI/CD failures.** ~~`ninthwave-sh/create-todo` — a thin GitHub Action that creates a todo file in `.ninthwave/todos/` when a CD workflow fails.~~ Done (GHA-1).
+- **Multiplexer abstraction.** ~~tmux~~ Done (MUX-3, MUX-4). ~~zellij~~ Done (ZLJ-1). cmux remains the default.
 - **Smarter resource management.** ~~Memory-aware WIP limits based on available RAM.~~ Done (WIP-1). Adaptive scaling under load. Each worker consumes ~1GB (revised down from initial 2.5GB estimate after measurement).
 - **Cross-repo maturity.** Monorepo workspace support (pnpm/yarn/turborepo). Dependency ordering across repos.
 
@@ -172,10 +178,10 @@ ninthwave is feature-complete when:
 - A developer goes from spec to merged, reviewed PRs in a single command cycle. *(Achieved.)*
 - The pipeline handles all common failure modes automatically: CI failures, merge conflicts, review feedback, worker crashes, dependency ordering. *(Achieved — CI failure detection, rebase on conflicts, review dispatch, heartbeat monitoring, crash recovery, worker retry: RET-1.)*
 - Works with 3+ AI coding tools. *(Achieved: Claude Code, OpenCode, Copilot CLI.)*
-- Works with 2+ terminal multiplexers. *(Achieved: cmux + tmux. zellij in progress: ZLJ-1.)*
-- Connects to 2+ task backends. *(In progress — GitHub Issues adapter achieved: GHI-1, GHI-2. ClickUp adapter in progress: CKU-1.)*
-- Connects to 2+ observability/alerting backends (Sentry, PagerDuty). *(Not yet.)*
-- GitHub Action bridges CI/CD failures into todo files. *(In progress: GHA-1.)*
+- Works with 2+ terminal multiplexers. *(Achieved: cmux + tmux + zellij: ZLJ-1.)*
+- Connects to 2+ task backends. *(Achieved: GitHub Issues: GHI-1, GHI-2. ClickUp: CKU-1.)*
+- Connects to 2+ observability/alerting backends. *(Achieved: Sentry: SNT-1. PagerDuty: PGD-1.)*
+- GitHub Action bridges CI/CD failures into todo files. *(Achieved: GHA-1.)*
 - Every decomposed work item has a test plan with tracked outcomes. *(Achieved — test plan field required since v0.1.0. Analytics tracks outcomes per run: ANL-1, ANL-2. Cost/token tracking: ANL-4.)*
 - Workers run sandboxed by default. *(Achieved — nono kernel-level sandboxing via Seatbelt/Landlock: SBX-1.)*
 - Remote session links posted on PRs with auth. *(Not yet.)*
