@@ -25,6 +25,7 @@ import {
 import { parseTodos } from "../parser.ts";
 import { checkPrStatus } from "./watch.ts";
 import { launchSingleItem, detectAiTool } from "./start.ts";
+import { checkWorkerHealth } from "../worker-health.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner } from "../gh.ts";
 import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset, daemonRebase } from "../git.ts";
@@ -198,9 +199,13 @@ export function buildSnapshot(
       }
     }
 
-    // Check worker alive and commit freshness for active items
+    // Check worker alive, health, and commit freshness for active items
     if (orchItem.state === "launching" || orchItem.state === "implementing" || orchItem.state === "ci-failed") {
       snap.workerAlive = isWorkerAlive(orchItem, mux);
+      // Screen-based health check: detect loading, prompt (stuck), processing, stalled, error
+      if (orchItem.workspaceRef) {
+        snap.workerHealth = checkWorkerHealth(mux, orchItem.workspaceRef);
+      }
       const commitTime = getLastCommitTime(projectRoot, `todo/${orchItem.id}`);
       snap.lastCommitTime = commitTime;
       // Also store on the orchestrator item so the supervisor can read it
