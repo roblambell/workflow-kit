@@ -1359,8 +1359,8 @@ export async function cmdOrchestrate(
 
   const ctx: ExecutionContext = { projectRoot, worktreeDir, todosDir, aiTool };
   const actionDeps: OrchestratorDeps = {
-    launchSingleItem: (item, todosDir, worktreeDir, projectRoot, aiTool) =>
-      launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux, { noSandbox }),
+    launchSingleItem: (item, todosDir, worktreeDir, projectRoot, aiTool, baseBranch) =>
+      launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux, { noSandbox, baseBranch }),
     cleanSingleWorktree,
     prMerge: (repoRoot, prNumber) => prMerge(repoRoot, prNumber),
     prComment: (repoRoot, prNumber, body) => prComment(repoRoot, prNumber, body),

@@ -31,19 +31,26 @@ Before making any changes, read the following documents:
 
 The project instruction file is the source of truth for project-specific conventions. Follow it.
 
-## 3. Sync with latest main and set status
+## 3. Sync with latest base branch and set status
 
-In WIP-limited batches, your worktree may have been created minutes or hours ago. Rebase onto the latest main before starting work:
+In WIP-limited batches, your worktree may have been created minutes or hours ago. Rebase onto the latest base before starting work.
 
+**If `BASE_BRANCH` is set** (stacked on a dependency):
+```bash
+git fetch origin $BASE_BRANCH --quiet
+git rebase origin/$BASE_BRANCH --quiet
+```
+
+**If `BASE_BRANCH` is not set** (normal, non-stacked):
 ```bash
 git fetch origin main --quiet
 git rebase origin/main --quiet
 ```
 
-If the rebase has conflicts, abort and re-create from latest main:
+If the rebase has conflicts, abort and re-create from the base:
 ```bash
 git rebase --abort
-git reset --hard origin/main
+git reset --hard origin/main  # or origin/$BASE_BRANCH if stacked
 ```
 
 Then set status:
@@ -189,6 +196,20 @@ Before creating the PR, delete your todo file so that merging the PR automatical
 ```bash
 git push -u origin todo/YOUR_TODO_ID
 ```
+
+### Stacked PRs (BASE_BRANCH)
+
+If your system prompt includes `BASE_BRANCH: <branch>`, you are stacked on a dependency branch. Create the PR against the dependency branch instead of main:
+
+```bash
+gh pr create --base $BASE_BRANCH --title "..." --body "..."
+```
+
+This gives reviewers a clean diff showing only your changes, not the dependency's changes. When the dependency merges, GitHub will automatically retarget your PR to main.
+
+If `BASE_BRANCH` is **not** set in your system prompt, create the PR normally (no `--base` flag needed — it defaults to main).
+
+### PR body template
 
 Create the PR with `gh pr create`. Use a HEREDOC for the body:
 

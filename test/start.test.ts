@@ -20,7 +20,7 @@ vi.mock("../core/git.ts", () => ({
 
 import { detectAiTool, cmdStart, launchSingleItem, sanitizeTitle, extractTodoText } from "../core/commands/start.ts";
 import { parseTodos } from "../core/parser.ts";
-import { fetchOrigin, ffMerge } from "../core/git.ts";
+import { fetchOrigin, ffMerge, createWorktree } from "../core/git.ts";
 
 /** Create a mock Multiplexer for dependency injection (avoids vi.mock leaking). */
 function createMockMux(): Multiplexer & Record<string, Mock> {
@@ -443,6 +443,120 @@ describe("launchSingleItem", () => {
       expect(res).not.toBeNull();
       expect(res!.worktreePath).toBe(join(worktreeDir, "todo-M-CI-1"));
     });
+  });
+
+  it("creates worktree from dep branch when baseBranch is set", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    captureOutput(() => {
+      const res = launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux, {
+        baseBranch: "todo/H-1-1",
+      });
+      expect(res).not.toBeNull();
+    });
+
+    // createWorktree should be called with the dep branch as startPoint
+    expect(createWorktree).toHaveBeenCalledWith(
+      repo,
+      expect.stringContaining("todo-M-CI-1"),
+      "todo/M-CI-1",
+      "origin/todo/H-1-1",
+    );
+  });
+
+  it("fetches dep branch instead of main when baseBranch is set", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    const output = captureOutput(() => {
+      launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux, {
+        baseBranch: "todo/H-1-1",
+      });
+    });
+
+    // Should fetch the dep branch, not main
+    expect(fetchOrigin).toHaveBeenCalledWith(repo, "todo/H-1-1");
+    // Should NOT fetch main
+    expect(fetchOrigin).not.toHaveBeenCalledWith(repo, "main");
+    // Should NOT call ffMerge (stacked launches skip main ff-merge)
+    expect(ffMerge).not.toHaveBeenCalled();
+    // Output should mention the dep branch
+    expect(output).toContain("Fetching dependency branch todo/H-1-1");
+  });
+
+  it("includes BASE_BRANCH in system prompt when baseBranch is set", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    // Use opencode so the full system prompt is sent via sendMessage (not --append-system-prompt)
+    captureOutput(() => {
+      launchSingleItem(item, todosDir, worktreeDir, repo, "opencode", mockMux, {
+        baseBranch: "todo/H-1-1",
+      });
+    });
+
+    // For opencode, the system prompt is included in the initial message sent via sendMessage
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    expect(sendCall).toBeDefined();
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).toContain("BASE_BRANCH: todo/H-1-1");
+  });
+
+  it("does not include BASE_BRANCH in system prompt when baseBranch is not set", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    // Use opencode so the full system prompt is sent via sendMessage
+    captureOutput(() => {
+      launchSingleItem(item, todosDir, worktreeDir, repo, "opencode", mockMux);
+    });
+
+    // The system prompt should NOT contain BASE_BRANCH
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    expect(sendCall).toBeDefined();
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).not.toContain("BASE_BRANCH:");
+  });
+
+  it("non-stacked launch still fetches main and calls ffMerge", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    captureOutput(() => {
+      launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
+    });
+
+    // Non-stacked: should fetch main and call ffMerge
+    expect(fetchOrigin).toHaveBeenCalledWith(repo, "main");
+    expect(ffMerge).toHaveBeenCalledWith(repo, "main");
+    // createWorktree should use default startPoint "HEAD"
+    expect(createWorktree).toHaveBeenCalledWith(
+      repo,
+      expect.stringContaining("todo-M-CI-1"),
+      "todo/M-CI-1",
+      "HEAD",
+    );
   });
 });
 

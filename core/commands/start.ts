@@ -168,7 +168,7 @@ export function launchSingleItem(
   projectRoot: string,
   aiTool: string,
   mux: Multiplexer = getMux(),
-  options: { noSandbox?: boolean } = {},
+  options: { noSandbox?: boolean; baseBranch?: string } = {},
 ): LaunchResult | null {
   let targetRepo: string;
   try {
@@ -200,22 +200,37 @@ export function launchSingleItem(
       ensureWorktreeExcluded(targetRepo);
     }
 
-    info(
-      `Fetching latest main in ${basename(targetRepo)} before creating worktree for ${item.id}`,
-    );
-    try {
-      fetchOrigin(targetRepo, "main");
-    } catch (e) {
-      warn(
-        `Failed to fetch origin/main in ${basename(targetRepo)} for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree will be based on local main (may be outdated).`,
+    // When stacking, fetch the dependency branch instead of main
+    const baseBranch = options.baseBranch;
+    if (baseBranch) {
+      info(
+        `Fetching dependency branch ${baseBranch} in ${basename(targetRepo)} for stacked launch of ${item.id}`,
       );
-    }
-    try {
-      ffMerge(targetRepo, "main");
-    } catch (e) {
-      warn(
-        `Failed to fast-forward main in ${basename(targetRepo)} for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree may be based on outdated code.`,
+      try {
+        fetchOrigin(targetRepo, baseBranch);
+      } catch (e) {
+        warn(
+          `Failed to fetch origin/${baseBranch} in ${basename(targetRepo)} for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree will be based on local branch (may be outdated).`,
+        );
+      }
+    } else {
+      info(
+        `Fetching latest main in ${basename(targetRepo)} before creating worktree for ${item.id}`,
       );
+      try {
+        fetchOrigin(targetRepo, "main");
+      } catch (e) {
+        warn(
+          `Failed to fetch origin/main in ${basename(targetRepo)} for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree will be based on local main (may be outdated).`,
+        );
+      }
+      try {
+        ffMerge(targetRepo, "main");
+      } catch (e) {
+        warn(
+          `Failed to fast-forward main in ${basename(targetRepo)} for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree may be based on outdated code.`,
+        );
+      }
     }
 
     // Handle branch collision
@@ -233,7 +248,9 @@ export function launchSingleItem(
     info(
       `Creating worktree for ${item.id} on branch ${branchName} in ${basename(targetRepo)}`,
     );
-    createWorktree(targetRepo, worktreePath, branchName);
+    // When stacking, create worktree from the dependency branch; otherwise from HEAD (default)
+    const startPoint = baseBranch ? `origin/${baseBranch}` : "HEAD";
+    createWorktree(targetRepo, worktreePath, branchName, startPoint);
   }
 
   // Track cross-repo items in the index
@@ -257,11 +274,12 @@ export function launchSingleItem(
 
   // Build system prompt
   const todoText = extractTodoText(todosDir, item.id);
+  const baseBranchLine = options.baseBranch ? `BASE_BRANCH: ${options.baseBranch}\n` : "";
   const systemPrompt = `YOUR_TODO_ID: ${item.id}
 YOUR_PARTITION: ${partition}
 PROJECT_ROOT: ${targetRepo}
 HUB_ROOT: ${projectRoot}
-
+${baseBranchLine}
 ${todoText}`;
 
   // Write system prompt to a temp file
