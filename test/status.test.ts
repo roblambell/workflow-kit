@@ -13,6 +13,7 @@ import {
   formatStatusTable,
   cmdStatusWatch,
   cmdStatus,
+  renderStatus,
   getTerminalWidth,
   pad,
   mapDaemonItemState,
@@ -448,65 +449,103 @@ describe("getTerminalWidth", () => {
   });
 });
 
+// ─── renderStatus ───────────────────────────────────────────────────────────
+
+describe("renderStatus", () => {
+  it("returns a string (not void)", () => {
+    const result = renderStatus("/nonexistent/path/.worktrees", "/nonexistent/path");
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("contains the same content cmdStatus would print", () => {
+    // renderStatus should include 'ninthwave status' header
+    const result = stripAnsi(renderStatus("/nonexistent/path/.worktrees", "/nonexistent/path"));
+    expect(result).toContain("ninthwave status");
+    expect(result).toContain("No active items");
+  });
+
+  it("includes worktreeDir path when it does not exist", () => {
+    const result = stripAnsi(renderStatus("/nonexistent/path/.worktrees", "/nonexistent/path"));
+    expect(result).toContain("/nonexistent/path/.worktrees");
+    expect(result).toContain("not found");
+  });
+
+  it("includes getting-started hints when no items exist", () => {
+    const result = stripAnsi(renderStatus("/nonexistent/path/.worktrees", "/nonexistent/path"));
+    expect(result).toContain("To get started:");
+    expect(result).toContain("ninthwave list --ready");
+  });
+
+  it("shows 'No active items' when worktreeDir exists but has no todo-* entries", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "nw-status-test-"));
+    const worktreeDir = join(tmpDir, ".worktrees");
+    mkdirSync(worktreeDir);
+    writeFileSync(join(worktreeDir, "some-other-file"), "");
+
+    try {
+      const result = stripAnsi(renderStatus(worktreeDir, tmpDir));
+      expect(result).toContain("No active items");
+      expect(result).toContain("ninthwave status");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("ends with a newline", () => {
+    const result = renderStatus("/nonexistent/path/.worktrees", "/nonexistent/path");
+    expect(result.endsWith("\n")).toBe(true);
+  });
+});
+
 // ─── cmdStatus (integration) ────────────────────────────────────────────────
 
 describe("cmdStatus", () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
-  let logOutput: string[];
-
-  function setupLogSpy() {
-    logOutput = [];
-    logSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation((...args: unknown[]) => {
-        logOutput.push(args.map(String).join(" "));
-      });
-  }
-
-  function teardownLogSpy() {
-    logSpy.mockRestore();
-  }
-
-  function allOutput(): string {
-    return stripAnsi(logOutput.join("\n"));
-  }
-
-  it("shows 'No active items' when worktreeDir does not exist", () => {
-    setupLogSpy();
+  it("writes to stdout with the same content as renderStatus", () => {
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       cmdStatus("/nonexistent/path/.worktrees", "/nonexistent/path");
-      const output = allOutput();
+      const written = writeSpy.mock.calls.map((call) => String(call[0])).join("");
+      const expected = renderStatus("/nonexistent/path/.worktrees", "/nonexistent/path");
+      expect(written).toBe(expected);
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it("shows 'No active items' when worktreeDir does not exist", () => {
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      cmdStatus("/nonexistent/path/.worktrees", "/nonexistent/path");
+      const output = stripAnsi(writeSpy.mock.calls.map((call) => String(call[0])).join(""));
       expect(output).toContain("No active items");
       expect(output).toContain("ninthwave status");
     } finally {
-      teardownLogSpy();
+      writeSpy.mockRestore();
     }
   });
 
   it("shows worktreeDir path when it does not exist", () => {
-    setupLogSpy();
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
-      cmdStatus(
-        "/nonexistent/path/.worktrees",
-        "/nonexistent/path",
-      );
-      const output = allOutput();
+      cmdStatus("/nonexistent/path/.worktrees", "/nonexistent/path");
+      const output = stripAnsi(writeSpy.mock.calls.map((call) => String(call[0])).join(""));
       expect(output).toContain("/nonexistent/path/.worktrees");
       expect(output).toContain("not found");
     } finally {
-      teardownLogSpy();
+      writeSpy.mockRestore();
     }
   });
 
   it("shows getting-started hints when worktreeDir does not exist", () => {
-    setupLogSpy();
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       cmdStatus("/nonexistent/path/.worktrees", "/nonexistent/path");
-      const output = allOutput();
+      const output = stripAnsi(writeSpy.mock.calls.map((call) => String(call[0])).join(""));
       expect(output).toContain("To get started:");
       expect(output).toContain("ninthwave list --ready");
     } finally {
-      teardownLogSpy();
+      writeSpy.mockRestore();
     }
   });
 
@@ -514,17 +553,16 @@ describe("cmdStatus", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "nw-status-test-"));
     const worktreeDir = join(tmpDir, ".worktrees");
     mkdirSync(worktreeDir);
-    // Add a non-todo file to ensure it's not picked up
     writeFileSync(join(worktreeDir, "some-other-file"), "");
 
-    setupLogSpy();
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       cmdStatus(worktreeDir, tmpDir);
-      const output = allOutput();
+      const output = stripAnsi(writeSpy.mock.calls.map((call) => String(call[0])).join(""));
       expect(output).toContain("No active items");
       expect(output).toContain("ninthwave status");
     } finally {
-      teardownLogSpy();
+      writeSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -534,13 +572,13 @@ describe("cmdStatus", () => {
     const worktreeDir = join(tmpDir, ".worktrees");
     mkdirSync(worktreeDir);
 
-    setupLogSpy();
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       cmdStatus(worktreeDir, tmpDir);
-      const output = allOutput();
+      const output = stripAnsi(writeSpy.mock.calls.map((call) => String(call[0])).join(""));
       expect(output).toContain("To get started:");
     } finally {
-      teardownLogSpy();
+      writeSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -549,16 +587,11 @@ describe("cmdStatus", () => {
 // ─── cmdStatusWatch ──────────────────────────────────────────────────────────
 
 describe("cmdStatusWatch", () => {
-  it("--watch triggers a polling refresh loop that stops on abort", async () => {
+  it("uses cursor-home (not full-screen-clear) for flicker-free refresh", async () => {
     const controller = new AbortController();
-    let iterations = 0;
 
-    // Spy on stdout.write to count screen clears
     const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    // Spy on console.log to suppress output
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    // Abort after 2 iterations using a very short interval
     const watchPromise = cmdStatusWatch(
       "/nonexistent",
       "/nonexistent",
@@ -571,14 +604,54 @@ describe("cmdStatusWatch", () => {
     controller.abort();
     await watchPromise;
 
-    // Screen clear sequence should have been written multiple times
-    const clearCalls = writeSpy.mock.calls.filter(
-      (call) => typeof call[0] === "string" && (call[0] as string).includes("\x1B[2J"),
-    );
-    expect(clearCalls.length).toBeGreaterThanOrEqual(1);
+    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
+
+    // \x1B[2J (clear entire screen) must NOT be used — that causes flicker
+    const fullClearCalls = allWrites.filter((s) => s.includes("\x1B[2J"));
+    expect(fullClearCalls.length).toBe(0);
+
+    // \x1B[H (cursor home) must be used
+    const cursorHomeCalls = allWrites.filter((s) => s.includes("\x1B[H"));
+    expect(cursorHomeCalls.length).toBeGreaterThanOrEqual(1);
+
+    // \x1B[J (clear from cursor to end of screen) must be used after content
+    const clearTrailingCalls = allWrites.filter((s) => s.includes("\x1B[J"));
+    expect(clearTrailingCalls.length).toBeGreaterThanOrEqual(1);
 
     writeSpy.mockRestore();
-    logSpy.mockRestore();
+  });
+
+  it("writes status content between cursor-home and clear-trailing", async () => {
+    const controller = new AbortController();
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    const watchPromise = cmdStatusWatch(
+      "/nonexistent",
+      "/nonexistent",
+      10,
+      controller.signal,
+    );
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
+    controller.abort();
+    await watchPromise;
+
+    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
+
+    // Verify the sequence: \x1B[H, then content, then \x1B[J
+    const cursorHomeIdx = allWrites.findIndex((s) => s === "\x1B[H");
+    const clearTrailingIdx = allWrites.findIndex((s) => s === "\x1B[J");
+    expect(cursorHomeIdx).toBeGreaterThanOrEqual(0);
+    expect(clearTrailingIdx).toBeGreaterThan(cursorHomeIdx);
+
+    // Content should be between them
+    const contentBetween = allWrites.slice(cursorHomeIdx + 1, clearTrailingIdx);
+    expect(contentBetween.length).toBeGreaterThan(0);
+    const contentStr = stripAnsi(contentBetween.join(""));
+    expect(contentStr).toContain("ninthwave status");
+
+    writeSpy.mockRestore();
   });
 
   it("resolves immediately when signal is already aborted", async () => {
@@ -586,7 +659,6 @@ describe("cmdStatusWatch", () => {
     controller.abort();
 
     const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const start = Date.now();
     await cmdStatusWatch("/nonexistent", "/nonexistent", 5000, controller.signal);
@@ -595,7 +667,6 @@ describe("cmdStatusWatch", () => {
     expect(elapsed).toBeLessThan(100);
 
     writeSpy.mockRestore();
-    logSpy.mockRestore();
   });
 });
 

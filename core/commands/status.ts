@@ -452,7 +452,8 @@ export function getTerminalWidth(): number {
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 /**
- * Run `ninthwave status` in watch mode: clear screen and refresh every intervalMs.
+ * Run `ninthwave status` in watch mode: refresh in-place every intervalMs.
+ * Uses cursor-home + clear-trailing to avoid visible flicker.
  * Exits when the abort signal fires (or Ctrl-C).
  */
 export async function cmdStatusWatch(
@@ -462,9 +463,12 @@ export async function cmdStatusWatch(
   signal?: AbortSignal,
 ): Promise<void> {
   while (!signal?.aborted) {
-    // Clear screen and move cursor to top-left
-    process.stdout.write("\x1B[2J\x1B[H");
-    cmdStatus(worktreeDir, projectRoot);
+    // Move cursor to top-left (no full-screen clear — avoids flicker)
+    process.stdout.write("\x1B[H");
+    // Write status content
+    process.stdout.write(renderStatus(worktreeDir, projectRoot));
+    // Clear from cursor to end of screen (removes stale trailing lines)
+    process.stdout.write("\x1B[J");
     await new Promise<void>((resolve) => {
       if (signal?.aborted) {
         resolve();
@@ -483,7 +487,13 @@ export async function cmdStatusWatch(
   }
 }
 
-export function cmdStatus(worktreeDir: string, projectRoot: string): void {
+/**
+ * Render the full status output as a string (no side effects).
+ * Used by both cmdStatus (prints it) and cmdStatusWatch (writes it flicker-free).
+ */
+export function renderStatus(worktreeDir: string, projectRoot: string): string {
+  const lines: string[] = [];
+
   // Fast path: when daemon is running, read state file (no GitHub API calls)
   const daemonPid = isDaemonRunning(projectRoot);
   if (daemonPid !== null) {
@@ -491,18 +501,18 @@ export function cmdStatus(worktreeDir: string, projectRoot: string): void {
     if (daemonState) {
       const items = daemonStateToStatusItems(daemonState);
       const termWidth = getTerminalWidth();
-      console.log(formatStatusTable(items, termWidth));
-      console.log(`\n  ${DIM}Daemon running (PID ${daemonPid}), updated ${daemonState.updatedAt}${RESET}`);
-      return;
+      lines.push(formatStatusTable(items, termWidth));
+      lines.push(`\n  ${DIM}Daemon running (PID ${daemonPid}), updated ${daemonState.updatedAt}${RESET}`);
+      return lines.join("\n") + "\n";
     }
     // State file missing but daemon running — fall through to normal scan
   }
 
   if (!existsSync(worktreeDir)) {
     const termWidth = getTerminalWidth();
-    console.log(formatStatusTable([], termWidth));
-    console.log(`\n  ${DIM}Worktree directory: ${worktreeDir} (not found)${RESET}`);
-    return;
+    lines.push(formatStatusTable([], termWidth));
+    lines.push(`\n  ${DIM}Worktree directory: ${worktreeDir} (not found)${RESET}`);
+    return lines.join("\n") + "\n";
   }
 
   const titles = loadTodoTitles(projectRoot);
@@ -554,7 +564,11 @@ export function cmdStatus(worktreeDir: string, projectRoot: string): void {
     }
   }
 
-  console.log(formatStatusTable(items, getTerminalWidth()));
+  return formatStatusTable(items, getTerminalWidth()) + "\n";
+}
+
+export function cmdStatus(worktreeDir: string, projectRoot: string): void {
+  process.stdout.write(renderStatus(worktreeDir, projectRoot));
 }
 
 export function cmdPartitions(partitionDir: string): void {
