@@ -1,0 +1,33 @@
+{
+  "runTimestamp": "2026-03-25T07:12:22.692Z",
+  "wallClockMs": 111512,
+  "itemsAttempted": 2,
+  "itemsCompleted": 0,
+  "itemsFailed": 2,
+  "mergeStrategy": "asap",
+  "items": [
+    {
+      "id": "H-ONB-1",
+      "state": "stuck",
+      "ciRetryCount": 0,
+      "retryCount": 1,
+      "tool": "claude",
+      "tokensUsed": null,
+      "costUsd": null,
+      "detectionLatencyMs": 0
+    },
+    {
+      "id": "M-ORC-1",
+      "state": "stuck",
+      "ciRetryCount": 0,
+      "retryCount": 1,
+      "tool": "claude",
+      "tokensUsed": null,
+      "costUsd": null,
+      "detectionLatencyMs": 0
+    }
+  ],
+  "totalTokensUsed": null,
+  "totalCostUsd": null,
+  "detectionLatency": null
+}
