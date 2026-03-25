@@ -92,29 +92,33 @@ export function detectAiTool(): string {
 
 /**
  * Launch an AI coding session for a single TODO item.
+ *
+ * @param options.agentName - The agent prompt to use (default: "todo-worker").
+ *   Pass "review-worker" for review sessions, or any future agent type.
  */
-function launchAiSession(
+export function launchAiSession(
   tool: string,
   worktreePath: string,
   id: string,
   safeTitle: string,
   promptFile: string,
   mux: Multiplexer,
-  options: { noSandbox?: boolean; projectRoot?: string } = {},
+  options: { noSandbox?: boolean; projectRoot?: string; agentName?: string } = {},
 ): string | null {
+  const agentName = options.agentName ?? "todo-worker";
   let cmd = "";
   let initialPrompt = "Start";
 
   switch (tool) {
     case "claude":
-      cmd = `claude --name 'TODO ${id}: ${safeTitle}' --permission-mode bypassPermissions --agent todo-worker --append-system-prompt "$(cat '${promptFile}')"`;
+      cmd = `claude --name 'TODO ${id}: ${safeTitle}' --permission-mode bypassPermissions --agent ${agentName} --append-system-prompt "$(cat '${promptFile}')"`;
       break;
     case "opencode":
-      cmd = `opencode --agent todo-worker --title 'TODO ${id}: ${safeTitle}'`;
+      cmd = `opencode --agent ${agentName} --title 'TODO ${id}: ${safeTitle}'`;
       initialPrompt = `${readFileSync(promptFile, "utf-8")}\n\nStart implementing this TODO now.`;
       break;
     case "copilot":
-      cmd = `copilot --agent=todo-worker --allow-all-tools --allow-all-paths`;
+      cmd = `copilot --agent=${agentName} --allow-all-tools --allow-all-paths`;
       initialPrompt = `${readFileSync(promptFile, "utf-8")}\n\nStart implementing this TODO now.`;
       break;
     default:
@@ -317,6 +321,122 @@ ${todoText}`;
     return { worktreePath, workspaceRef };
   } finally {
     // Clean up temp prompt file
+    try {
+      unlinkSync(promptFile);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/** Result of launching a review worker session. */
+export interface ReviewLaunchResult {
+  worktreePath: string | null;
+  workspaceRef: string;
+}
+
+/**
+ * Launch a review worker session for a specific PR.
+ *
+ * Behavior varies by autoFixMode:
+ * - "off": No worktree needed. Review worker reads diff via `gh pr diff` and posts
+ *   comments. Runs in a temp directory (read-only, lighter, faster).
+ * - "direct" / "pr": Creates a worktree named `review-{id}` from the existing
+ *   `todo/{id}` branch. The review worker needs the worktree to push fix commits.
+ *
+ * No partition allocation — review workers don't need isolated ports/DBs.
+ */
+export function launchReviewWorker(
+  prNumber: number,
+  itemId: string,
+  autoFixMode: "off" | "direct" | "pr",
+  repoRoot: string,
+  aiTool: string,
+  mux: Multiplexer = getMux(),
+  options: { noSandbox?: boolean; baseBranch?: string } = {},
+): ReviewLaunchResult | null {
+  let worktreePath: string | null = null;
+  let workDir: string;
+
+  if (autoFixMode === "off") {
+    // No worktree needed — review worker reads diff via gh and posts comments
+    workDir = join(tmpdir(), `nw-review-${itemId}-${Date.now()}`);
+    mkdirSync(workDir, { recursive: true });
+  } else {
+    // direct or pr: create worktree from existing todo/{id} branch
+    const branchName = `todo/${itemId}`;
+    const reviewBranch = `review/${itemId}`;
+    worktreePath = join(repoRoot, ".worktrees", `review-${itemId}`);
+    workDir = worktreePath;
+
+    if (existsSync(worktreePath)) {
+      warn(`Review worktree already exists for ${itemId} at ${worktreePath}, reusing`);
+    } else {
+      mkdirSync(join(repoRoot, ".worktrees"), { recursive: true });
+      ensureWorktreeExcluded(repoRoot);
+
+      info(
+        `Fetching branch ${branchName} in ${basename(repoRoot)} for review of ${itemId}`,
+      );
+      try {
+        fetchOrigin(repoRoot, branchName);
+      } catch (e) {
+        warn(
+          `Failed to fetch origin/${branchName} in ${basename(repoRoot)} for review of ${itemId}: ${e instanceof Error ? e.message : e}`,
+        );
+        return null;
+      }
+
+      // Handle branch collision
+      if (branchExists(repoRoot, reviewBranch)) {
+        warn(
+          `Branch ${reviewBranch} already exists in ${basename(repoRoot)}. Deleting stale branch.`,
+        );
+        try {
+          deleteBranch(repoRoot, reviewBranch);
+        } catch {
+          // ignore
+        }
+      }
+
+      info(`Creating review worktree for ${itemId} on branch ${reviewBranch}`);
+      createWorktree(repoRoot, worktreePath, reviewBranch, `origin/${branchName}`);
+    }
+  }
+
+  // Build system prompt
+  const baseBranchLine = options.baseBranch
+    ? `BASE_BRANCH: ${options.baseBranch}\n`
+    : "";
+  const systemPrompt = `YOUR_REVIEW_PR: ${prNumber}
+YOUR_REVIEW_ITEM_ID: ${itemId}
+PROJECT_ROOT: ${repoRoot}
+REPO_ROOT: ${repoRoot}
+AUTO_FIX_MODE: ${autoFixMode}
+${baseBranchLine}`;
+
+  const safeTitle = sanitizeTitle(`Review PR #${prNumber}`);
+  info(
+    `Launching ${aiTool} review session for ${itemId}: PR #${prNumber} (${autoFixMode} mode)`,
+  );
+
+  // Write system prompt to a temp file
+  const promptFile = join(tmpdir(), `nw-review-prompt-${itemId}-${Date.now()}`);
+  writeFileSync(promptFile, systemPrompt);
+
+  try {
+    const workspaceRef = launchAiSession(
+      aiTool,
+      workDir,
+      itemId,
+      safeTitle,
+      promptFile,
+      mux,
+      { noSandbox: options.noSandbox, projectRoot: repoRoot, agentName: "review-worker" },
+    );
+    if (!workspaceRef) return null;
+    return { worktreePath, workspaceRef };
+  } finally {
     try {
       unlinkSync(promptFile);
     } catch {

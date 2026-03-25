@@ -18,9 +18,9 @@ vi.mock("../core/git.ts", () => ({
   createWorktree: vi.fn(),
 }));
 
-import { detectAiTool, cmdStart, launchSingleItem, sanitizeTitle, extractTodoText } from "../core/commands/start.ts";
+import { detectAiTool, cmdStart, launchSingleItem, launchAiSession, launchReviewWorker, sanitizeTitle, extractTodoText } from "../core/commands/start.ts";
 import { parseTodos } from "../core/parser.ts";
-import { fetchOrigin, ffMerge, createWorktree } from "../core/git.ts";
+import { fetchOrigin, ffMerge, createWorktree, branchExists } from "../core/git.ts";
 
 /** Create a mock Multiplexer for dependency injection (avoids vi.mock leaking). */
 function createMockMux(): Multiplexer & Record<string, Mock> {
@@ -739,5 +739,311 @@ describe("extractTodoText", () => {
 
     const text = extractTodoText(todosDir, "H-BUG-1");
     expect(text).toBe("");
+  });
+});
+
+describe("launchAiSession agentName", () => {
+  afterEach(() => cleanupTempRepos());
+
+  it("defaults agentName to todo-worker when not specified", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const promptFile = join(repo, "prompt.txt");
+    writeFileSync(promptFile, "test prompt");
+
+    launchAiSession("claude", repo, "T-1", "Test", promptFile, mockMux);
+
+    const launchCall = mockMux.launchWorkspace.mock.calls[0];
+    expect(launchCall).toBeDefined();
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain("--agent todo-worker");
+  });
+
+  it("passes custom agentName to claude command", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const promptFile = join(repo, "prompt.txt");
+    writeFileSync(promptFile, "test prompt");
+
+    launchAiSession("claude", repo, "T-1", "Test", promptFile, mockMux, {
+      agentName: "review-worker",
+    });
+
+    const launchCall = mockMux.launchWorkspace.mock.calls[0];
+    expect(launchCall).toBeDefined();
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain("--agent review-worker");
+    expect(cmd).not.toContain("--agent todo-worker");
+  });
+
+  it("passes custom agentName to opencode command", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const promptFile = join(repo, "prompt.txt");
+    writeFileSync(promptFile, "test prompt");
+
+    launchAiSession("opencode", repo, "T-1", "Test", promptFile, mockMux, {
+      agentName: "review-worker",
+    });
+
+    const launchCall = mockMux.launchWorkspace.mock.calls[0];
+    expect(launchCall).toBeDefined();
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain("--agent review-worker");
+  });
+
+  it("passes custom agentName to copilot command", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const promptFile = join(repo, "prompt.txt");
+    writeFileSync(promptFile, "test prompt");
+
+    launchAiSession("copilot", repo, "T-1", "Test", promptFile, mockMux, {
+      agentName: "review-worker",
+    });
+
+    const launchCall = mockMux.launchWorkspace.mock.calls[0];
+    expect(launchCall).toBeDefined();
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain("--agent=review-worker");
+  });
+});
+
+describe("launchSingleItem agentName default", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINTHWAVE_AI_TOOL = "claude";
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    cleanupTempRepos();
+  });
+
+  it("launches with --agent todo-worker by default", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    captureOutput(() => {
+      launchSingleItem(item, todosDir, worktreeDir, repo, "claude", mockMux);
+    });
+
+    const launchCall = mockMux.launchWorkspace.mock.calls[0];
+    expect(launchCall).toBeDefined();
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain("--agent todo-worker");
+  });
+});
+
+describe("launchReviewWorker", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINTHWAVE_AI_TOOL = "claude";
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    cleanupTempRepos();
+  });
+
+  it("off mode does not create a worktree and returns worktreePath null", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    const result = captureOutput(() => {
+      const res = launchReviewWorker(42, "H-RVW-1", "off", repo, "claude", mockMux);
+      expect(res).not.toBeNull();
+      expect(res!.worktreePath).toBeNull();
+      expect(res!.workspaceRef).toBe("workspace:1");
+    });
+
+    // Should NOT create a worktree (no createWorktree call)
+    expect(createWorktree).not.toHaveBeenCalled();
+    // Should NOT call fetchOrigin (no branch to fetch)
+    expect(fetchOrigin).not.toHaveBeenCalled();
+    // Should launch with review-worker agent
+    const launchCall = mockMux.launchWorkspace.mock.calls[0];
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain("--agent review-worker");
+    // Info message should mention off mode
+    expect(result).toContain("off mode");
+  });
+
+  it("direct mode creates worktree from todo/{id} branch", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    const result = captureOutput(() => {
+      const res = launchReviewWorker(42, "H-RVW-1", "direct", repo, "claude", mockMux);
+      expect(res).not.toBeNull();
+      expect(res!.worktreePath).toContain("review-H-RVW-1");
+      expect(res!.workspaceRef).toBe("workspace:1");
+    });
+
+    // Should fetch the todo branch
+    expect(fetchOrigin).toHaveBeenCalledWith(repo, "todo/H-RVW-1");
+    // Should create worktree with review branch from origin/todo/{id}
+    expect(createWorktree).toHaveBeenCalledWith(
+      repo,
+      expect.stringContaining("review-H-RVW-1"),
+      "review/H-RVW-1",
+      "origin/todo/H-RVW-1",
+    );
+    // Should log info about creating the review worktree
+    expect(result).toContain("Creating review worktree for H-RVW-1");
+  });
+
+  it("pr mode creates worktree same as direct mode", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    captureOutput(() => {
+      const res = launchReviewWorker(42, "H-RVW-1", "pr", repo, "claude", mockMux);
+      expect(res).not.toBeNull();
+      expect(res!.worktreePath).toContain("review-H-RVW-1");
+    });
+
+    // Same worktree creation as direct mode
+    expect(fetchOrigin).toHaveBeenCalledWith(repo, "todo/H-RVW-1");
+    expect(createWorktree).toHaveBeenCalledWith(
+      repo,
+      expect.stringContaining("review-H-RVW-1"),
+      "review/H-RVW-1",
+      "origin/todo/H-RVW-1",
+    );
+  });
+
+  it("system prompt contains correct YOUR_REVIEW_PR and AUTO_FIX_MODE", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    // Use opencode so the system prompt is sent via sendMessage
+    captureOutput(() => {
+      launchReviewWorker(99, "H-RVW-2", "direct", repo, "opencode", mockMux);
+    });
+
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    expect(sendCall).toBeDefined();
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).toContain("YOUR_REVIEW_PR: 99");
+    expect(sentPrompt).toContain("YOUR_REVIEW_ITEM_ID: H-RVW-2");
+    expect(sentPrompt).toContain("AUTO_FIX_MODE: direct");
+    expect(sentPrompt).toContain(`PROJECT_ROOT: ${repo}`);
+    expect(sentPrompt).toContain(`REPO_ROOT: ${repo}`);
+  });
+
+  it("system prompt contains AUTO_FIX_MODE off for off mode", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    captureOutput(() => {
+      launchReviewWorker(50, "H-RVW-3", "off", repo, "opencode", mockMux);
+    });
+
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    expect(sendCall).toBeDefined();
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).toContain("YOUR_REVIEW_PR: 50");
+    expect(sentPrompt).toContain("AUTO_FIX_MODE: off");
+  });
+
+  it("includes BASE_BRANCH in system prompt when baseBranch is set", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    captureOutput(() => {
+      launchReviewWorker(42, "H-RVW-1", "off", repo, "opencode", mockMux, {
+        baseBranch: "todo/H-DEP-1",
+      });
+    });
+
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    expect(sendCall).toBeDefined();
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).toContain("BASE_BRANCH: todo/H-DEP-1");
+  });
+
+  it("does not include BASE_BRANCH when baseBranch is not set", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    captureOutput(() => {
+      launchReviewWorker(42, "H-RVW-1", "off", repo, "opencode", mockMux);
+    });
+
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    expect(sendCall).toBeDefined();
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).not.toContain("BASE_BRANCH:");
+  });
+
+  it("launches with --agent review-worker for all modes", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    for (const mode of ["off", "direct", "pr"] as const) {
+      vi.clearAllMocks();
+      captureOutput(() => {
+        launchReviewWorker(42, "H-RVW-1", mode, repo, "claude", mockMux);
+      });
+
+      const launchCall = mockMux.launchWorkspace.mock.calls[0];
+      expect(launchCall).toBeDefined();
+      const cmd = launchCall[1] as string;
+      expect(cmd).toContain("--agent review-worker");
+      expect(cmd).not.toContain("--agent todo-worker");
+    }
+  });
+
+  it("returns null when fetch fails in direct mode", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    (fetchOrigin as Mock).mockImplementationOnce(() => {
+      throw new Error("branch not found");
+    });
+
+    const result = captureOutput(() => {
+      const res = launchReviewWorker(42, "H-RVW-1", "direct", repo, "claude", mockMux);
+      expect(res).toBeNull();
+    });
+
+    expect(result).toContain("Failed to fetch origin/todo/H-RVW-1");
+    expect(mockMux.launchWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("returns null when mux launch fails", () => {
+    const mockMux = createMockMux();
+    mockMux.launchWorkspace.mockReturnValueOnce(null);
+    const repo = setupTempRepo();
+
+    captureOutput(() => {
+      const res = launchReviewWorker(42, "H-RVW-1", "off", repo, "claude", mockMux);
+      expect(res).toBeNull();
+    });
+
+    expect(mockMux.launchWorkspace).toHaveBeenCalled();
+  });
+
+  it("deletes stale review branch before creating worktree", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+
+    (branchExists as Mock).mockReturnValueOnce(true);
+
+    captureOutput(() => {
+      launchReviewWorker(42, "H-RVW-1", "direct", repo, "claude", mockMux);
+    });
+
+    const { deleteBranch } = require("../core/git.ts");
+    expect(deleteBranch).toHaveBeenCalledWith(repo, "review/H-RVW-1");
   });
 });
