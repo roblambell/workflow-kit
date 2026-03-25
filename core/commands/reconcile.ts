@@ -232,6 +232,22 @@ export function reconcile(
     info(`Closed ${closedWorkspaces} stale workspace(s).`);
   }
 
+  // Step 4.6: Clean orphaned worktrees — worktrees with no matching todo file.
+  // Skip IDs already handled by step 4 (merged items) to avoid double-cleaning.
+  const refreshedOpenIds = new Set(deps.getOpenTodoIds(todosDir));
+  const refreshedWorktreeIds = deps.getWorktreeIds(worktreeDir);
+  let orphanCount = 0;
+  for (const wtId of refreshedWorktreeIds) {
+    if (!doneIds.has(wtId) && !refreshedOpenIds.has(wtId)) {
+      if (deps.cleanWorktree(wtId, worktreeDir, projectRoot)) {
+        orphanCount++;
+      }
+    }
+  }
+  if (orphanCount > 0) {
+    info(`Cleaned ${orphanCount} orphaned worktree(s).`);
+  }
+
   // Step 5: Commit and push todo file changes if any
   if (toMarkDone.length > 0) {
     info("Committing and pushing todo file changes...");

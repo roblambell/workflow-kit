@@ -360,6 +360,58 @@ describe("reconcile", () => {
     const output = captureOutput(() => reconcile(todosDir, worktreeDir, projectRoot, deps));
     expect(output).toContain("1 workspace(s)");
   });
+
+  it("cleans orphaned worktrees with no matching todo file", () => {
+    const { todosDir, worktreeDir, projectRoot } = setupTodosDir();
+    const cleaned: string[] = [];
+
+    const deps = makeDeps({
+      getMergedTodoIds: () => [],
+      // Worktree X-OLD-1 exists but has no todo file
+      getWorktreeIds: () => ["X-OLD-1", "M-CI-1"],
+      cleanWorktree: (id) => {
+        cleaned.push(id);
+        return true;
+      },
+    });
+
+    captureOutput(() => reconcile(todosDir, worktreeDir, projectRoot, deps));
+    // X-OLD-1 has no todo file — should be cleaned as orphan
+    // M-CI-1 has a matching todo file — should NOT be cleaned
+    expect(cleaned).not.toContain("M-CI-1");
+    expect(cleaned).toContain("X-OLD-1");
+  });
+
+  it("does not clean non-todo worktrees during orphan cleanup", () => {
+    const { todosDir, worktreeDir, projectRoot } = setupTodosDir();
+    const cleaned: string[] = [];
+
+    const deps = makeDeps({
+      getMergedTodoIds: () => [],
+      // getWorktreeIds only returns todo-* prefixed dirs (non-todo dirs excluded)
+      getWorktreeIds: () => [],
+      cleanWorktree: (id) => {
+        cleaned.push(id);
+        return true;
+      },
+    });
+
+    captureOutput(() => reconcile(todosDir, worktreeDir, projectRoot, deps));
+    expect(cleaned).toEqual([]);
+  });
+
+  it("reports orphan cleanup count", () => {
+    const { todosDir, worktreeDir, projectRoot } = setupTodosDir({});
+
+    const deps = makeDeps({
+      getMergedTodoIds: () => [],
+      getWorktreeIds: () => ["X-OLD-1", "X-OLD-2"],
+      cleanWorktree: () => true,
+    });
+
+    const output = captureOutput(() => reconcile(todosDir, worktreeDir, projectRoot, deps));
+    expect(output).toContain("2 orphaned worktree(s)");
+  });
 });
 
 // --- closeWorkspacesForIds tests ---
