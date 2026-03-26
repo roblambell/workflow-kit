@@ -47,6 +47,7 @@ function makeTodoItem(overrides: Partial<TodoItem> = {}): TodoItem {
     rawText: "",
     filePaths: [],
     testPlan: "",
+    bootstrap: false,
     ...overrides,
   };
 }

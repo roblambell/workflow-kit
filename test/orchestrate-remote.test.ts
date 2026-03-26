@@ -38,6 +38,7 @@ function makeTodo(id: string, deps: string[] = []): TodoItem {
     rawText: `## ${id}\nTest todo`,
     filePaths: [],
     testPlan: "",
+    bootstrap: false,
   };
 }
 

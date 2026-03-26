@@ -45,6 +45,7 @@ function makeTodo(
     rawText: `## ${id}\nTest todo`,
     filePaths: [],
     testPlan: "",
+    bootstrap: false,
   };
 }
 

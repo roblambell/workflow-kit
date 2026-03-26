@@ -38,6 +38,7 @@ function makeTodoItem(overrides: Partial<TodoItem> & { id: string; priority: Pri
     rawText: "",
     filePaths: [],
     testPlan: "",
+    bootstrap: false,
     ...overrides,
   };
 }

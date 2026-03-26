@@ -27,6 +27,7 @@ function makeTodo(id: string): TodoItem {
     rawText: "",
     filePaths: [],
     testPlan: "",
+    bootstrap: false,
   };
 }
 

@@ -36,6 +36,7 @@ function makeTodo(
     rawText: `## ${id}\n${title}`,
     filePaths: [],
     testPlan: "",
+    bootstrap: false,
   };
 }
 
