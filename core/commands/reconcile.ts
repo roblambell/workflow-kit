@@ -10,6 +10,8 @@ import { listCrossRepoEntries } from "../cross-repo.ts";
 import { cmdMarkDone } from "./mark-done.ts";
 import { cleanSingleWorktree, closeWorkspacesForIds } from "./clean.ts";
 import { getMux } from "../mux.ts";
+import { readTodo } from "../todo-files.ts";
+import { prTitleMatchesTodo } from "../todo-utils.ts";
 
 /**
  * Dependencies for reconcile, injectable for testing.
@@ -18,8 +20,8 @@ export interface ReconcileDeps {
   /** Pull latest main with rebase. Returns { ok, conflict, error }. */
   pullRebase(projectRoot: string): { ok: boolean; conflict: boolean; error?: string };
 
-  /** Get IDs of merged todo/* PRs from GitHub. Queries hub repo and any cross-repo targets. */
-  getMergedTodoIds(projectRoot: string, worktreeDir: string): string[];
+  /** Get IDs and PR titles of merged todo/* PRs from GitHub. Queries hub repo and any cross-repo targets. */
+  getMergedTodoIds(projectRoot: string, worktreeDir: string): Array<{ id: string; prTitle: string }>;
 
   /** Get IDs of open todo items from the todos directory. */
   getOpenTodoIds(todosDir: string): string[];
@@ -66,33 +68,36 @@ function defaultPullRebase(projectRoot: string): { ok: boolean; conflict: boolea
   return { ok: false, conflict: false, error: result.stderr };
 }
 
-function getMergedTodoIdsFromRepo(repoRoot: string): string[] {
+function getMergedTodoIdsFromRepo(repoRoot: string): Array<{ id: string; prTitle: string }> {
   const result = run("gh", [
     "pr", "list",
     "--state", "merged",
-    "--json", "headRefName",
+    "--json", "headRefName,title",
     "--limit", "200",
   ], { cwd: repoRoot });
 
   if (result.exitCode !== 0 || !result.stdout) return [];
 
   try {
-    const prs = JSON.parse(result.stdout) as Array<{ headRefName: string }>;
-    const ids: string[] = [];
+    const prs = JSON.parse(result.stdout) as Array<{ headRefName: string; title: string }>;
+    const items: Array<{ id: string; prTitle: string }> = [];
     for (const pr of prs) {
       if (pr.headRefName.startsWith("todo/")) {
-        ids.push(pr.headRefName.slice(5)); // strip "todo/"
+        items.push({ id: pr.headRefName.slice(5), prTitle: pr.title ?? "" }); // strip "todo/"
       }
     }
-    return ids;
+    return items;
   } catch {
     return [];
   }
 }
 
-function defaultGetMergedTodoIds(projectRoot: string, worktreeDir: string): string[] {
+function defaultGetMergedTodoIds(projectRoot: string, worktreeDir: string): Array<{ id: string; prTitle: string }> {
   // Query hub repo for merged todo/* PRs
-  const ids = new Set(getMergedTodoIdsFromRepo(projectRoot));
+  const byId = new Map<string, { id: string; prTitle: string }>();
+  for (const item of getMergedTodoIdsFromRepo(projectRoot)) {
+    byId.set(item.id, item);
+  }
 
   // Also query cross-repo targets discovered from the cross-repo index
   const indexPath = join(worktreeDir, ".cross-repo-index");
@@ -105,15 +110,17 @@ function defaultGetMergedTodoIds(projectRoot: string, worktreeDir: string): stri
   }
   for (const repo of targetRepos) {
     try {
-      for (const id of getMergedTodoIdsFromRepo(repo)) {
-        ids.add(id);
+      for (const item of getMergedTodoIdsFromRepo(repo)) {
+        if (!byId.has(item.id)) {
+          byId.set(item.id, item);
+        }
       }
     } catch (e) {
       warn(`Failed to query merged PRs in ${repo}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  return Array.from(ids);
+  return Array.from(byId.values());
 }
 
 function defaultGetOpenTodoIds(todosDir: string): string[] {
@@ -241,14 +248,40 @@ export function reconcile(
 
   // Step 2: Get merged todo IDs from GitHub (hub + cross-repo targets)
   info("Querying GitHub for merged todo/* PRs...");
-  const mergedIds = deps.getMergedTodoIds(projectRoot, worktreeDir);
-  if (mergedIds.length === 0) {
+  const mergedItems = deps.getMergedTodoIds(projectRoot, worktreeDir);
+  if (mergedItems.length === 0) {
     info("No merged todo/* PRs found.");
   }
 
-  // Step 3: Find items that are merged but still have todo files
+  // Step 3: Find items that are merged but still have todo files.
+  // Collision safety (H-MID-1): compare the merged PR's title with the TODO file's
+  // title. If they don't match, the merged PR belongs to a previous cycle that reused
+  // the same ID — skip it to avoid falsely deleting the new TODO.
   const openIds = new Set(deps.getOpenTodoIds(todosDir));
-  const toMarkDone = mergedIds.filter((id) => openIds.has(id));
+  const mergedPrTitleById = new Map(mergedItems.map((m) => [m.id, m.prTitle]));
+  const toMarkDone: string[] = [];
+  const skippedCollisions: string[] = [];
+
+  for (const merged of mergedItems) {
+    if (!openIds.has(merged.id)) continue;
+
+    // Title-match check: read the TODO file's title and compare with the merged PR's title
+    if (merged.prTitle) {
+      const todoItem = readTodo(todosDir, merged.id);
+      if (todoItem?.title && !prTitleMatchesTodo(merged.prTitle, todoItem.title)) {
+        skippedCollisions.push(merged.id);
+        continue;
+      }
+    }
+
+    toMarkDone.push(merged.id);
+  }
+
+  if (skippedCollisions.length > 0) {
+    warn(
+      `Skipped ${skippedCollisions.length} item(s) with ID collision (merged PR title doesn't match TODO title): ${skippedCollisions.join(", ")}`,
+    );
+  }
 
   if (toMarkDone.length > 0) {
     info(`Marking ${toMarkDone.length} merged item(s) as done: ${toMarkDone.join(", ")}`);
@@ -260,7 +293,15 @@ export function reconcile(
   // Step 4: Clean worktrees for done items
   const worktreeIds = deps.getWorktreeIds(worktreeDir);
   // Done items = those we just marked done + those already not in todos dir
-  const doneIds = new Set(mergedIds);
+  // (only IDs that passed title check or have no open TODO file)
+  const mergedIds = new Set(mergedItems.map((m) => m.id));
+  const doneIds = new Set<string>();
+  for (const id of mergedIds) {
+    // Include if: not a collision (either in toMarkDone, or no open TODO file)
+    if (!skippedCollisions.includes(id)) {
+      doneIds.add(id);
+    }
+  }
   let cleanedCount = 0;
 
   for (const wtId of worktreeIds) {
@@ -292,7 +333,7 @@ export function reconcile(
   }
 
   // Step 4.5: Close cmux workspaces for done/merged items
-  const closedWorkspaces = deps.closeStaleWorkspaces(mergedIds);
+  const closedWorkspaces = deps.closeStaleWorkspaces(Array.from(doneIds));
   if (closedWorkspaces > 0) {
     info(`Closed ${closedWorkspaces} stale workspace(s).`);
   }

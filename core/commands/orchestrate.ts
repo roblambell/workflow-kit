@@ -35,6 +35,7 @@ import { reconcile } from "./reconcile.ts";
 import { die } from "../output.ts";
 import { shouldEnterInteractive, runInteractiveFlow } from "../interactive.ts";
 import type { TodoItem, StatusSync } from "../types.ts";
+import { prTitleMatchesTodo } from "../todo-utils.ts";
 import { ClickUpBackend, resolveClickUpConfig } from "../backends/clickup.ts";
 import { loadConfig } from "../config.ts";
 import {
@@ -175,9 +176,18 @@ export function buildSnapshot(
       }
 
       switch (status) {
-        case "merged":
-          snap.prState = "merged";
+        case "merged": {
+          // Collision detection: verify the merged PR's title matches this TODO's title.
+          // If titles don't match, this is an old PR from a previous TODO cycle — ignore it.
+          const mergedPrTitle = parts[5] ?? "";
+          const todoTitle = orchItem.todo.title;
+          if (mergedPrTitle && todoTitle && !prTitleMatchesTodo(mergedPrTitle, todoTitle)) {
+            // Title mismatch — treat as no-pr (stale merged PR from a different TODO)
+          } else {
+            snap.prState = "merged";
+          }
           break;
+        }
         case "ready":
           snap.ciStatus = "pass";
           snap.prState = "open";
@@ -532,9 +542,20 @@ export function reconstructState(
     }
 
     switch (status) {
-      case "merged":
-        orch.setState(item.id, "merged");
+      case "merged": {
+        // Collision detection: verify the merged PR's title matches this TODO's title.
+        // If titles don't match, the merged PR belongs to a previous TODO that reused the
+        // same ID — treat as no-pr to avoid falsely completing the new item (H-MID-1).
+        const mergedPrTitle = parts[5] ?? "";
+        const todoTitle = orch.getItem(item.id)?.todo.title ?? "";
+        if (mergedPrTitle && todoTitle && !prTitleMatchesTodo(mergedPrTitle, todoTitle)) {
+          orch.setState(item.id, "implementing");
+          recoverWorkspaceRef(orch, item.id, workspaceList);
+        } else {
+          orch.setState(item.id, "merged");
+        }
         break;
+      }
       case "ready":
       case "ci-passed":
         orch.setState(item.id, "ci-passed");

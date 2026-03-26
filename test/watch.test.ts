@@ -326,13 +326,13 @@ describe("checkPrStatus", () => {
     (gh.prList as Mock).mockImplementation(
       (_root: string, _branch: string, state: string) => {
         if (state === "open") return [];
-        if (state === "merged") return [{ number: 99 }];
+        if (state === "merged") return [{ number: 99, title: "fix: some work (TODO H-1-1)" }];
         return [];
       },
     );
 
     const result = checkPrStatus("H-1-1", "/fake/repo");
-    expect(result).toBe("H-1-1\t99\tmerged");
+    expect(result).toBe("H-1-1\t99\tmerged\t\t\tfix: some work (TODO H-1-1)");
   });
 
   it("returns no-pr when no PR exists", () => {

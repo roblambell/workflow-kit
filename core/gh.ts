@@ -18,7 +18,7 @@ export function prList(
   repoRoot: string,
   branch: string,
   state: string,
-): Array<{ number: number }> {
+): Array<{ number: number; title: string }> {
   const result = ghInRepo(repoRoot, [
     "pr",
     "list",
@@ -27,13 +27,13 @@ export function prList(
     "--state",
     state,
     "--json",
-    "number",
+    "number,title",
     "--limit",
     "100",
   ]);
   if (result.exitCode !== 0 || !result.stdout) return [];
   try {
-    return JSON.parse(result.stdout) as Array<{ number: number }>;
+    return JSON.parse(result.stdout) as Array<{ number: number; title: string }>;
   } catch {
     return [];
   }

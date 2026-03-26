@@ -251,3 +251,40 @@ export function extractBody(rawText: string): string[] {
 
   return bodyLines;
 }
+
+/**
+ * Normalize a title for comparison by lowercasing, stripping TODO ID
+ * references (e.g., "(H-MUX-1)", "TODO H-MUX-1"), conventional commit
+ * prefixes (e.g., "fix:", "feat:"), and collapsing whitespace.
+ *
+ * Used to detect TODO ID collisions: when a new TODO reuses an old merged
+ * PR's branch name, we compare the PR title against the TODO title.
+ * Titles must be an exact match after normalization.
+ */
+export function normalizeTitleForComparison(title: string): string {
+  return title
+    .toLowerCase()
+    // Strip TODO ID references: "(H-MUX-1)", "TODO H-MUX-1", "(TODO H-MUX-1)"
+    .replace(/\(?TODO\s+[A-Z]-[A-Za-z0-9]+-[0-9]+\)?/gi, "")
+    .replace(/\([A-Z]-[A-Za-z0-9]+-[0-9]+\)/gi, "")
+    // Strip conventional commit prefixes: "fix:", "feat:", "refactor:", etc.
+    .replace(/^(fix|feat|refactor|test|docs|chore|perf|ci|build|style|revert)\s*(\([^)]*\))?\s*:\s*/i, "")
+    // Collapse whitespace
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Check if a PR title matches a TODO title.
+ *
+ * Returns true only if the normalized titles are an exact match.
+ * Substring matches are intentionally rejected — a PR titled "old work"
+ * should not match a TODO titled "old work extended".
+ */
+export function prTitleMatchesTodo(prTitle: string, todoTitle: string): boolean {
+  if (!prTitle || !todoTitle) return false;
+  const normPr = normalizeTitleForComparison(prTitle);
+  const normTodo = normalizeTitleForComparison(todoTitle);
+  if (!normPr || !normTodo) return false;
+  return normPr === normTodo;
+}

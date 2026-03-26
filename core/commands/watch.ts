@@ -165,7 +165,10 @@ export function checkPrStatus(id: string, repoRoot: string): string {
     // Check if merged
     const mergedPrs = prList(repoRoot, branch, "merged");
     if (mergedPrs.length > 0) {
-      return `${id}\t${mergedPrs[0]!.number}\tmerged`;
+      // Include PR title as 6th field so callers can detect ID collisions
+      // (a new TODO reusing an old merged PR's branch name).
+      const prTitle = mergedPrs[0]!.title ?? "";
+      return `${id}\t${mergedPrs[0]!.number}\tmerged\t\t\t${prTitle}`;
     }
     return `${id}\t\tno-pr`;
   }

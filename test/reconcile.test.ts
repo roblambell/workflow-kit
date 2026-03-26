@@ -97,6 +97,19 @@ function makeDeps(overrides: Partial<ReconcileDeps> = {}): ReconcileDeps {
   };
 }
 
+// Title map for sample todo files (used to construct matching PR titles)
+const SAMPLE_TITLES: Record<string, string> = {
+  "M-CI-1": "Upgrade CI runners",
+  "H-CI-2": "Flaky connection pool",
+  "C-UO-1": "Onboarding wizard",
+  "H-UO-2": "Welcome email",
+};
+
+/** Create a merged-PR-style entry with a matching title for a known sample ID. */
+function mergedPr(id: string): { id: string; prTitle: string } {
+  return { id, prTitle: SAMPLE_TITLES[id] ?? `fix: ${id}` };
+}
+
 // --- Tests ---
 
 describe("reconcile", () => {
@@ -165,7 +178,7 @@ describe("reconcile", () => {
     let markedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => ["M-CI-1", "H-CI-2"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
       markDone: (ids) => {
         markedIds = ids;
       },
@@ -181,7 +194,7 @@ describe("reconcile", () => {
 
     const deps = makeDeps({
       // GitHub says these are merged, but X-GONE-1 has no todo file
-      getMergedTodoIds: () => ["M-CI-1", "X-GONE-1"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("X-GONE-1")],
       markDone: (ids) => {
         markedIds = ids;
       },
@@ -197,7 +210,7 @@ describe("reconcile", () => {
     const cleaned: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => ["M-CI-1", "H-CI-2"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
       getWorktreeIds: () => ["M-CI-1", "H-CI-2", "C-UO-1"],
       cleanWorktree: (id) => {
         cleaned.push(id);
@@ -215,7 +228,7 @@ describe("reconcile", () => {
     let committed = false;
 
     const deps = makeDeps({
-      getMergedTodoIds: () => ["M-CI-1"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1")],
       commitAndPush: () => {
         committed = true;
         return true;
@@ -255,7 +268,7 @@ describe("reconcile", () => {
 
     const deps = makeDeps({
       // These IDs were merged but already have no todo files
-      getMergedTodoIds: () => ["X-OLD-1", "X-OLD-2"],
+      getMergedTodoIds: () => [mergedPr("X-OLD-1"), mergedPr("X-OLD-2")],
       markDone: () => {
         markDoneCalled = true;
       },
@@ -275,7 +288,7 @@ describe("reconcile", () => {
     const { todosDir, worktreeDir, projectRoot } = setupTodosDir();
 
     const deps = makeDeps({
-      getMergedTodoIds: () => ["M-CI-1", "H-CI-2"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
       getWorktreeIds: () => ["M-CI-1"],
       cleanWorktree: () => true,
       commitAndPush: () => true,
@@ -292,7 +305,7 @@ describe("reconcile", () => {
 
     const deps = makeDeps({
       // X-OLD-1 is merged but has no todo file (already removed)
-      getMergedTodoIds: () => ["X-OLD-1"],
+      getMergedTodoIds: () => [mergedPr("X-OLD-1")],
       getWorktreeIds: () => ["X-OLD-1"],
       cleanWorktree: (id) => {
         cleaned.push(id);
@@ -309,7 +322,7 @@ describe("reconcile", () => {
     const { todosDir, worktreeDir, projectRoot } = setupTodosDir({});
 
     const deps = makeDeps({
-      getMergedTodoIds: () => ["M-CI-1"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1")],
     });
 
     const output = captureOutput(() => reconcile(todosDir, worktreeDir, projectRoot, deps));
@@ -338,7 +351,7 @@ describe("reconcile", () => {
     let closedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => ["M-CI-1", "H-CI-2"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
       closeStaleWorkspaces: (ids) => {
         closedIds = [...ids];
         return ids.length;
@@ -354,7 +367,7 @@ describe("reconcile", () => {
     const { todosDir, worktreeDir, projectRoot } = setupTodosDir();
 
     const deps = makeDeps({
-      getMergedTodoIds: () => ["M-CI-1"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1")],
       closeStaleWorkspaces: () => 1,
       commitAndPush: () => true,
     });
@@ -520,7 +533,7 @@ describe("reconcile", () => {
     let cleanCount = 0;
 
     const deps = makeDeps({
-      getMergedTodoIds: () => ["M-CI-1"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1")],
       getWorktreeIds: () => ["M-CI-1"],
       worktreeHasCommits: () => false,
       branchHasOpenPR: () => false,
@@ -563,7 +576,7 @@ describe("reconcile cross-repo", () => {
     writeFileSync(indexPath, "M-CI-1\t/target-repo\t/target-repo/.worktrees/todo-M-CI-1\n");
 
     const deps = makeDeps({
-      getMergedTodoIds: () => ["M-CI-1"],
+      getMergedTodoIds: () => [mergedPr("M-CI-1")],
       cleanWorktree: (id, wtDir, root) => {
         cleaned.push({ id, wtDir, root });
         return true;

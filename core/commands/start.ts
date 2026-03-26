@@ -30,7 +30,7 @@ import {
 import { cmdConflicts } from "./conflicts.ts";
 import { readTodo } from "../todo-files.ts";
 import { wrapWithSandbox } from "../sandbox.ts";
-import { applyGithubToken } from "../gh.ts";
+import { applyGithubToken, prList } from "../gh.ts";
 import { loadConfig } from "../config.ts";
 import { isProxyAvailable, warnOnceNoProxy, startProxy } from "../proxy-launcher.ts";
 import type { ProxyHandle } from "../proxy-launcher.ts";
@@ -259,6 +259,17 @@ export function launchSingleItem(
     return null;
   }
   const branchName = `todo/${item.id}`;
+
+  // Collision detection: check if merged PRs exist for this branch name.
+  // This indicates a TODO ID was reused from a previous cycle. The title comparison
+  // in reconstructState/buildSnapshot/reconcile prevents false completion (H-MID-1).
+  const mergedPrs = prList(targetRepo, branchName, "merged");
+  if (mergedPrs.length > 0) {
+    warn(
+      `Branch ${branchName} has ${mergedPrs.length} merged PR(s) from a previous cycle. ` +
+      `Title comparison will prevent false completion. Old PR: "${mergedPrs[0]!.title}"`,
+    );
+  }
 
   // Ensure worktree directory exists
   mkdirSync(worktreeDir, { recursive: true });
