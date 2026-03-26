@@ -1,154 +1,66 @@
 {
-  "pid": 80657,
-  "startedAt": "2026-03-25T21:50:36.564Z",
-  "updatedAt": "2026-03-26T05:40:30.439Z",
-  "statusPaneRef": "surface:87",
+  "pid": 15920,
+  "startedAt": "2026-03-26T07:04:29.140Z",
+  "updatedAt": "2026-03-26T07:34:05.314Z",
+  "statusPaneRef": null,
   "wipLimit": 4,
   "dashboardUrl": null,
   "items": [
     {
-      "id": "H-HLT-1",
-      "state": "done",
-      "prNumber": 185,
-      "title": "Add deterministic worker health checks to orchestrator daemon",
-      "lastTransition": "2026-03-25T22:08:36.574Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "H-RVW-1",
-      "state": "done",
-      "prNumber": 183,
-      "title": "Add reviewing state, review config, and review state transitions to orchestrator",
-      "lastTransition": "2026-03-25T22:00:10.898Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "H-RVW-2",
-      "state": "done",
-      "prNumber": 182,
-      "title": "Create review worker agent prompt and update vision non-goal",
-      "lastTransition": "2026-03-25T21:57:01.998Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "H-PRX-4",
+      "id": "H-DOC-1",
       "state": "stuck",
       "prNumber": null,
-      "title": "Add session CA cert generation + selective MITM for GitHub",
-      "lastTransition": "2026-03-25T21:52:51.459Z",
+      "title": "Update README.md for current feature set and file-per-todo format",
+      "lastTransition": "2026-03-26T07:04:44.036Z",
       "ciFailCount": 0,
-      "retryCount": 1
+      "retryCount": 1,
+      "failureReason": "launch-failed: worker launch returned no result for H-DOC-1"
     },
     {
-      "id": "M-CLN-1",
-      "state": "done",
-      "prNumber": 181,
-      "title": "Remove superseded TODO M-REM-3",
-      "lastTransition": "2026-03-25T21:56:44.806Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "M-ORC-7",
-      "state": "done",
-      "prNumber": 184,
-      "title": "Suppress remote branch delete warnings when branch already deleted",
-      "lastTransition": "2026-03-25T22:02:13.357Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "H-PRX-5",
-      "state": "queued",
+      "id": "H-DOC-2",
+      "state": "stuck",
       "prNumber": null,
-      "title": "Add Cedar policy evaluation to MITM request handler",
-      "lastTransition": "2026-03-25T21:50:36.384Z",
+      "title": "Update vision.md for grind cycles 6-7 and current project status",
+      "lastTransition": "2026-03-26T07:04:44.066Z",
       "ciFailCount": 0,
-      "retryCount": 0
+      "retryCount": 1,
+      "failureReason": "launch-failed: worker launch returned no result for H-DOC-2"
     },
     {
-      "id": "H-RVW-3",
-      "state": "done",
-      "prNumber": 186,
-      "title": "Parameterize launchAiSession and add launchReviewWorker function",
-      "lastTransition": "2026-03-25T22:07:28.399Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "H-RVW-4",
-      "state": "done",
-      "prNumber": 188,
-      "title": "Wire review worker into CLI, setup, and daemon state persistence",
-      "lastTransition": "2026-03-25T22:19:52.115Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "M-HLT-2",
-      "state": "done",
-      "prNumber": 187,
-      "title": "Feed worker screen health data to supervisor prompt",
-      "lastTransition": "2026-03-25T22:14:30.364Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "H-PRX-6",
-      "state": "queued",
+      "id": "M-TEL-1",
+      "state": "stuck",
       "prNumber": null,
-      "title": "Add credential injection + TOML config + audit logging",
-      "lastTransition": "2026-03-25T21:50:36.384Z",
+      "title": "Add worker session telemetry for evidence-based failure diagnosis",
+      "lastTransition": "2026-03-26T07:04:44.095Z",
       "ciFailCount": 0,
-      "retryCount": 0
+      "retryCount": 1,
+      "failureReason": "launch-failed: worker launch returned no result for M-TEL-1"
     },
     {
-      "id": "M-RVW-5",
-      "state": "done",
-      "prNumber": 189,
-      "title": "External PR review — scan, track, and review non-ninthwave PRs",
-      "lastTransition": "2026-03-25T22:33:14.059Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "H-PRX-7",
-      "state": "queued",
+      "id": "M-SKL-1",
+      "state": "stuck",
       "prNumber": null,
-      "title": "ninthwave proxy-launcher: detection, spawn, health check",
-      "lastTransition": "2026-03-25T21:50:36.384Z",
+      "title": "Update /decompose skill to use file-per-todo output format",
+      "lastTransition": "2026-03-26T07:04:44.124Z",
       "ciFailCount": 0,
-      "retryCount": 0
+      "retryCount": 1,
+      "failureReason": "launch-failed: worker launch returned no result for M-SKL-1"
     },
     {
-      "id": "H-PRX-8",
-      "state": "queued",
-      "prNumber": null,
-      "title": "ninthwave sandbox.ts --upstream-proxy flag + config keys",
-      "lastTransition": "2026-03-25T21:50:36.384Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "M-PRX-9",
-      "state": "queued",
-      "prNumber": null,
-      "title": "E2E integration test nono + proxy + GitHub API",
-      "lastTransition": "2026-03-25T21:50:36.384Z",
-      "ciFailCount": 0,
-      "retryCount": 0
-    },
-    {
-      "id": "L-VIS-9",
+      "id": "L-VIS-10",
       "state": "queued",
       "prNumber": null,
       "title": "Explore vision, scope next iteration, and decompose into TODOs",
-      "lastTransition": "2026-03-25T21:50:36.384Z",
+      "lastTransition": "2026-03-26T07:04:29.096Z",
       "ciFailCount": 0,
-      "retryCount": 0
+      "retryCount": 0,
+      "dependencies": [
+        "H-DOC-1",
+        "H-DOC-2",
+        "M-TEL-1",
+        "M-SUP-2",
+        "M-SKL-1"
+      ]
     }
   ]
 }
