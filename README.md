@@ -12,7 +12,7 @@
 </p>
 
 <!-- PLACEHOLDER: docs/assets/pipeline-overview.png
-     LEFT: Icons stacked vertically: TODOS.md (markdown icon), Linear, ClickUp, GitHub Issues
+     LEFT: Icons stacked vertically: .ninthwave/todos/ (folder icon), Linear, ClickUp, GitHub Issues
      CENTER: Arrows converge into a cmux screenshot showing orchestrator + 4 worker
      sessions in the sidebar with colored status indicators
      RIGHT: GitHub PR list with green merge checkmarks
@@ -36,6 +36,7 @@ Your AI tool handles one session at a time. An 8-item feature means 8 sequential
 - **Automatic CI + merge pipeline** — dependency ordering, CI monitoring, review dispatch, auto-merge
 - **Switch into any session** mid-flight via cmux sidebar or tmux
 - **Friction log + self-improvement** — log what slows you down, decompose fixes, process them automatically
+- **Stacked branch execution** — dependent items automatically target their dependency's branch, giving reviewers clean diffs
 - **Convention over configuration** — cross-repo, port isolation, domain mapping. Zero config for the common case
 - **Bring your own everything** — your AI tool, your billing, your CI, your task tracker. No lock-in
 
@@ -69,7 +70,7 @@ Decomposition:
   2      H-UO-4  Profile completion flow             ~400
   3      M-UO-5  Onboarding analytics events         ~150
 
-5 items across 3 batches written to TODOS.md.
+5 items across 3 batches written to .ninthwave/todos/
 
 
 > /work
@@ -133,7 +134,7 @@ All items merged. Version bump: 1.4.0 → 1.5.0 (CHANGELOG updated)
 | **Explore** | Scans the codebase: what exists vs. what needs building |
 | **Architect** | Optional architecture review for complex features |
 | **Decompose** | PR-sized items (~200-400 LOC each), dependencies mapped into batches |
-| **Write** | Items written to TODOS.md (or synced to Linear/ClickUp) |
+| **Write** | Items written to `.ninthwave/todos/` (or synced to Linear/ClickUp) |
 
 ### `/work`: Orchestrate Parallel Sessions
 
@@ -312,23 +313,66 @@ Checks required tools (gh, AI tool, multiplexer, git config), recommended config
 
 All commands work with both `nw` and `ninthwave` (identical behavior):
 
+**Setup & diagnostics:**
+
 | Command | Description |
 |---------|-------------|
-| `list [--ready] [--priority P] [--domain D] [--feature F]` | List and filter work items |
+| `doctor` | Check prerequisites and configuration health |
+| `init` | Auto-detect and initialize ninthwave (zero input) |
+| `setup [--global]` | Set up ninthwave in a project (creates `.ninthwave/todos/`) or globally |
+| `version` | Print ninthwave version |
+
+**Work items:**
+
+| Command | Description |
+|---------|-------------|
+| `list [--ready] [--priority P] [--domain D] [--feature F] [--backend B]` | List and filter work items |
 | `deps <ID>` | Show dependency chain and dependents |
 | `conflicts <ID1> <ID2> ...` | Check file-level and domain overlaps |
 | `batch-order <ID1> [ID2] ...` | Group items into dependency-ordered batches |
-| `start <ID1> [ID2] ...` | Create worktrees and launch AI sessions |
-| `status` | Show active worktree status (branches, PRs, partitions) |
-| `watch-ready` | Check PR merge readiness (pending/passing/failing) |
-| `autopilot-watch [--interval N]` | Poll for PR status transitions |
-| `merged-ids` | List already-merged work items |
-| `mark-done <ID1> [ID2] ...` | Remove completed items from TODOS.md |
-| `version-bump` | Bump version and generate changelog from commits |
+
+**Sessions & orchestration:**
+
+| Command | Description |
+|---------|-------------|
+| `start <ID1> [ID2] ... [--mux cmux\|tmux]` | Create worktrees and launch AI sessions |
+| `orchestrate [--items ID1 ID2 ...] [--daemon] [--watch]` | Orchestrate parallel processing (interactive if no `--items`) |
+| `stop` | Stop the orchestrator daemon |
+| `retry <ID> [ID2] ...` | Reset stuck or done items to queued for re-processing |
+| `status [--watch] [--flat]` | Show active worktrees (live refresh with `--watch`) |
+| `partitions` | Show partition allocation |
+
+**CI & PR monitoring:**
+
+| Command | Description |
+|---------|-------------|
+| `watch-ready` | Check which PRs are merge-ready |
+| `autopilot-watch [--interval N] [--state-file F]` | Block until item status changes |
+| `pr-watch --pr N [--interval N] [--since T]` | Block until a PR has new activity |
+| `pr-activity <PR1> [PR2] ... [--since T]` | Check for new comments and reviews |
+| `ci-failures <PR>` | Show failing CI check details |
+
+**Cleanup & finalization:**
+
+| Command | Description |
+|---------|-------------|
 | `clean [ID]` | Remove merged worktrees and close workspaces |
-| `orchestrate --items ID1,ID2 [options]` | Orchestrate parallel processing (launch workers, poll CI, merge PRs) |
-| `doctor` | Check environment health (required tools, config, optional dependencies) |
+| `clean-single <ID>` | Clean a single worktree (no side effects) |
+| `close-workspaces` | Close all cmux todo workspaces |
+| `close-workspace <ID>` | Close cmux workspace for a single item |
+| `mark-done <ID1> [ID2] ...` | Remove completed todo files |
+| `merged-ids` | List IDs of already-merged work items |
+| `reconcile` | Sync todo files with merged PRs and clean stale worktrees |
+| `version-bump` | Bump version and generate changelog from commits |
+
+**Utilities:**
+
+| Command | Description |
+|---------|-------------|
 | `repos` | List discovered repos (sibling dirs + repos.conf) |
+| `analytics [--all]` | Show orchestration performance trends |
+| `migrate-todos` | Migrate TODOS.md to file-per-todo format |
+| `generate-todos` | Generate TODOS.md from individual todo files |
 
 ### Expected skills (bring your own)
 
@@ -371,12 +415,12 @@ Workers reference these skill names during execution. If available, they're used
 | Path | Purpose |
 |------|---------|
 | `.ninthwave/config` | Project settings (LOC extensions, domain mappings) |
+| `.ninthwave/todos/` | Work items directory (one file per todo) |
 | `.ninthwave/domains.conf` | Custom domain slug mappings |
 | `.claude/skills/*` | Symlinks to skills (for discovery) |
 | `.claude/agents/todo-worker.md` | Worker agent (Claude Code) |
 | `.opencode/agents/todo-worker.md` | Worker agent (OpenCode) |
 | `.github/agents/todo-worker.agent.md` | Worker agent (Copilot CLI) |
-| `TODOS.md` | Work items (created if missing) |
 
 </details>
 
@@ -389,7 +433,7 @@ brew upgrade ninthwave
 nw setup   # re-sync project-level files
 ```
 
-Project-specific config (`TODOS.md`, `.ninthwave/config`, `domains.conf`) is preserved.
+Project-specific config (`.ninthwave/todos/`, `.ninthwave/config`, `domains.conf`) is preserved.
 
 ## Contributing
 
