@@ -5,7 +5,7 @@
 // Optionally runs an LLM supervisor tick for anomaly detection and friction logging.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, appendFileSync } from "fs";
-import { join } from "path";
+import { join, basename } from "path";
 import { totalmem, freemem, platform } from "os";
 import { execSync } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
@@ -89,6 +89,12 @@ import {
   type DaemonState,
   type ExternalReviewItem,
 } from "../daemon.ts";
+import {
+  formatStatusTable,
+  mapDaemonItemState,
+  getTerminalWidth,
+  type StatusItem,
+} from "../status-render.ts";
 
 // ── Structured logging ─────────────────────────────────────────────
 
@@ -101,6 +107,56 @@ export interface LogEntry {
 
 export function structuredLog(entry: LogEntry): void {
   console.log(JSON.stringify(entry));
+}
+
+// ── TUI mode helpers ────────────────────────────────────────────────
+
+/**
+ * Determine if TUI mode should be active.
+ * TUI mode renders a live status table on stdout instead of JSON log lines.
+ * Enabled when: stdout is a TTY, not a daemon child process, and --json not set.
+ */
+export function detectTuiMode(isDaemonChild: boolean, jsonFlag: boolean, isTTY: boolean): boolean {
+  return !isDaemonChild && !jsonFlag && isTTY;
+}
+
+/**
+ * Convert OrchestratorItem[] to StatusItem[] for TUI rendering.
+ * Mirrors the logic in daemonStateToStatusItems but works directly from live orchestrator state.
+ */
+export function orchestratorItemsToStatusItems(items: OrchestratorItem[]): StatusItem[] {
+  return items.map((item) => ({
+    id: item.id,
+    title: item.todo.title,
+    state: mapDaemonItemState(item.state),
+    prNumber: item.prNumber ?? null,
+    ageMs: Date.now() - new Date(item.lastTransition).getTime(),
+    repoLabel: item.resolvedRepoRoot ? basename(item.resolvedRepoRoot) : "",
+    failureReason: item.failureReason,
+    dependencies: item.todo.dependencies ?? [],
+    startedAt: item.startedAt,
+    endedAt: item.endedAt,
+    exitCode: item.exitCode,
+    stderrTail: item.stderrTail,
+  }));
+}
+
+/**
+ * Render the status table to stdout using ANSI cursor control for flicker-free updates.
+ * Uses cursor-home + clear-line + clear-to-end to replace content in-place.
+ * Injectable write function for testability.
+ */
+export function renderTuiFrame(
+  items: OrchestratorItem[],
+  wipLimit: number | undefined,
+  write: (s: string) => void = (s) => process.stdout.write(s),
+): void {
+  const statusItems = orchestratorItemsToStatusItems(items);
+  const termWidth = getTerminalWidth();
+  const content = formatStatusTable(statusItems, termWidth, wipLimit);
+  write("\x1B[H");
+  write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+  write("\x1B[J");
 }
 
 // ── Worktree commit tracking ──────────────────────────────────────
@@ -1730,6 +1786,7 @@ export async function cmdOrchestrate(
   let reviewExternal = false;
   let watchMode = false;
   let watchIntervalSecs: number | undefined;
+  let jsonFlag = false;
 
   // Parse args
   let i = 0;
@@ -1833,6 +1890,10 @@ export async function cmdOrchestrate(
         watchIntervalSecs = parseInt(args[i + 1] ?? "30", 10);
         i += 2;
         break;
+      case "--json":
+        jsonFlag = true;
+        i += 1;
+        break;
       default:
         die(`Unknown option: ${args[i]}`);
     }
@@ -1857,6 +1918,22 @@ export async function cmdOrchestrate(
     console.log(`  State: ${stateFilePath(projectRoot)}`);
     console.log(`  Stop:  ninthwave stop`);
     return;
+  }
+
+  // ── TUI mode setup ─────────────────────────────────────────────────
+  // TUI mode: render live status table to stdout; redirect JSON logs to log file.
+  // Enabled when stdout is a TTY and neither --json nor --_daemon-child is set.
+  const tuiMode = detectTuiMode(isDaemonChild, jsonFlag, process.stdout.isTTY === true);
+
+  // In TUI mode, redirect structured logs to the log file instead of stdout.
+  let log: (entry: LogEntry) => void = structuredLog;
+  if (tuiMode) {
+    const stateDir = userStateDir(projectRoot);
+    mkdirSync(stateDir, { recursive: true });
+    const tuiLogPath = logFilePath(projectRoot);
+    log = (entry: LogEntry) => {
+      appendFileSync(tuiLogPath, JSON.stringify(entry) + "\n");
+    };
   }
 
   // Migrate runtime state from old .ninthwave/ to ~/.ninthwave/projects/<slug>/
@@ -1887,7 +1964,7 @@ export async function cmdOrchestrate(
     supervisorFlag = result.supervisor;
   }
 
-  structuredLog({
+  log({
     ts: new Date().toISOString(),
     level: "info",
     event: "wip_limit_resolved",
@@ -1942,7 +2019,7 @@ export async function cmdOrchestrate(
         // bootstrap the repo before launch (via the bootstrap action). Log the
         // deferred resolution. Non-bootstrap items stay hub-local as fallback.
         if (item.todo.bootstrap) {
-          structuredLog({
+          log({
             ts: new Date().toISOString(),
             level: "info",
             event: "cross_repo_bootstrap_deferred",
@@ -1950,7 +2027,7 @@ export async function cmdOrchestrate(
             alias,
           });
         } else {
-          structuredLog({
+          log({
             ts: new Date().toISOString(),
             level: "warn",
             event: "cross_repo_resolve_failed",
@@ -1988,7 +2065,7 @@ export async function cmdOrchestrate(
         if (match) mux.closeWorkspace(match[0]);
       }
     },
-    log: structuredLog,
+    log,
   });
 
   // Reconstruct state from disk + GitHub (crash recovery)
@@ -2014,7 +2091,7 @@ export async function cmdOrchestrate(
     checkPrMergeable,
     daemonRebase,
     warn: (message) =>
-      structuredLog({ ts: new Date().toISOString(), level: "warn", event: "orchestrator_warning", message }),
+      log({ ts: new Date().toISOString(), level: "warn", event: "orchestrator_warning", message }),
     launchReview: (itemId, prNumber, repoRoot) => {
       const autoFix = orch.config.reviewAutoFix;
       const result = launchReviewWorker(prNumber, itemId, autoFix, repoRoot, aiTool, mux, { noSandbox });
@@ -2036,14 +2113,14 @@ export async function cmdOrchestrate(
   // Graceful SIGINT handling
   const abortController = new AbortController();
   const sigintHandler = () => {
-    structuredLog({ ts: new Date().toISOString(), level: "info", event: "sigint_received" });
+    log({ ts: new Date().toISOString(), level: "info", event: "sigint_received" });
     abortController.abort();
   };
   process.on("SIGINT", sigintHandler);
 
   // Graceful SIGTERM handling (used by daemon mode for clean shutdown)
   const sigtermHandler = () => {
-    structuredLog({ ts: new Date().toISOString(), level: "info", event: "sigterm_received" });
+    log({ ts: new Date().toISOString(), level: "info", event: "sigterm_received" });
     abortController.abort();
   };
   process.on("SIGTERM", sigtermHandler);
@@ -2061,7 +2138,7 @@ export async function cmdOrchestrate(
     : undefined;
 
   if (supervisorActive) {
-    structuredLog({
+    log({
       ts: new Date().toISOString(),
       level: "info",
       event: "supervisor_enabled",
@@ -2074,10 +2151,10 @@ export async function cmdOrchestrate(
   // Resolve webhook URL and create notifier (fire-and-forget)
   const webhookUrl = resolveWebhookUrl(projectRoot);
   const notify = createWebhookNotifier(webhookUrl, undefined, (msg) =>
-    structuredLog({ ts: new Date().toISOString(), level: "warn", event: "webhook_error", error: msg }),
+    log({ ts: new Date().toISOString(), level: "warn", event: "webhook_error", error: msg }),
   );
   if (webhookUrl) {
-    structuredLog({
+    log({
       ts: new Date().toISOString(),
       level: "info",
       event: "webhook_configured",
@@ -2106,7 +2183,7 @@ export async function cmdOrchestrate(
         ? `${dashboardServer.token.slice(0, 4)}...${dashboardServer.token.slice(-4)}`
         : dashboardServer.token;
 
-      structuredLog({
+      log({
         ts: new Date().toISOString(),
         level: "info",
         event: "dashboard_started",
@@ -2117,7 +2194,7 @@ export async function cmdOrchestrate(
     } catch (e: unknown) {
       // Graceful degradation: log warning, continue without dashboard
       const msg = e instanceof Error ? e.message : String(e);
-      structuredLog({
+      log({
         ts: new Date().toISOString(),
         level: "warn",
         event: "dashboard_start_failed",
@@ -2140,7 +2217,7 @@ export async function cmdOrchestrate(
   // with the current run — even before the first poll cycle completes.
   const archivePath = archiveStateFile(projectRoot);
   if (archivePath) {
-    structuredLog({
+    log({
       ts: new Date().toISOString(),
       level: "info",
       event: "state_archived",
@@ -2164,10 +2241,18 @@ export async function cmdOrchestrate(
     } catch {
       // Non-fatal — state persistence failure shouldn't block the orchestrator
     }
+    // TUI mode: render live status table to stdout after each poll cycle
+    if (tuiMode) {
+      try {
+        renderTuiFrame(items, wipLimit);
+      } catch {
+        // Non-fatal — TUI render failure shouldn't block the orchestrator
+      }
+    }
   };
 
   if (isDaemonChild) {
-    structuredLog({
+    log({
       ts: new Date().toISOString(),
       level: "info",
       event: "daemon_child_started",
@@ -2182,7 +2267,7 @@ export async function cmdOrchestrate(
     : undefined;
 
   if (statusSync) {
-    structuredLog({
+    log({
       ts: new Date().toISOString(),
       level: "info",
       event: "clickup_sync_enabled",
@@ -2208,12 +2293,12 @@ export async function cmdOrchestrate(
           try { mux.closeWorkspace(reviewWorkspaceRef); } catch { /* best-effort */ }
           return true;
         },
-        log: structuredLog,
+        log,
       }
     : undefined;
 
   if (reviewExternalEnabled) {
-    structuredLog({
+    log({
       ts: new Date().toISOString(),
       level: "info",
       event: "review_external_enabled",
@@ -2223,11 +2308,11 @@ export async function cmdOrchestrate(
   const loopDeps: OrchestrateLoopDeps = {
     buildSnapshot: (o, pr, wd) => buildSnapshot(o, pr, wd, mux),
     sleep: (ms) => interruptibleSleep(ms, abortController.signal),
-    log: structuredLog,
+    log,
     actionDeps,
     getFreeMem: getAvailableMemory,
     reconcile,
-    supervisorDeps: supervisorActive ? createSupervisorDeps(structuredLog) : undefined,
+    supervisorDeps: supervisorActive ? createSupervisorDeps(log) : undefined,
     notify,
     analyticsIO: { mkdirSync, writeFileSync },
     analyticsCommit: { hasChanges, gitAdd, getStagedFiles, gitCommit, gitReset },
@@ -2264,7 +2349,7 @@ export async function cmdOrchestrate(
   // or closes it and creates a new one if stale. No separate closeStaleStatusPane call needed.
   statusPaneRef = isDaemonChild ? null : launchStatusPane(mux, projectRoot);
   if (statusPaneRef) {
-    structuredLog({
+    log({
       ts: new Date().toISOString(),
       level: "info",
       event: "status_pane_opened",
@@ -2304,7 +2389,7 @@ export async function cmdOrchestrate(
       }
     }
     if (closedWorkspaces.length > 0) {
-      structuredLog({
+      log({
         ts: new Date().toISOString(),
         level: "info",
         event: "shutdown_workspaces_closed",
@@ -2316,7 +2401,7 @@ export async function cmdOrchestrate(
     // Close status pane on completion (or SIGINT)
     if (statusPaneRef) {
       closeStatusPane(mux, statusPaneRef);
-      structuredLog({
+      log({
         ts: new Date().toISOString(),
         level: "info",
         event: "status_pane_closed",
@@ -2328,7 +2413,7 @@ export async function cmdOrchestrate(
     if (dashboardServer) {
       try {
         stopDashboard(dashboardServer);
-        structuredLog({
+        log({
           ts: new Date().toISOString(),
           level: "info",
           event: "dashboard_stopped",
@@ -2344,7 +2429,7 @@ export async function cmdOrchestrate(
     // Clean up PID file on exit (both foreground and daemon child)
     cleanPidFile(projectRoot);
     if (isDaemonChild) {
-      structuredLog({
+      log({
         ts: new Date().toISOString(),
         level: "info",
         event: "daemon_child_exiting",
