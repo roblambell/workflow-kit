@@ -10,6 +10,7 @@ import {
   lstatSync,
 } from "fs";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
+import { userStateDir } from "../core/daemon.ts";
 import {
   detectCI,
   detectTestCommand,
@@ -846,7 +847,7 @@ describe("initProject", () => {
     expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/friction/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".gitignore"))).toBe(true);
-    expect(existsSync(join(projectDir, ".ninthwave/version"))).toBe(true);
+    expect(existsSync(join(userStateDir(projectDir), "version"))).toBe(true);
 
     // Init should NOT create TODOS.md
     expect(existsSync(join(projectDir, "TODOS.md"))).toBe(false);

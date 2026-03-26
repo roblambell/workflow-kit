@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { cmdRetry, type RetryDeps } from "../core/commands/retry.ts";
-import type { DaemonIO, DaemonState } from "../core/daemon.ts";
+import { pidFilePath, stateFilePath, type DaemonIO, type DaemonState } from "../core/daemon.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ function seedState(
   state: DaemonState,
 ): void {
   io.files.set(
-    "/project/.ninthwave/orchestrator.state.json",
+    stateFilePath("/project"),
     JSON.stringify(state, null, 2),
   );
 }
@@ -127,7 +127,7 @@ describe("cmdRetry", () => {
 
     // Verify state was written back
     const updated = JSON.parse(
-      io.files.get("/project/.ninthwave/orchestrator.state.json")!,
+      io.files.get(stateFilePath("/project"))!,
     ) as DaemonState;
     const item = updated.items.find((i) => i.id === "H-PRX-4")!;
     expect(item.state).toBe("queued");
@@ -241,7 +241,7 @@ describe("cmdRetry", () => {
     cmdRetry(["H-PRX-4"], "/worktrees", "/project", deps);
 
     const updated = JSON.parse(
-      io.files.get("/project/.ninthwave/orchestrator.state.json")!,
+      io.files.get(stateFilePath("/project"))!,
     ) as DaemonState;
     expect(updated.items[0]!.retryCount).toBe(0);
   });
@@ -276,7 +276,7 @@ describe("cmdRetry", () => {
     const state = makeState([makeItem("H-PRX-4", "stuck")]);
     seedState(io, state);
     // Also seed PID file so isDaemonRunning finds it
-    io.files.set("/project/.ninthwave/orchestrator.pid", "5678");
+    io.files.set(pidFilePath("/project"), "5678");
     const deps = createDeps(io, true);
 
     // Spy on process.kill to capture the SIGUSR1 signal
@@ -305,7 +305,7 @@ describe("cmdRetry", () => {
     cmdRetry(["H-PRX-4"], "/worktrees", "/project", deps);
 
     const updated = JSON.parse(
-      io.files.get("/project/.ninthwave/orchestrator.state.json")!,
+      io.files.get(stateFilePath("/project"))!,
     ) as DaemonState;
     expect(updated.items[0]!.lastTransition).not.toBe(oldTime);
   });

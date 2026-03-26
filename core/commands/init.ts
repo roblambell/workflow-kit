@@ -16,6 +16,7 @@ import {
 } from "fs";
 import { join, relative } from "path";
 import { getBundleDir } from "../paths.ts";
+import { userStateDir } from "../daemon.ts";
 import { info, GREEN, BOLD, DIM, RESET, YELLOW, RED } from "../output.ts";
 import { run } from "../shell.ts";
 import {
@@ -532,7 +533,9 @@ function scaffold(projectDir: string, bundleDir: string): void {
   ]);
   const version =
     versionResult.exitCode === 0 ? versionResult.stdout : "unknown";
-  writeFileSync(join(projectDir, ".ninthwave/version"), version + "\n");
+  const stateDir = userStateDir(projectDir);
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, "version"), version + "\n");
 }
 
 // --- Main init command ---

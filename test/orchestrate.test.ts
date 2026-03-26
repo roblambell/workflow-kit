@@ -33,7 +33,7 @@ import {
 } from "../core/orchestrator.ts";
 import type { TodoItem } from "../core/types.ts";
 import type { Multiplexer } from "../core/mux.ts";
-import type { DaemonState } from "../core/daemon.ts";
+import { pidFilePath, logFilePath, type DaemonState } from "../core/daemon.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -2096,11 +2096,11 @@ describe("forkDaemon", () => {
     );
 
     expect(result.pid).toBe(42);
-    expect(result.logPath).toBe("/project/.ninthwave/orchestrator.log");
+    expect(result.logPath).toBe(logFilePath("/project"));
     expect(mockChild.unref).toHaveBeenCalled();
 
     // PID file was written
-    expect(files.get("/project/.ninthwave/orchestrator.pid")).toBe("42");
+    expect(files.get(pidFilePath("/project"))).toBe("42");
 
     // spawn was called with detached: true
     expect(spawnFn).toHaveBeenCalled();

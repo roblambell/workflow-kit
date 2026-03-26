@@ -26,6 +26,7 @@ import type {
   AuthChecker,
   CommandPathResolver,
 } from "../core/commands/setup.ts";
+import { userStateDir } from "../core/daemon.ts";
 
 // Store original env
 const originalEnv = { ...process.env };
@@ -484,19 +485,22 @@ describe("setupProject", () => {
     expect(matches).toHaveLength(1);
   });
 
-  it("records version in .ninthwave/version", () => {
+  it("records version in user state directory", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
     setupProject(projectDir, bundleDir, allPresentDeps);
 
-    expect(existsSync(join(projectDir, ".ninthwave/version"))).toBe(true);
+    const stateDir = userStateDir(projectDir);
+    expect(existsSync(join(stateDir, "version"))).toBe(true);
     const version = readFileSync(
-      join(projectDir, ".ninthwave/version"),
+      join(stateDir, "version"),
       "utf-8",
     );
     // Should have some version string (git describe output)
     expect(version.trim()).toBeTruthy();
+    // Version should NOT be in the project's .ninthwave/ directory
+    expect(existsSync(join(projectDir, ".ninthwave/version"))).toBe(false);
   });
 
   it("aborts when prerequisites are missing", () => {

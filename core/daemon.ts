@@ -6,9 +6,10 @@ import {
   writeFileSync,
   unlinkSync,
   mkdirSync,
+  readdirSync,
+  rmSync,
 } from "fs";
-import { dirname } from "path";
-import { join } from "path";
+import { dirname, join } from "path";
 import type { OrchestratorItem } from "./orchestrator.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -49,18 +50,34 @@ export interface DaemonState {
   items: DaemonStateItem[];
 }
 
+// ── User state directory ─────────────────────────────────────────────
+
+/**
+ * Compute a stable per-project user state directory under ~/.ninthwave/projects/.
+ * Uses a path-derived slug (replacing / with -) for uniqueness and readability,
+ * matching the Claude Code convention (e.g., /Users/rob/code/proj → -Users-rob-code-proj).
+ *
+ * Runtime state files (PID, state, log, health-samples, etc.) are stored here
+ * instead of inside the project, keeping them out of git.
+ */
+export function userStateDir(projectRoot: string): string {
+  const home = process.env.HOME ?? "/tmp";
+  const slug = projectRoot.replace(/\//g, "-");
+  return join(home, ".ninthwave", "projects", slug);
+}
+
 // ── Paths ────────────────────────────────────────────────────────────
 
 export function pidFilePath(projectRoot: string): string {
-  return join(projectRoot, ".ninthwave", "orchestrator.pid");
+  return join(userStateDir(projectRoot), "orchestrator.pid");
 }
 
 export function stateFilePath(projectRoot: string): string {
-  return join(projectRoot, ".ninthwave", "orchestrator.state.json");
+  return join(userStateDir(projectRoot), "orchestrator.state.json");
 }
 
 export function logFilePath(projectRoot: string): string {
-  return join(projectRoot, ".ninthwave", "orchestrator.log");
+  return join(userStateDir(projectRoot), "orchestrator.log");
 }
 
 // ── Injectable I/O ───────────────────────────────────────────────────
@@ -203,7 +220,7 @@ export function cleanStateFile(
 
 /** Path to the state archive directory. */
 export function stateArchiveDir(projectRoot: string): string {
-  return join(projectRoot, ".ninthwave", "state-archive");
+  return join(userStateDir(projectRoot), "state-archive");
 }
 
 /**
@@ -268,7 +285,7 @@ export interface ExternalReviewItem {
 }
 
 export function externalReviewsPath(projectRoot: string): string {
-  return join(projectRoot, ".ninthwave", "external-reviews.json");
+  return join(userStateDir(projectRoot), "external-reviews.json");
 }
 
 export function readExternalReviews(
@@ -329,4 +346,97 @@ export function serializeOrchestratorState(
       ...(item.stderrTail ? { stderrTail: item.stderrTail } : {}),
     })),
   };
+}
+
+// ── Runtime state migration ─────────────────────────────────────────
+
+/** Runtime state files that should live in the user state directory. */
+const RUNTIME_STATE_FILES = [
+  "orchestrator.pid",
+  "orchestrator.state.json",
+  "orchestrator.log",
+  "health-samples.jsonl",
+  "version",
+  "external-reviews.json",
+];
+
+/**
+ * Migrate runtime state files from the old `.ninthwave/` project location
+ * to the new `~/.ninthwave/projects/<slug>/` user state directory.
+ *
+ * This is a one-time, idempotent migration:
+ * - Only moves files that exist in the old location and NOT in the new location
+ * - Removes old files after successful copy
+ * - Best-effort — failures are silently ignored (files will be recreated)
+ * - Also migrates the `state-archive/` directory
+ *
+ * Safe to call repeatedly — no-ops when nothing to migrate.
+ */
+export function migrateRuntimeState(projectRoot: string): void {
+  const newDir = userStateDir(projectRoot);
+  const oldDir = join(projectRoot, ".ninthwave");
+
+  if (!existsSync(oldDir)) return;
+
+  let dirCreated = false;
+  const ensureDir = () => {
+    if (!dirCreated) {
+      mkdirSync(newDir, { recursive: true });
+      dirCreated = true;
+    }
+  };
+
+  // Migrate individual files
+  for (const file of RUNTIME_STATE_FILES) {
+    const oldPath = join(oldDir, file);
+    const newPath = join(newDir, file);
+    if (existsSync(oldPath) && !existsSync(newPath)) {
+      try {
+        ensureDir();
+        writeFileSync(newPath, readFileSync(oldPath, "utf-8"), "utf-8");
+        unlinkSync(oldPath);
+      } catch {
+        // best-effort — file will be recreated on next write
+      }
+    } else if (existsSync(oldPath) && existsSync(newPath)) {
+      // New location already has the file — just clean up old copy
+      try {
+        unlinkSync(oldPath);
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
+  // Migrate state-archive directory
+  const oldArchive = join(oldDir, "state-archive");
+  if (existsSync(oldArchive)) {
+    const newArchive = join(newDir, "state-archive");
+    try {
+      mkdirSync(newArchive, { recursive: true });
+      const entries = readdirSync(oldArchive);
+      for (const entry of entries) {
+        const oldFile = join(oldArchive, entry);
+        const newFile = join(newArchive, entry);
+        if (!existsSync(newFile)) {
+          writeFileSync(newFile, readFileSync(oldFile, "utf-8"), "utf-8");
+        }
+        try {
+          unlinkSync(oldFile);
+        } catch {
+          // best-effort
+        }
+      }
+      // Remove old archive directory if now empty
+      try {
+        if (readdirSync(oldArchive).length === 0) {
+          rmSync(oldArchive, { recursive: true });
+        }
+      } catch {
+        // best-effort
+      }
+    } catch {
+      // best-effort — archive will be recreated
+    }
+  }
 }

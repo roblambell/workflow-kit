@@ -1,7 +1,10 @@
 // Tests for core/daemon.ts — PID file management, state serialization,
-// stale PID detection, and state file roundtrips.
+// stale PID detection, state file roundtrips, user state directory, and migration.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, mkdtempSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import {
   writePidFile,
   readPidFile,
@@ -16,6 +19,8 @@ import {
   pidFilePath,
   stateFilePath,
   logFilePath,
+  userStateDir,
+  migrateRuntimeState,
   type DaemonIO,
   type DaemonState,
   type ProcessExistsCheck,
@@ -78,23 +83,87 @@ function createMockIO(): DaemonIO & { files: Map<string, string> } {
   };
 }
 
+// ── userStateDir ────────────────────────────────────────────────────
+
+describe("userStateDir", () => {
+  const origHome = process.env.HOME;
+  afterEach(() => {
+    process.env.HOME = origHome;
+  });
+
+  it("returns consistent path for same project root", () => {
+    process.env.HOME = "/home/testuser";
+    const a = userStateDir("/Users/rob/code/myproject");
+    const b = userStateDir("/Users/rob/code/myproject");
+    expect(a).toBe(b);
+  });
+
+  it("returns different paths for different project roots", () => {
+    process.env.HOME = "/home/testuser";
+    const a = userStateDir("/Users/rob/code/projectA");
+    const b = userStateDir("/Users/rob/code/projectB");
+    expect(a).not.toBe(b);
+  });
+
+  it("uses HOME-based path under ~/.ninthwave/projects/", () => {
+    process.env.HOME = "/home/testuser";
+    const dir = userStateDir("/Users/rob/code/proj");
+    expect(dir).toMatch(/^\/home\/testuser\/\.ninthwave\/projects\//);
+  });
+
+  it("encodes project root as slug (slashes replaced with dashes)", () => {
+    process.env.HOME = "/home/testuser";
+    const dir = userStateDir("/Users/rob/code/proj");
+    expect(dir).toContain("-Users-rob-code-proj");
+  });
+
+  it("falls back to /tmp when HOME is unset", () => {
+    delete process.env.HOME;
+    const dir = userStateDir("/project");
+    expect(dir).toMatch(/^\/tmp\/\.ninthwave\/projects\//);
+  });
+});
+
 // ── Path helpers ─────────────────────────────────────────────────────
 
 describe("path helpers", () => {
-  it("pidFilePath returns correct path", () => {
-    expect(pidFilePath("/project")).toBe("/project/.ninthwave/orchestrator.pid");
+  const origHome = process.env.HOME;
+  beforeEach(() => {
+    process.env.HOME = "/home/testuser";
+  });
+  afterEach(() => {
+    process.env.HOME = origHome;
   });
 
-  it("stateFilePath returns correct path", () => {
-    expect(stateFilePath("/project")).toBe(
-      "/project/.ninthwave/orchestrator.state.json",
-    );
+  it("pidFilePath returns path under user state dir", () => {
+    const path = pidFilePath("/project");
+    expect(path).toBe(join(userStateDir("/project"), "orchestrator.pid"));
+    expect(path).toMatch(/\.ninthwave\/projects\//);
+    expect(path).toContain("orchestrator.pid");
   });
 
-  it("logFilePath returns correct path", () => {
-    expect(logFilePath("/project")).toBe(
-      "/project/.ninthwave/orchestrator.log",
-    );
+  it("stateFilePath returns path under user state dir", () => {
+    const path = stateFilePath("/project");
+    expect(path).toBe(join(userStateDir("/project"), "orchestrator.state.json"));
+    expect(path).toMatch(/\.ninthwave\/projects\//);
+  });
+
+  it("logFilePath returns path under user state dir", () => {
+    const path = logFilePath("/project");
+    expect(path).toBe(join(userStateDir("/project"), "orchestrator.log"));
+    expect(path).toMatch(/\.ninthwave\/projects\//);
+  });
+
+  it("stateArchiveDir returns path under user state dir", () => {
+    const path = stateArchiveDir("/project");
+    expect(path).toBe(join(userStateDir("/project"), "state-archive"));
+  });
+
+  it("path functions return paths outside the project directory", () => {
+    const projRoot = "/Users/rob/code/myproject";
+    expect(pidFilePath(projRoot)).not.toContain(projRoot);
+    expect(stateFilePath(projRoot)).not.toContain(projRoot);
+    expect(logFilePath(projRoot)).not.toContain(projRoot);
   });
 });
 
@@ -109,29 +178,24 @@ describe("PID file management", () => {
 
   it("writePidFile writes PID as string", () => {
     writePidFile("/project", 12345, io);
-    expect(io.files.get("/project/.ninthwave/orchestrator.pid")).toBe("12345");
+    expect(io.files.get(pidFilePath("/project"))).toBe("12345");
   });
 
   it("writePidFile creates directory if missing", () => {
     writePidFile("/project", 42, io);
-    expect(io.mkdirSync).toHaveBeenCalledWith("/project/.ninthwave", {
-      recursive: true,
-    });
+    expect(io.mkdirSync).toHaveBeenCalled();
   });
 
   it("writePidFile skips mkdir when dir exists", () => {
-    io.files.set("/project/.ninthwave", ""); // simulate dir exists
+    // Simulate dir exists by adding the dirname of pidFilePath to mock
+    const { dirname } = require("path");
+    io.files.set(dirname(pidFilePath("/project")), "");
     writePidFile("/project", 42, io);
-    // mkdirSync not called since existsSync returns true for the dir
-    // Actually our mock checks exact path, and the dir path doesn't have /orchestrator.pid
-    // Let me check: existsSync is called with dirname of the pid file path
-    // The dirname would be /project/.ninthwave
-    // Since we put a key for that, existsSync returns true
     expect(io.mkdirSync).not.toHaveBeenCalled();
   });
 
   it("readPidFile returns PID number", () => {
-    io.files.set("/project/.ninthwave/orchestrator.pid", "12345");
+    io.files.set(pidFilePath("/project"), "12345");
     expect(readPidFile("/project", io)).toBe(12345);
   });
 
@@ -140,19 +204,19 @@ describe("PID file management", () => {
   });
 
   it("readPidFile returns null for non-numeric content", () => {
-    io.files.set("/project/.ninthwave/orchestrator.pid", "not-a-number");
+    io.files.set(pidFilePath("/project"), "not-a-number");
     expect(readPidFile("/project", io)).toBeNull();
   });
 
   it("readPidFile trims whitespace", () => {
-    io.files.set("/project/.ninthwave/orchestrator.pid", "  99  \n");
+    io.files.set(pidFilePath("/project"), "  99  \n");
     expect(readPidFile("/project", io)).toBe(99);
   });
 
   it("cleanPidFile removes file when present", () => {
-    io.files.set("/project/.ninthwave/orchestrator.pid", "123");
+    io.files.set(pidFilePath("/project"), "123");
     cleanPidFile("/project", io);
-    expect(io.files.has("/project/.ninthwave/orchestrator.pid")).toBe(false);
+    expect(io.files.has(pidFilePath("/project"))).toBe(false);
   });
 
   it("cleanPidFile does nothing when file missing", () => {
@@ -175,25 +239,20 @@ describe("isDaemonRunning", () => {
   });
 
   it("returns PID when process is alive", () => {
-    io.files.set("/project/.ninthwave/orchestrator.pid", "1234");
+    io.files.set(pidFilePath("/project"), "1234");
     const check: ProcessExistsCheck = () => true;
     expect(isDaemonRunning("/project", io, check)).toBe(1234);
   });
 
   it("cleans up and returns null for stale PID (process dead)", () => {
-    io.files.set("/project/.ninthwave/orchestrator.pid", "9999");
-    io.files.set(
-      "/project/.ninthwave/orchestrator.state.json",
-      '{"pid":9999}',
-    );
+    io.files.set(pidFilePath("/project"), "9999");
+    io.files.set(stateFilePath("/project"), '{"pid":9999}');
     const check: ProcessExistsCheck = () => false;
 
     expect(isDaemonRunning("/project", io, check)).toBeNull();
     // Both PID file and state file should be cleaned up
-    expect(io.files.has("/project/.ninthwave/orchestrator.pid")).toBe(false);
-    expect(io.files.has("/project/.ninthwave/orchestrator.state.json")).toBe(
-      false,
-    );
+    expect(io.files.has(pidFilePath("/project"))).toBe(false);
+    expect(io.files.has(stateFilePath("/project"))).toBe(false);
   });
 });
 
@@ -214,7 +273,7 @@ describe("state file management", () => {
       items: [],
     };
     writeStateFile("/project", state, io);
-    const raw = io.files.get("/project/.ninthwave/orchestrator.state.json")!;
+    const raw = io.files.get(stateFilePath("/project"))!;
     expect(JSON.parse(raw)).toEqual(state);
   });
 
@@ -235,10 +294,7 @@ describe("state file management", () => {
         },
       ],
     };
-    io.files.set(
-      "/project/.ninthwave/orchestrator.state.json",
-      JSON.stringify(state),
-    );
+    io.files.set(stateFilePath("/project"), JSON.stringify(state));
     expect(readStateFile("/project", io)).toEqual(state);
   });
 
@@ -247,22 +303,14 @@ describe("state file management", () => {
   });
 
   it("readStateFile returns null for invalid JSON", () => {
-    io.files.set(
-      "/project/.ninthwave/orchestrator.state.json",
-      "not valid json",
-    );
+    io.files.set(stateFilePath("/project"), "not valid json");
     expect(readStateFile("/project", io)).toBeNull();
   });
 
   it("cleanStateFile removes file when present", () => {
-    io.files.set(
-      "/project/.ninthwave/orchestrator.state.json",
-      '{"pid":1}',
-    );
+    io.files.set(stateFilePath("/project"), '{"pid":1}');
     cleanStateFile("/project", io);
-    expect(
-      io.files.has("/project/.ninthwave/orchestrator.state.json"),
-    ).toBe(false);
+    expect(io.files.has(stateFilePath("/project"))).toBe(false);
   });
 
   it("state serialization/deserialization roundtrips correctly", () => {
@@ -591,5 +639,127 @@ describe("archiveStateFile", () => {
     expect(current).not.toBeNull();
     expect(current!.items).toHaveLength(1);
     expect(current!.items[0]!.id).toBe("FRESH-1-1");
+  });
+});
+
+// ── migrateRuntimeState ─────────────────────────────────────────────
+
+describe("migrateRuntimeState", () => {
+  let tempDir: string;
+  let projectRoot: string;
+  const origHome = process.env.HOME;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "nw-migrate-test-"));
+    projectRoot = join(tempDir, "project");
+    mkdirSync(join(projectRoot, ".ninthwave"), { recursive: true });
+    // Point HOME to temp so userStateDir resolves inside temp
+    process.env.HOME = join(tempDir, "home");
+    mkdirSync(join(tempDir, "home"), { recursive: true });
+  });
+
+  afterEach(() => {
+    process.env.HOME = origHome;
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch { /* cleanup best-effort */ }
+  });
+
+  it("migrates runtime files from old location to user state dir", () => {
+    const oldDir = join(projectRoot, ".ninthwave");
+    writeFileSync(join(oldDir, "orchestrator.pid"), "12345");
+    writeFileSync(join(oldDir, "orchestrator.state.json"), '{"pid":12345}');
+    writeFileSync(join(oldDir, "orchestrator.log"), "log content");
+    writeFileSync(join(oldDir, "health-samples.jsonl"), '{"t":"now"}');
+    writeFileSync(join(oldDir, "version"), "v1.0.0\n");
+    writeFileSync(join(oldDir, "external-reviews.json"), "[]");
+
+    migrateRuntimeState(projectRoot);
+
+    const newDir = userStateDir(projectRoot);
+    // Files should exist in new location
+    expect(existsSync(join(newDir, "orchestrator.pid"))).toBe(true);
+    expect(readFileSync(join(newDir, "orchestrator.pid"), "utf-8")).toBe("12345");
+    expect(existsSync(join(newDir, "orchestrator.state.json"))).toBe(true);
+    expect(existsSync(join(newDir, "orchestrator.log"))).toBe(true);
+    expect(existsSync(join(newDir, "health-samples.jsonl"))).toBe(true);
+    expect(existsSync(join(newDir, "version"))).toBe(true);
+    expect(existsSync(join(newDir, "external-reviews.json"))).toBe(true);
+
+    // Files should be removed from old location
+    expect(existsSync(join(oldDir, "orchestrator.pid"))).toBe(false);
+    expect(existsSync(join(oldDir, "orchestrator.state.json"))).toBe(false);
+    expect(existsSync(join(oldDir, "orchestrator.log"))).toBe(false);
+    expect(existsSync(join(oldDir, "health-samples.jsonl"))).toBe(false);
+    expect(existsSync(join(oldDir, "version"))).toBe(false);
+    expect(existsSync(join(oldDir, "external-reviews.json"))).toBe(false);
+  });
+
+  it("migrates state-archive directory", () => {
+    const oldArchive = join(projectRoot, ".ninthwave", "state-archive");
+    mkdirSync(oldArchive, { recursive: true });
+    writeFileSync(join(oldArchive, "state-2026.json"), '{"pid":1}');
+    writeFileSync(join(oldArchive, "state-2025.json"), '{"pid":2}');
+
+    migrateRuntimeState(projectRoot);
+
+    const newArchive = join(userStateDir(projectRoot), "state-archive");
+    expect(existsSync(join(newArchive, "state-2026.json"))).toBe(true);
+    expect(existsSync(join(newArchive, "state-2025.json"))).toBe(true);
+    expect(readFileSync(join(newArchive, "state-2026.json"), "utf-8")).toBe('{"pid":1}');
+
+    // Old archive files should be cleaned up
+    expect(existsSync(join(oldArchive, "state-2026.json"))).toBe(false);
+    expect(existsSync(join(oldArchive, "state-2025.json"))).toBe(false);
+  });
+
+  it("does not overwrite existing files in new location", () => {
+    const oldDir = join(projectRoot, ".ninthwave");
+    writeFileSync(join(oldDir, "orchestrator.pid"), "old-pid");
+
+    const newDir = userStateDir(projectRoot);
+    mkdirSync(newDir, { recursive: true });
+    writeFileSync(join(newDir, "orchestrator.pid"), "new-pid");
+
+    migrateRuntimeState(projectRoot);
+
+    // New location should retain its value
+    expect(readFileSync(join(newDir, "orchestrator.pid"), "utf-8")).toBe("new-pid");
+    // Old file should be cleaned up even when new exists
+    expect(existsSync(join(oldDir, "orchestrator.pid"))).toBe(false);
+  });
+
+  it("is idempotent — safe to call multiple times", () => {
+    const oldDir = join(projectRoot, ".ninthwave");
+    writeFileSync(join(oldDir, "orchestrator.pid"), "12345");
+
+    migrateRuntimeState(projectRoot);
+    migrateRuntimeState(projectRoot); // second call should be a no-op
+
+    const newDir = userStateDir(projectRoot);
+    expect(readFileSync(join(newDir, "orchestrator.pid"), "utf-8")).toBe("12345");
+  });
+
+  it("no-ops when .ninthwave directory does not exist", () => {
+    const emptyProject = join(tempDir, "empty-project");
+    mkdirSync(emptyProject, { recursive: true });
+
+    // Should not throw
+    migrateRuntimeState(emptyProject);
+  });
+
+  it("preserves non-runtime files in .ninthwave/", () => {
+    const oldDir = join(projectRoot, ".ninthwave");
+    writeFileSync(join(oldDir, "config"), "# config content");
+    writeFileSync(join(oldDir, "domains.conf"), "# domains");
+    writeFileSync(join(oldDir, "orchestrator.pid"), "999");
+
+    migrateRuntimeState(projectRoot);
+
+    // Non-runtime files should remain in .ninthwave/
+    expect(existsSync(join(oldDir, "config"))).toBe(true);
+    expect(existsSync(join(oldDir, "domains.conf"))).toBe(true);
+    // Runtime file should be migrated
+    expect(existsSync(join(oldDir, "orchestrator.pid"))).toBe(false);
   });
 });

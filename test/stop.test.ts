@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { cmdStop, type StopDeps } from "../core/commands/stop.ts";
-import type { DaemonIO, ProcessExistsCheck } from "../core/daemon.ts";
+import { pidFilePath, stateFilePath, type DaemonIO, type ProcessExistsCheck } from "../core/daemon.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -58,7 +58,7 @@ describe("cmdStop", () => {
   });
 
   it("sends SIGTERM to running daemon", () => {
-    io.files.set("/project/.ninthwave/orchestrator.pid", "1234");
+    io.files.set(pidFilePath("/project"), "1234");
     const deps = createDeps(io, true);
     const msg = cmdStop("/project", deps);
     expect(msg).toContain("SIGTERM");
@@ -67,20 +67,15 @@ describe("cmdStop", () => {
   });
 
   it("cleans up stale PID file when process is dead", () => {
-    io.files.set("/project/.ninthwave/orchestrator.pid", "9999");
-    io.files.set(
-      "/project/.ninthwave/orchestrator.state.json",
-      '{"pid":9999}',
-    );
+    io.files.set(pidFilePath("/project"), "9999");
+    io.files.set(stateFilePath("/project"), '{"pid":9999}');
     const deps = createDeps(io, false);
     const msg = cmdStop("/project", deps);
     expect(msg).toContain("stale PID file");
     expect(msg).toContain("9999");
     // Files should be cleaned up
-    expect(io.files.has("/project/.ninthwave/orchestrator.pid")).toBe(false);
-    expect(io.files.has("/project/.ninthwave/orchestrator.state.json")).toBe(
-      false,
-    );
+    expect(io.files.has(pidFilePath("/project"))).toBe(false);
+    expect(io.files.has(stateFilePath("/project"))).toBe(false);
     // No kill should have been sent
     expect(deps.killCalls).toEqual([]);
   });

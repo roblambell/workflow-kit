@@ -83,6 +83,8 @@ import {
   writeExternalReviews,
   logFilePath,
   stateFilePath,
+  userStateDir,
+  migrateRuntimeState,
   type DaemonIO,
   type DaemonState,
   type ExternalReviewItem,
@@ -255,7 +257,7 @@ export function buildSnapshot(
           // Record screen samples for health-check tuning (best-effort, separate try/catch)
           try {
             if (rawScreen.trim()) {
-              const samplesDir = join(projectRoot, ".ninthwave");
+              const samplesDir = userStateDir(projectRoot);
               const samplesFile = join(samplesDir, "health-samples.jsonl");
               const sample = JSON.stringify({
                 t: new Date().toISOString(),
@@ -1682,9 +1684,9 @@ export function forkDaemon(
   openFn: typeof openSync = openSync,
   daemonIO: DaemonIO = { writeFileSync, readFileSync: () => "" as any, unlinkSync: () => {}, existsSync, mkdirSync },
 ): { pid: number; logPath: string } {
-  const ninthwaveDir = join(projectRoot, ".ninthwave");
-  if (!daemonIO.existsSync(ninthwaveDir)) {
-    daemonIO.mkdirSync(ninthwaveDir, { recursive: true });
+  const stateDir = userStateDir(projectRoot);
+  if (!daemonIO.existsSync(stateDir)) {
+    daemonIO.mkdirSync(stateDir, { recursive: true });
   }
 
   const logPath = logFilePath(projectRoot);
@@ -1856,6 +1858,9 @@ export async function cmdOrchestrate(
     console.log(`  Stop:  ninthwave stop`);
     return;
   }
+
+  // Migrate runtime state from old .ninthwave/ to ~/.ninthwave/projects/<slug>/
+  migrateRuntimeState(projectRoot);
 
   // Prevent duplicate orchestrator instances (foreground or daemon-child)
   const existingPid = isDaemonRunning(projectRoot);

@@ -13,6 +13,7 @@ import {
 } from "fs";
 import { join, relative, dirname, resolve } from "path";
 import { getBundleDir } from "../paths.ts";
+import { userStateDir, migrateRuntimeState } from "../daemon.ts";
 import { info, die, warn, RED, YELLOW, GREEN, RESET, BOLD, DIM } from "../output.ts";
 import { run } from "../shell.ts";
 
@@ -464,7 +465,10 @@ export function setupProject(
 
   console.log();
 
-  // --- Version tracking ---
+  // --- Migrate runtime state to user state directory ---
+  migrateRuntimeState(projectDir);
+
+  // --- Version tracking (written to user state dir, not project) ---
   const versionResult = run("git", [
     "-C",
     bundleDir,
@@ -474,7 +478,9 @@ export function setupProject(
   ]);
   const version =
     versionResult.exitCode === 0 ? versionResult.stdout : "unknown";
-  writeFileSync(join(projectDir, ".ninthwave/version"), version + "\n");
+  const stateDir = userStateDir(projectDir);
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, "version"), version + "\n");
 
   // --- Summary ---
   console.log("Done! All files are project-level (commit to git).");
