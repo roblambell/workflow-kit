@@ -18,6 +18,8 @@ import {
   createSkillSymlinks,
   checkPrerequisites,
   createNwSymlink,
+  isSelfHosting,
+  SYMLINK_GITIGNORE_DIRS,
 } from "../core/commands/setup.ts";
 import type {
   CommandChecker,
@@ -874,6 +876,135 @@ describe("createNwSymlink", () => {
     const result = createNwSymlink(commandExists, resolveCommandPath);
 
     expect(result).toBe(false);
+  });
+});
+
+// --- isSelfHosting ---
+
+describe("isSelfHosting", () => {
+  it("returns true when projectDir equals bundleDir", () => {
+    expect(isSelfHosting("/foo/bar", "/foo/bar")).toBe(true);
+  });
+
+  it("returns true when paths resolve to the same directory", () => {
+    expect(isSelfHosting("/foo/bar/../bar", "/foo/bar")).toBe(true);
+  });
+
+  it("returns false when projectDir differs from bundleDir", () => {
+    expect(isSelfHosting("/my/project", "/usr/share/ninthwave")).toBe(false);
+  });
+});
+
+// --- Symlink gitignore entries ---
+
+describe("setupProject — symlink gitignore entries", () => {
+  it("adds symlink directories to .gitignore for non-ninthwave projects", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    setupProject(projectDir, bundleDir, allPresentDeps);
+
+    const content = readFileSync(join(projectDir, ".gitignore"), "utf-8");
+    expect(content).toContain(".claude/agents/");
+    expect(content).toContain(".claude/skills/");
+    expect(content).toContain(".opencode/agents/");
+    expect(content).toContain(".github/agents/");
+    expect(content).toContain("ninthwave symlinks");
+  });
+
+  it("does NOT add symlink directories when projectDir equals bundleDir (self-hosting)", () => {
+    // In self-hosting mode, bundleDir IS the projectDir (the ninthwave repo)
+    const projectDir = setupTempRepo();
+    // Use projectDir as bundleDir to simulate self-hosting
+    // We need the bundle structure inside projectDir
+    for (const skill of ["work", "decompose", "todo-preview", "ninthwave-upgrade"]) {
+      const skillDir = join(projectDir, "skills", skill);
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(join(skillDir, "SKILL.md"), `# ${skill}\n`);
+    }
+    mkdirSync(join(projectDir, "agents"), { recursive: true });
+    writeFileSync(join(projectDir, "agents", "todo-worker.md"), "# Todo Worker\n");
+    writeFileSync(join(projectDir, "agents", "review-worker.md"), "# Review Worker\n");
+
+    setupProject(projectDir, projectDir, allPresentDeps);
+
+    const content = readFileSync(join(projectDir, ".gitignore"), "utf-8");
+    // .worktrees/ should still be present
+    expect(content).toContain(".worktrees/");
+    // But symlink directories should NOT be gitignored
+    expect(content).not.toContain(".claude/agents/");
+    expect(content).not.toContain(".claude/skills/");
+    expect(content).not.toContain(".opencode/agents/");
+    expect(content).not.toContain(".github/agents/");
+    expect(content).not.toContain("ninthwave symlinks");
+  });
+
+  it("does not duplicate symlink gitignore entries on re-run", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    // Run setup twice
+    setupProject(projectDir, bundleDir, allPresentDeps);
+    setupProject(projectDir, bundleDir, allPresentDeps);
+
+    const content = readFileSync(join(projectDir, ".gitignore"), "utf-8");
+    // Each symlink directory should appear exactly once
+    for (const dir of SYMLINK_GITIGNORE_DIRS) {
+      const matches = content.match(new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"));
+      expect(matches).toHaveLength(1);
+    }
+  });
+
+  it("preserves existing .gitignore content when adding symlink entries", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    // Pre-create .gitignore with custom content
+    writeFileSync(join(projectDir, ".gitignore"), "node_modules/\ndist/\n");
+
+    setupProject(projectDir, bundleDir, allPresentDeps);
+
+    const content = readFileSync(join(projectDir, ".gitignore"), "utf-8");
+    expect(content).toContain("node_modules/");
+    expect(content).toContain("dist/");
+    expect(content).toContain(".worktrees/");
+    expect(content).toContain(".claude/agents/");
+  });
+
+  it("creates .gitignore with symlink entries when file does not exist", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    // Ensure no .gitignore exists
+    expect(existsSync(join(projectDir, ".gitignore"))).toBe(false);
+
+    setupProject(projectDir, bundleDir, allPresentDeps);
+
+    const content = readFileSync(join(projectDir, ".gitignore"), "utf-8");
+    expect(content).toContain(".worktrees/");
+    expect(content).toContain(".claude/agents/");
+    expect(content).toContain(".claude/skills/");
+    expect(content).toContain(".opencode/agents/");
+    expect(content).toContain(".github/agents/");
+  });
+
+  it("symlinks are still created correctly alongside gitignore entries", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    setupProject(projectDir, bundleDir, allPresentDeps);
+
+    // Skill symlinks exist and work
+    for (const skill of ["work", "decompose", "todo-preview", "ninthwave-upgrade"]) {
+      const linkPath = join(projectDir, ".claude/skills", skill);
+      expect(existsSync(linkPath)).toBe(true);
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    }
+
+    // Agent symlinks exist and work
+    expect(existsSync(join(projectDir, ".claude/agents/todo-worker.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".opencode/agents/todo-worker.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".github/agents/todo-worker.agent.md"))).toBe(true);
   });
 });
 

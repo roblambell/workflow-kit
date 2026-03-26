@@ -25,6 +25,7 @@ import {
   type DetectionResult,
 } from "../core/commands/init.ts";
 import type { CommandChecker } from "../core/commands/setup.ts";
+import { SYMLINK_GITIGNORE_DIRS } from "../core/commands/setup.ts";
 
 // Store original env
 const originalEnv = { ...process.env };
@@ -1067,5 +1068,80 @@ describe("initProject", () => {
 
     // No profile should have been created
     expect(existsSync(join(projectDir, ".nono/profiles/claude-worker.json"))).toBe(false);
+  });
+});
+
+// --- initProject symlink gitignore entries ---
+
+describe("initProject — symlink gitignore entries", () => {
+  it("adds symlink directories to .gitignore for non-ninthwave projects", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+
+    const content = readFileSync(join(projectDir, ".gitignore"), "utf-8");
+    expect(content).toContain(".claude/agents/");
+    expect(content).toContain(".claude/skills/");
+    expect(content).toContain(".opencode/agents/");
+    expect(content).toContain(".github/agents/");
+    expect(content).toContain("ninthwave symlinks");
+  });
+
+  it("does NOT add symlink directories when projectDir equals bundleDir (self-hosting)", () => {
+    const projectDir = setupTempRepo();
+
+    // Set up bundle structure inside projectDir to simulate self-hosting
+    for (const skill of ["work", "decompose", "todo-preview", "ninthwave-upgrade"]) {
+      const skillDir = join(projectDir, "skills", skill);
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(join(skillDir, "SKILL.md"), `# ${skill}\n`);
+    }
+    mkdirSync(join(projectDir, "agents"), { recursive: true });
+    writeFileSync(join(projectDir, "agents", "todo-worker.md"), "# Todo Worker\n");
+
+    // Initialize the projectDir as a git repo for version tracking
+    const { spawnSync } = require("child_process");
+    spawnSync("git", ["-C", projectDir, "add", "."]);
+    spawnSync("git", ["-C", projectDir, "commit", "-m", "init", "--quiet"]);
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, projectDir, deps);
+
+    const content = readFileSync(join(projectDir, ".gitignore"), "utf-8");
+    expect(content).toContain(".worktrees/");
+    expect(content).not.toContain(".claude/agents/");
+    expect(content).not.toContain(".claude/skills/");
+    expect(content).not.toContain(".opencode/agents/");
+    expect(content).not.toContain(".github/agents/");
+  });
+
+  it("does not duplicate symlink gitignore entries on re-run", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    // Run init twice
+    initProject(projectDir, bundleDir, deps);
+    initProject(projectDir, bundleDir, deps);
+
+    const content = readFileSync(join(projectDir, ".gitignore"), "utf-8");
+    for (const dir of SYMLINK_GITIGNORE_DIRS) {
+      const matches = content.match(new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"));
+      expect(matches).toHaveLength(1);
+    }
   });
 });
