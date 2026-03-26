@@ -193,6 +193,58 @@ export function cleanStateFile(
   }
 }
 
+/** Path to the state archive directory. */
+export function stateArchiveDir(projectRoot: string): string {
+  return join(projectRoot, ".ninthwave", "state-archive");
+}
+
+/**
+ * Archive the current state file (if it exists) to `.ninthwave/state-archive/`.
+ * The archived file is named with the original run's startedAt timestamp.
+ * Returns the archive path if a file was archived, null otherwise.
+ *
+ * This should be called when a new daemon run starts, before writing a fresh state file.
+ * It preserves the old state for debugging/analytics without mixing it with the new run.
+ */
+export function archiveStateFile(
+  projectRoot: string,
+  io: DaemonIO = defaultIO,
+): string | null {
+  const filePath = stateFilePath(projectRoot);
+  if (!io.existsSync(filePath)) return null;
+
+  try {
+    const content = io.readFileSync(filePath, "utf-8");
+
+    // Try to extract startedAt for a meaningful archive filename
+    let timestamp: string;
+    try {
+      const state = JSON.parse(content) as DaemonState;
+      // Use startedAt to identify which run this was from
+      timestamp = state.startedAt.replace(/[:.]/g, "-");
+    } catch {
+      // Invalid JSON — use current time as fallback
+      timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    }
+
+    const archiveDir = stateArchiveDir(projectRoot);
+    if (!io.existsSync(archiveDir)) {
+      io.mkdirSync(archiveDir, { recursive: true });
+    }
+
+    const archivePath = join(archiveDir, `orchestrator.state.${timestamp}.json`);
+    io.writeFileSync(archivePath, content, "utf-8");
+
+    // Remove the original state file now that it's archived
+    io.unlinkSync(filePath);
+
+    return archivePath;
+  } catch {
+    // Best-effort — archiving failure should not block the new daemon
+    return null;
+  }
+}
+
 // ── External review state ────────────────────────────────────────────
 
 export type ExternalReviewState = "detected" | "reviewing" | "reviewed" | "done";

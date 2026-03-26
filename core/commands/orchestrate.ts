@@ -77,6 +77,7 @@ import {
   serializeOrchestratorState,
   writeStateFile,
   readStateFile,
+  archiveStateFile,
   readExternalReviews,
   writeExternalReviews,
   logFilePath,
@@ -2068,6 +2069,24 @@ export async function cmdOrchestrate(
   // the full queue including queued items that don't have worktrees yet.
   // statusPaneRef is captured by reference so the closure always persists the current value.
   const daemonStartedAt = new Date().toISOString();
+
+  // Archive stale state from previous run and write a fresh initial state.
+  // This ensures `ninthwave status` never shows items from a previous run mixed
+  // with the current run — even before the first poll cycle completes.
+  const archivePath = archiveStateFile(projectRoot);
+  if (archivePath) {
+    structuredLog({
+      ts: new Date().toISOString(),
+      level: "info",
+      event: "state_archived",
+      archivePath,
+    });
+  }
+  const initialState = serializeOrchestratorState(orch.getAllItems(), process.pid, daemonStartedAt, {
+    wipLimit,
+  });
+  writeStateFile(projectRoot, initialState);
+
   let statusPaneRef: string | null = null;
   const onPollComplete = (items: OrchestratorItem[]) => {
     try {
