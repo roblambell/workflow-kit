@@ -33,7 +33,9 @@ import {
 /** Create a mock Multiplexer for dependency injection (avoids vi.mock leaking). */
 function createMockMux(): Multiplexer & Record<string, Mock> {
   return {
+    type: "cmux",
     isAvailable: vi.fn(() => true),
+    diagnoseUnavailable: vi.fn(() => "not available"),
     launchWorkspace: vi.fn(() => "workspace:1"),
     splitPane: vi.fn(() => "pane:1"),
     sendMessage: vi.fn(() => true),

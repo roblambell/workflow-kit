@@ -615,7 +615,9 @@ describe("reconcile cross-repo", () => {
 
 function mockMux(overrides: Partial<Multiplexer> = {}): Multiplexer {
   return {
+    type: "cmux",
     isAvailable: () => true,
+    diagnoseUnavailable: () => "not available",
     launchWorkspace: () => null,
     splitPane: () => null,
     sendMessage: () => false,

@@ -29,7 +29,9 @@ function fakeMux(
   sendMessageFn: (ref: string, message: string) => boolean = () => true,
 ): Multiplexer {
   return {
+    type: "cmux",
     isAvailable: () => true,
+    diagnoseUnavailable: () => "not available",
     launchWorkspace: () => null,
     splitPane: () => null,
     sendMessage: sendMessageFn,

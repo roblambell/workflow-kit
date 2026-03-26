@@ -941,8 +941,11 @@ describe("reconstructState", () => {
 
     // Mock mux that reports a live workspace matching the item ID
     const fakeMux = {
+      type: "cmux" as const,
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
+      splitPane: () => null,
       sendMessage: () => true,
       readScreen: () => "",
       listWorkspaces: () =>
@@ -973,8 +976,11 @@ describe("reconstructState", () => {
 
     // Mock mux with no matching workspaces
     const fakeMux = {
+      type: "cmux" as const,
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
+      splitPane: () => null,
       sendMessage: () => true,
       readScreen: () => "",
       listWorkspaces: () => "  workspace:1  main",
@@ -1263,8 +1269,11 @@ describe("buildSnapshot cross-repo", () => {
     };
 
     const fakeMux = {
+      type: "cmux" as const,
       isAvailable: () => false,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
+      splitPane: () => null,
       sendMessage: () => true,
       readScreen: () => "",
       listWorkspaces: () => "",
@@ -1288,8 +1297,11 @@ describe("buildSnapshot cross-repo", () => {
     };
 
     const fakeMux = {
+      type: "cmux" as const,
       isAvailable: () => false,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
+      splitPane: () => null,
       sendMessage: () => true,
       readScreen: () => "",
       listWorkspaces: () => "",
@@ -1404,7 +1416,9 @@ describe("buildSnapshot lastCommitTime", () => {
   /** Create a mock multiplexer that reports no workspaces. */
   function mockMux(workspaces: string = ""): Multiplexer {
     return {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,
@@ -1501,8 +1515,11 @@ describe("buildSnapshot lastCommitTime", () => {
 describe("buildSnapshot isMergeable", () => {
   function mockMux(workspaces: string = ""): Multiplexer {
     return {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
+      splitPane: () => null,
       sendMessage: () => true,
       readScreen: () => "",
       listWorkspaces: () => workspaces,
@@ -1584,8 +1601,11 @@ describe("buildSnapshot isMergeable", () => {
 describe("buildSnapshot ready status mapping", () => {
   function mockMux(workspaces: string = ""): Multiplexer {
     return {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
+      splitPane: () => null,
       sendMessage: () => true,
       readScreen: () => "",
       listWorkspaces: () => workspaces,
@@ -1620,7 +1640,9 @@ describe("buildSnapshot ready status mapping", () => {
 describe("launchStatusPane", () => {
   function mockMux(overrides?: Partial<Multiplexer>): Multiplexer {
     return {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: vi.fn(() => "workspace:99"),
       splitPane: vi.fn(() => "pane:1"),
       sendMessage: () => true,
@@ -1736,7 +1758,9 @@ describe("closeStatusPane", () => {
   it("closes the status pane workspace", () => {
     const closeWorkspace = vi.fn(() => true);
     const mux: Multiplexer = {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,
@@ -1752,7 +1776,9 @@ describe("closeStatusPane", () => {
   it("is a no-op when ref is null", () => {
     const closeWorkspace = vi.fn(() => true);
     const mux: Multiplexer = {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,
@@ -1771,7 +1797,9 @@ describe("closeStatusPane", () => {
 describe("closeStaleStatusPane", () => {
   function mockMux(overrides?: Partial<Multiplexer>): Multiplexer {
     return {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: vi.fn(() => "workspace:99"),
       splitPane: vi.fn(() => "pane:1"),
       sendMessage: () => true,
@@ -2078,7 +2106,9 @@ describe("orchestrateLoop post-merge conflict detection", () => {
 describe("isWorkerAlive", () => {
   function mockMux(workspaces: string): Multiplexer {
     return {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,
@@ -2424,7 +2454,9 @@ describe("buildSnapshot screenHealth", () => {
 
   function mockMux(workspaces: string = "", screenContent: string = ""): Multiplexer {
     return {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,
@@ -2505,7 +2537,9 @@ describe("buildSnapshot screenHealth", () => {
     orch.getItem("BSH-5-1")!.workspaceRef = "workspace:5";
 
     const mux: Multiplexer = {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,

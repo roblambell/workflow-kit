@@ -39,16 +39,23 @@ function adapterWithRetry(
 
 describe("TmuxAdapter", () => {
   describe("isAvailable", () => {
-    it("returns true when tmux -V succeeds", () => {
+    it("returns true when tmux -V succeeds and TMUX env is set", () => {
       const { runner } = fakeRunner([ok("tmux 3.4")]);
-      const adapter = new TmuxAdapter(runner);
+      const adapter = new TmuxAdapter(runner, { env: { TMUX: "/tmp/tmux-501/default,12345,0" } });
 
       expect(adapter.isAvailable()).toBe(true);
     });
 
     it("returns false when tmux is not installed", () => {
       const { runner } = fakeRunner([fail("command not found: tmux")]);
-      const adapter = new TmuxAdapter(runner);
+      const adapter = new TmuxAdapter(runner, { env: {} });
+
+      expect(adapter.isAvailable()).toBe(false);
+    });
+
+    it("returns false when tmux binary exists but no active session", () => {
+      const { runner } = fakeRunner([ok("tmux 3.4")]);
+      const adapter = new TmuxAdapter(runner, { env: {} });
 
       expect(adapter.isAvailable()).toBe(false);
     });

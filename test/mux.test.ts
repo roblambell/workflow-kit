@@ -138,11 +138,11 @@ describe("TmuxAdapter", () => {
   // ── isAvailable ─────────────────────────────────────────────────
 
   describe("isAvailable", () => {
-    it("returns true when tmux -V succeeds", () => {
+    it("returns true when tmux -V succeeds and TMUX is set", () => {
       const runner = mockRunner({
         "-V": { exitCode: 0, stdout: "tmux 3.4", stderr: "" },
       });
-      const adapter = new TmuxAdapter(runner);
+      const adapter = new TmuxAdapter(runner, { env: { TMUX: "/tmp/tmux-501/default,12345,0" } });
       expect(adapter.isAvailable()).toBe(true);
     });
 
@@ -150,7 +150,7 @@ describe("TmuxAdapter", () => {
       const runner = mockRunner({
         "-V": { exitCode: 1, stdout: "", stderr: "not found" },
       });
-      const adapter = new TmuxAdapter(runner);
+      const adapter = new TmuxAdapter(runner, { env: {} });
       expect(adapter.isAvailable()).toBe(false);
     });
 
@@ -158,7 +158,7 @@ describe("TmuxAdapter", () => {
       const { runner, calls } = trackingRunner({
         "-V": { exitCode: 0, stdout: "tmux 3.4", stderr: "" },
       });
-      const adapter = new TmuxAdapter(runner);
+      const adapter = new TmuxAdapter(runner, { env: { TMUX: "/tmp/tmux-501/default" } });
       adapter.isAvailable();
 
       expect(calls).toHaveLength(1);
@@ -748,7 +748,9 @@ describe("getMux", () => {
 describe("waitForReady", () => {
   it("returns true when screen has stable, substantial content", () => {
     const fakeMux: Multiplexer = {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,
@@ -769,7 +771,9 @@ describe("waitForReady", () => {
   it("returns false when screen never stabilizes", () => {
     let callCount = 0;
     const fakeMux: Multiplexer = {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,
@@ -786,7 +790,9 @@ describe("waitForReady", () => {
 
   it("returns false when screen has fewer than 3 lines", () => {
     const fakeMux: Multiplexer = {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,
@@ -804,7 +810,9 @@ describe("waitForReady", () => {
   it("waits through empty screens until content appears", () => {
     let callCount = 0;
     const fakeMux: Multiplexer = {
+      type: "cmux",
       isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
       launchWorkspace: () => null,
       splitPane: () => null,
       sendMessage: () => true,

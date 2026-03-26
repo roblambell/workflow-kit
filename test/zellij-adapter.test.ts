@@ -41,23 +41,30 @@ describe("ZellijAdapter", () => {
   // ── isAvailable ─────────────────────────────────────────────────
 
   describe("isAvailable", () => {
-    it("returns true when zellij --version succeeds", () => {
+    it("returns true when zellij --version succeeds and ZELLIJ_SESSION_NAME is set", () => {
       const { runner } = fakeRunner([ok("zellij 0.40.1")]);
-      const adapter = new ZellijAdapter(runner);
+      const adapter = new ZellijAdapter(runner, { env: { ZELLIJ_SESSION_NAME: "my-session" } });
 
       expect(adapter.isAvailable()).toBe(true);
     });
 
     it("returns false when zellij is not installed", () => {
       const { runner } = fakeRunner([fail("command not found: zellij")]);
-      const adapter = new ZellijAdapter(runner);
+      const adapter = new ZellijAdapter(runner, { env: {} });
+
+      expect(adapter.isAvailable()).toBe(false);
+    });
+
+    it("returns false when zellij binary exists but no active session", () => {
+      const { runner } = fakeRunner([ok("zellij 0.40.1")]);
+      const adapter = new ZellijAdapter(runner, { env: {} });
 
       expect(adapter.isAvailable()).toBe(false);
     });
 
     it("calls zellij with --version flag", () => {
       const { runner, calls } = fakeRunner([ok("zellij 0.40.1")]);
-      const adapter = new ZellijAdapter(runner);
+      const adapter = new ZellijAdapter(runner, { env: { ZELLIJ_SESSION_NAME: "my-session" } });
       adapter.isAvailable();
 
       expect(calls).toHaveLength(1);
