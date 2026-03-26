@@ -402,16 +402,17 @@ export class ZellijAdapter implements Multiplexer {
   }
 
   closeWorkspace(ref: string): boolean {
-    // Focus the tab and close it
+    // Focus the tab and close it.
+    // If the tab isn't found, return false — never fall back to
+    // delete-session, which would destroy the user's entire session.
     const focusResult = this.run("zellij", [
       "action",
       "go-to-tab-name",
       ref,
     ]);
     if (focusResult.exitCode !== 0) {
-      // Tab not found — try deleting as a session
-      const deleteResult = this.run("zellij", ["delete-session", ref]);
-      return deleteResult.exitCode === 0;
+      // Tab not found — nothing to close (never delete the session)
+      return false;
     }
     const closeResult = this.run("zellij", ["action", "close-tab"]);
     return closeResult.exitCode === 0;

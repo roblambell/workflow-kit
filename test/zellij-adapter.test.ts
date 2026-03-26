@@ -308,25 +308,18 @@ describe("ZellijAdapter", () => {
       expect(calls[1].args).toEqual(["action", "close-tab"]);
     });
 
-    it("falls back to delete-session when tab focus fails", () => {
+    it("returns false when tab focus fails — never calls delete-session", () => {
       const { runner, calls } = fakeRunner([
         fail("tab not found"), // go-to-tab-name fails
-        ok(),                  // delete-session succeeds
       ]);
       const adapter = new ZellijAdapter(runner);
-      expect(adapter.closeWorkspace("nw-1")).toBe(true);
+      expect(adapter.closeWorkspace("nw-1")).toBe(false);
 
-      expect(calls[1].cmd).toBe("zellij");
-      expect(calls[1].args).toEqual(["delete-session", "nw-1"]);
-    });
-
-    it("returns false when both tab close and session delete fail", () => {
-      const { runner } = fakeRunner([
-        fail("tab not found"),     // go-to-tab-name fails
-        fail("session not found"), // delete-session fails
-      ]);
-      const adapter = new ZellijAdapter(runner);
-      expect(adapter.closeWorkspace("nw-99")).toBe(false);
+      // Must NOT issue delete-session (destructive — would kill the user's session)
+      const deleteSessionCalls = calls.filter(
+        (c) => c.cmd === "zellij" && c.args[0] === "delete-session",
+      );
+      expect(deleteSessionCalls).toHaveLength(0);
     });
 
     it("returns false when close-tab fails after successful focus", () => {

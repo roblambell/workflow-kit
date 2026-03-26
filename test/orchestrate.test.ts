@@ -1664,6 +1664,10 @@ describe("launchStatusPane", () => {
   const tmuxWorkspaceEnv: EnvAccessor = (key) =>
     key === "TMUX" ? "/tmp/tmux-501/default,12345,0" : undefined;
 
+  /** Env that simulates running inside a zellij session. */
+  const zellijWorkspaceEnv: EnvAccessor = (key) =>
+    key === "ZELLIJ_SESSION_NAME" ? "my-session" : undefined;
+
   it("launches status pane via mux.launchWorkspace when not in a workspace", () => {
     const mux = mockMux();
     const ref = launchStatusPane(mux, "/tmp/project", noWorkspaceEnv);
@@ -1713,6 +1717,15 @@ describe("launchStatusPane", () => {
     expect(mux.launchWorkspace).not.toHaveBeenCalled();
   });
 
+  it("splits pane when ZELLIJ_SESSION_NAME is set", () => {
+    const mux = mockMux();
+    const ref = launchStatusPane(mux, "/tmp/project", zellijWorkspaceEnv);
+
+    expect(ref).toBe("pane:1");
+    expect(mux.splitPane).toHaveBeenCalledWith("ninthwave status --watch");
+    expect(mux.launchWorkspace).not.toHaveBeenCalled();
+  });
+
   it("falls back to launchWorkspace when splitPane fails inside a workspace", () => {
     const mux = mockMux({ splitPane: vi.fn(() => null) });
     const ref = launchStatusPane(mux, "/tmp/project", cmuxWorkspaceEnv);
@@ -1739,15 +1752,22 @@ describe("isInsideWorkspace", () => {
     expect(isInsideWorkspace(env)).toBe(true);
   });
 
-  it("returns false when neither env var is set", () => {
+  it("returns true when ZELLIJ_SESSION_NAME is set", () => {
+    const env: EnvAccessor = (key) =>
+      key === "ZELLIJ_SESSION_NAME" ? "my-session" : undefined;
+    expect(isInsideWorkspace(env)).toBe(true);
+  });
+
+  it("returns false when no workspace env var is set", () => {
     const env: EnvAccessor = () => undefined;
     expect(isInsideWorkspace(env)).toBe(false);
   });
 
-  it("returns true when both env vars are set", () => {
+  it("returns true when all workspace env vars are set", () => {
     const env: EnvAccessor = (key) => {
       if (key === "CMUX_WORKSPACE_ID") return "workspace:5";
       if (key === "TMUX") return "/tmp/tmux-501/default,12345,0";
+      if (key === "ZELLIJ_SESSION_NAME") return "my-session";
       return undefined;
     };
     expect(isInsideWorkspace(env)).toBe(true);

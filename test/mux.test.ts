@@ -573,6 +573,177 @@ describe("TmuxAdapter", () => {
   });
 });
 
+// ── ZellijAdapter tests ──────────────────────────────────────────────
+
+describe("ZellijAdapter", () => {
+  /** Helper: build a ShellRunner mock that returns canned results by command. */
+  function mockRunner(
+    responses: Record<string, { exitCode: number; stdout: string; stderr: string }>,
+  ) {
+    return (cmd: string, args: string[]) => {
+      const subcommand = args[0] ?? cmd;
+      return responses[subcommand] ?? { exitCode: 1, stdout: "", stderr: "unknown" };
+    };
+  }
+
+  /**
+   * Helper: build a call-tracking ShellRunner that records every call and
+   * returns canned responses keyed by subcommand. When multiple calls use
+   * the same subcommand, responses can be provided as an array (consumed
+   * in order).
+   */
+  function trackingRunner(
+    responses: Record<
+      string,
+      | { exitCode: number; stdout: string; stderr: string }
+      | Array<{ exitCode: number; stdout: string; stderr: string }>
+    >,
+  ) {
+    const calls: Array<{ cmd: string; args: string[] }> = [];
+    const counters: Record<string, number> = {};
+
+    const runner = (cmd: string, args: string[]) => {
+      calls.push({ cmd, args });
+      const subcommand = args[0] ?? cmd;
+      const resp = responses[subcommand];
+      if (Array.isArray(resp)) {
+        const idx = counters[subcommand] ?? 0;
+        counters[subcommand] = idx + 1;
+        return resp[idx] ?? { exitCode: 1, stdout: "", stderr: "exhausted" };
+      }
+      return resp ?? { exitCode: 1, stdout: "", stderr: "unknown" };
+    };
+
+    return { runner, calls };
+  }
+
+  // ── isAvailable ─────────────────────────────────────────────────
+
+  describe("isAvailable", () => {
+    it("returns true when zellij --version succeeds and ZELLIJ_SESSION_NAME is set", () => {
+      const runner = mockRunner({
+        "--version": { exitCode: 0, stdout: "zellij 0.40.1", stderr: "" },
+      });
+      const adapter = new ZellijAdapter(runner, { env: { ZELLIJ_SESSION_NAME: "my-session" } });
+      expect(adapter.isAvailable()).toBe(true);
+    });
+
+    it("returns false when zellij --version fails", () => {
+      const runner = mockRunner({
+        "--version": { exitCode: 1, stdout: "", stderr: "not found" },
+      });
+      const adapter = new ZellijAdapter(runner, { env: {} });
+      expect(adapter.isAvailable()).toBe(false);
+    });
+
+    it("returns false when ZELLIJ_SESSION_NAME is not set even if binary exists", () => {
+      const runner = mockRunner({
+        "--version": { exitCode: 0, stdout: "zellij 0.40.1", stderr: "" },
+      });
+      const adapter = new ZellijAdapter(runner, { env: {} });
+      expect(adapter.isAvailable()).toBe(false);
+    });
+  });
+
+  // ── closeWorkspace ──────────────────────────────────────────────
+
+  describe("closeWorkspace", () => {
+    it("returns true when tab is found and closed", () => {
+      const runner = mockRunner({
+        "action": { exitCode: 0, stdout: "", stderr: "" },
+      });
+      const adapter = new ZellijAdapter(runner);
+      expect(adapter.closeWorkspace("nw-1")).toBe(true);
+    });
+
+    it("returns false when tab is not found", () => {
+      const runner = mockRunner({
+        "action": { exitCode: 1, stdout: "", stderr: "tab not found" },
+      });
+      const adapter = new ZellijAdapter(runner);
+      expect(adapter.closeWorkspace("nw-unknown")).toBe(false);
+    });
+
+    it("never calls delete-session", () => {
+      // Even when go-to-tab-name fails, must not fall back to delete-session
+      const { runner, calls } = trackingRunner({
+        "action": { exitCode: 1, stdout: "", stderr: "tab not found" },
+      });
+      const adapter = new ZellijAdapter(runner);
+      adapter.closeWorkspace("nw-missing");
+
+      // Verify no call to "zellij delete-session"
+      const deleteSessionCalls = calls.filter(
+        (c) => c.cmd === "zellij" && c.args[0] === "delete-session",
+      );
+      expect(deleteSessionCalls).toHaveLength(0);
+    });
+
+    it("focuses tab then closes it on success", () => {
+      const ok = { exitCode: 0, stdout: "", stderr: "" };
+      const { runner, calls } = trackingRunner({
+        "action": [ok, ok], // go-to-tab-name, close-tab
+      });
+      const adapter = new ZellijAdapter(runner);
+      adapter.closeWorkspace("nw-test-1");
+
+      expect(calls).toHaveLength(2);
+      expect(calls[0].args).toEqual(["action", "go-to-tab-name", "nw-test-1"]);
+      expect(calls[1].args).toEqual(["action", "close-tab"]);
+    });
+  });
+
+  // ── launchWorkspace ─────────────────────────────────────────────
+
+  describe("launchWorkspace", () => {
+    it("returns tab name on success", () => {
+      const ok = { exitCode: 0, stdout: "", stderr: "" };
+      const runner = mockRunner({ "action": ok });
+      const adapter = new ZellijAdapter(runner);
+      const result = adapter.launchWorkspace("/tmp/project", "claude --name test");
+      expect(result).toBe("nw-1");
+    });
+
+    it("includes TODO ID in tab name when provided", () => {
+      const ok = { exitCode: 0, stdout: "", stderr: "" };
+      const runner = mockRunner({ "action": ok });
+      const adapter = new ZellijAdapter(runner);
+      const result = adapter.launchWorkspace("/tmp/project", "claude", "H-WRK-1");
+      expect(result).toBe("nw-H-WRK-1-1");
+    });
+
+    it("returns null when new-tab fails", () => {
+      const runner = mockRunner({
+        "action": { exitCode: 1, stdout: "", stderr: "error" },
+      });
+      const adapter = new ZellijAdapter(runner);
+      const result = adapter.launchWorkspace("/tmp/project", "claude");
+      expect(result).toBeNull();
+    });
+  });
+
+  // ── splitPane ───────────────────────────────────────────────────
+
+  describe("splitPane", () => {
+    it("returns a pane ref on success", () => {
+      const ok = { exitCode: 0, stdout: "", stderr: "" };
+      const runner = mockRunner({ "action": ok });
+      const adapter = new ZellijAdapter(runner);
+      const result = adapter.splitPane("ninthwave status --watch");
+      expect(result).toMatch(/^nw-pane-\d+$/);
+    });
+
+    it("returns null when new-pane fails", () => {
+      const runner = mockRunner({
+        "action": { exitCode: 1, stdout: "", stderr: "error" },
+      });
+      const adapter = new ZellijAdapter(runner);
+      const result = adapter.splitPane("echo hello");
+      expect(result).toBeNull();
+    });
+  });
+});
+
 // ── detectMuxType tests ─────────────────────────────────────────────
 
 describe("detectMuxType", () => {

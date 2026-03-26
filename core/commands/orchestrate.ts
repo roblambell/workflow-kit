@@ -1502,10 +1502,11 @@ const defaultEnv: EnvAccessor = (key) => process.env[key];
 
 /**
  * Check if we're running inside an existing workspace.
- * Detects cmux via CMUX_WORKSPACE_ID and tmux via TMUX env vars.
+ * Detects cmux via CMUX_WORKSPACE_ID, tmux via TMUX, and zellij via
+ * ZELLIJ_SESSION_NAME env vars.
  */
 export function isInsideWorkspace(env: EnvAccessor = defaultEnv): boolean {
-  return !!(env("CMUX_WORKSPACE_ID") || env("TMUX"));
+  return !!(env("CMUX_WORKSPACE_ID") || env("TMUX") || env("ZELLIJ_SESSION_NAME"));
 }
 
 /**
@@ -1533,9 +1534,10 @@ export function closeStaleStatusPane(
 /**
  * Launch a dedicated status pane that runs `ninthwave status --watch`.
  *
- * When running inside an existing workspace (detected via CMUX_WORKSPACE_ID
- * or TMUX env vars), opens the status pane as a split in the current
- * workspace. Falls back to creating a new workspace when not inside one.
+ * When running inside an existing workspace (detected via CMUX_WORKSPACE_ID,
+ * TMUX, or ZELLIJ_SESSION_NAME env vars), opens the status pane as a split
+ * in the current workspace. Falls back to creating a new workspace when not
+ * inside one.
  *
  * Returns the workspace/pane ref or null if mux is not available.
  */
