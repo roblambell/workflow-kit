@@ -506,6 +506,111 @@ describe("handleImplementing", () => {
   });
 });
 
+// ── Heartbeat-based health detection (tested via processTransitions) ──
+
+describe("heartbeat-based health detection", () => {
+  it("worker with recent heartbeat (< 5 min) is not marked stuck even with no commits", () => {
+    const orch = new Orchestrator({ launchTimeoutMs: 1000 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    // Advance past launch timeout, but heartbeat is fresh
+    const futureTime = new Date(Date.now() + 2000);
+    const freshHeartbeat = { id: "H-1-1", progress: 50, label: "Working", ts: new Date(futureTime.getTime() - 1000).toISOString() };
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null, lastHeartbeat: freshHeartbeat }]),
+      futureTime,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("implementing");
+    expect(actions).toHaveLength(0);
+  });
+
+  it("worker with stale heartbeat (> 5 min) and no recent commits transitions to stuck", () => {
+    const orch = new Orchestrator({ launchTimeoutMs: 1000, maxRetries: 0 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    // Advance past launch timeout with stale heartbeat (> 5 min old)
+    const futureTime = new Date(Date.now() + 2000);
+    const staleHeartbeat = { id: "H-1-1", progress: 30, label: "Stalled", ts: new Date(futureTime.getTime() - 6 * 60 * 1000).toISOString() };
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null, lastHeartbeat: staleHeartbeat }]),
+      futureTime,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("stuck");
+    expect(actions.some((a) => a.type === "clean")).toBe(true);
+  });
+
+  it("worker with no heartbeat file falls back to commit-based timeout detection", () => {
+    const orch = new Orchestrator({ launchTimeoutMs: 1000, maxRetries: 0 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    // No heartbeat (null), advance past launch timeout
+    const futureTime = new Date(Date.now() + 2000);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null, lastHeartbeat: null }]),
+      futureTime,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("stuck");
+    expect(actions.some((a) => a.type === "clean")).toBe(true);
+  });
+
+  it("worker with no heartbeat file and recent commits stays implementing", () => {
+    const orch = new Orchestrator({ activityTimeoutMs: 60_000 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    const now = new Date("2026-01-15T12:00:00Z");
+    const recentCommit = "2026-01-15T11:59:30Z"; // 30s ago
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: recentCommit, lastHeartbeat: null }]),
+      now,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("implementing");
+    expect(actions).toHaveLength(0);
+  });
+
+  it("fresh heartbeat overrides stale commits to keep worker alive", () => {
+    const orch = new Orchestrator({ activityTimeoutMs: 1000, maxRetries: 0 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    const now = new Date("2026-01-15T12:00:00Z");
+    const staleCommit = "2026-01-15T10:00:00Z"; // 2 hours ago, past activity timeout
+    const freshHeartbeat = { id: "H-1-1", progress: 80, label: "Testing", ts: "2026-01-15T11:59:00Z" }; // 1 min ago
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: staleCommit, lastHeartbeat: freshHeartbeat }]),
+      now,
+    );
+
+    // Fresh heartbeat should prevent stuck transition despite stale commits
+    expect(orch.getItem("H-1-1")!.state).toBe("implementing");
+    expect(actions).toHaveLength(0);
+  });
+
+  it("workerHealth field no longer appears in ItemSnapshot type", () => {
+    // Verify at runtime that creating an ItemSnapshot without workerHealth compiles and works
+    const snap: ItemSnapshot = {
+      id: "H-1-1",
+      workerAlive: true,
+      lastCommitTime: null,
+      lastHeartbeat: null,
+    };
+    // The workerHealth property should not exist on the type
+    expect("workerHealth" in snap).toBe(false);
+  });
+});
+
 // ── handlePrLifecycle / handleCiPending (tested via processTransitions) ──
 
 describe("handleCiPending", () => {

@@ -26,7 +26,6 @@ import { parseTodos } from "../parser.ts";
 import { resolveRepo, getWorktreeInfo, bootstrapRepo } from "../cross-repo.ts";
 import { checkPrStatus, scanExternalPRs } from "./watch.ts";
 import { launchSingleItem, launchReviewWorker, detectAiTool, cleanStaleBranchForReuse } from "./start.ts";
-import { getWorkerHealthStatus } from "../worker-health.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments } from "../gh.ts";
 import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset, daemonRebase } from "../git.ts";
@@ -276,35 +275,9 @@ export function buildSnapshot(
       );
     }
 
-    // Check worker alive, health, and commit freshness for active items
+    // Check worker alive and commit freshness for active items
     if (orchItem.state === "launching" || orchItem.state === "implementing" || orchItem.state === "ci-failed") {
       snap.workerAlive = isWorkerAlive(orchItem, mux);
-      // Screen-based health check for workerHealth (used by delivery verification)
-      if (orchItem.workspaceRef) {
-        try {
-          const rawScreen = mux.readScreen(orchItem.workspaceRef, 30);
-          snap.workerHealth = getWorkerHealthStatus(rawScreen);
-          // Record screen samples for health-check tuning (best-effort, separate try/catch)
-          try {
-            if (rawScreen.trim()) {
-              const samplesDir = userStateDir(projectRoot);
-              const samplesFile = join(samplesDir, "health-samples.jsonl");
-              const sample = JSON.stringify({
-                t: new Date().toISOString(),
-                id: orchItem.id,
-                state: orchItem.state,
-                health: snap.workerHealth,
-                alive: snap.workerAlive,
-                lines: rawScreen.split("\n").filter((l: string) => l.trim()).length,
-                screen: rawScreen.slice(0, 2000),
-              });
-              appendFileSync(samplesFile, sample + "\n");
-            }
-          } catch { /* best-effort — don't break polling */ }
-        } catch {
-          // readScreen threw — graceful degradation
-        }
-      }
       const commitTime = getLastCommitTime(repoRoot, `todo/${orchItem.id}`);
       snap.lastCommitTime = commitTime;
       orchItem.lastCommitTime = commitTime;
