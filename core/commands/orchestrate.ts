@@ -1626,8 +1626,8 @@ export async function cmdOrchestrate(
   let frictionDir: string | undefined;
   let daemonMode = false;
   let isDaemonChild = false;
-  let noSandbox = false;
   let clickupListId: string | undefined;
+  let remoteFlag = false;
   let reviewEnabled = false;
   let reviewWipLimit: number | undefined;
   let reviewAutoFix: "off" | "direct" | "pr" | undefined;
@@ -1686,10 +1686,6 @@ export async function cmdOrchestrate(
         i += 2;
         break;
       }
-      case "--no-sandbox":
-        noSandbox = true;
-        i += 1;
-        break;
       case "--daemon":
         daemonMode = true;
         i += 1;
@@ -1924,7 +1920,7 @@ export async function cmdOrchestrate(
   const ctx: ExecutionContext = { projectRoot, worktreeDir, todosDir, aiTool };
   const actionDeps: OrchestratorDeps = {
     launchSingleItem: (item, todosDir, worktreeDir, projectRoot, aiTool, baseBranch) =>
-      launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux, { noSandbox, baseBranch }),
+      launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux, { baseBranch }),
     cleanSingleWorktree,
     prMerge: (repoRoot, prNumber) => prMerge(repoRoot, prNumber),
     prComment: (repoRoot, prNumber, body) => prComment(repoRoot, prNumber, body),
@@ -1939,7 +1935,7 @@ export async function cmdOrchestrate(
       log({ ts: new Date().toISOString(), level: "warn", event: "orchestrator_warning", message }),
     launchReview: (itemId, prNumber, repoRoot) => {
       const autoFix = orch.config.reviewAutoFix;
-      const result = launchReviewWorker(prNumber, itemId, autoFix, repoRoot, aiTool, mux, { noSandbox });
+      const result = launchReviewWorker(prNumber, itemId, autoFix, repoRoot, aiTool, mux);
       if (!result) return null;
       return { workspaceRef: result.workspaceRef };
     },
@@ -2061,7 +2057,6 @@ export async function cmdOrchestrate(
           const autoFix = orch.config.reviewAutoFix;
           const extItemId = `ext-${prNumber}`;
           const result = launchReviewWorker(prNumber, extItemId, autoFix, repoRoot, aiTool, mux, {
-            noSandbox,
             reviewType: "external",
           });
           if (!result) return null;

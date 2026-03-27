@@ -39,8 +39,8 @@ export interface DetectionResult {
   aiTools: string[];
   /** Repo structure type */
   repoType: "monorepo" | "single";
-  /** Detected kernel-level sandbox */
-  sandbox: "nono" | null;
+  /** Detected observability backends (from env vars) */
+  observabilityBackends: string[];
 }
 
 /**
@@ -173,14 +173,6 @@ export function detectAITools(
 }
 
 /**
- * Detect kernel-level sandbox (nono).
- */
-export function detectSandbox(deps: InitDeps = {}): "nono" | null {
-  const commandExists = deps.commandExists ?? defaultCommandExists;
-  return commandExists("nono") ? "nono" : null;
-}
-
-/**
  * Detect repo structure — monorepo if package.json has workspaces,
  * or if there are multiple package.json files in top-level directories.
  */
@@ -232,7 +224,7 @@ export function detectAll(
     mux: detectMux(deps),
     aiTools: detectAITools(projectDir, deps),
     repoType: detectRepoType(projectDir, deps),
-    sandbox: detectSandbox(deps),
+    observabilityBackends: detectObservabilityBackends(deps),
   };
 }
 
@@ -267,11 +259,6 @@ export function generateConfig(detection: DetectionResult): string {
     lines.push(`MUX=${detection.mux}`);
   } else {
     lines.push("# MUX=cmux");
-  }
-
-  // Sandbox
-  if (detection.sandbox) {
-    lines.push(`# SANDBOX=${detection.sandbox}`);
   }
 
   // Repo type
@@ -332,17 +319,6 @@ export function printSummary(detection: DetectionResult): void {
   } else {
     console.log(
       `  ${YELLOW}!${RESET} Multiplexer: none detected ${DIM}(install cmux or tmux for parallel sessions)${RESET}`,
-    );
-  }
-
-  // Sandbox
-  if (detection.sandbox) {
-    console.log(
-      `  ${GREEN}✓${RESET} Sandbox: ${detection.sandbox}`,
-    );
-  } else {
-    console.log(
-      `  ${DIM}–${RESET} Sandbox: ${DIM}none (install nono for worker isolation)${RESET}`,
     );
   }
 
@@ -422,17 +398,6 @@ function scaffold(projectDir: string, bundleDir: string): void {
       const linkPath = join(targetDir, target.filename);
       if (existsSync(linkPath)) unlinkSync(linkPath);
       symlinkSync(relative(targetDir, agentSource), linkPath);
-    }
-  }
-
-  // --- nono profile symlink ---
-  const nonoProfileSource = join(bundleDir, ".nono", "profiles", "claude-worker.json");
-  if (existsSync(nonoProfileSource)) {
-    const nonoProfileDir = join(projectDir, ".nono", "profiles");
-    const nonoProfileLink = join(nonoProfileDir, "claude-worker.json");
-    if (!existsSync(nonoProfileLink)) {
-      mkdirSync(nonoProfileDir, { recursive: true });
-      symlinkSync(relative(nonoProfileDir, nonoProfileSource), nonoProfileLink);
     }
   }
 

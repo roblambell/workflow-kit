@@ -11,8 +11,6 @@ import {
   checkMultiplexer,
   checkGitConfig,
   checkNinthwaveConfig,
-  checkNono,
-  checkSandboxProfile,
   checkPreCommitHook,
   checkGithubIdentity,
   runDoctor,
@@ -253,70 +251,6 @@ describe("checkNinthwaveConfig", () => {
   });
 });
 
-describe("checkNono", () => {
-  it("passes when nono is installed", () => {
-    const runner = mockRunner({
-      "which nono": {
-        stdout: "/usr/local/bin/nono",
-        stderr: "",
-        exitCode: 0,
-      },
-    });
-    const result = checkNono(runner);
-    expect(result.status).toBe("pass");
-  });
-
-  it("warns when nono is not installed", () => {
-    const runner = allFailRunner();
-    const result = checkNono(runner);
-    expect(result.status).toBe("warn");
-    expect(result.message).toContain("unsandboxed");
-  });
-});
-
-describe("checkSandboxProfile", () => {
-  it("passes when project-level profile exists", () => {
-    const repo = setupTempRepo();
-    const profileDir = join(repo, ".nono", "profiles");
-    mkdirSync(profileDir, { recursive: true });
-    writeFileSync(join(profileDir, "claude-worker.json"), "{}");
-    const result = checkSandboxProfile(repo);
-    expect(result.status).toBe("pass");
-    expect(result.message).toContain("project-level");
-  });
-
-  it("passes when user-level profile exists", () => {
-    const repo = setupTempRepo();
-    const fakeHome = setupTempRepo();
-    // Temporarily set HOME
-    const origHome = process.env.HOME;
-    process.env.HOME = fakeHome;
-    try {
-      const profileDir = join(fakeHome, ".nono", "profiles");
-      mkdirSync(profileDir, { recursive: true });
-      writeFileSync(join(profileDir, "claude-worker.json"), "{}");
-      const result = checkSandboxProfile(repo);
-      expect(result.status).toBe("pass");
-      expect(result.message).toContain("user-level");
-    } finally {
-      process.env.HOME = origHome;
-    }
-  });
-
-  it("warns when no profile exists", () => {
-    const repo = setupTempRepo();
-    const origHome = process.env.HOME;
-    process.env.HOME = repo; // Use repo as home so no user profile exists
-    try {
-      const result = checkSandboxProfile(repo);
-      expect(result.status).toBe("warn");
-      expect(result.message).toContain("nw setup");
-    } finally {
-      process.env.HOME = origHome;
-    }
-  });
-});
-
 describe("checkPreCommitHook", () => {
   it("passes when pre-commit hook exists", () => {
     const repo = setupTempRepo();
@@ -467,11 +401,10 @@ describe("runDoctor", () => {
 
   it("counts warnings from recommended checks", () => {
     const repo = setupTempRepo();
-    // No .ninthwave/config, no nono, no sandbox profile, no pre-commit hook
+    // No .ninthwave/config, no pre-commit hook
     // All required pass, but recommended items warn
     const doctor = runDoctor(repo, allPassRunner());
-    // nono will "pass" (allPassRunner returns success for which),
-    // but .ninthwave/config exists since we don't create it -> warn
+    // .ninthwave/config doesn't exist -> warn
     // Let's create config so we can count warnings from other checks
     expect(doctor.warnings).toBeGreaterThanOrEqual(0);
   });
@@ -509,7 +442,7 @@ describe("runDoctor", () => {
     // gh fails + AI tool fails = 2 required failures
     expect(doctor.requiredPassed).toBe(2); // mux + git config
     expect(doctor.requiredTotal).toBe(4);
-    // nono warn + no config warn + no profile warn + no pre-commit warn = 4 warnings
+    // no config warn + no pre-commit warn = 2 warnings (at least)
     expect(doctor.warnings).toBeGreaterThanOrEqual(2);
   });
 });

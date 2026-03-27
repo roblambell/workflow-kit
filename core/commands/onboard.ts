@@ -20,7 +20,6 @@ import { run } from "../shell.ts";
 import type { RunResult } from "../types.ts";
 import { initProject } from "./init.ts";
 import { getBundleDir } from "../paths.ts";
-import { isNonoAvailable as defaultIsNonoAvailable } from "../sandbox.ts";
 
 // ── AI tool descriptors ─────────────────────────────────────────────
 
@@ -101,8 +100,6 @@ export interface OnboardDeps {
   getBundleDir?: () => string;
   /** Override to prevent process replacement during tests. */
   execAttach?: (cmd: string, args: string[]) => void;
-  /** Override nono availability check for testing. */
-  isNonoAvailable?: () => boolean;
 }
 
 const defaultCommandExists: CommandChecker = (cmd: string): boolean => {
@@ -276,7 +273,6 @@ export async function onboard(
   const sleep = deps.sleep ?? defaultSleep;
   const bundleDir = (deps.getBundleDir ?? getBundleDir)();
   const execAttach = deps.execAttach ?? defaultExecAttach;
-  const isNonoAvail = deps.isNonoAvailable ?? (() => defaultIsNonoAvailable());
 
   // ── Step 1: Welcome ─────────────────────────────────────────────
   console.log();
@@ -371,41 +367,6 @@ export async function onboard(
       prompt,
     );
     chosenTool = installedTools[idx]!;
-  }
-  console.log();
-
-  // ── Step 3.5: Sandbox awareness ─────────────────────────────────
-  console.log(`${DIM}Checking sandbox status...${RESET}`);
-  if (isNonoAvail()) {
-    console.log(
-      `  ${GREEN}✓${RESET} Workers sandboxed by default. Disable with ${BOLD}--no-sandbox${RESET}.`,
-    );
-  } else {
-    console.log(
-      `  ${YELLOW}⚡${RESET} ${BOLD}nono${RESET} provides kernel-level sandboxing for workers ${DIM}(recommended)${RESET}`,
-    );
-    const installAnswer = await prompt(`  Install nono via brew? [Y/n]: `);
-    if (installAnswer.toLowerCase() !== "n") {
-      console.log(`  ${DIM}Running brew install nono...${RESET}`);
-      try {
-        const result = runShell("brew", ["install", "nono"]);
-        if (result.exitCode === 0) {
-          console.log(
-            `  ${GREEN}✓${RESET} nono installed. Workers will be sandboxed by default.`,
-          );
-        } else {
-          console.log(
-            `  ${YELLOW}Could not install nono.${RESET} Continuing without sandboxing.`,
-          );
-        }
-      } catch {
-        console.log(
-          `  ${YELLOW}Could not install nono.${RESET} Continuing without sandboxing.`,
-        );
-      }
-    } else {
-      console.log(`  Continuing without sandboxing.`);
-    }
   }
   console.log();
 

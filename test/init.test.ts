@@ -17,7 +17,7 @@ import {
   detectMux,
   detectAITools,
   detectRepoType,
-  detectSandbox,
+  detectObservabilityBackends,
   detectAll,
   generateConfig,
   initProject,
@@ -59,13 +59,6 @@ function createFakeBundle(dir: string): string {
   writeFileSync(
     join(bundleDir, "agents", "todo-worker.md"),
     "# Todo Worker Agent\n",
-  );
-
-  // Create nono profile
-  mkdirSync(join(bundleDir, ".nono", "profiles"), { recursive: true });
-  writeFileSync(
-    join(bundleDir, ".nono", "profiles", "claude-worker.json"),
-    '{"extends": "claude-code"}\n',
   );
 
   // Create VERSION file
@@ -442,7 +435,7 @@ describe("generateConfig", () => {
       mux: "cmux",
       aiTools: ["claude"],
       repoType: "single",
-      sandbox: null,
+      observabilityBackends: [],
     };
 
     const config = generateConfig(detection);
@@ -457,7 +450,7 @@ describe("generateConfig", () => {
       mux: "cmux",
       aiTools: [],
       repoType: "single",
-      sandbox: null,
+      observabilityBackends: [],
     };
 
     const config = generateConfig(detection);
@@ -473,7 +466,7 @@ describe("generateConfig", () => {
       mux: "tmux",
       aiTools: [],
       repoType: "single",
-      sandbox: null,
+      observabilityBackends: [],
     };
 
     const config = generateConfig(detection);
@@ -488,7 +481,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: [],
       repoType: "single",
-      sandbox: null,
+      observabilityBackends: [],
     };
 
     const config = generateConfig(detection);
@@ -504,7 +497,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: [],
       repoType: "monorepo",
-      sandbox: null,
+      observabilityBackends: [],
     };
 
     const config = generateConfig(detection);
@@ -519,7 +512,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: ["claude", "opencode"],
       repoType: "single",
-      sandbox: null,
+      observabilityBackends: [],
     };
 
     const config = generateConfig(detection);
@@ -534,7 +527,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: [],
       repoType: "single",
-      sandbox: null,
+      observabilityBackends: [],
     };
 
     const config = generateConfig(detection);
@@ -549,7 +542,7 @@ describe("generateConfig", () => {
       mux: null,
       aiTools: [],
       repoType: "single",
-      sandbox: null,
+      observabilityBackends: [],
     };
 
     const config = generateConfig(detection);
@@ -565,7 +558,7 @@ describe("generateConfig", () => {
       mux: "cmux",
       aiTools: ["claude"],
       repoType: "single",
-      sandbox: null,
+      observabilityBackends: [],
     };
 
     const config = generateConfig(detection);
@@ -575,47 +568,148 @@ describe("generateConfig", () => {
   });
 });
 
-// --- detectSandbox ---
+// --- detectObservabilityBackends ---
 
-describe("detectSandbox", () => {
-  it("detects nono when binary exists on PATH", () => {
+describe("detectObservabilityBackends", () => {
+  it("detects Sentry when SENTRY_AUTH_TOKEN is set", () => {
     const deps: InitDeps = {
-      commandExists: ((cmd: string) => cmd === "nono") as CommandChecker,
+      getEnv: (key: string) =>
+        key === "SENTRY_AUTH_TOKEN" ? "test-token" : undefined,
     };
 
-    const result = detectSandbox(deps);
+    const result = detectObservabilityBackends(deps);
 
-    expect(result).toBe("nono");
+    expect(result).toEqual(["sentry"]);
   });
 
-  it("returns null when nono is not available", () => {
+  it("detects PagerDuty when PAGERDUTY_API_TOKEN is set", () => {
     const deps: InitDeps = {
-      commandExists: (() => false) as CommandChecker,
+      getEnv: (key: string) =>
+        key === "PAGERDUTY_API_TOKEN" ? "test-token" : undefined,
     };
 
-    const result = detectSandbox(deps);
+    const result = detectObservabilityBackends(deps);
 
-    expect(result).toBeNull();
+    expect(result).toEqual(["pagerduty"]);
+  });
+
+  it("detects both Sentry and PagerDuty", () => {
+    const deps: InitDeps = {
+      getEnv: (key: string) => {
+        if (key === "SENTRY_AUTH_TOKEN") return "sentry-token";
+        if (key === "PAGERDUTY_API_TOKEN") return "pd-token";
+        return undefined;
+      },
+    };
+
+    const result = detectObservabilityBackends(deps);
+
+    expect(result).toEqual(["sentry", "pagerduty"]);
+  });
+
+  it("returns empty array when no observability env vars are set", () => {
+    const deps: InitDeps = {
+      getEnv: () => undefined,
+    };
+
+    const result = detectObservabilityBackends(deps);
+
+    expect(result).toEqual([]);
   });
 });
 
-// --- detectAll includes sandbox ---
+// --- generateConfig with observability backends ---
+
+describe("generateConfig observability", () => {
+  it("writes Sentry config placeholders when sentry is detected", () => {
+    const detection: DetectionResult = {
+      ci: null,
+      testCommand: null,
+      mux: null,
+      aiTools: [],
+      repoType: "single",
+      observabilityBackends: ["sentry"],
+    };
+
+    const config = generateConfig(detection);
+
+    expect(config).toContain("# Sentry integration (SENTRY_AUTH_TOKEN detected)");
+    expect(config).toContain("# sentry_org=your-org");
+    expect(config).toContain("# sentry_project=your-project");
+  });
+
+  it("writes PagerDuty config placeholders when pagerduty is detected", () => {
+    const detection: DetectionResult = {
+      ci: null,
+      testCommand: null,
+      mux: null,
+      aiTools: [],
+      repoType: "single",
+      observabilityBackends: ["pagerduty"],
+    };
+
+    const config = generateConfig(detection);
+
+    expect(config).toContain("# PagerDuty integration (PAGERDUTY_API_TOKEN detected)");
+    expect(config).toContain("# pagerduty_service_id=your-service-id");
+    expect(config).toContain("# pagerduty_from_email=your@email.com");
+  });
+
+  it("writes both backend placeholders when both are detected", () => {
+    const detection: DetectionResult = {
+      ci: null,
+      testCommand: null,
+      mux: null,
+      aiTools: [],
+      repoType: "single",
+      observabilityBackends: ["sentry", "pagerduty"],
+    };
+
+    const config = generateConfig(detection);
+
+    expect(config).toContain("# Observability backends");
+    expect(config).toContain("# sentry_org=your-org");
+    expect(config).toContain("# pagerduty_service_id=your-service-id");
+  });
+
+  it("omits observability section when no backends detected", () => {
+    const detection: DetectionResult = {
+      ci: null,
+      testCommand: null,
+      mux: null,
+      aiTools: [],
+      repoType: "single",
+      observabilityBackends: [],
+    };
+
+    const config = generateConfig(detection);
+
+    expect(config).not.toContain("Observability backends");
+    expect(config).not.toContain("sentry_org");
+    expect(config).not.toContain("pagerduty_service_id");
+  });
+});
+
+// --- detectAll ---
 
 describe("detectAll", () => {
-  it("includes sandbox field in detection result", () => {
+  it("includes observabilityBackends when env vars are set", () => {
     const projectDir = setupTempRepo();
     const deps: InitDeps = {
-      commandExists: ((cmd: string) => cmd === "nono") as CommandChecker,
-      getEnv: () => undefined,
+      commandExists: (() => false) as CommandChecker,
+      getEnv: (key: string) => {
+        if (key === "SENTRY_AUTH_TOKEN") return "token";
+        if (key === "PAGERDUTY_API_TOKEN") return "token";
+        return undefined;
+      },
     };
 
     const result = detectAll(projectDir, deps);
 
-    expect(result).toHaveProperty("sandbox");
-    expect(result.sandbox).toBe("nono");
+    expect(result.observabilityBackends).toEqual(["sentry", "pagerduty"]);
   });
 
-  it("includes sandbox: null when nono is not available", () => {
+  it("returns empty observabilityBackends when no env vars set", () => {
     const projectDir = setupTempRepo();
     const deps: InitDeps = {
       commandExists: (() => false) as CommandChecker,
@@ -624,7 +718,7 @@ describe("detectAll", () => {
 
     const result = detectAll(projectDir, deps);
 
-    expect(result.sandbox).toBeNull();
+    expect(result.observabilityBackends).toEqual([]);
   });
 });
 
@@ -839,72 +933,6 @@ describe("initProject", () => {
     expect(output).toContain("github-actions");
     expect(output).toContain("cmux");
     expect(output).toContain("Done!");
-  });
-
-  it("symlinks nono profile from bundle to project", () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
-
-    const deps: InitDeps = {
-      commandExists: (() => false) as CommandChecker,
-      getEnv: () => undefined,
-    };
-
-    initProject(projectDir, bundleDir, deps);
-
-    const profileLink = join(projectDir, ".nono/profiles/claude-worker.json");
-    expect(existsSync(profileLink)).toBe(true);
-    expect(lstatSync(profileLink).isSymbolicLink()).toBe(true);
-
-    // Content should be accessible via the symlink
-    const content = readFileSync(profileLink, "utf-8");
-    expect(content).toContain("claude-code");
-  });
-
-  it("skips nono profile symlink if target already exists", () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
-
-    // Pre-create the profile
-    mkdirSync(join(projectDir, ".nono/profiles"), { recursive: true });
-    writeFileSync(
-      join(projectDir, ".nono/profiles/claude-worker.json"),
-      '{"custom": true}\n',
-    );
-
-    const deps: InitDeps = {
-      commandExists: (() => false) as CommandChecker,
-      getEnv: () => undefined,
-    };
-
-    initProject(projectDir, bundleDir, deps);
-
-    // Should NOT have overwritten
-    const content = readFileSync(
-      join(projectDir, ".nono/profiles/claude-worker.json"),
-      "utf-8",
-    );
-    expect(content).toBe('{"custom": true}\n');
-  });
-
-  it("skips nono profile symlink if bundle has no profile", () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
-
-    // Remove the nono profile from the bundle
-    const { rmSync } = require("fs");
-    rmSync(join(bundleDir, ".nono"), { recursive: true, force: true });
-
-    const deps: InitDeps = {
-      commandExists: (() => false) as CommandChecker,
-      getEnv: () => undefined,
-    };
-
-    // Should not throw
-    initProject(projectDir, bundleDir, deps);
-
-    // No profile should have been created
-    expect(existsSync(join(projectDir, ".nono/profiles/claude-worker.json"))).toBe(false);
   });
 });
 

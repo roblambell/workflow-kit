@@ -426,7 +426,6 @@ describe("onboard", () => {
         execAttach: () => {
           attachCalled = true;
         },
-        isNonoAvailable: () => true,
       });
     } finally {
       console.log = origLog;
@@ -438,8 +437,6 @@ describe("onboard", () => {
     // Should detect tools
     expect(output).toContain("cmux");
     expect(output).toContain("Claude Code");
-    // Should show sandbox status
-    expect(output).toContain("Workers sandboxed by default");
     // Should run setup
     expect(output).toContain("Setting up ninthwave");
     // Should launch session
@@ -472,7 +469,6 @@ describe("onboard", () => {
           attachCmd = cmd;
           attachArgs = args;
         },
-        isNonoAvailable: () => true,
       });
     } finally {
       console.log = origLog;
@@ -503,7 +499,6 @@ describe("onboard", () => {
           attachCmd = cmd;
           attachArgs = args;
         },
-        isNonoAvailable: () => true,
       });
     } finally {
       console.log = origLog;
@@ -592,7 +587,6 @@ describe("onboard", () => {
         sleep: () => {},
         getBundleDir: () => bundleDir,
         execAttach: () => {},
-        isNonoAvailable: () => true,
       });
     } finally {
       console.log = origLog;
@@ -616,7 +610,6 @@ describe("onboard", () => {
         runShell: () => ({ stdout: "", stderr: "error", exitCode: 1 }),
         sleep: () => {},
         getBundleDir: () => bundleDir,
-        isNonoAvailable: () => true,
       });
     } finally {
       console.log = origLog;
@@ -625,202 +618,5 @@ describe("onboard", () => {
     const output = logs.join("\n");
     expect(output).toContain("Failed to launch session");
     expect(output).toContain("Try manually");
-  });
-
-  // ── Step 3.5: Sandbox awareness ─────────────────────────────────
-
-  it("shows sandbox checkmark when nono is installed", async () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle");
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-
-    try {
-      await onboard(projectDir, {
-        commandExists: (cmd) => cmd === "cmux" || cmd === "claude",
-        prompt: async () => "",
-        runShell: (cmd, args) => {
-          if (args[0] === "new-workspace") {
-            return { stdout: "workspace:1", stderr: "", exitCode: 0 };
-          }
-          return { stdout: "", stderr: "", exitCode: 0 };
-        },
-        sleep: () => {},
-        getBundleDir: () => bundleDir,
-        execAttach: () => {},
-        isNonoAvailable: () => true,
-      });
-    } finally {
-      console.log = origLog;
-    }
-
-    const output = logs.join("\n");
-    expect(output).toContain("Workers sandboxed by default");
-    expect(output).toContain("--no-sandbox");
-    // Should not prompt for install
-    expect(output).not.toContain("Install nono via brew");
-  });
-
-  it("offers nono installation when not installed", async () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle");
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-    const prompts: string[] = [];
-
-    try {
-      await onboard(projectDir, {
-        commandExists: (cmd) => cmd === "cmux" || cmd === "claude",
-        prompt: async (q) => {
-          prompts.push(q);
-          return ""; // accept all defaults (Y for install)
-        },
-        runShell: (cmd, args) => {
-          if (args[0] === "new-workspace") {
-            return { stdout: "workspace:1", stderr: "", exitCode: 0 };
-          }
-          return { stdout: "", stderr: "", exitCode: 0 };
-        },
-        sleep: () => {},
-        getBundleDir: () => bundleDir,
-        execAttach: () => {},
-        isNonoAvailable: () => false,
-      });
-    } finally {
-      console.log = origLog;
-    }
-
-    const output = logs.join("\n");
-    // Should show install suggestion
-    expect(output).toContain("nono");
-    expect(output).toContain("kernel-level sandboxing");
-    // Should have prompted for install
-    expect(prompts.some((p) => p.includes("Install nono"))).toBe(true);
-  });
-
-  it("runs brew install when user accepts nono installation", async () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle");
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-    const shellCalls: Array<{ cmd: string; args: string[] }> = [];
-
-    try {
-      await onboard(projectDir, {
-        commandExists: (cmd) => cmd === "cmux" || cmd === "claude",
-        prompt: async () => "", // accept all defaults
-        runShell: (cmd, args) => {
-          shellCalls.push({ cmd, args });
-          if (args[0] === "new-workspace") {
-            return { stdout: "workspace:1", stderr: "", exitCode: 0 };
-          }
-          return { stdout: "", stderr: "", exitCode: 0 };
-        },
-        sleep: () => {},
-        getBundleDir: () => bundleDir,
-        execAttach: () => {},
-        isNonoAvailable: () => false,
-      });
-    } finally {
-      console.log = origLog;
-    }
-
-    const output = logs.join("\n");
-    // Should have called brew install nono
-    const brewCall = shellCalls.find(
-      (c) => c.cmd === "brew" && c.args[0] === "install" && c.args[1] === "nono",
-    );
-    expect(brewCall).toBeDefined();
-    // Should show success message
-    expect(output).toContain("nono installed");
-  });
-
-  it("continues without sandboxing when user declines nono install", async () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle");
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-    let promptCount = 0;
-    const shellCalls: Array<{ cmd: string; args: string[] }> = [];
-
-    try {
-      await onboard(projectDir, {
-        commandExists: (cmd) => cmd === "cmux" || cmd === "claude",
-        prompt: async (q) => {
-          promptCount++;
-          // Accept mux (1st), accept AI tool (2nd), decline nono install (3rd)
-          if (q.includes("Install nono")) return "n";
-          return "";
-        },
-        runShell: (cmd, args) => {
-          shellCalls.push({ cmd, args });
-          if (args[0] === "new-workspace") {
-            return { stdout: "workspace:1", stderr: "", exitCode: 0 };
-          }
-          return { stdout: "", stderr: "", exitCode: 0 };
-        },
-        sleep: () => {},
-        getBundleDir: () => bundleDir,
-        execAttach: () => {},
-        isNonoAvailable: () => false,
-      });
-    } finally {
-      console.log = origLog;
-    }
-
-    const output = logs.join("\n");
-    // Should not have called brew install
-    const brewCall = shellCalls.find(
-      (c) => c.cmd === "brew" && c.args[0] === "install" && c.args[1] === "nono",
-    );
-    expect(brewCall).toBeUndefined();
-    // Should continue without sandboxing
-    expect(output).toContain("Continuing without sandboxing");
-    // Flow should continue to setup and session
-    expect(output).toContain("Setting up ninthwave");
-  });
-
-  it("handles brew install failure gracefully", async () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle");
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-
-    try {
-      await onboard(projectDir, {
-        commandExists: (cmd) => cmd === "cmux" || cmd === "claude",
-        prompt: async () => "", // accept all defaults
-        runShell: (cmd, args) => {
-          // brew install nono fails
-          if (cmd === "brew" && args[0] === "install") {
-            return { stdout: "", stderr: "Error: nono not found", exitCode: 1 };
-          }
-          if (args[0] === "new-workspace") {
-            return { stdout: "workspace:1", stderr: "", exitCode: 0 };
-          }
-          return { stdout: "", stderr: "", exitCode: 0 };
-        },
-        sleep: () => {},
-        getBundleDir: () => bundleDir,
-        execAttach: () => {},
-        isNonoAvailable: () => false,
-      });
-    } finally {
-      console.log = origLog;
-    }
-
-    const output = logs.join("\n");
-    // Should show graceful failure message
-    expect(output).toContain("Could not install nono");
-    expect(output).toContain("Continuing without sandboxing");
-    // Flow should continue to setup
-    expect(output).toContain("Setting up ninthwave");
-    // Flow should complete
-    expect(output).toContain("You're all set!");
   });
 });

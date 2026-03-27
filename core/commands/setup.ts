@@ -133,13 +133,6 @@ export function checkPrerequisites(
     missing.push("multiplexer (cmux, zellij, or tmux)");
   }
 
-  // Detect nono sandbox (informational, not blocking)
-  if (commandExists("nono")) {
-    console.log(`  ${GREEN}✓${RESET} nono ${DIM}(kernel-level sandbox)${RESET}`);
-  } else {
-    console.log(`  ${DIM}–${RESET} nono ${DIM}(optional — brew install nono)${RESET}`);
-  }
-
   // If gh is present, check authentication
   if (!missing.includes("gh") && commandExists("gh")) {
     const auth = ghAuthCheck();
@@ -280,20 +273,6 @@ export function setupGlobal(bundleDir: string): void {
 
   console.log("Skills (~/.claude/skills/)...");
   createSkillSymlinks(skillsDir, bundleDir);
-
-  // nono profile symlink (user-level)
-  const nonoProfileSource = join(bundleDir, ".nono", "profiles", "claude-worker.json");
-  if (existsSync(nonoProfileSource)) {
-    const nonoProfileDir = join(home!, ".nono", "profiles");
-    const nonoProfileLink = join(nonoProfileDir, "claude-worker.json");
-    if (!existsSync(nonoProfileLink)) {
-      mkdirSync(nonoProfileDir, { recursive: true });
-      symlinkSync(relative(nonoProfileDir, nonoProfileSource), nonoProfileLink);
-      console.log(`  ${GREEN}✓${RESET} ~/.nono/profiles/claude-worker.json ${DIM}(symlink)${RESET}`);
-    } else {
-      console.log(`  ~/.nono/profiles/claude-worker.json ${DIM}(exists, skipped)${RESET}`);
-    }
-  }
 
   console.log();
   console.log("Done! Global skills are available in all projects.");

@@ -18,7 +18,7 @@ vi.mock("../core/git.ts", () => ({
   createWorktree: vi.fn(),
 }));
 
-import { detectAiTool, cmdStart, launchSingleItem, launchAiSession, launchReviewWorker, sanitizeTitle, extractTodoText, buildCaCertEnv, getSystemCaBundlePath } from "../core/commands/start.ts";
+import { detectAiTool, cmdStart, launchSingleItem, launchAiSession, launchReviewWorker, sanitizeTitle, extractTodoText } from "../core/commands/start.ts";
 import { parseTodos } from "../core/parser.ts";
 import { fetchOrigin, ffMerge, createWorktree, branchExists } from "../core/git.ts";
 
@@ -1069,72 +1069,5 @@ describe("launchReviewWorker", () => {
 
     const { deleteBranch } = require("../core/git.ts");
     expect(deleteBranch).toHaveBeenCalledWith(repo, "review/H-RVW-1");
-  });
-});
-
-describe("buildCaCertEnv", () => {
-  afterEach(() => {
-    cleanupTempRepos();
-  });
-
-  it("returns null when session CA does not exist", () => {
-    const result = buildCaCertEnv("/nonexistent/ca.pem", "/tmp/session");
-    expect(result).toBeNull();
-  });
-
-  it("sets NODE_EXTRA_CA_CERTS to session CA path", () => {
-    const sessionDir = setupTempRepo();
-    const caPath = join(sessionDir, "ca.pem");
-    writeFileSync(caPath, "-----BEGIN CERTIFICATE-----\nFAKE_CA\n-----END CERTIFICATE-----\n");
-
-    const env = buildCaCertEnv(caPath, sessionDir);
-    expect(env).not.toBeNull();
-    expect(env!.NODE_EXTRA_CA_CERTS).toBe(caPath);
-  });
-
-  it("sets GIT_SSL_CAINFO to session CA path", () => {
-    const sessionDir = setupTempRepo();
-    const caPath = join(sessionDir, "ca.pem");
-    writeFileSync(caPath, "-----BEGIN CERTIFICATE-----\nFAKE_CA\n-----END CERTIFICATE-----\n");
-
-    const env = buildCaCertEnv(caPath, sessionDir);
-    expect(env).not.toBeNull();
-    expect(env!.GIT_SSL_CAINFO).toBe(caPath);
-  });
-
-  it("sets SSL_CERT_FILE to concatenated bundle when system CAs exist", () => {
-    const sessionDir = setupTempRepo();
-    const caPath = join(sessionDir, "ca.pem");
-    const sessionCa = "-----BEGIN CERTIFICATE-----\nSESSION_CA\n-----END CERTIFICATE-----\n";
-    writeFileSync(caPath, sessionCa);
-
-    const env = buildCaCertEnv(caPath, sessionDir);
-    expect(env).not.toBeNull();
-    // SSL_CERT_FILE should point to a bundle path (either concatenated or just session CA)
-    expect(env!.SSL_CERT_FILE).toBeTruthy();
-
-    // If system CAs are available, the bundle should be in the session dir
-    if (getSystemCaBundlePath()) {
-      const bundlePath = join(sessionDir, "ca-bundle.pem");
-      expect(env!.SSL_CERT_FILE).toBe(bundlePath);
-      // Bundle should contain both system CAs and session CA
-      const { readFileSync } = require("fs");
-      const bundleContent = readFileSync(bundlePath, "utf-8");
-      expect(bundleContent).toContain("SESSION_CA");
-    } else {
-      // No system CAs — falls back to just session CA
-      expect(env!.SSL_CERT_FILE).toBe(caPath);
-    }
-  });
-});
-
-describe("getSystemCaBundlePath", () => {
-  it("returns a string path or null", () => {
-    const result = getSystemCaBundlePath();
-    // On CI/macOS /etc/ssl/cert.pem should exist; on some Linux it may not
-    if (result !== null) {
-      expect(typeof result).toBe("string");
-      expect(result).toMatch(/\.pem$|\.crt$/);
-    }
   });
 });

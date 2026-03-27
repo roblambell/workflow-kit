@@ -1384,7 +1384,7 @@ describe("formatStatusTable tree rendering", () => {
       makeItem("H-PRX-4", "merged", "Add session CA", 123, 3600000),
       makeItem("H-PRX-5", "merged", "Add Cedar policy", 124, 3600000, ["H-PRX-4"]),
       makeItem("H-PRX-6", "queued", "Add credential injection", null, 3600000, ["H-PRX-5"]),
-      makeItem("H-PRX-7", "queued", "proxy-launcher", null, 3600000, ["H-PRX-6"]),
+      makeItem("H-PRX-7", "queued", "Add final integration", null, 3600000, ["H-PRX-6"]),
     ];
     const output = stripAnsi(formatStatusTable(items, 100));
     expect(output).toContain("H-PRX-4");

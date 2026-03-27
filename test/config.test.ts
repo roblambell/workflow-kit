@@ -152,31 +152,6 @@ describe("KNOWN_CONFIG_KEYS", () => {
     expect(KNOWN_CONFIG_KEYS.has("github_token")).toBe(true);
   });
 
-  it("includes proxy config keys", () => {
-    expect(KNOWN_CONFIG_KEYS.has("proxy_policy")).toBe(true);
-    expect(KNOWN_CONFIG_KEYS.has("proxy_credentials")).toBe(true);
-  });
-
-  it("does not warn on proxy config keys", () => {
-    const repo = setupTempRepo();
-    const configDir = join(repo, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config"),
-      "proxy_policy=/path/to/policy.cedar\nproxy_credentials=/path/to/creds.json\n",
-    );
-
-    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const config = loadConfig(repo);
-      expect(config["proxy_policy"]).toBe("/path/to/policy.cedar");
-      expect(config["proxy_credentials"]).toBe("/path/to/creds.json");
-      expect(spy).not.toHaveBeenCalled();
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
   it("does not warn on review config keys", () => {
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");

@@ -159,45 +159,6 @@ export function checkNinthwaveConfig(projectRoot: string): CheckResult {
   };
 }
 
-/** Check: nono installed for sandbox support. */
-export function checkNono(runner: ShellRunner): CheckResult {
-  const result = runner("which", ["nono"]);
-  if (result.exitCode === 0) {
-    return { status: "pass", message: "nono installed" };
-  }
-  return {
-    status: "warn",
-    message: "nono not installed \u2014 workers will run unsandboxed",
-    detail: "Install: brew install ninthwave-sh/tap/nono",
-  };
-}
-
-/** Check: sandbox profile exists and is valid. */
-export function checkSandboxProfile(projectRoot: string): CheckResult {
-  const projectProfile = join(
-    projectRoot,
-    ".nono",
-    "profiles",
-    "claude-worker.json",
-  );
-  if (existsSync(projectProfile)) {
-    return { status: "pass", message: "Sandbox profile found (project-level)" };
-  }
-
-  const home = process.env.HOME;
-  if (home) {
-    const userProfile = join(home, ".nono", "profiles", "claude-worker.json");
-    if (existsSync(userProfile)) {
-      return { status: "pass", message: "Sandbox profile found (user-level)" };
-    }
-  }
-
-  return {
-    status: "warn",
-    message: "No sandbox profile \u2014 run `nw setup` to create one",
-  };
-}
-
 /** Check: pre-commit hook installed. */
 export function checkPreCommitHook(projectRoot: string): CheckResult {
   if (existsSync(join(projectRoot, ".git", "hooks", "pre-commit"))) {
@@ -294,8 +255,6 @@ export function buildChecks(
 
     // Recommended
     { category: "Recommended", run: () => checkNinthwaveConfig(projectRoot) },
-    { category: "Recommended", run: () => checkNono(runner) },
-    { category: "Recommended", run: () => checkSandboxProfile(projectRoot) },
     { category: "Recommended", run: () => checkPreCommitHook(projectRoot) },
 
     // Optional
