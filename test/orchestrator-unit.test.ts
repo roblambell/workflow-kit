@@ -529,6 +529,40 @@ describe("handleCiPending", () => {
     expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
   });
 
+  it("does not re-notify CI failure on subsequent ticks (deduplication)", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "ci-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+    orch.getItem("H-1-1")!.lastCommitTime = "2026-03-27T10:00:00Z";
+
+    // First tick: CI fails → notify
+    const actions1 = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open", isMergeable: true }]),
+    );
+    expect(actions1.some((a) => a.type === "notify-ci-failure")).toBe(true);
+
+    // Second tick: still failing, same commit → no re-notify
+    const actions2 = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open", isMergeable: true }]),
+    );
+    expect(actions2.some((a) => a.type === "notify-ci-failure")).toBe(false);
+
+    // Third tick: still failing, but new commit pushed → re-notify
+    orch.getItem("H-1-1")!.lastCommitTime = "2026-03-27T10:05:00Z";
+    const actions3 = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open", isMergeable: true }]),
+    );
+    expect(actions3.some((a) => a.type === "notify-ci-failure")).toBe(true);
+
+    // Fourth tick: still failing, same commit again → no re-notify
+    const actions4 = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open", isMergeable: true }]),
+    );
+    expect(actions4.some((a) => a.type === "notify-ci-failure")).toBe(false);
+  });
+
   it("emits daemon-rebase on CI failure with merge conflict", () => {
     const orch = new Orchestrator();
     orch.addItem(makeTodo("H-1-1"));

@@ -86,6 +86,10 @@ export interface OrchestratorItem {
   notAliveCount?: number;
   /** Number of consecutive merge failures for this item. Resets on successful merge. */
   mergeFailCount?: number;
+  /** Whether a CI failure notification has already been sent for the current failure. Cleared on recovery (ci-pending/ci-passed) or when a new commit is pushed. */
+  ciFailureNotified?: boolean;
+  /** The lastCommitTime when ciFailureNotified was set. Used to reset the flag when the worker pushes a fix. */
+  ciFailureNotifiedAt?: string | null;
 }
 
 export interface OrchestratorConfig {
@@ -479,6 +483,11 @@ export class Orchestrator {
     if (state === "ci-pending" || state === "ci-failed") {
       item.reviewCompleted = false;
     }
+    // Clear CI failure notification flag on recovery so re-failures can be notified
+    if (state === "ci-pending" || state === "ci-passed") {
+      item.ciFailureNotified = false;
+      item.ciFailureNotifiedAt = undefined;
+    }
     // Clear failureReason when recovering from a failure state
     if (state !== "ci-failed" && state !== "stuck") {
       item.failureReason = undefined;
@@ -703,13 +712,21 @@ export class Orchestrator {
         this.transition(item, "ci-pending", snap?.eventTime);
         return [];
       } else {
-        // Still failing — retry CI notification in case it wasn't delivered
-        actions.push({
-          type: "notify-ci-failure",
-          itemId: item.id,
-          prNumber: item.prNumber,
-          message: "[ORCHESTRATOR] CI Fix Request: CI is still failing — please investigate and fix.",
-        });
+        // Reset notification flag if the worker pushed a new commit (fix attempt)
+        if (item.ciFailureNotified && item.lastCommitTime !== item.ciFailureNotifiedAt) {
+          item.ciFailureNotified = false;
+        }
+        // Still failing — only notify once per failure cycle to avoid comment spam
+        if (!item.ciFailureNotified) {
+          item.ciFailureNotified = true;
+          item.ciFailureNotifiedAt = item.lastCommitTime ?? null;
+          actions.push({
+            type: "notify-ci-failure",
+            itemId: item.id,
+            prNumber: item.prNumber,
+            message: "[ORCHESTRATOR] CI Fix Request: CI is still failing — please investigate and fix.",
+          });
+        }
         return actions;
       }
     }
@@ -734,6 +751,8 @@ export class Orchestrator {
           message: "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
         });
       } else {
+        item.ciFailureNotified = true;
+        item.ciFailureNotifiedAt = item.lastCommitTime ?? null;
         actions.push({
           type: "notify-ci-failure",
           itemId: item.id,
