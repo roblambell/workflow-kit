@@ -1,5 +1,10 @@
 # Vision
 
+<!-- Convention: Do NOT add completion markers to this document. No strikethrough
+     (~~done~~), no "*(complete)*" annotations, no "Decomposed →" references, no
+     inline "(Shipped.)" markers. Completed work belongs in CHANGELOG.md. This
+     document describes the product vision and what's next. -->
+
 ## The Thesis
 
 AI coding tools are single-session by nature. One context window, one work item, one PR at a time. A feature with eight work items means eight sequential sessions, eight rounds of waiting for CI, eight manual PR flows. The AI does the hard part — writing code — but you do the tedious part: picking the next item, watching CI, managing merges, forwarding review feedback, rebasing. You become the bottleneck in your own AI-assisted workflow.
@@ -10,228 +15,114 @@ ninthwave is that orchestration layer. It doesn't write code. It manages the pip
 
 ## What Exists Today
 
-v0.1.0 shipped March 2026. Nine grind cycles (0-8) have shipped since then.
+v0.1.0 shipped March 2026. Twelve grind cycles (0-11) have shipped since then. See CHANGELOG.md for the detailed history of each cycle.
 
-**Core pipeline (v0.1.0):**
-- **Decompose + orchestrate pipeline.** `/decompose` breaks a spec into batched work items (~200-400 LOC each). `ninthwave orchestrate` runs an event-driven daemon that launches workers, monitors CI and PR state, merges, cleans up, and recovers from crashes. The full cycle: spec in, merged PRs out.
-- **Deterministic orchestrator, intelligent workers.** The orchestrator is a TypeScript state machine with 13 states and pure transition functions. It never calls an LLM. Workers are the intelligent agents. This split keeps orchestration predictable, auditable, and cheap.
-- **Multi-tool, no lock-in.** Works with Claude Code, OpenCode, Copilot CLI, and anything supporting the [Agent Skills standard](https://agentskills.io). No proxy, no billing layer, no API key management.
+**Core pipeline:**
+- **Decompose + orchestrate.** `/decompose` breaks a spec into batched work items (~200-400 LOC each). `ninthwave orchestrate` runs an event-driven daemon that launches workers, monitors CI and PR state, merges, cleans up, and recovers from crashes. The full cycle: spec in, merged PRs out.
+- **Deterministic orchestrator, intelligent workers.** The orchestrator is a TypeScript state machine with 13 states and pure transition functions — no LLM calls. Workers are the intelligent agents. This split keeps orchestration predictable, auditable, and cheap.
+- **Multi-tool, no lock-in.** Works with Claude Code, OpenCode, Copilot CLI, and anything supporting the [Agent Skills standard](https://agentskills.io).
 - **Convention over configuration.** Cross-repo resolves via sibling directories. Port isolation via partition math. Domain slugs from section headers. Zero config for the common case.
 
-**Shipped in grind cycles 0-1 (Phases A through A-ter):**
-- **`ninthwave init`** — zero-config project onboarding with CI provider and test command auto-detection.
-- **Terminal status UI** — structured real-time display with color-coded agent states, auto-pane in cmux workspace.
-- **Webhook notifications** — Slack/Discord integration for orchestrator lifecycle events (start, merge, fail, complete).
-- **Structured analytics** — JSON metrics per run + `ninthwave analytics` trend display.
-- **Decomposition templates** — pre-built patterns for common work types (API endpoint, frontend component, migration).
-- **tmux adapter** — full orchestration on tmux with auto-detection (`--mux` flag).
-- **Orchestrator reliability** — CI failure detection, rebase on merge conflicts, crash recovery with state reconstruction, worker heartbeat monitoring, stale workspace cleanup.
-- **Wildcard dependencies** — pattern matching (`MUX-*`, `DF-*`) in dependency declarations.
-- **`/work` continuous delivery loop** — friction review, vision exploration, and self-improvement integrated into a single skill (consolidated from separate `/grind` skill).
+**Key capabilities:**
+- `ninthwave init` — zero-config project onboarding with CI and test command auto-detection
+- Daemon TUI with keyboard shortcuts and inline overlays
+- Stacked branch execution — dependent items launch early from the dependency's branch
+- Review worker integration — automated code review dispatched against PRs
+- Worker health monitoring — deterministic screen-based stall detection
+- Memory-aware WIP limits based on available RAM
+- Structured analytics with cost/token tracking
+- LLM supervisor (opt-in) — advisory layer that detects patterns the daemon can't
+- Monorepo workspace detection (pnpm/yarn/npm)
+- `nw doctor` health check command
 
-**Shipped in grind cycles 2-3 (Phase A-quater):**
-- **Analytics persistence** — auto-commit analytics JSON files at end of orchestration runs (ANL-3).
-- **Memory-aware WIP** — dynamic WIP limits based on available RAM via `vm_stat` on macOS (WIP-1).
-- **Cost/token tracking** — parse worker session costs, aggregate in analytics for ROI measurement (ANL-4).
-- **GitHub Issues adapter** — first external task backend: read issues as work items, sync status, close on merge (GHI-1, GHI-2).
-- **Orchestrator daemon mode** — fork to background, persist state to disk, `ninthwave stop` to terminate (DAE-1).
-- **Automatic worker retry** — retry crashed workers once before marking stuck (RET-1).
-- **Detection latency tracking** — timestamps for key orchestrator events, surface metrics in analytics (DET-2, DET-3).
-- **Daemon-side auto-rebase** — post-merge rebase of sibling PRs, conflict detection in ci-pending path (ORC-5, ORC-6, DET-4).
-- **File-per-todo migration** — replaced TODOS.md with `.ninthwave/todos/` directory, eliminating merge conflicts between parallel workers.
-- **Priority-ordered merge queue** — merge PRs in priority order to reduce conflict cascades (DET-5).
+**0.2.0 scope reduction.** Narrowed focus to the core orchestration pipeline. Removed: external task backends (GitHub Issues, ClickUp, Sentry, PagerDuty), sandboxing (nono, policy proxy), remote dashboard server, webhook notifications, and legacy migration commands. These features were working but added surface area beyond the narrowest wedge. They may return as separate packages or plugins.
 
-**Shipped in grind cycle 4 (Phase A-quinquies):**
-- **CLI polish** — `--version`/`-v` and `--help`/`-h` flags (CLI-2).
-- **nono default sandboxing** — kernel-level worker isolation via Seatbelt (macOS) and Landlock (Linux), zero-config (SBX-1). Profile distribution via init/setup (SBX-3, SBX-4). Sandbox fix for profile creation (SBX-2).
-- **Interactive onboarding** — guided first-run onboarding flow with project detection (ONB-1). Sandbox awareness step in onboarding (ONB-2).
-- **zellij multiplexer adapter** — alternative multiplexer backend: create session, send message, list sessions (ZLJ-1).
-- **ClickUp task backend** — external task backend adapter alongside GitHub Issues (CKU-1).
-- **GitHub Action create-todo** — `ninthwave-sh/create-todo` action creates todo files when CD workflows fail (GHA-1).
-- **Stacked branch execution** — items with in-flight dependencies launch early from the dependency's branch instead of waiting for merge. Squash-merge-safe `rebaseOnto()` restacks automatically post-merge. Stack navigation comments on PRs show the full dependency chain with links (STK-1 through STK-6).
-- **CI failure detection fix** — `gh pr checks` field name correction (`link` not `detailsUrl`) that was silently breaking all CI status detection, plus notification delivery hardening with retry on failure.
-- **Status UX improvements** — flicker-free status refresh, status pane reuse on daemon restart, full queue and WIP info display (STA-1 through STA-3).
+**Self-developing.** ninthwave dogfoods itself. The friction log has surfaced 25+ issues across 12 grind cycles, driving improvements from poll interval tuning to deterministic worker health monitoring.
 
-**Shipped in grind cycle 5 (Phase A-sexies):**
-- **Sentry task backend** — read Sentry issues as work items, sync status, resolve on merge (SNT-1).
-- **PagerDuty task backend** — read PagerDuty incidents as work items, acknowledge/resolve on merge (PGD-1).
-- **CLI observability integration** — `ninthwave list` and `ninthwave init` wired to Sentry and PagerDuty backends (OBS-1).
-- **Friction log auto-commit** — `/work` delivery loop auto-commits friction entries (FRC-1).
-
-**Shipped in grind cycle 6 (Phase C-alpha: Remote Session Access Foundation):**
-- **Orchestrator dashboard server** — single Bun.serve HTTP server per orchestration run, bound to localhost with OS-assigned port. Real-time HTML dashboard showing all items with color-coded states, PR links, and session drill-down. Token-authenticated (auto-generated 32-byte bearer token) — no unauthenticated endpoints except `/health` (H-REM-1).
-- **Dashboard lifecycle wiring** — `--remote` flag (off by default) starts the dashboard before orchestration begins. Dashboard URL persisted in daemon state for status pane display. Graceful degradation: if dashboard fails to start, orchestration continues without it (H-REM-2).
-- **`SessionUrlProvider` pattern** — dependency-injection interface (`getPublicUrl`, `cleanup`) for cloud integration. OSS provides the dashboard server; cloud product implements the provider to inject managed tunnels and persistent domains. Clean extension point without modifying core code.
-- **BYOT tunnel model** — Bring Your Own Tunnel. Users expose the localhost dashboard with their tunneling tool of choice (cloudflared, ngrok, zrok, SSH, Tailscale). ninthwave does not manage tunnels in the OSS CLI. `nw doctor` checks for cloudflared as an optional info-level dependency.
-- **`nw doctor` command** — health check for the ninthwave environment. Required checks: gh CLI, AI tool, multiplexer, git config. Recommended checks: project config, nono sandbox, pre-commit hook. Optional checks: cloudflared (for remote access), webhook URL (M-DX-1).
-
-**Shipped in grind cycle 7 (Phase B completion + C-bis: Worker Health Monitoring):**
-- **Review worker integration** — full review pipeline: reviewing state and config (H-RVW-1), review worker agent prompt (H-RVW-2), parameterized session launcher (H-RVW-3), CLI/setup/daemon wiring (H-RVW-4), external PR scanning and review (M-RVW-5). The orchestrator now dispatches review workers against PRs as part of the standard lifecycle.
-- **Worker health monitoring** — deterministic screen-based health checks (H-HLT-1), supervisor screen awareness (M-HLT-2), suppressed false branch-delete warnings (M-ORC-7), cleanup of superseded TODOs (M-CLN-1). Driven by friction log: the supervisor reported "ok" while workers were stalled at empty prompts — now the daemon detects this deterministically.
-- **Policy proxy foundation** — nono CONNECT forwarding + CA trust chain validation (H-PRX-1), Cedar entity hierarchy for URL path matching (H-PRX-2).
-
-**Shipped in grind cycle 8 (Phase B completion + orchestrator maturity):**
-- **Policy proxy completion** — proxy-launcher module with detection, spawn, and health check (H-PRX-7), `--upstream-proxy` flag and config keys (H-PRX-8), E2E integration test for nono + proxy + GitHub API (M-PRX-9). The full policy-driven sandboxing tier is now shipped.
-- **Multiplexer reliability** — fail-fast when multiplexer is unavailable or misconfigured (H-MFV-1), prevent zellij session exit when orchestrator launches (H-MZJ-1).
-- **ID collision protection** — prevent orchestrator from falsely completing TODOs when IDs collide with old PRs (H-MID-1).
-- **Orchestrator improvements** — granular failure states (M-ORC-8), `--watch` persistent daemon mode (M-ORC-9), robust remote branch deletion (M-ORC-10), `ninthwave retry` command for stuck items (H-ORC-8), cross-repo bootstrap for non-existent repos (H-ORC-9), custom GitHub identity for daemon and workers (L-ORC-3), cross-repo daemon awareness fix.
-- **CLI and UX** — comma/space-separated ID parsing (M-CLI-2), dependency tree visualization in status output (M-UX-1), interactive CLI flow for orchestrate command (L-UX-1).
-- **Testing** — daemon lifecycle integration tests (M-TST-5).
-
-**Shipped in grind cycle 9 (public repo readiness + vision L-VIS-10):**
-- **Runtime state relocation (H-PUB-1).** Moved orchestrator state files (PID, state, logs, health samples, archives) from `.ninthwave/` inside the project to `~/.ninthwave/projects/<hash>/`. Eliminates runtime clutter from git history on public repos.
-- **Symlink gitignore (M-PUB-2).** `ninthwave setup` now gitignores agent and skill symlinks (`.claude/agents/`, `.claude/skills/`, `.opencode/agents/`, `.github/agents/`) on non-ninthwave projects so broken symlinks don't appear for external contributors. Self-hosting mode (ninthwave repo) is excluded.
-- **Vision exploration (L-VIS-10).** Reviewed friction log (clean — all entries resolved or decomposed). Identified next iteration theme: autonomous loop closure + platform reach. Decomposed into 4 items: supervisor friction auto-decomposition (H-ADF-1), Linear task backend (M-LIN-1), supervisor webhook notifications (M-NTF-1), architecture documentation (L-ARC-1).
-
-**Self-developing.** ninthwave dogfoods itself. The friction log has surfaced 25+ issues across 9+ grind cycles, driving improvements from poll interval tuning to the file-per-todo migration to deterministic worker health monitoring to multiplexer reliability fixes to public repo readiness. The L-VIS recurring item in `.ninthwave/todos/` keeps the self-improvement loop running.
-
-**0.2.0 scope reduction (grind cycle 10).** Narrowed focus to the core orchestration pipeline. Removed: external task backends (GitHub Issues, ClickUp, Sentry, PagerDuty, StatusSync), sandboxing (nono wrapper, policy proxy, proxy-launcher), remote dashboard server and SessionUrlProvider, webhook notifications, and legacy migration commands (migrate-todos, generate-todos). These features were working but added surface area beyond the narrowest wedge. Work items come from `.ninthwave/todos/` only. The vision for external integrations, sandboxing, and remote access remains — they may return as separate packages or plugins once the core pipeline is battle-tested at scale.
-
-**Shipped in grind cycle 11 (daemon TUI + supervisor pivot + monorepo foundation):**
-- **Daemon TUI rendering (H-TUI-1).** Status rendered on daemon stdout in TUI mode.
-- **Keyboard shortcuts and status pane removal (H-TUI-2).** Replaced separate status pane with inline keyboard-triggered overlays.
-- **Supervisor agent prompt (H-SUP-1).** Created `agents/supervisor.md` for the session-based supervisor.
-- **Monorepo workspace detection (H-MNR-1).** `ninthwave init` detects pnpm/yarn/npm workspaces and stores package configs in `.ninthwave/config.json`.
-- **Vision exploration (L-VIS-12).** Reviewed friction log — one actionable item (Copilot CLI trust prompt blocking workers). Identified next theme: pipeline reliability and tool integration polish. Decomposed into 4 items: pre-flight validation (H-PFV-1), Copilot CLI trusted folders (M-CPT-1), orchestrator state machine unit tests (M-TST-6), Copilot integration docs (L-DOC-1).
-
-**Competitive positioning (Q1 2026).** Parallel AI coding exploded: Claude Code Agent Teams (16+ agents), Cursor (8 agents), Superset IDE (10+ agents), dmux, Conductor. All launch parallel sessions. None decompose work, order dependencies, manage CI lifecycle, or orchestrate merges. ninthwave's moat is the integrated pipeline, not session launching. Agent Teams is complementary (intra-task collaboration on one item) while ninthwave is inter-task orchestration (N workers on N items).
+**Competitive positioning (Q1 2026).** Parallel AI coding exploded: Claude Code Agent Teams (16+ agents), Cursor (8 agents), Superset IDE (10+ agents), dmux, Conductor. All launch parallel sessions. None decompose work, order dependencies, manage CI lifecycle, or orchestrate merges. ninthwave's moat is the integrated pipeline, not session launching.
 
 ## Principles
 
-1. **Orchestrate around, never wrap.** ninthwave does not proxy AI tool calls, intercept responses, or inject middleware. Workers are full native instances of your AI tool. ninthwave manages what happens before the session starts and after the PR opens. This is the most important principle and the one that differentiates ninthwave from agent frameworks.
+1. **Orchestrate around, never wrap.** ninthwave does not proxy AI tool calls, intercept responses, or inject middleware. Workers are full native instances of your AI tool. ninthwave manages what happens before the session starts and after the PR opens.
 
-2. **Deterministic orchestration, intelligent workers.** The orchestrator is a TypeScript state machine — no LLM calls, no non-determinism, no token costs. Workers are the intelligent agents. This split keeps the orchestrator predictable, auditable, testable, and cheap. The orchestrator handles the mechanical lifecycle; workers handle the thinking.
+2. **Deterministic orchestration, intelligent workers.** The orchestrator is a TypeScript state machine — no LLM calls, no non-determinism, no token costs. Workers are the intelligent agents.
 
-3. **Convention over configuration.** The common case should work with zero config files. Cross-repo resolves via sibling directories. Port isolation via partition math. Domain slugs from section headers. Only require explicit configuration when convention genuinely cannot cover the use case.
+3. **Convention over configuration.** The common case should work with zero config files. Only require explicit configuration when convention genuinely cannot cover the use case.
 
-4. **Human-sized PRs.** Every work item targets 200-400 LOC of meaningful change — small enough for a human to review meaningfully, large enough to be a coherent unit of work. This is not a sizing guideline; it's a product requirement. If the AI produces 2000-line PRs, the human loses the ability to audit. ninthwave's value depends on the human staying in the review loop.
+4. **Human-sized PRs.** Every work item targets 200-400 LOC of meaningful change — small enough for a human to review meaningfully, large enough to be a coherent unit of work.
 
-5. **Bring your own everything.** Your AI tool, your billing, your API keys, your task tracker, your CI. ninthwave is a coordination layer, not a platform. No vendor lock-in at any level.
+5. **Bring your own everything.** Your AI tool, your billing, your API keys, your task tracker, your CI. ninthwave is a coordination layer, not a platform.
 
-6. **The friction log is the roadmap.** Dogfooding generates signal. Every friction point encountered while using ninthwave is a potential improvement. L-VIS cycles review the friction log and decompose actionable items into TODOs. This is not aspirational — it's how v0.1.0 was built.
+6. **The friction log is the roadmap.** Dogfooding generates signal. Every friction point encountered while using ninthwave is a potential improvement. L-VIS cycles review the friction log and decompose actionable items.
 
-7. **Delegate, don't debug.** The orchestrator's job is to detect problems and dispatch them to workers. It doesn't read source code, diagnose root causes, or attempt patches. When CI fails, tell the worker. When a review comment appears, forward it. The orchestrator manages the pipeline; workers do the thinking.
+7. **Delegate, don't debug.** The orchestrator's job is to detect problems and dispatch them to workers. It doesn't read source code, diagnose root causes, or attempt patches.
 
-8. **Test confidence is merge confidence.** Every work item has a test plan. Every PR has verified test outcomes. The orchestrator surfaces aggregate test confidence so humans review with context. ninthwave doesn't run tests — it tracks and surfaces the results of tests that workers and CI already run.
+8. **Test confidence is merge confidence.** Every work item has a test plan. Every PR has verified test outcomes. The orchestrator surfaces aggregate test confidence.
 
-9. **Reduce entropy, maintain outcomes.** Systems should get simpler over time, not more complex and fragile. Every fix or feature should leave the system no more complex than before — prefer removing code over adding code, convention over configuration, fewer moving parts achieving the same results. Complexity is debt. This applies to ninthwave itself (the C-bis cycle moved intelligence from the LLM supervisor into deterministic daemon logic, making the system simpler and more reliable) and to the codebases it operates on (human-sized PRs and decomposition keep each change reviewable and reversible). The goal is always: same or better outcomes, less machinery.
+9. **Reduce entropy, maintain outcomes.** Systems should get simpler over time, not more complex and fragile. Prefer removing code over adding code, fewer moving parts achieving the same results.
 
 ## What's Next
 
-Priority areas ordered by dependency and impact. Phases A through A-sexies, B (local + policy tiers), C-alpha, and C-bis are complete.
-
-### A. Solidify the Foundation *(complete)*
-
-~~Make what exists reliable, well-documented, and pleasant for a solo developer on a single repo.~~ Done. All friction fixes (DF-1 through DF-5) shipped. `ninthwave init` with auto-detection (INI-1, INI-2) shipped. Exhaustive state machine tests (TST-1) shipped. Test plan field required for every work item.
-
-### A-bis. Visibility & Developer Experience *(complete)*
-
-~~Make ninthwave's work visible, measurable, and professional-feeling.~~ Done. Terminal status UI with auto-pane (STU-1, STU-2, STU-3) shipped. Webhook notifications (WHK-1) shipped. Structured analytics + trends command (ANL-1, ANL-2) shipped. Web dashboard deferred to Phase 4.
-
-### A-ter. Decomposition Quality *(complete for Phase 3)*
-
-~~Build the competitive moat.~~ Decomposition templates (TPL-1) shipped. Wildcard dependencies (WLD-1) shipped. Self-improving decomposition and community learning deferred to Phases 4-5.
-
-### ~~A-quater. Operational Maturity~~ *(complete)*
-
-~~Make ninthwave reliable enough for daily use without manual intervention.~~ Done. Analytics persistence (ANL-3), memory-aware WIP (WIP-1), cost/token tracking (ANL-4), GitHub Issues adapter (GHI-1, GHI-2), daemon mode (DAE-1), and worker retry (RET-1) all shipped. Detection latency tracking, daemon-side auto-rebase, file-per-todo migration, and priority-ordered merge queue also shipped as friction-driven improvements.
-
-### ~~A-quinquies. Surface Area & Onboarding~~ *(complete)*
-
-~~Expand ninthwave's reach: more multiplexers, more task backends, better onboarding, and sandboxed workers by default.~~ Done. CLI polish (CLI-2), nono sandboxing with profile distribution (SBX-1 through SBX-4), interactive onboarding with sandbox awareness (ONB-1, ONB-2), zellij adapter (ZLJ-1), ClickUp adapter (CKU-1), GitHub Action (GHA-1), stacked branch execution (STK-1 through STK-6), and status UX improvements (STA-1 through STA-3) all shipped.
-
-### ~~A-sexies. Production Signal Pipeline~~ *(complete)*
-
-~~Wire production observability tools into the work queue so production incidents become work items automatically.~~ Done. Sentry task backend adapter (SNT-1), PagerDuty task backend adapter (PGD-1), and CLI integration for both backends in `list` and `init` commands (OBS-1) all shipped. Friction log auto-commit (FRC-1) also shipped.
-
-### ~~C-alpha. Remote Session Access Foundation~~ *(complete)*
-
-~~Ship the OSS foundation for remote session access: dashboard server, auth, provider pattern, health checks.~~ Done. Orchestrator dashboard server with token auth (H-REM-1), dashboard lifecycle wiring with `--remote` flag (H-REM-2), `SessionUrlProvider` pattern for cloud extensibility, BYOT tunnel model, and `nw doctor` health check command (M-DX-1) all shipped. Architecture: one dashboard per orchestration run (not per-worker servers). OSS provides the server, user brings their own tunnel. Cloud adds managed tunneling + persistent domains via the provider pattern.
-
-### ~~B. Sandboxed Workers~~ *(complete — local + policy tiers shipped; Firecracker future)*
-
-~~Workers run in isolated environments. Prevent accidental destructive operations and contain blast radius.~~ Done. Two of three tiers shipped:
-
-- **Local/lightweight (default):** [nono](https://github.com/always-further/nono) — kernel-level sandboxing via Seatbelt (macOS) and Landlock (Linux). Zero startup latency, granular filesystem allowlisting, snapshot and rollback, credential injection via proxy. Convention: this is the default, zero-config. *(Shipped: SBX-1 through SBX-4.)*
-- **Policy-driven:** MITM policy proxy — standalone Rust binary with Cedar policy engine. Selective MITM for credentialed services (GitHub API), per-request policy evaluation, credential injection, structured JSON audit logging. Integrates with nono via `--upstream-proxy`. Proxy-launcher module handles detection, spawn, and health checks. E2E tested with nono + proxy + GitHub API flow. *(Shipped: H-PRX-1, H-PRX-2, H-PRX-7, H-PRX-8, M-PRX-9.)*
-- **Maximum isolation:** [Firecracker](https://github.com/firecracker-microvm/firecracker) microVMs — hardware virtualization via KVM. Minimal overhead, battle-tested at AWS Lambda scale. For untrusted code or multi-tenant scenarios. *(Future — deferred until multi-tenant demand materializes.)*
-
-Worker snapshots enable pre-commit review of filesystem changes before they're applied to the repo.
-
-### ~~C-bis. Worker Health Monitoring~~ *(complete)*
-
-~~Deterministic worker health checks — the daemon detects stalled workers by reading terminal screens, not just checking state-level data.~~ Done. Friction log surfaced this as the #1 reliability gap: the supervisor reported "ok" while all 3 workers were stalled at empty prompts.
-
-- **Deterministic screen health checks (H-HLT-1).** Orchestrator reads worker screens during snapshot building. Detects: empty input (stalled), permission prompts (waiting for user), error output (stuck), no change (hung process). Emits nudge actions automatically. *(Shipped.)*
-- **Supervisor screen awareness (M-HLT-2).** Screen health classifications fed into the supervisor prompt for detecting subtler anomalies and systemic patterns (e.g., all workers stalled = environment issue). *(Shipped.)*
-- **Orchestrator log cleanup (M-ORC-7).** Suppressed false "branch delete failed" warnings when GitHub auto-delete is enabled. *(Shipped.)*
-- **TODO cleanup (M-CLN-1).** Removed superseded TODO files. *(Shipped.)*
-
 ### C-beta. Remote Session Access — Cloud Track
 
-Cloud-track items building on the C-alpha foundation. These extend the BYOT model with managed infrastructure for teams that want zero-config remote access.
+Cloud-track items building on the shipped C-alpha foundation (localhost dashboard, token auth, SessionUrlProvider pattern, BYOT tunnels). Extends with managed infrastructure for teams that want zero-config remote access.
 
-- **Cloud tunnel provider.** `ninthwave-cloud` implements `SessionUrlProvider` with managed Cloudflare tunnels. Auto-provisions tunnels on `--remote`, tears them down on shutdown.
-- **Persistent domains.** `*.yourproject.ninthwave.sh` subdomains via Cloudflare Access. Authentication via team SSO — the one thin managed layer ninthwave offers.
-- **Interactive mode.** Full TUI or chat-optimized view for remote session interaction, depending on what cmux sockets support. Reviewer jumps into a session from the PR link, remote pair debugging with a stuck worker.
+- **Cloud tunnel provider.** `ninthwave-cloud` implements `SessionUrlProvider` with managed Cloudflare tunnels. Auto-provisions on `--remote`, tears down on shutdown.
+- **Persistent domains.** `*.yourproject.ninthwave.sh` subdomains via Cloudflare Access. Authentication via team SSO.
+- **Interactive mode.** Full TUI or chat-optimized view for remote session interaction. Reviewer jumps into a session from the PR link, remote pair debugging with a stuck worker.
 
-Use cases: team visibility into worker progress without self-managed tunnels, reviewer jumps into a session from the PR link, remote pair debugging with a stuck worker.
+### D. LLM Supervisor
 
-### D. LLM Supervisor *(foundation shipped)*
+An optional advisory layer on top of the deterministic daemon. Foundation shipped — core tick loop, prompt construction, response parsing, action application, friction file writing, error resilience with exponential backoff.
 
-An optional advisory layer on top of the deterministic daemon.
+**Remaining:**
+- Supervisor-generated friction entries auto-decomposed into TODOs (closes the loop between friction detection and work item creation)
+- Integration with external notification channels beyond log entries
 
-- Opt-in via `--supervisor` flag on `ninthwave orchestrate`. Auto-activates in dogfooding mode. *(Shipped.)*
-- Periodically reviews the daemon's structured logs and applies judgment: stuck workers, repeating CI errors, patterns suggesting systemic issues, process improvements the daemon can't detect. *(Shipped — core supervisor tick loop with prompt construction, response parsing, action application, and friction file writing.)*
-- Advisory outputs only: structured log events, friction log entries, suggested actions (send worker a hint, adjust WIP). The daemon continues regardless of supervisor output. *(Shipped.)*
-- Error resilience: exponential backoff after 3 consecutive LLM failures, auto-disable after 10 failures, error details logged. *(Shipped.)*
-- **Key principle: the LLM makes itself less necessary over time.** Each dogfooding cycle should move more intelligence from the supervisor into deterministic daemon logic. The supervisor's job is to detect what the daemon doesn't handle yet — then that detection gets codified. *(Demonstrated — C-bis moved screen health checks from supervisor into deterministic daemon logic, making the system simpler and more reliable.)*
-- **Remaining:** ~~Supervisor-generated friction entries auto-decomposed into TODOs (next priority — closes the loop between friction detection and work item creation).~~ Decomposed → H-ADF-1. ~~Integration with external notification channels beyond log entries.~~ Decomposed → M-NTF-1.
+**Key principle:** The LLM makes itself less necessary over time. Each dogfooding cycle moves more intelligence from the supervisor into deterministic daemon logic.
 
 ### E. Expand the Surface Area
 
-- **External task backends** *(removed in 0.2.0, future plugin candidates).* Two categories were previously shipped: (1) Project management — GitHub Issues (GHI-1, GHI-2), ClickUp (CKU-1). (2) Observability — Sentry (SNT-1), PagerDuty (PGD-1). Removed to narrow focus to `.ninthwave/todos/` as the sole work item source. May return as separate packages.
-- **GitHub Action for CI/CD failures.** ~~`ninthwave-sh/create-todo` — a thin GitHub Action that creates a todo file in `.ninthwave/todos/` when a CD workflow fails.~~ Done (GHA-1).
-- **Multiplexer abstraction.** ~~tmux~~ Done (MUX-3, MUX-4). ~~zellij~~ Done (ZLJ-1). cmux remains the default.
-- **Smarter resource management.** ~~Memory-aware WIP limits based on available RAM.~~ Done (WIP-1). Adaptive scaling under load. Each worker consumes ~1GB (revised down from initial 2.5GB estimate after measurement).
+- **External task backends.** Removed in 0.2.0, future plugin candidates. Previously shipped: GitHub Issues, ClickUp, Sentry, PagerDuty. May return as separate packages.
 - **Cross-repo maturity.** Monorepo workspace support (pnpm/yarn/turborepo). Dependency ordering across repos.
+- **Adaptive resource management.** Scaling beyond current memory-aware WIP limits.
 
 ## Non-Goals
 
 What ninthwave will not become:
 
-1. **Not an AI tool.** No LLM calls in the core pipeline. The supervisor is opt-in, advisory, and designed to shrink over time as its patterns get codified into the daemon.
+1. **Not an AI tool.** No LLM calls in the core pipeline. The supervisor is opt-in, advisory, and designed to shrink over time.
 
-2. **Not a compute platform.** ninthwave never owns your compute, your code, or your AI tool billing. The one exception: optional managed domain routing and auth for remote session access (`*.yourproject.ninthwave.sh` via Cloudflare Access). This is a thin coordination layer — your workers, your machine, your infrastructure.
+2. **Not a compute platform.** ninthwave never owns your compute, your code, or your AI tool billing. The one exception: optional managed domain routing for remote session access.
 
-3. **Not a CI/CD replacement.** ninthwave monitors your CI pipeline. It doesn't run tests or build code. The worker runs tests locally; CI is the authoritative check.
+3. **Not a CI/CD replacement.** ninthwave monitors your CI pipeline. It doesn't run tests or build code.
 
-4. **Not a code review tool.** ninthwave orchestrates review workers — it dispatches them against PRs and manages their lifecycle — but the review logic itself lives in the review worker agent prompt (`agents/review-worker.md`), not in the orchestrator. ninthwave never parses diffs, classifies findings, or decides what's a blocker. The human reviewer is always in the loop.
+4. **Not a code review tool.** ninthwave orchestrates review workers but the review logic lives in the agent prompt, not the orchestrator. The human reviewer is always in the loop.
 
-5. **Not a project management tool.** `.ninthwave/todos/` is a lightweight work queue, not Jira. For teams with existing task management, ninthwave connects via adapters.
+5. **Not a project management tool.** `.ninthwave/todos/` is a lightweight work queue, not Jira.
 
-6. **Not a monolithic agent.** Many small workers plus a deterministic orchestrator is the architecture. It's not a stepping stone to a single agent that handles everything in one session. Decomposition and parallel execution is the point.
+6. **Not a monolithic agent.** Many small workers plus a deterministic orchestrator is the architecture. Decomposition and parallel execution is the point.
 
-7. **Not a monitoring system.** ninthwave doesn't collect metrics, set alert thresholds, or evaluate production health. Work items come from `.ninthwave/todos/` files or the `create-todo` GitHub Action for CI/CD failures. External backend adapters (Sentry, PagerDuty, etc.) were previously available but removed in 0.2.0 to narrow focus — they may return as separate packages.
+7. **Not a monitoring system.** ninthwave doesn't collect metrics or evaluate production health. Work items come from `.ninthwave/todos/` files or the `create-todo` GitHub Action.
 
 ## Feature-Completeness
 
 ninthwave is feature-complete when:
 
-- A developer goes from spec to merged, reviewed PRs in a single command cycle. *(Achieved.)*
-- The pipeline handles all common failure modes automatically: CI failures, merge conflicts, review feedback, worker crashes, dependency ordering. *(Achieved — CI failure detection, rebase on conflicts, review dispatch, heartbeat monitoring, crash recovery, worker retry: RET-1.)*
-- Works with 3+ AI coding tools. *(Achieved: Claude Code, OpenCode, Copilot CLI.)*
-- Works with 2+ terminal multiplexers. *(Achieved: cmux + tmux + zellij: ZLJ-1.)*
-- Connects to 2+ task backends. *(Previously achieved: GitHub Issues: GHI-1, GHI-2. ClickUp: CKU-1. Removed in 0.2.0 scope reduction — may return as separate packages.)*
-- Connects to 2+ observability/alerting backends. *(Previously achieved: Sentry: SNT-1. PagerDuty: PGD-1. Removed in 0.2.0 scope reduction — may return as separate packages.)*
-- GitHub Action bridges CI/CD failures into todo files. *(Achieved: GHA-1.)*
-- Every decomposed work item has a test plan with tracked outcomes. *(Achieved — test plan field required since v0.1.0. Analytics tracks outcomes per run: ANL-1, ANL-2. Cost/token tracking: ANL-4.)*
-- Workers run sandboxed by default. *(Previously achieved — nono kernel-level sandboxing via Seatbelt/Landlock: SBX-1. Removed in 0.2.0 scope reduction — may return as a separate package.)*
-- Remote session links posted on PRs with auth. *(Previously partially achieved — auth-secured local dashboard with session drill-down shipped: H-REM-1, H-REM-2. Removed in 0.2.0 scope reduction.)*
-- Resource management is automatic — memory-aware WIP, no manual tuning. *(Achieved: WIP-1.)*
-- Install to working parallel session in under 10 minutes. *(Achieved — `ninthwave init` with auto-detection ships zero-config onboarding.)*
+- A developer goes from spec to merged, reviewed PRs in a single command cycle.
+- The pipeline handles all common failure modes automatically: CI failures, merge conflicts, review feedback, worker crashes, dependency ordering.
+- Works with 3+ AI coding tools (currently: Claude Code, OpenCode, Copilot CLI).
+- Works with 2+ terminal multiplexers (currently: cmux, tmux, zellij).
+- Connects to 2+ task backends (previously shipped, removed in 0.2.0 — may return as plugins).
+- Connects to 2+ observability/alerting backends (previously shipped, removed in 0.2.0 — may return as plugins).
+- GitHub Action bridges CI/CD failures into todo files.
+- Every decomposed work item has a test plan with tracked outcomes.
+- Workers run sandboxed by default (previously shipped, removed in 0.2.0 — may return as a separate package).
+- Remote session links posted on PRs with auth (foundation shipped, full implementation deferred).
+- Resource management is automatic — memory-aware WIP, no manual tuning.
+- Install to working parallel session in under 10 minutes.
 
-After feature-completeness, ninthwave enters maintenance: bug fixes, compatibility updates for new AI tools and platforms, and community-driven extensions.
+After feature-completeness, ninthwave enters maintenance: bug fixes, compatibility updates, and community-driven extensions.
 
 ## The Self-Improvement Loop
 
@@ -240,5 +131,3 @@ ninthwave uses itself to develop itself. This is not a metaphor — the v0.1.0 r
 The cycle: decompose a feature into TODOs, process them via `ninthwave orchestrate` with auto-merge, review the friction log after each batch, decompose actionable friction into new TODOs, repeat until no actionable friction remains.
 
 The **L-VIS recurring item** in `.ninthwave/todos/` is the mechanism. When all other TODOs complete, L-VIS triggers: review this document against the current state, check the friction log, identify the next most impactful capability, decompose it into TODOs, add a new L-VIS-(N+1) depending on the terminal items. The cycle continues.
-
-The supervisor layer will eventually automate friction detection during orchestration, making the loop tighter. But the core mechanic — dogfood, log friction, decompose, work, repeat — is already running.
