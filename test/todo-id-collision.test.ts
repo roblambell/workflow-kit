@@ -374,7 +374,9 @@ describe("reconstructState: TODO ID collision safety", () => {
 // ── buildSnapshot collision tests ────────────────────────────────────
 
 describe("buildSnapshot: TODO ID collision safety", () => {
-  it("does not report merged when PR title doesn't match TODO title", () => {
+  it("reports merged regardless of title mismatch (trusts branch name during live polling)", () => {
+    // After H-MRG-1: buildSnapshot trusts the branch name `todo/{ID}` as definitive
+    // identity during live polling. Title checks are only in reconstructState.
     const orch = new Orchestrator();
     orch.addItem(makeTodo("H-FOO-1", "new work"));
     orch.setState("H-FOO-1", "implementing");
@@ -409,8 +411,8 @@ describe("buildSnapshot: TODO ID collision safety", () => {
 
     const snap = snapshot.items.find((s) => s.id === "H-FOO-1");
     expect(snap).toBeDefined();
-    // prState should NOT be "merged" — title mismatch
-    expect(snap!.prState).toBeUndefined();
+    // prState IS "merged" — branch name is authoritative during live polling
+    expect(snap!.prState).toBe("merged");
   });
 
   it("reports merged when orchestrator already tracks the PR number (skips title check)", () => {
@@ -459,8 +461,9 @@ describe("buildSnapshot: TODO ID collision safety", () => {
     expect(snap!.prState).toBe("merged");
   });
 
-  it("still rejects title mismatch when prNumber differs from merged PR", () => {
-    // When the orchestrator tracks a DIFFERENT PR number, the title check should still apply
+  it("reports merged even when prNumber differs from tracked (branch name is authoritative)", () => {
+    // After H-MRG-1: buildSnapshot trusts branch name, so even a prNumber mismatch
+    // doesn't prevent merge detection during live polling.
     const orch = new Orchestrator();
     orch.addItem(makeTodo("H-FOO-1", "new work"));
     orch.setState("H-FOO-1", "ci-passed");
@@ -497,8 +500,8 @@ describe("buildSnapshot: TODO ID collision safety", () => {
 
     const snap = snapshot.items.find((s) => s.id === "H-FOO-1");
     expect(snap).toBeDefined();
-    // prState should NOT be "merged" — prNumber doesn't match and title doesn't match
-    expect(snap!.prState).toBeUndefined();
+    // prState IS "merged" — branch name is authoritative during live polling
+    expect(snap!.prState).toBe("merged");
   });
 
   it("reports merged when PR title matches TODO title", () => {

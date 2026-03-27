@@ -1630,6 +1630,94 @@ describe("buildSnapshot ready status mapping", () => {
   });
 });
 
+// ── buildSnapshot merge detection (H-MRG-1) ──────────────────────────
+
+describe("buildSnapshot merge detection", () => {
+  function mockMux(workspaces: string = ""): Multiplexer {
+    return {
+      type: "cmux",
+      isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
+      launchWorkspace: () => null,
+      splitPane: () => null,
+      sendMessage: () => true,
+      readScreen: () => "",
+      listWorkspaces: () => workspaces,
+      closeWorkspace: () => true,
+    };
+  }
+
+  it("detects merged PR even when prNumber is unset and title differs from TODO", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    const todo = makeTodo("MRG-1-1");
+    todo.title = "Fix the daemon polling loop";
+    orch.addItem(todo);
+    orch.setState("MRG-1-1", "implementing");
+    // prNumber is never set (auto-merged before daemon saw it as open)
+    expect(orch.getItem("MRG-1-1")!.prNumber).toBeUndefined();
+
+    // checkPr returns merged with a completely different title
+    const checkPr = () => "MRG-1-1\t99\tmerged\t\t\trefactor: rewrite polling internals";
+    const mux = mockMux();
+
+    const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, () => null, checkPr);
+
+    const snapItem = snapshot.items.find((i) => i.id === "MRG-1-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.prState).toBe("merged");
+    expect(snapItem!.prNumber).toBe(99);
+  });
+});
+
+// ── reconstructState merge detection (H-MRG-1) ──────────────────────
+
+describe("reconstructState merge detection", () => {
+  it("rejects title-mismatched merged PR from previous cycle (no prNumber tracked)", () => {
+    const orch = new Orchestrator();
+    const todo = makeTodo("MRG-2-1");
+    todo.title = "New implementation for feature X";
+    orch.addItem(todo);
+
+    // Create a temp worktree so reconstructState processes this item
+    const tmpDir = join(require("os").tmpdir(), `nw-mrg-test-${Date.now()}`);
+    const wtDir = join(tmpDir, ".worktrees");
+    require("fs").mkdirSync(join(wtDir, "todo-MRG-2-1"), { recursive: true });
+
+    // checkPr returns merged with a mismatched title (old cycle's PR)
+    const checkPr = () => "MRG-2-1\t50\tmerged\t\t\tfix: old implementation of feature X";
+
+    reconstructState(orch, tmpDir, wtDir, undefined, checkPr);
+
+    // Should NOT be marked merged — title mismatch means it's a stale PR
+    expect(orch.getItem("MRG-2-1")!.state).toBe("implementing");
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("accepts title-mismatched merged PR when prNumber was already tracked", () => {
+    const orch = new Orchestrator();
+    const todo = makeTodo("MRG-3-1");
+    todo.title = "Improve error handling";
+    orch.addItem(todo);
+    // Simulate daemon state having previously tracked this PR number
+    orch.getItem("MRG-3-1")!.prNumber = 77;
+
+    const tmpDir = join(require("os").tmpdir(), `nw-mrg-test2-${Date.now()}`);
+    const wtDir = join(tmpDir, ".worktrees");
+    require("fs").mkdirSync(join(wtDir, "todo-MRG-3-1"), { recursive: true });
+
+    // checkPr returns merged with a different title but matching PR number
+    const checkPr = () => "MRG-3-1\t77\tmerged\t\t\trefactor: completely rewrite error paths";
+
+    reconstructState(orch, tmpDir, wtDir, undefined, checkPr);
+
+    // Should be merged — prNumber match bypasses title check
+    expect(orch.getItem("MRG-3-1")!.state).toBe("merged");
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
 // ── Keyboard shortcuts (TUI mode) ────────────────────────────────────
 
 describe("setupKeyboardShortcuts", () => {

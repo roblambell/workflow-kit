@@ -218,24 +218,12 @@ export function buildSnapshot(
 
       switch (status) {
         case "merged": {
-          // Collision detection: verify the merged PR's title matches this TODO's title.
-          // If titles don't match, this is an old PR from a previous TODO cycle — ignore it.
-          // BUT: skip the title check if the orchestrator already tracks this PR number —
-          // that means we assigned it during this run, so it's definitely ours regardless
-          // of how the worker chose to title it.
-          const mergedPrNum = snap.prNumber;
-          const alreadyTracked = mergedPrNum != null && orchItem.prNumber === mergedPrNum;
-          if (alreadyTracked) {
-            snap.prState = "merged";
-          } else {
-            const mergedPrTitle = parts[5] ?? "";
-            const todoTitle = orchItem.todo.title;
-            if (mergedPrTitle && todoTitle && !prTitleMatchesTodo(mergedPrTitle, todoTitle)) {
-              // Title mismatch — treat as no-pr (stale merged PR from a different TODO)
-            } else {
-              snap.prState = "merged";
-            }
-          }
+          // During live polling, the branch name `todo/{ID}` is the definitive
+          // identity — if checkPrStatus finds a merged PR for that branch, it's
+          // ours regardless of how the worker titled the PR. Title collision
+          // checks are only needed in reconstructState (cross-cycle ambiguity
+          // after daemon restart).
+          snap.prState = "merged";
           break;
         }
         case "ready":
@@ -586,6 +574,10 @@ export function reconstructState(
     const prNumStr = parts[1];
     const status = parts[2];
 
+    // Capture the pre-existing prNumber (from daemon state) BEFORE overwriting it.
+    // Used by the merged-case alreadyTracked check below.
+    const previousPrNumber = orch.getItem(item.id)?.prNumber;
+
     if (prNumStr) {
       const orchItem = orch.getItem(item.id)!;
       orchItem.prNumber = parseInt(prNumStr, 10);
@@ -596,13 +588,22 @@ export function reconstructState(
         // Collision detection: verify the merged PR's title matches this TODO's title.
         // If titles don't match, the merged PR belongs to a previous TODO that reused the
         // same ID — treat as no-pr to avoid falsely completing the new item (H-MID-1).
-        const mergedPrTitle = parts[5] ?? "";
-        const todoTitle = orch.getItem(item.id)?.todo.title ?? "";
-        if (mergedPrTitle && todoTitle && !prTitleMatchesTodo(mergedPrTitle, todoTitle)) {
-          orch.setState(item.id, "implementing");
-          recoverWorkspaceRef(orch, item.id, workspaceList);
-        } else {
+        // BUT: skip the title check if the orchestrator already tracked this PR number
+        // (from daemon state) — that means we assigned it during the previous run,
+        // so it's definitely ours regardless of how the worker titled it.
+        const mergedPrNum = prNumStr ? parseInt(prNumStr, 10) : undefined;
+        const alreadyTracked = mergedPrNum != null && previousPrNumber === mergedPrNum;
+        if (alreadyTracked) {
           orch.setState(item.id, "merged");
+        } else {
+          const mergedPrTitle = parts[5] ?? "";
+          const todoTitle = orch.getItem(item.id)?.todo.title ?? "";
+          if (mergedPrTitle && todoTitle && !prTitleMatchesTodo(mergedPrTitle, todoTitle)) {
+            orch.setState(item.id, "implementing");
+            recoverWorkspaceRef(orch, item.id, workspaceList);
+          } else {
+            orch.setState(item.id, "merged");
+          }
         }
         break;
       }
