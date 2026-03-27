@@ -133,6 +133,25 @@ This skill interactively selects TODO items, then delegates all orchestration to
 
 ---
 
+### Transition: Commit and push TODO changes
+
+**Goal:** Ensure all TODO file changes from Phase 1 (selection, reconciliation, ad-hoc edits) are committed and pushed before launching workers.
+
+> **Why?** Workers spawn in worktrees cloned from the remote. If TODO files are created, modified, or removed during Phase 1 but not pushed, workers won't see those changes — they'll operate on stale state from the last push.
+
+```bash
+git add .ninthwave/todos/
+# Only commit if there are staged changes
+if ! git diff --cached --quiet; then
+  git commit -m "chore: sync TODO files before orchestration"
+  git push
+fi
+```
+
+Skip this step if nothing changed in `.ninthwave/todos/` during Phase 1.
+
+---
+
 ### Phase 2: ORCHESTRATE
 
 **Goal:** Launch the `ninthwave orchestrate` daemon and monitor its output.
