@@ -85,9 +85,9 @@ Sometimes a TODO requires no code change. Valid reasons include:
 The no-op PR template (replace the standard Phase 9 template):
 
 ```bash
-gh pr create --title "chore: close TODO YOUR_TODO_ID — no code change needed" --body "$(cat <<'EOF'
+gh pr create --title "chore: close YOUR_TODO_ID — no code change needed" --body "$(cat <<'EOF'
 ## Summary
-Closes TODO YOUR_TODO_ID: <title>
+Closes YOUR_TODO_ID: <title>
 
 **No code change needed.** This PR only removes the TODO file from `.ninthwave/todos/`.
 
@@ -220,9 +220,9 @@ If `BASE_BRANCH` is **not** set in your system prompt, create the PR normally (n
 Create the PR with `gh pr create`. Use a HEREDOC for the body:
 
 ```bash
-gh pr create --title "fix|feat|refactor|test: <description> (TODO YOUR_TODO_ID)" --body "$(cat <<'EOF'
+gh pr create --title "fix|feat|refactor|test: <description> (YOUR_TODO_ID)" --body "$(cat <<'EOF'
 ## Summary
-Implements TODO YOUR_TODO_ID: <title>
+Implements YOUR_TODO_ID: <title>
 
 - <what changed>
 - <why it changed>
