@@ -13,15 +13,15 @@ Remove the HTTP dashboard server (Bun.serve-based session viewer) and webhook no
 - `test/session-server.test.ts`, `test/webhooks.test.ts`, `test/orchestrate-remote.test.ts`
 
 **Modify:**
-- `core/commands/orchestrate.ts` — Remove: session-server imports (lines 58-62), webhook imports (lines 53-57), `--remote` flag parsing (lines 1856-1859), webhook notifier creation (~lines 2150-2163), dashboard start/stop blocks (~lines 2170-2193, 2413-2415), dashboard URL in state serialization, PR comment posting with dashboard URL
-- `core/commands/doctor.ts` — Remove: `checkCloudflared()` function (lines 212-224), `checkWebhookUrl()` function (lines 226-243)
-- `core/commands/status.ts` — Remove: dashboard URL display (~lines 294-296)
-- `core/daemon.ts` — Remove `dashboardUrl` field from `DaemonState` interface (line 49) and serialization extras (line 324)
-- `core/config.ts` — Remove keys: `webhook_url`, `remote_sessions`
-- `test/orchestrate.test.ts`, `test/doctor.test.ts` — Remove remote/webhook-related test cases
+- `core/commands/orchestrate.ts` -- Remove: session-server imports (lines 58-62), webhook imports (lines 53-57), `--remote` flag parsing (lines 1856-1859), webhook notifier creation (~lines 2150-2163), dashboard start/stop blocks (~lines 2170-2193, 2413-2415), dashboard URL in state serialization, PR comment posting with dashboard URL
+- `core/commands/doctor.ts` -- Remove: `checkCloudflared()` function (lines 212-224), `checkWebhookUrl()` function (lines 226-243)
+- `core/commands/status.ts` -- Remove: dashboard URL display (~lines 294-296)
+- `core/daemon.ts` -- Remove `dashboardUrl` field from `DaemonState` interface (line 49) and serialization extras (line 324)
+- `core/config.ts` -- Remove keys: `webhook_url`, `remote_sessions`
+- `test/orchestrate.test.ts`, `test/doctor.test.ts` -- Remove remote/webhook-related test cases
 
 **Test plan:**
-- Run `bun test test/` — all surviving tests must pass
+- Run `bun test test/` -- all surviving tests must pass
 - Verify `grep -r "session-server\|webhooks\|dashboardUrl\|--remote" core/` returns nothing
 - Verify `ninthwave status` still works without dashboard URL display
 

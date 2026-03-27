@@ -223,6 +223,7 @@ Present summary and connect to `/work` for processing.
 
 ## Important Rules
 
+- **ASCII only:** TODO files must use only ASCII characters. Use `--` instead of em dashes, `-` instead of en dashes, `"` instead of smart quotes, `...` instead of ellipsis. Non-ASCII characters break `$'...'` shell quoting when the prompt is sent to workers via multiplexers (tmux/zellij).
 - **Spec fidelity:** Every requirement must map to at least one TODO
 - **No implementation:** This skill only plans and writes TODOs
 - **PR size discipline:** Split TODOs > ~500 LOC, combine < ~50 LOC

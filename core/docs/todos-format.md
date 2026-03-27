@@ -2,6 +2,8 @@
 
 Canonical reference for the file-per-todo format. Each TODO is a separate markdown file in `.ninthwave/todos/`. Used by `/decompose` (feature decomposition) and ad-hoc TODO creation. Parsed by the ninthwave CLI (`core/todo-files.ts`).
 
+**ASCII only:** TODO content must use only ASCII characters. Use `--` instead of em dashes (`—`), `-` instead of en dashes (`–`), straight quotes instead of smart quotes, and `...` instead of ellipsis (`…`). Non-ASCII breaks shell quoting when prompts are sent to workers via multiplexers.
+
 ## Directory Layout
 
 TODOs live in `.ninthwave/todos/` at the project root. Each file is one TODO item:

@@ -44,6 +44,23 @@ export function sanitizeTitle(title: string): string {
   return title.replace(/[^a-zA-Z0-9 _-]/g, "_");
 }
 
+/**
+ * Replace non-ASCII characters that break `printf %q` / `$'...'` shell quoting
+ * when sent through multiplexers (tmux/zellij). Converts common Unicode
+ * punctuation to ASCII equivalents and strips anything else non-ASCII.
+ */
+export function sanitizeForShellQuoting(text: string): string {
+  return text
+    .replace(/[\u2014\u2015]/g, "--")  // em dash
+    .replace(/[\u2013]/g, "-")         // en dash
+    .replace(/[\u2018\u2019]/g, "'")   // smart single quotes
+    .replace(/[\u201C\u201D]/g, '"')   // smart double quotes
+    .replace(/[\u2026]/g, "...")        // ellipsis
+    .replace(/[\u2022]/g, "*")         // bullet
+    .replace(/[\u00A0]/g, " ")         // non-breaking space
+    .replace(/[^\x00-\x7F]/g, "");     // strip remaining non-ASCII
+}
+
 /** Result of launching a single TODO item. */
 export interface LaunchResult {
   worktreePath: string;
@@ -178,9 +195,10 @@ export function launchAiSession(
       break;
     case "copilot": {
       const promptText = `${readFileSync(promptFile, "utf-8")}\n\nStart implementing this TODO now.`;
-      const shellQuoted = run("bash", ["-c", 'printf %q "$1"', "--", promptText]);
+      const safePrompt = sanitizeForShellQuoting(promptText);
+      const shellQuoted = run("bash", ["-c", 'printf %q "$1"', "--", safePrompt]);
       const quotedPrompt =
-        shellQuoted.exitCode === 0 ? shellQuoted.stdout.trim() : JSON.stringify(promptText);
+        shellQuoted.exitCode === 0 ? shellQuoted.stdout.trim() : JSON.stringify(safePrompt);
       cmd = `copilot --agent=${agentName} --allow-all -i ${quotedPrompt}`;
       initialPrompt = ""; // embedded in cmd via -i — skip post-launch send
       break;

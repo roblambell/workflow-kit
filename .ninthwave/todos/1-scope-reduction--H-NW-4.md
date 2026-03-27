@@ -5,7 +5,7 @@
 **Depends on:** None
 **Domain:** scope-reduction
 
-Remove the `migrate-todos` and `generate-todos` CLI commands (legacy TODOS.md ↔ file-per-todo migration). Also remove `TODOS.md` itself — it's auto-generated and redundant with `.ninthwave/todos/` which is the canonical source.
+Remove the `migrate-todos` and `generate-todos` CLI commands (legacy TODOS.md ↔ file-per-todo migration). Also remove `TODOS.md` itself -- it's auto-generated and redundant with `.ninthwave/todos/` which is the canonical source.
 
 **Delete files:**
 - `core/commands/migrate-todos.ts` (510 lines)
@@ -13,10 +13,10 @@ Remove the `migrate-todos` and `generate-todos` CLI commands (legacy TODOS.md �
 - `test/migrate-todos.test.ts`
 
 **Modify:**
-- `core/cli.ts` — Remove `cmdMigrateTodos` and `cmdGenerateTodos` imports, remove their case branches in the command dispatcher, remove from `COMMANDS` help array
+- `core/cli.ts` -- Remove `cmdMigrateTodos` and `cmdGenerateTodos` imports, remove their case branches in the command dispatcher, remove from `COMMANDS` help array
 
 **Test plan:**
-- Run `bun test test/` — all surviving tests must pass
+- Run `bun test test/` -- all surviving tests must pass
 - Verify `ninthwave --help` no longer lists `migrate-todos` or `generate-todos`
 - Verify `grep -r "migrate-todos\|generate-todos\|cmdMigrateTodos\|cmdGenerateTodos" core/` returns nothing
 
