@@ -71,7 +71,7 @@ Key files: `path/to/file.ex`, `path/to/component.tsx:42`
 |-------|----------|--------|
 | Type | `# ` header | One of: `Migration`, `Feat`, `Refactor`, `Test`, `Docs`, `Fix` |
 | Title | `# ` header | Short descriptive title |
-| ID | `# ` header (parenthetical) | `[CHML]-<feature_code>-<seq>` |
+| ID | `# ` header (parenthetical) | `[CHML]-<feature_code>-<seq>[suffix]` |
 | Priority | Metadata line | `Critical`, `High`, `Medium`, or `Low` |
 | Source | Metadata line | Free text describing origin |
 | Depends on | Metadata line | Comma-separated IDs or `None` |
@@ -133,7 +133,7 @@ Example: `**Repo:** api-service`
 
 ## ID Scheme
 
-Format: `[CHML]-<feature_code>-<seq>`
+Format: `[CHML]-<feature_code>-<seq>[suffix]`
 
 **Priority letter** (first character):
 - `C` -- Critical (blocking migrations, core schema)
@@ -147,7 +147,9 @@ Format: `[CHML]-<feature_code>-<seq>`
 
 **Sequence**: Incrementing integer starting at 1.
 
-Examples: `C-UO-1`, `H-UO-3`, `M-CI-1`, `L-SF-2`
+**Suffix** (optional): Lowercase alphabetic suffix for split items. When a TODO is split into sub-items, append `a`, `b`, `c`, etc. to the sequence number. Example: `H-CP-7a`, `H-CP-7b`.
+
+Examples: `C-UO-1`, `H-UO-3`, `M-CI-1`, `L-SF-2`, `H-CP-7a`, `H-CP-7b`
 
 ## Sizing Guidelines
 
@@ -161,7 +163,7 @@ Each TODO should target one human-reviewable PR:
 
 `core/todo-files.ts` reads individual files from `.ninthwave/todos/` and parses each one:
 
-- **ID**: from parenthetical in `# ` header, pattern `([A-Z]-[A-Za-z0-9]+-[0-9]+)`
+- **ID**: from parenthetical in `# ` header, pattern `([A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*)`
 - **Priority**: from `**Priority:**` line, converted to lowercase
 - **Depends on**: from `**Depends on:**` line, comma/space-separated IDs
 - **Domain**: from `**Domain:**` line (defaults to `"uncategorized"` if missing)
@@ -174,7 +176,7 @@ Wildcard dependencies (e.g., `MUX-*`, `H-MUX-*`) are expanded in a second pass a
 
 Things that break parsing:
 - Missing ID in the `# ` header
-- ID format that doesn't match `[A-Z]-[A-Za-z0-9]+-[0-9]+`
+- ID format that doesn't match `[A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*`
 - Missing `**Priority:**` line
 - File not ending in `.md`
 

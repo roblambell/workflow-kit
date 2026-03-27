@@ -2,7 +2,7 @@
 // Extracted to break the bidirectional dependency between parser.ts and todo-files.ts.
 
 import type { TodoItem } from "./types.ts";
-import { WILDCARD_DEP_PATTERN, CODE_EXTENSIONS } from "./types.ts";
+import { WILDCARD_DEP_PATTERN, CODE_EXTENSIONS, ID_PATTERN_SOURCE } from "./types.ts";
 
 /**
  * Normalize an array of ID arguments by splitting on commas, trimming whitespace,
@@ -265,8 +265,8 @@ export function normalizeTitleForComparison(title: string): string {
   return title
     .toLowerCase()
     // Strip TODO ID references: "(H-MUX-1)", "TODO H-MUX-1", "(TODO H-MUX-1)"
-    .replace(/\(?TODO\s+[A-Z]-[A-Za-z0-9]+-[0-9]+\)?/gi, "")
-    .replace(/\([A-Z]-[A-Za-z0-9]+-[0-9]+\)/gi, "")
+    .replace(new RegExp(`\\(?TODO\\s+${ID_PATTERN_SOURCE}\\)?`, "gi"), "")
+    .replace(new RegExp(`\\(${ID_PATTERN_SOURCE}\\)`, "gi"), "")
     // Strip conventional commit prefixes: "fix:", "feat:", "refactor:", etc.
     .replace(/^(fix|feat|refactor|test|docs|chore|perf|ci|build|style|revert)\s*(\([^)]*\))?\s*:\s*/i, "")
     // Collapse whitespace

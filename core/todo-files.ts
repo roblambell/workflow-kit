@@ -13,6 +13,7 @@ import {
   PRIORITY_NUM,
   ID_IN_PARENS,
   ID_PATTERN_GLOBAL,
+  ID_PATTERN_SOURCE,
   WILDCARD_DEP_PATTERN,
 } from "./types.ts";
 import { extractTestPlan, extractFilePaths, expandWildcardDeps, extractBody } from "./todo-utils.ts";
@@ -55,7 +56,7 @@ export function parseTodoFile(filePath: string): TodoItem | null {
       // Title: everything after "# " up to the ID parens
       title = line
         .slice(2)
-        .replace(/\s*\([A-Z]-[A-Za-z0-9]+-[0-9]+\)/, "")
+        .replace(new RegExp(`\\s*\\(${ID_PATTERN_SOURCE}\\)`), "")
         .trim();
       // Strip "Type: " prefix if present (e.g., "Fix: foo" -> "foo")
       const colonIdx = title.indexOf(": ");

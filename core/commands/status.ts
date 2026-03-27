@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, basename } from "path";
 import { BOLD, DIM, RESET } from "../output.ts";
 import { run } from "../shell.ts";
+import { ID_PATTERN_GLOBAL } from "../types.ts";
 import {
   isDaemonRunning,
   readStateFile,
@@ -88,7 +89,7 @@ function loadTodoMetadata(projectRoot: string): Map<string, TodoMetadata> {
           if (depsMatch) {
             const depsStr = depsMatch[1]!;
             if (depsStr.toLowerCase() !== "none" && depsStr !== "-") {
-              const idMatches = depsStr.match(/[A-Z]-[A-Za-z0-9]+-[0-9]+/g);
+              const idMatches = depsStr.match(ID_PATTERN_GLOBAL);
               if (idMatches) deps.push(...idMatches);
             }
           }

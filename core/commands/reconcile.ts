@@ -12,6 +12,7 @@ import { cleanSingleWorktree, closeWorkspacesForIds } from "./clean.ts";
 import { getMux } from "../mux.ts";
 import { readTodo } from "../todo-files.ts";
 import { prTitleMatchesTodo } from "../todo-utils.ts";
+import { ID_IN_FILENAME } from "../types.ts";
 
 /**
  * Dependencies for reconcile, injectable for testing.
@@ -130,7 +131,7 @@ function defaultGetOpenTodoIds(todosDir: string): string[] {
     const ids: string[] = [];
     for (const entry of entries) {
       // Filename format: "{priority_num}-{domain}--{ID}.md"
-      const match = entry.match(/--([A-Z]-[A-Za-z0-9]+-[0-9]+)\.md$/);
+      const match = entry.match(ID_IN_FILENAME);
       if (match) {
         ids.push(match[1]!);
       }

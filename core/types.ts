@@ -77,10 +77,17 @@ export interface RunResult {
   timedOut?: boolean;
 }
 
-// ID pattern: X-code-N (e.g., H-BF5-1, D-2-1)
-export const ID_PATTERN = /[A-Z]-[A-Za-z0-9]+-[0-9]+/;
-export const ID_PATTERN_GLOBAL = /[A-Z]-[A-Za-z0-9]+-[0-9]+/g;
-export const ID_IN_PARENS = /\(([A-Z]-[A-Za-z0-9]+-[0-9]+)/;
+// ID pattern: X-code-N[suffix] (e.g., H-BF5-1, D-2-1, H-CP-7a, H-CP-7b)
+// The optional [a-z]* suffix supports split items like 7a/7b.
+export const ID_PATTERN = /[A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*/;
+export const ID_PATTERN_GLOBAL = /[A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*/g;
+export const ID_IN_PARENS = /\(([A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*)/;
+
+// Filename pattern: extracts ID from "--{ID}.md" suffix in todo filenames
+export const ID_IN_FILENAME = /--([A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*)\.md$/;
+
+// Source string for building composite regexes (keeps the pattern in one place)
+export const ID_PATTERN_SOURCE = "[A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*";
 
 // Wildcard dependency pattern: matches patterns like "MUX-*", "H-MUX-*", "DF-*"
 // Captures an uppercase start, optional hyphen-separated segments, ending with -*

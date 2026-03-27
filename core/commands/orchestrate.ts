@@ -34,6 +34,7 @@ import { reconcile } from "./reconcile.ts";
 import { die } from "../output.ts";
 import { shouldEnterInteractive, runInteractiveFlow } from "../interactive.ts";
 import type { TodoItem } from "../types.ts";
+import { ID_IN_FILENAME } from "../types.ts";
 import { prTitleMatchesTodo } from "../todo-utils.ts";
 import { loadConfig } from "../config.ts";
 import { preflight } from "../preflight.ts";
@@ -685,7 +686,7 @@ function listOpenTodoIds(todosDir: string): string[] {
     const entries = readdirSync(todosDir).filter((f) => f.endsWith(".md"));
     const ids: string[] = [];
     for (const entry of entries) {
-      const match = entry.match(/--([A-Z]-[A-Za-z0-9]+-[0-9]+)\.md$/);
+      const match = entry.match(ID_IN_FILENAME);
       if (match) ids.push(match[1]!);
     }
     return ids;
