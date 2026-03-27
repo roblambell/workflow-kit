@@ -2815,6 +2815,102 @@ describe("Orchestrator", () => {
     });
   });
 
+  // ── M-EVT-1: Deduplicate state transition events ─────────────────
+
+  describe("State transition deduplication (M-EVT-1)", () => {
+    it("same-state transition is a no-op — timestamps unchanged", () => {
+      orch.addItem(makeTodo("H-1-1"));
+      orch.setState("H-1-1", "merged");
+      const item = orch.getItem("H-1-1")!;
+      const origTimestamp = item.lastTransition;
+
+      // processTransitions transitions merged→done (different state), which is fine.
+      // To test the guard directly, manually set to done first, then run again.
+      orch.processTransitions(emptySnapshot());
+      expect(item.state).toBe("done");
+      const doneTimestamp = item.lastTransition;
+
+      // Second call: item is already done — should NOT update lastTransition
+      orch.processTransitions(emptySnapshot());
+      expect(item.state).toBe("done");
+      expect(item.lastTransition).toBe(doneTimestamp);
+    });
+
+    it("consecutive polls with merged snapshot emit exactly one merged transition", () => {
+      orch.addItem(makeTodo("H-1-1"));
+      orch.setState("H-1-1", "merging");
+      const item = orch.getItem("H-1-1")!;
+      item.prNumber = 42;
+
+      const mergedSnap = snapshotWith([
+        { id: "H-1-1", prNumber: 42, prState: "merged" as const, workerAlive: false },
+      ]);
+
+      // Track state transitions across cycles (mimics daemon prevStates logic)
+      const transitions: { from: string; to: string }[] = [];
+
+      // Cycle 1: merging → merged
+      const prev1 = item.state;
+      orch.processTransitions(mergedSnap);
+      if (item.state !== prev1) transitions.push({ from: prev1, to: item.state });
+      expect(item.state).toBe("merged");
+
+      // Cycle 2: merged → done
+      const prev2 = item.state;
+      orch.processTransitions(mergedSnap);
+      if (item.state !== prev2) transitions.push({ from: prev2, to: item.state });
+      expect(item.state).toBe("done");
+
+      // Cycle 3: done — stable, no transition
+      const prev3 = item.state;
+      orch.processTransitions(mergedSnap);
+      if (item.state !== prev3) transitions.push({ from: prev3, to: item.state });
+      expect(item.state).toBe("done");
+
+      // Exactly one transition TO "merged" — no duplicates
+      const mergedEntries = transitions.filter((t) => t.to === "merged");
+      expect(mergedEntries).toHaveLength(1);
+
+      // Total transitions: merging→merged, merged→done
+      expect(transitions).toEqual([
+        { from: "merging", to: "merged" },
+        { from: "merged", to: "done" },
+      ]);
+    });
+
+    it("item-merged event fires only for merged state, not done (daemon parity)", () => {
+      // Simulates the daemon's supervisor event logic: only "merged" state
+      // should trigger an "item-merged" event, not the subsequent "done" state.
+      orch.addItem(makeTodo("H-1-1"));
+      orch.setState("H-1-1", "merging");
+      const item = orch.getItem("H-1-1")!;
+      item.prNumber = 42;
+
+      const mergedSnap = snapshotWith([
+        { id: "H-1-1", prNumber: 42, prState: "merged" as const, workerAlive: false },
+      ]);
+
+      const itemMergedEvents: string[] = [];
+
+      // Cycle 1: merging → merged
+      let prevState = item.state;
+      orch.processTransitions(mergedSnap);
+      if (prevState !== item.state) {
+        // Mirror daemon logic: only emit for "merged", not "done"
+        if (item.state === "merged") itemMergedEvents.push(item.state);
+      }
+
+      // Cycle 2: merged → done
+      prevState = item.state;
+      orch.processTransitions(mergedSnap);
+      if (prevState !== item.state) {
+        if (item.state === "merged") itemMergedEvents.push(item.state);
+      }
+
+      expect(itemMergedEvents).toHaveLength(1);
+    });
+  });
+
   // ── Concurrent transitions in a single tick ──────────────────────
 
   describe("Concurrent transitions in a single tick", () => {
