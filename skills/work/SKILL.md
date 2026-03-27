@@ -134,7 +134,7 @@ This skill interactively selects TODO items, then delegates all orchestration to
 12. **Supervisor mode:**
 
     AskUserQuestion -- "Enable LLM supervisor? (monitors for anomalies, logs friction)"
-    - A) Yes (recommended for unattended runs) -- an LLM periodically reviews orchestrator state, detects anomalies, and logs friction
+    - A) Yes (recommended for unattended runs) -- a separate AI session monitors the pipeline, detects anomalies, nudges stuck workers, and logs friction
     - B) No (daemon only) -- deterministic daemon with no LLM oversight
 
     Store SUPERVISOR_ENABLED (boolean, default: false).
@@ -164,6 +164,14 @@ This skill interactively selects TODO items, then delegates all orchestration to
      --supervisor
    ```
 
+   **Output modes:** When run in a TTY, the daemon shows an interactive TUI with a live status table. Use `--json` for structured JSON log lines (useful for piping to other tools or CI):
+
+   ```bash
+   ninthwave orchestrate \
+     --items <comma-separated-IDs> \
+     --json
+   ```
+
 2. Run the command. The orchestrator handles the full lifecycle automatically:
    - **Queued** items wait for dependencies to clear — or **stack early** if a dependency is already in-flight (ci-passed, review-pending, or merging). Stacked items launch from the dependency's branch instead of main.
    - **Ready** items get launched as worker sessions (up to the WIP limit)
@@ -175,13 +183,13 @@ This skill interactively selects TODO items, then delegates all orchestration to
    - Adaptive polling adjusts check frequency based on current state
    - Crash recovery reconstructs state from disk and GitHub on restart
 
-3. The orchestrator emits structured JSON log lines. Monitor the output for:
+3. The orchestrator emits structured JSON log lines (always in `--json` mode; TUI mode also logs to `~/.ninthwave/state/<project>/daemon.log`). Monitor the output for:
    - `orchestrate_start` — daemon started, lists all items
    - `transition` — items moving between states (e.g., `queued → ready → launching`)
    - `action_execute` / `action_result` — launches, merges, cleanups
    - `orchestrate_complete` — all items reached terminal state (done or stuck)
    - `shutdown` — SIGINT received, clean exit
-   - `supervisor_tick` — (supervisor mode only) periodic LLM review of orchestrator state
+   - `supervisor_event` — (supervisor mode only) the daemon sent an event to the supervisor session
    - `supervisor_anomaly` — (supervisor mode only) supervisor detected an anomaly and sent a hint to a worker
    - `supervisor_friction` — (supervisor mode only) supervisor logged a friction observation
 

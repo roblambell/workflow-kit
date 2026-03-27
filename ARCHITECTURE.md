@@ -111,7 +111,7 @@ ninthwave orchestrate (event loop, ~10s poll)
   │   ├─ rebase   → git.ts daemonRebase
   │   ├─ clean    → clean.ts cleanSingleWorktree
   │   └─ launch-review → start.ts launchReviewWorker
-  └─ every 5min: supervisor tick (optional LLM anomaly check)
+  └─ every 5min: supervisor heartbeat sent to supervisor session (optional, --supervisor flag)
 
 Post-merge
   ├─ worktree and workspace cleaned up
@@ -191,19 +191,22 @@ The core event loop in [`core/commands/orchestrate.ts`](core/commands/orchestrat
 3. Execute each action via `executeAction()` (launch workers, merge PRs, send messages, rebase branches).
 4. Persist state to `~/.ninthwave/state/<project>/state.json` for daemon resilience.
 
-The daemon can run in the foreground (interactive) or background (`--daemon` flag). In daemon mode, state survives restarts.
+The daemon supports two output modes:
 
-### Optional LLM Supervisor
+- **TUI mode** (default when stdout is a TTY): renders a live status table using [`core/status-render.ts`](core/status-render.ts), with keyboard shortcuts for interacting with the pipeline.
+- **JSON mode** (`--json` flag): emits structured JSON log lines, suitable for piping to other tools or CI environments.
 
-Defined in [`core/supervisor.ts`](core/supervisor.ts). Runs every 5 minutes alongside the daemon:
+The daemon can also run in the background (`--daemon` flag). In daemon mode, state survives restarts.
 
-1. Collects recent log entries and current item states.
-2. Builds a prompt (`buildSupervisorPrompt`) and calls `claude --print --model haiku`.
-3. Parses the structured JSON response (`parseSupervisorResponse`).
-4. Applies suggested interventions (send nudge messages to stalled workers, escalate anomalies).
-5. Writes friction observations to `.ninthwave/friction/` for the self-improvement loop.
+### Optional LLM Supervisor (Session-Based)
 
-**Backoff and disable:** After `BACKOFF_THRESHOLD` (3) consecutive LLM failures, the supervisor interval doubles per failure, capped at 30 minutes. After `DISABLE_THRESHOLD` (10) failures, the supervisor is disabled for the session.
+The supervisor runs as a **separate AI session** alongside the daemon, not as an inline LLM call. The agent prompt lives in [`agents/supervisor.md`](agents/supervisor.md); activation logic is in [`core/supervisor.ts`](core/supervisor.ts).
+
+1. The daemon launches a supervisor session via `launchSupervisorSession()` in [`core/commands/start.ts`](core/commands/start.ts).
+2. The daemon sends structured event messages to the supervisor session on state transitions and periodic heartbeats (default: every 5 minutes).
+3. The supervisor session observes pipeline state, detects anomalies (stalled workers, CI cycling), nudges workers via `cmux send`, and logs friction to `.ninthwave/friction/`.
+
+This session-based approach gives the supervisor full tool access (bash, file I/O, git) and multi-turn reasoning — unlike the previous inline `claude --print` approach which was limited to single-shot responses.
 
 The supervisor is activated explicitly via `--supervisor` flag, or automatically in dogfooding mode (when `skills/work/SKILL.md` exists).
 
