@@ -1,7 +1,7 @@
 // `ninthwave init` — zero-input project initialization with auto-detection.
 //
 // Detects: (1) repo structure (monorepo vs single), (2) CI system (GitHub Actions),
-// (3) multiplexer (cmux, tmux), (4) AI tool config (.claude/, .opencode/, copilot).
+// (3) multiplexer (cmux), (4) AI tool config (.claude/, .opencode/, copilot).
 // Writes .ninthwave/config with detected settings, runs setup scaffolding,
 // and prints a summary.
 
@@ -35,7 +35,7 @@ export interface DetectionResult {
   /** Detected test command, e.g. "bun test" */
   testCommand: string | null;
   /** Detected multiplexer */
-  mux: "cmux" | "tmux" | null;
+  mux: "cmux" | null;
   /** Detected AI tool configurations */
   aiTools: string[];
   /** Repo structure type */
@@ -139,15 +139,11 @@ export function detectTestCommand(
 
 /**
  * Detect available terminal multiplexer.
- * Priority: cmux binary > tmux binary > TMUX env var (indicates tmux session).
  */
-export function detectMux(deps: InitDeps = {}): "cmux" | "tmux" | null {
+export function detectMux(deps: InitDeps = {}): "cmux" | null {
   const commandExists = deps.commandExists ?? defaultCommandExists;
-  const getEnv = deps.getEnv ?? defaultGetEnv;
 
   if (commandExists("cmux")) return "cmux";
-  if (commandExists("tmux")) return "tmux";
-  if (getEnv("TMUX")) return "tmux";
 
   return null;
 }
@@ -582,7 +578,7 @@ export function printSummary(detection: DetectionResult): void {
     );
   } else {
     console.log(
-      `  ${YELLOW}!${RESET} Multiplexer: none detected ${DIM}(install cmux or tmux for parallel sessions)${RESET}`,
+      `  ${YELLOW}!${RESET} Multiplexer: none detected ${DIM}(install cmux for parallel sessions)${RESET}`,
     );
   }
 

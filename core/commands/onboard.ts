@@ -6,7 +6,7 @@
 // inside the chosen multiplexer.
 
 import { createInterface } from "readline";
-import { existsSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync } from "fs";
 import { join } from "path";
 import {
   BOLD,
@@ -54,7 +54,7 @@ export const AI_TOOLS: AITool[] = [
 // ── Multiplexer descriptors ─────────────────────────────────────────
 
 export interface MuxOption {
-  type: "cmux" | "zellij" | "tmux";
+  type: "cmux";
   name: string;
   description: string;
   installCmd: string;
@@ -66,18 +66,6 @@ export const MUX_OPTIONS: MuxOption[] = [
     name: "cmux",
     description: "Visual sidebar (recommended)",
     installCmd: "brew install --cask manaflow-ai/cmux/cmux",
-  },
-  {
-    type: "zellij",
-    name: "zellij",
-    description: "Tiling terminal multiplexer",
-    installCmd: "brew install zellij",
-  },
-  {
-    type: "tmux",
-    name: "tmux",
-    description: "Classic headless multiplexer",
-    installCmd: "brew install tmux",
   },
 ];
 
@@ -98,8 +86,6 @@ export interface OnboardDeps {
   runShell?: ShellRunner;
   sleep?: SleepFn;
   getBundleDir?: () => string;
-  /** Override to prevent process replacement during tests. */
-  execAttach?: (cmd: string, args: string[]) => void;
 }
 
 const defaultCommandExists: CommandChecker = (cmd: string): boolean => {
@@ -121,19 +107,11 @@ const defaultSleep: SleepFn = (ms: number): void => {
   Bun.sleepSync(ms);
 };
 
-const defaultExecAttach = (cmd: string, args: string[]): void => {
-  Bun.spawnSync([cmd, ...args], {
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-};
-
 // ── Detection functions ─────────────────────────────────────────────
 
 /**
  * Detect all installed multiplexers.
- * Returns matching MuxOption entries in preference order (cmux > zellij > tmux).
+ * Returns matching MuxOption entries.
  */
 export function detectInstalledMuxes(
   commandExists: CommandChecker = defaultCommandExists,
@@ -182,77 +160,34 @@ const WELCOME_MSG =
  * Launch the AI tool inside the chosen multiplexer and pre-seed the welcome prompt.
  *
  * Returns a session reference string on success, or null on failure.
- * For tmux/zellij, the attach step happens AFTER this returns.
  */
 export function launchSession(
-  muxType: "cmux" | "zellij" | "tmux",
+  muxType: "cmux",
   aiCommand: string,
   cwd: string,
   runShell: ShellRunner = run,
   sleep: SleepFn = defaultSleep,
 ): string | null {
-  const sessionName = "ninthwave";
-
-  switch (muxType) {
-    case "cmux": {
-      const result = runShell("cmux", [
-        "new-workspace",
-        "--cwd",
-        cwd,
-        "--command",
-        aiCommand,
-      ]);
-      if (result.exitCode !== 0) return null;
-      const ref = result.stdout.match(/workspace:\d+/)?.[0] ?? null;
-      if (ref) {
-        // Best-effort: wait for tool to start, then send welcome message
-        sleep(3000);
-        runShell("cmux", [
-          "send",
-          "--workspace",
-          ref,
-          WELCOME_MSG + "\n",
-        ]);
-      }
-      return ref;
-    }
-
-    case "tmux": {
-      const create = runShell("tmux", [
-        "new-session",
-        "-d",
-        "-s",
-        sessionName,
-        "-c",
-        cwd,
-        aiCommand,
-      ]);
-      if (create.exitCode !== 0) return null;
-      // Best-effort pre-seed: wait for tool to start, then send welcome
-      sleep(3000);
-      runShell("tmux", [
-        "send-keys",
-        "-t",
-        sessionName,
-        WELCOME_MSG,
-        "Enter",
-      ]);
-      return sessionName;
-    }
-
-    case "zellij": {
-      // Zellij doesn't support detached session creation, so we use a
-      // temporary layout file to launch the AI tool in the initial pane.
-      // The actual attach happens separately via execAttach.
-      const layoutPath = `/tmp/nw-onboard-${Date.now()}.kdl`;
-      writeFileSync(
-        layoutPath,
-        `layout {\n  pane command="${aiCommand}"\n}\n`,
-      );
-      // Return the layout path as a reference — the caller uses it when attaching
-      return `zellij:${sessionName}:${layoutPath}`;
-    }
+  const result = runShell("cmux", [
+    "new-workspace",
+    "--cwd",
+    cwd,
+    "--command",
+    aiCommand,
+  ]);
+  if (result.exitCode !== 0) return null;
+  const ref = result.stdout.match(/workspace:\d+/)?.[0] ?? null;
+  if (ref) {
+    // Best-effort: wait for tool to start, then send welcome message
+    sleep(3000);
+    runShell("cmux", [
+      "send",
+      "--workspace",
+      ref,
+      WELCOME_MSG + "\n",
+    ]);
   }
+  return ref;
 }
 
 // ── Main onboarding flow ────────────────────────────────────────────
@@ -272,7 +207,6 @@ export async function onboard(
   const runShell = deps.runShell ?? run;
   const sleep = deps.sleep ?? defaultSleep;
   const bundleDir = (deps.getBundleDir ?? getBundleDir)();
-  const execAttach = deps.execAttach ?? defaultExecAttach;
 
   // ── Step 1: Welcome ─────────────────────────────────────────────
   console.log();
@@ -425,29 +359,6 @@ export async function onboard(
   );
   console.log();
 
-  // For terminal muxes, attach to the session so the user is "inside" it
-  if (chosenMux.type === "tmux") {
-    console.log(`${DIM}Attaching to tmux session...${RESET}`);
-    execAttach("tmux", ["attach-session", "-t", "ninthwave"]);
-  } else if (chosenMux.type === "zellij") {
-    // Parse the session name and layout path from our ref
-    const parts = sessionRef.split(":");
-    const zellijSession = parts[1]!;
-    const layoutPath = parts.slice(2).join(":");
-    console.log(`${DIM}Attaching to zellij session...${RESET}`);
-    execAttach("zellij", [
-      "-s",
-      zellijSession,
-      "--layout",
-      layoutPath,
-    ]);
-    // Clean up temp layout file (best-effort, may not run if exec replaces process)
-    try {
-      unlinkSync(layoutPath);
-    } catch {
-      // Ignore — file may already be gone
-    }
-  }
   // cmux: GUI app, workspace is already visible — no attach needed
 }
 

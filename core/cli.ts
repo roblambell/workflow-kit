@@ -53,7 +53,7 @@ export const COMMANDS: ReadonlyArray<[string, string]> = [
   ["deps <ID>", "Show dependency chain"],
   ["conflicts <ID1> <ID2>...", "Check file conflicts"],
   ["batch-order <ID1> [ID2]...", "Group items into dependency batches"],
-  ["start <ID1> [ID2]... [--mux cmux|tmux]", "Launch parallel sessions"],
+  ["start <ID1> [ID2]...", "Launch parallel sessions"],
   [
     "status [--watch] [--flat]",
     "Show active worktrees (--watch: refresh, --flat: no tree)",

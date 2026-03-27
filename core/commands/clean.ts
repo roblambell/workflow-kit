@@ -47,7 +47,7 @@ export function closeWorkspacesForIds(
       continue;
     }
 
-    // tmux format: session name contains the TODO ID (e.g., "nw-H-WRK-1-1")
+    // Workspace name contains the TODO ID (e.g., "nw-H-WRK-1-1")
     for (const id of ids) {
       if (trimmed.includes(id)) {
         info(`Closing workspace ${trimmed} (${id})`);

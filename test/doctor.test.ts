@@ -144,7 +144,7 @@ describe("checkAiTool", () => {
 });
 
 describe("checkMultiplexer", () => {
-  it("passes with cmux (preferred)", () => {
+  it("passes with cmux", () => {
     const runner = mockRunner({
       "which cmux": {
         stdout: "/usr/local/bin/cmux",
@@ -155,33 +155,6 @@ describe("checkMultiplexer", () => {
     const result = checkMultiplexer(runner);
     expect(result.status).toBe("pass");
     expect(result.message).toContain("cmux");
-    expect(result.message).toContain("preferred");
-  });
-
-  it("passes with tmux", () => {
-    const runner = mockRunner({
-      "which tmux": {
-        stdout: "/usr/local/bin/tmux",
-        stderr: "",
-        exitCode: 0,
-      },
-    });
-    const result = checkMultiplexer(runner);
-    expect(result.status).toBe("pass");
-    expect(result.message).toContain("tmux");
-  });
-
-  it("passes with zellij", () => {
-    const runner = mockRunner({
-      "which zellij": {
-        stdout: "/usr/local/bin/zellij",
-        stderr: "",
-        exitCode: 0,
-      },
-    });
-    const result = checkMultiplexer(runner);
-    expect(result.status).toBe("pass");
-    expect(result.message).toContain("zellij");
   });
 
   it("fails when no multiplexer is available", () => {

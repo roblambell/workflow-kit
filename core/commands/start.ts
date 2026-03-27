@@ -42,7 +42,7 @@ export function sanitizeTitle(title: string): string {
 
 /**
  * Replace non-ASCII characters that break `printf %q` / `$'...'` shell quoting
- * when sent through multiplexers (tmux/zellij). Converts common Unicode
+ * when sent through multiplexers. Converts common Unicode
  * punctuation to ASCII equivalents and strips anything else non-ASCII.
  */
 export function sanitizeForShellQuoting(text: string): string {
@@ -557,23 +557,9 @@ export async function cmdStart(
   projectRoot: string,
   muxOverride?: Multiplexer,
 ): Promise<void> {
-  // Parse flags before treating remaining args as IDs
-  const rawIds: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--mux") {
-      const value = args[i + 1];
-      if (value !== "cmux" && value !== "zellij" && value !== "tmux") {
-        die(`Invalid --mux value: "${value ?? ""}". Must be "cmux", "zellij", or "tmux".`);
-      }
-      process.env.NINTHWAVE_MUX = value;
-      i++; // skip value
-    } else {
-      rawIds.push(args[i]!);
-    }
-  }
-  const ids = splitIds(rawIds);
+  const ids = splitIds(args);
 
-  if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...] [--mux cmux|tmux]");
+  if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...]");
   const items = parseTodos(todosDir, worktreeDir);
   const itemMap = new Map<string, TodoItem>();
   for (const item of items) {

@@ -355,7 +355,7 @@ describe("formatStatusTable", () => {
   it("shows header and items", () => {
     const items = [
       makeItem("H-STU-1", "implementing", "Rewrite status", 42),
-      makeItem("H-MUX-2", "merged", "Add tmux adapter", 41),
+      makeItem("H-MUX-2", "merged", "Add mux adapter", 41),
     ];
     const output = stripAnsi(formatStatusTable(items));
     expect(output).toContain("ninthwave status");
@@ -433,7 +433,7 @@ describe("formatStatusTable", () => {
   it("is readable on standard 80-column terminal", () => {
     const items = [
       makeItem("H-STU-1", "implementing", "Rewrite status", 42),
-      makeItem("H-MUX-2", "merged", "Add tmux adapter", 41),
+      makeItem("H-MUX-2", "merged", "Add mux adapter", 41),
       makeItem("M-CI-3", "ci-failed", "Fix CI timeout", 40),
     ];
     const output = formatStatusTable(items, 80);

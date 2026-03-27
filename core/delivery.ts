@@ -1,5 +1,5 @@
 // Shared delivery verification and retry logic for terminal multiplexer adapters.
-// Extracted from send-message.ts so both cmux and tmux paths share identical
+// Extracted from send-message.ts so multiplexer paths share identical
 // verification and retry semantics.
 
 export type Sleeper = (ms: number) => void;

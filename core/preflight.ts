@@ -86,21 +86,15 @@ export function checkAiTool(runner: ShellRunner): CheckResult {
   };
 }
 
-/** Check: at least one multiplexer available (cmux, tmux, zellij). */
+/** Check: cmux multiplexer available. */
 export function checkMultiplexer(runner: ShellRunner): CheckResult {
   if (runner("which", ["cmux"]).exitCode === 0) {
-    return { status: "pass", message: "cmux available (preferred)" };
-  }
-  if (runner("which", ["tmux"]).exitCode === 0) {
-    return { status: "pass", message: "tmux available" };
-  }
-  if (runner("which", ["zellij"]).exitCode === 0) {
-    return { status: "pass", message: "zellij available" };
+    return { status: "pass", message: "cmux available" };
   }
 
   return {
     status: "fail",
-    message: "No multiplexer available (need cmux, tmux, or zellij)",
+    message: "No multiplexer available (need cmux)",
     detail: "Install: brew install --cask manaflow-ai/cmux/cmux",
   };
 }

@@ -128,11 +128,11 @@ Key files: [`core/parser.ts`](core/parser.ts) (read todos), [`core/commands/star
 
 ### `Multiplexer` — `core/mux.ts`
 
-Abstracts terminal multiplexer operations so the orchestrator is not tied to cmux.
+Abstracts terminal multiplexer operations behind a clean interface.
 
 ```typescript
 interface Multiplexer {
-  readonly type: MuxType;                                           // "cmux" | "tmux" | "zellij"
+  readonly type: MuxType;                                           // "cmux"
   isAvailable(): boolean;
   launchWorkspace(cwd: string, command: string, todoId?: string): string | null;
   sendMessage(ref: string, message: string): boolean;
@@ -142,7 +142,7 @@ interface Multiplexer {
 }
 ```
 
-Concrete implementations: `CmuxAdapter`, `TmuxAdapter`, `ZellijAdapter`. Auto-detection via `getMux()` checks `NINTHWAVE_MUX` env var first, then detects the active session type, then falls back by binary availability.
+Concrete implementation: `CmuxAdapter`. Auto-detection via `getMux()` checks `CMUX_WORKSPACE_ID` env var first, then falls back to binary availability.
 
 ---
 
@@ -152,11 +152,11 @@ Concrete implementations: `CmuxAdapter`, `TmuxAdapter`, `ZellijAdapter`. Auto-de
 
 1. Add your type to `MuxType` in `core/mux.ts`:
    ```typescript
-   export type MuxType = "cmux" | "zellij" | "tmux" | "mymux";
+   export type MuxType = "cmux" | "mymux";
    ```
-2. Implement the `Multiplexer` interface as a new class in `core/mux.ts` (follow `TmuxAdapter` as a template).
+2. Implement the `Multiplexer` interface as a new class in `core/mux.ts` (follow `CmuxAdapter` as a template).
 3. Add detection logic in `detectMuxType()` — check an env var or binary.
-4. Add a `case "mymux"` branch in the `getMux()` switch.
+4. Add a case in `getMux()` to return the new adapter.
 5. Add tests in `test/mux.test.ts`.
 
 ### Adding a New CLI Command

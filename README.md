@@ -161,10 +161,8 @@ curl -fsSL https://raw.githubusercontent.com/ninthwave-sh/ninthwave/main/install
 | Dependency | Purpose | Install |
 |------------|---------|---------|
 | AI coding tool | Runs the sessions | [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview), [OpenCode](https://opencode.ai), or [Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli) ([integration guide](docs/copilot-cli.md)) |
-| [cmux](https://cmux.com) **or** [tmux](https://github.com/tmux/tmux) | Parallel terminal sessions | cmux *(recommended)*: `brew install --cask manaflow-ai/cmux/cmux`<br>tmux: `brew install tmux` |
+| [cmux](https://cmux.com) | Parallel terminal sessions | `brew install --cask manaflow-ai/cmux/cmux` |
 | [gh](https://cli.github.com) | PR operations | `brew install gh && gh auth login` |
-
-> **cmux vs tmux:** cmux provides a visual sidebar showing all active sessions with live status. tmux works as a headless alternative — same orchestration, no GUI. If you already have tmux, ninthwave auto-detects it. Install cmux for the best experience.
 
 ### Set up a project
 
@@ -192,34 +190,6 @@ One developer runs setup. The team gets everything via `git pull`.
 **Bring your own agent.** Keep your billing, your interface, your API keys. Workers read your project instructions for conventions — same coding standards, same test commands, same architecture guardrails. No vendor lock-in. Works with Claude Code, OpenCode, Copilot CLI, and anything supporting the [Agent Skills standard](https://agentskills.io).
 
 **Cross-repo by convention.** Work items can target different repositories via a `Repo:` field. Sibling directories resolve automatically — no config file required.
-
-## Using with tmux
-
-ninthwave auto-detects your multiplexer. If cmux is installed, it's preferred. Otherwise, tmux is used automatically.
-
-To explicitly select a multiplexer:
-
-```bash
-# Via CLI flag
-nw start C-UO-1 --mux tmux
-nw orchestrate --items C-UO-1,H-UO-2 --mux tmux
-
-# Via environment variable (persists for the session)
-export NINTHWAVE_MUX=tmux
-```
-
-**Differences when using tmux:**
-
-| Feature | cmux | tmux |
-|---------|------|------|
-| Visual sidebar | ✓ Live status indicators | ✗ No sidebar |
-| Switch sessions | Click in sidebar | `tmux attach -t nw-1` |
-| Session management | Automatic | `tmux list-sessions` to see `nw-*` sessions |
-| Orchestration | Full | Full |
-| CI monitoring | Full | Full |
-| PR feedback loop | Full | Full |
-
-All orchestration features work identically — the only difference is the UI.
 
 ### Verify your setup
 

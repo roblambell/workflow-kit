@@ -2109,27 +2109,27 @@ describe("isWorkerAlive", () => {
     expect(isWorkerAlive(itemMissing, mux)).toBe(false);
   });
 
-  // ── tmux session name format (L-WRK-10) ──────────────────────────
+  // ── nw-prefixed session name format (L-WRK-10) ─────────────────────
 
-  it("returns true when tmux session name contains the TODO ID", () => {
+  it("returns true when nw-prefixed session name contains the TODO ID", () => {
     const mux = mockMux("nw-H-WRK-1-1");
     const item = makeItem("H-WRK-1", "nw-H-WRK-1-1");
     expect(isWorkerAlive(item, mux)).toBe(true);
   });
 
-  it("matches tmux session by workspace ref", () => {
+  it("matches session by workspace ref", () => {
     const mux = mockMux("nw-M-CI-2-3\nnw-H-WRK-1-1");
     const item = makeItem("H-WRK-1", "nw-H-WRK-1-1");
     expect(isWorkerAlive(item, mux)).toBe(true);
   });
 
-  it("matches tmux session by TODO ID in session name", () => {
+  it("matches session by TODO ID in session name", () => {
     const mux = mockMux("nw-H-WRK-1-1\nnw-M-CI-2-2");
     const item = makeItem("H-WRK-1", "nw-H-WRK-1-1");
     expect(isWorkerAlive(item, mux)).toBe(true);
   });
 
-  it("returns false for tmux session not in listing", () => {
+  it("returns false for session not in listing", () => {
     const mux = mockMux("nw-M-CI-2-1");
     const item = makeItem("H-WRK-1", "nw-H-WRK-1-1");
     expect(isWorkerAlive(item, mux)).toBe(false);

@@ -33,52 +33,12 @@ describe("detectInstalledMuxes", () => {
     expect(result).toEqual([]);
   });
 
-  it("returns only cmux when cmux is installed", () => {
+  it("returns cmux when cmux is installed", () => {
     const commandExists: CommandChecker = (cmd) => cmd === "cmux";
     const result = detectInstalledMuxes(commandExists);
 
     expect(result).toHaveLength(1);
     expect(result[0]!.type).toBe("cmux");
-  });
-
-  it("returns only tmux when tmux is installed", () => {
-    const commandExists: CommandChecker = (cmd) => cmd === "tmux";
-    const result = detectInstalledMuxes(commandExists);
-
-    expect(result).toHaveLength(1);
-    expect(result[0]!.type).toBe("tmux");
-  });
-
-  it("returns only zellij when zellij is installed", () => {
-    const commandExists: CommandChecker = (cmd) => cmd === "zellij";
-    const result = detectInstalledMuxes(commandExists);
-
-    expect(result).toHaveLength(1);
-    expect(result[0]!.type).toBe("zellij");
-  });
-
-  it("returns all three when all are installed", () => {
-    const result = detectInstalledMuxes(() => true);
-
-    expect(result).toHaveLength(3);
-    expect(result.map((m) => m.type)).toEqual(["cmux", "zellij", "tmux"]);
-  });
-
-  it("returns cmux and tmux when both are installed", () => {
-    const commandExists: CommandChecker = (cmd) =>
-      cmd === "cmux" || cmd === "tmux";
-    const result = detectInstalledMuxes(commandExists);
-
-    expect(result).toHaveLength(2);
-    expect(result.map((m) => m.type)).toEqual(["cmux", "tmux"]);
-  });
-
-  it("preserves preference order (cmux > zellij > tmux)", () => {
-    const result = detectInstalledMuxes(() => true);
-
-    expect(result[0]!.type).toBe("cmux");
-    expect(result[1]!.type).toBe("zellij");
-    expect(result[2]!.type).toBe("tmux");
   });
 });
 
@@ -226,44 +186,6 @@ describe("launchSession", () => {
     expect(calls[0]!.args).toContain("claude");
   });
 
-  it("launches tmux session and returns session name", () => {
-    const calls: Array<{ cmd: string; args: string[] }> = [];
-    const mockRun = (cmd: string, args: string[]) => {
-      calls.push({ cmd, args });
-      return { stdout: "", stderr: "", exitCode: 0 };
-    };
-
-    const ref = launchSession("tmux", "claude", "/tmp/project", mockRun, () => {});
-
-    expect(ref).toBe("ninthwave");
-    expect(calls[0]!.cmd).toBe("tmux");
-    expect(calls[0]!.args).toContain("new-session");
-    expect(calls[0]!.args).toContain("ninthwave");
-    expect(calls[0]!.args).toContain("claude");
-  });
-
-  it("sends pre-seed message to tmux after delay", () => {
-    const calls: Array<{ cmd: string; args: string[] }> = [];
-    let sleptMs = 0;
-    const mockRun = (cmd: string, args: string[]) => {
-      calls.push({ cmd, args });
-      return { stdout: "", stderr: "", exitCode: 0 };
-    };
-    const mockSleep = (ms: number) => {
-      sleptMs += ms;
-    };
-
-    launchSession("tmux", "claude", "/tmp/project", mockRun, mockSleep);
-
-    // Second call should be send-keys with the welcome message
-    const sendCall = calls.find(
-      (c) => c.cmd === "tmux" && c.args.includes("send-keys"),
-    );
-    expect(sendCall).toBeDefined();
-    expect(sendCall!.args).toContain("ninthwave");
-    expect(sleptMs).toBeGreaterThan(0);
-  });
-
   it("sends pre-seed message to cmux workspace after delay", () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     let sleptMs = 0;
@@ -288,34 +210,10 @@ describe("launchSession", () => {
     expect(sleptMs).toBeGreaterThan(0);
   });
 
-  it("creates zellij layout file and returns ref with session and path", () => {
-    const mockRun = () => ({ stdout: "", stderr: "", exitCode: 0 });
-
-    const ref = launchSession("zellij", "claude", "/tmp/project", mockRun, () => {});
-
-    expect(ref).toBeTruthy();
-    expect(ref).toMatch(/^zellij:ninthwave:/);
-    // Layout file should exist
-    const layoutPath = ref!.split(":").slice(2).join(":");
-    expect(existsSync(layoutPath)).toBe(true);
-    // Clean up
-    try {
-      require("fs").unlinkSync(layoutPath);
-    } catch {}
-  });
-
   it("returns null when cmux workspace creation fails", () => {
     const mockRun = () => ({ stdout: "", stderr: "error", exitCode: 1 });
 
     const ref = launchSession("cmux", "claude", "/tmp/project", mockRun, () => {});
-
-    expect(ref).toBeNull();
-  });
-
-  it("returns null when tmux session creation fails", () => {
-    const mockRun = () => ({ stdout: "", stderr: "error", exitCode: 1 });
-
-    const ref = launchSession("tmux", "claude", "/tmp/project", mockRun, () => {});
 
     expect(ref).toBeNull();
   });
@@ -449,67 +347,6 @@ describe("onboard", () => {
     expect(existsSync(join(projectDir, ".ninthwave"))).toBe(true);
   });
 
-  it("attaches to tmux session after launch", async () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle");
-    let attachCmd: string | null = null;
-    let attachArgs: string[] = [];
-
-    const origLog = console.log;
-    console.log = () => {};
-
-    try {
-      await onboard(projectDir, {
-        commandExists: (cmd) => cmd === "tmux" || cmd === "claude",
-        prompt: async () => "",
-        runShell: () => ({ stdout: "", stderr: "", exitCode: 0 }),
-        sleep: () => {},
-        getBundleDir: () => bundleDir,
-        execAttach: (cmd, args) => {
-          attachCmd = cmd;
-          attachArgs = args;
-        },
-      });
-    } finally {
-      console.log = origLog;
-    }
-
-    expect(attachCmd).toBe("tmux");
-    expect(attachArgs).toContain("attach-session");
-    expect(attachArgs).toContain("ninthwave");
-  });
-
-  it("attaches to zellij session after launch", async () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle");
-    let attachCmd: string | null = null;
-    let attachArgs: string[] = [];
-
-    const origLog = console.log;
-    console.log = () => {};
-
-    try {
-      await onboard(projectDir, {
-        commandExists: (cmd) => cmd === "zellij" || cmd === "claude",
-        prompt: async () => "",
-        runShell: () => ({ stdout: "", stderr: "", exitCode: 0 }),
-        sleep: () => {},
-        getBundleDir: () => bundleDir,
-        execAttach: (cmd, args) => {
-          attachCmd = cmd;
-          attachArgs = args;
-        },
-      });
-    } finally {
-      console.log = origLog;
-    }
-
-    expect(attachCmd).toBe("zellij");
-    expect(attachArgs).toContain("-s");
-    expect(attachArgs).toContain("ninthwave");
-    expect(attachArgs).toContain("--layout");
-  });
-
   it("exits when user declines single detected mux", async () => {
     const projectDir = setupTempRepo();
     const logs: string[] = [];
@@ -518,7 +355,7 @@ describe("onboard", () => {
 
     try {
       await onboard(projectDir, {
-        commandExists: (cmd) => cmd === "tmux" || cmd === "claude",
+        commandExists: (cmd) => cmd === "cmux" || cmd === "claude",
         prompt: async () => "n",
         runShell: () => ({ stdout: "", stderr: "", exitCode: 0 }),
         sleep: () => {},
@@ -559,41 +396,6 @@ describe("onboard", () => {
 
     const output = logs.join("\n");
     expect(output).toContain("Install a different AI tool");
-  });
-
-  it("lets user choose from multiple muxes", async () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle");
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-
-    try {
-      await onboard(projectDir, {
-        commandExists: (cmd) =>
-          cmd === "cmux" || cmd === "tmux" || cmd === "claude",
-        prompt: async (q) => {
-          // Choose tmux (second option) when presented with a choice
-          if (q.includes("Choose")) return "2";
-          return ""; // accept defaults
-        },
-        runShell: (cmd, args) => {
-          // tmux new-session should be called since user chose tmux
-          if (cmd === "tmux" && args[0] === "new-session") {
-            return { stdout: "", stderr: "", exitCode: 0 };
-          }
-          return { stdout: "", stderr: "", exitCode: 0 };
-        },
-        sleep: () => {},
-        getBundleDir: () => bundleDir,
-        execAttach: () => {},
-      });
-    } finally {
-      console.log = origLog;
-    }
-
-    const output = logs.join("\n");
-    expect(output).toContain("multiple multiplexers");
   });
 
   it("handles session launch failure gracefully", async () => {

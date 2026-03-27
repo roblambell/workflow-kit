@@ -93,8 +93,8 @@ export interface PrerequisiteResult {
   missing: string[];
   /** warnings (e.g. gh not authenticated) */
   warnings: string[];
-  /** detected multiplexer: "cmux", "zellij", "tmux", or null if none found */
-  detectedMux: "cmux" | "zellij" | "tmux" | null;
+  /** detected multiplexer: "cmux" or null if not found */
+  detectedMux: "cmux" | null;
 }
 
 /**
@@ -123,25 +123,15 @@ export function checkPrerequisites(
     }
   }
 
-  // Detect multiplexer (cmux preferred, zellij and tmux as alternatives)
-  let detectedMux: "cmux" | "zellij" | "tmux" | null = null;
+  // Detect multiplexer
+  let detectedMux: "cmux" | null = null;
   if (commandExists("cmux")) {
     detectedMux = "cmux";
-    console.log(`  ${GREEN}✓${RESET} cmux ${DIM}(multiplexer — visual sidebar, recommended)${RESET}`);
-  } else if (commandExists("zellij")) {
-    detectedMux = "zellij";
-    console.log(`  ${GREEN}✓${RESET} zellij ${DIM}(multiplexer — tiling terminal)${RESET}`);
-    console.log(`    ${DIM}Tip: Install cmux for a visual sidebar: ${BOLD}brew install --cask manaflow-ai/cmux/cmux${RESET}`);
-  } else if (commandExists("tmux")) {
-    detectedMux = "tmux";
-    console.log(`  ${GREEN}✓${RESET} tmux ${DIM}(multiplexer — headless sessions)${RESET}`);
-    console.log(`    ${DIM}Tip: Install cmux for a visual sidebar: ${BOLD}brew install --cask manaflow-ai/cmux/cmux${RESET}`);
+    console.log(`  ${GREEN}✓${RESET} cmux ${DIM}(multiplexer — visual sidebar)${RESET}`);
   } else {
-    console.log(`  ${RED}✗${RESET} cmux, zellij, or tmux ${DIM}(terminal multiplexer for parallel sessions)${RESET}`);
-    console.log(`    Install cmux (recommended): ${BOLD}brew install --cask manaflow-ai/cmux/cmux${RESET}`);
-    console.log(`    Or install zellij: ${BOLD}brew install zellij${RESET}`);
-    console.log(`    Or install tmux: ${BOLD}brew install tmux${RESET}`);
-    missing.push("multiplexer (cmux, zellij, or tmux)");
+    console.log(`  ${RED}✗${RESET} cmux ${DIM}(terminal multiplexer for parallel sessions)${RESET}`);
+    console.log(`    Install: ${BOLD}brew install --cask manaflow-ai/cmux/cmux${RESET}`);
+    missing.push("cmux");
   }
 
   // If gh is present, check authentication

@@ -148,40 +148,6 @@ describe("detectMux", () => {
   it("detects cmux when binary exists on PATH", () => {
     const deps: InitDeps = {
       commandExists: ((cmd: string) => cmd === "cmux") as CommandChecker,
-      getEnv: () => undefined,
-    };
-
-    const result = detectMux(deps);
-
-    expect(result).toBe("cmux");
-  });
-
-  it("detects tmux when binary exists on PATH", () => {
-    const deps: InitDeps = {
-      commandExists: ((cmd: string) => cmd === "tmux") as CommandChecker,
-      getEnv: () => undefined,
-    };
-
-    const result = detectMux(deps);
-
-    expect(result).toBe("tmux");
-  });
-
-  it("detects tmux when TMUX env var is set", () => {
-    const deps: InitDeps = {
-      commandExists: (() => false) as CommandChecker,
-      getEnv: (key: string) => (key === "TMUX" ? "/tmp/tmux-501/default,12345,0" : undefined),
-    };
-
-    const result = detectMux(deps);
-
-    expect(result).toBe("tmux");
-  });
-
-  it("prefers cmux over tmux when both are available", () => {
-    const deps: InitDeps = {
-      commandExists: (() => true) as CommandChecker,
-      getEnv: () => "/tmp/tmux",
     };
 
     const result = detectMux(deps);
@@ -470,7 +436,7 @@ describe("generateConfig", () => {
     const detection: DetectionResult = {
       ci: null,
       testCommand: null,
-      mux: "tmux",
+      mux: "cmux",
       aiTools: [],
       repoType: "single",
       observabilityBackends: [],
@@ -479,7 +445,7 @@ describe("generateConfig", () => {
 
     const config = generateConfig(detection);
 
-    expect(config).toContain("MUX=tmux");
+    expect(config).toContain("MUX=cmux");
   });
 
   it("comments out MUX when not detected", () => {
@@ -847,7 +813,7 @@ describe("initProject", () => {
     mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
     writeFileSync(
       join(projectDir, ".ninthwave/config"),
-      "CI=circleci\nMUX=tmux\n",
+      "CI=circleci\nMUX=old-value\n",
     );
 
     // Create GitHub Actions so CI detection finds something

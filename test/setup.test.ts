@@ -131,59 +131,7 @@ describe("checkPrerequisites", () => {
     expect(result.detectedMux).toBe("cmux");
   });
 
-  it("detects zellij as multiplexer when cmux is not available", () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-
-    // gh and zellij available, cmux not available
-    const commandExists: CommandChecker = (cmd) => cmd === "gh" || cmd === "zellij";
-    const ghAuthCheck: AuthChecker = () => ({
-      authenticated: true,
-      stderr: "",
-    });
-
-    const result = checkPrerequisites(commandExists, ghAuthCheck);
-
-    console.log = origLog;
-
-    expect(result.allPresent).toBe(true);
-    expect(result.missing).toEqual([]);
-    expect(result.detectedMux).toBe("zellij");
-
-    // Should show zellij detected and suggest cmux upgrade
-    const output = logs.join("\n");
-    expect(output).toContain("zellij");
-    expect(output).toContain("cmux");
-  });
-
-  it("detects tmux as multiplexer when cmux and zellij are not available", () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-
-    // gh and tmux available, cmux and zellij not available
-    const commandExists: CommandChecker = (cmd) => cmd === "gh" || cmd === "tmux";
-    const ghAuthCheck: AuthChecker = () => ({
-      authenticated: true,
-      stderr: "",
-    });
-
-    const result = checkPrerequisites(commandExists, ghAuthCheck);
-
-    console.log = origLog;
-
-    expect(result.allPresent).toBe(true);
-    expect(result.missing).toEqual([]);
-    expect(result.detectedMux).toBe("tmux");
-
-    // Should show tmux detected and suggest cmux upgrade
-    const output = logs.join("\n");
-    expect(output).toContain("tmux");
-    expect(output).toContain("cmux");
-  });
-
-  it("reports missing multiplexer when no multiplexer is available", () => {
+  it("reports missing multiplexer when cmux is not available", () => {
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (...args: unknown[]) => logs.push(args.join(" "));
@@ -199,14 +147,12 @@ describe("checkPrerequisites", () => {
     console.log = origLog;
 
     expect(result.allPresent).toBe(false);
-    expect(result.missing).toContain("multiplexer (cmux, zellij, or tmux)");
+    expect(result.missing).toContain("cmux");
     expect(result.detectedMux).toBeNull();
 
-    // Should suggest all install options
+    // Should suggest cmux install
     const output = logs.join("\n");
     expect(output).toContain("brew install --cask manaflow-ai/cmux/cmux");
-    expect(output).toContain("brew install zellij");
-    expect(output).toContain("brew install tmux");
   });
 
   it("detects missing gh and prints install instructions", () => {
@@ -243,7 +189,7 @@ describe("checkPrerequisites", () => {
     const result = checkPrerequisites(commandExists, ghAuthCheck);
 
     expect(result.allPresent).toBe(false);
-    expect(result.missing).toContain("multiplexer (cmux, zellij, or tmux)");
+    expect(result.missing).toContain("cmux");
     expect(result.missing).toContain("gh");
     expect(result.detectedMux).toBeNull();
   });
@@ -292,7 +238,7 @@ describe("checkPrerequisites — gh auth warning", () => {
     expect(authCheckCalled).toBe(false);
   });
 
-  it("prefers cmux over tmux when both are available", () => {
+  it("returns cmux when available", () => {
     const commandExists: CommandChecker = () => true;
     const ghAuthCheck: AuthChecker = () => ({
       authenticated: true,
