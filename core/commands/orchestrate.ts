@@ -73,6 +73,7 @@ import {
   mapDaemonItemState,
   getTerminalWidth,
   type StatusItem,
+  type ViewOptions,
 } from "../status-render.ts";
 
 // ── Structured logging ─────────────────────────────────────────────
@@ -129,10 +130,11 @@ export function renderTuiFrame(
   items: OrchestratorItem[],
   wipLimit: number | undefined,
   write: (s: string) => void = (s) => process.stdout.write(s),
+  viewOptions?: ViewOptions,
 ): void {
   const statusItems = orchestratorItemsToStatusItems(items);
   const termWidth = getTerminalWidth();
-  const content = formatStatusTable(statusItems, termWidth, wipLimit);
+  const content = formatStatusTable(statusItems, termWidth, wipLimit, false, viewOptions);
   write("\x1B[H");
   write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   write("\x1B[J");
@@ -1923,7 +1925,7 @@ export async function cmdOrchestrate(
     // TUI mode: render live status table to stdout after each poll cycle
     if (tuiMode) {
       try {
-        renderTuiFrame(items, wipLimit);
+        renderTuiFrame(items, wipLimit, undefined, { sessionStartedAt: daemonStartedAt });
       } catch {
         // Non-fatal — TUI render failure shouldn't block the orchestrator
       }
