@@ -35,7 +35,6 @@ import { cmdReconcile } from "./commands/reconcile.ts";
 import { cmdAnalytics } from "./commands/analytics.ts";
 import { cmdStop } from "./commands/stop.ts";
 import { cmdRetry } from "./commands/retry.ts";
-import { cmdMigrateTodos, cmdGenerateTodos } from "./commands/migrate-todos.ts";
 import { shouldOnboard, cmdOnboard } from "./commands/onboard.ts";
 import { cmdDoctor } from "./commands/doctor.ts";
 
@@ -90,8 +89,6 @@ export const COMMANDS: ReadonlyArray<[string, string]> = [
   ["repos", "List discovered repos"],
   ["reconcile", "Sync todo files with merged PRs"],
   ["analytics [--all]", "Show orchestration performance trends"],
-  ["migrate-todos", "Migrate TODOS.md to file-per-todo format"],
-  ["generate-todos", "Generate TODOS.md from individual todo files"],
 ];
 
 const HELP_PAD = 48;
@@ -242,8 +239,6 @@ const needsTodos = ![
   "pr-activity",
   "version-bump",
   "analytics",
-  "migrate-todos",
-  "generate-todos",
 ].includes(command);
 
 if (needsTodos && !existsSync(todosDir)) {
@@ -334,12 +329,6 @@ switch (command) {
     break;
   case "analytics":
     cmdAnalytics(args, projectRoot);
-    break;
-  case "migrate-todos":
-    cmdMigrateTodos(projectRoot);
-    break;
-  case "generate-todos":
-    cmdGenerateTodos(todosDir, join(projectRoot, "TODOS.md"));
     break;
   default:
     die(`Unknown command: ${command}`);
