@@ -1,0 +1,52 @@
+{
+  "runTimestamp": "2026-03-27T17:06:08.566Z",
+  "wallClockMs": 1144572,
+  "itemsAttempted": 3,
+  "itemsCompleted": 3,
+  "itemsFailed": 0,
+  "mergeStrategy": "asap",
+  "items": [
+    {
+      "id": "H-SR-1",
+      "state": "done",
+      "ciRetryCount": 0,
+      "retryCount": 0,
+      "tool": "claude",
+      "prNumber": 249,
+      "tokensUsed": null,
+      "costUsd": null,
+      "detectionLatencyMs": 0,
+      "startedAt": "2026-03-27T17:07:07.053Z",
+      "endedAt": "2026-03-27T17:24:42.611Z"
+    },
+    {
+      "id": "H-SR-2",
+      "state": "done",
+      "ciRetryCount": 0,
+      "retryCount": 0,
+      "tool": "claude",
+      "prNumber": 248,
+      "tokensUsed": null,
+      "costUsd": null,
+      "detectionLatencyMs": 0,
+      "startedAt": "2026-03-27T17:07:07.053Z",
+      "endedAt": "2026-03-27T17:16:23.713Z"
+    },
+    {
+      "id": "H-SR-3",
+      "state": "done",
+      "ciRetryCount": 0,
+      "retryCount": 0,
+      "tool": "claude",
+      "prNumber": 250,
+      "tokensUsed": null,
+      "costUsd": null,
+      "detectionLatencyMs": 0,
+      "startedAt": "2026-03-27T17:07:07.053Z",
+      "endedAt": "2026-03-27T17:23:00.143Z"
+    }
+  ],
+  "totalTokensUsed": null,
+  "totalCostUsd": null,
+  "detectionLatency": null
+}
