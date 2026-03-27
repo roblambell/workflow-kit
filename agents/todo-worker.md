@@ -15,7 +15,7 @@ Look for `YOUR_TODO_ID`, `YOUR_PARTITION`, and `HUB_ROOT` in the appended system
 - **YOUR_PARTITION**: The test partition number for database and port isolation
 - **HUB_ROOT**: Absolute path to the hub repo where `.ninthwave/` lives (including `.ninthwave/todos/`). For hub-local items, this equals `PROJECT_ROOT`. For cross-repo items, `PROJECT_ROOT` is the target repo while `HUB_ROOT` points back to the orchestrator's repo.
 
-Read the full TODO details from the appended system prompt, including: title, description, **acceptance criteria**, priority, source, and affected files.
+Read the full TODO details from the appended system prompt, including: title, description, **acceptance criteria**, priority, source, domain, and affected files.
 
 **Acceptance criteria** (the `Acceptance:` line) define when this TODO is done. They are your checklist -- every criterion must be satisfied before you create the PR. If a criterion is ambiguous, interpret it conservatively (do the more thorough thing).
 
@@ -97,7 +97,9 @@ Sometimes a TODO requires no code change. Valid reasons include:
 The no-op PR template (replace the standard Phase 9 template):
 
 ```bash
-gh pr create --title "chore: close YOUR_TODO_ID — no code change needed" --body "$(cat <<'EOF'
+gh label create "domain:YOUR_DOMAIN" --color 0E8A16 --force || true
+gh label create "ninthwave" --color 1D76DB --force || true
+gh pr create --label "domain:YOUR_DOMAIN" --label "ninthwave" --title "chore: close YOUR_TODO_ID — no code change needed" --body "$(cat <<'EOF'
 ## Summary
 Closes YOUR_TODO_ID: <title>
 
@@ -223,12 +225,23 @@ This gives reviewers a clean diff showing only your changes, not the dependency'
 
 If `BASE_BRANCH` is **not** set in your system prompt, create the PR normally (no `--base` flag needed — it defaults to main).
 
-### PR body template
+### Create labels
 
-Create the PR with `gh pr create`. Use a HEREDOC for the body:
+Before creating the PR, ensure the domain and ninthwave labels exist. Use `--force` so it doesn't error if the label already exists, and `|| true` so PR creation proceeds even if label creation fails:
 
 ```bash
-gh pr create --title "fix|feat|refactor|test: <description> (YOUR_TODO_ID)" --body "$(cat <<'EOF'
+gh label create "domain:YOUR_DOMAIN" --color 0E8A16 --force || true
+gh label create "ninthwave" --color 1D76DB --force || true
+```
+
+Replace `YOUR_DOMAIN` with the domain field from the TODO file (e.g., `tui-status`, `core`, `ci`).
+
+### PR body template
+
+Create the PR with `gh pr create`. Use a HEREDOC for the body. Include `--label` flags for both labels:
+
+```bash
+gh pr create --label "domain:YOUR_DOMAIN" --label "ninthwave" --title "fix|feat|refactor|test: <description> (YOUR_TODO_ID)" --body "$(cat <<'EOF'
 ## Summary
 Implements YOUR_TODO_ID: <title>
 
