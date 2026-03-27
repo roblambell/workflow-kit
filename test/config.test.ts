@@ -80,14 +80,14 @@ describe("loadConfig", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config"),
-      "LOC_EXTENSIONS=*.ts\nwebhook_url=https://example.com\n",
+      "LOC_EXTENSIONS=*.ts\nreview_enabled=true\n",
     );
 
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const config = loadConfig(repo);
       expect(config["LOC_EXTENSIONS"]).toBe("*.ts");
-      expect(config["webhook_url"]).toBe("https://example.com");
+      expect(config["review_enabled"]).toBe("true");
       expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
@@ -136,9 +136,9 @@ describe("loadConfig", () => {
 });
 
 describe("KNOWN_CONFIG_KEYS", () => {
-  it("includes LOC_EXTENSIONS and webhook_url", () => {
+  it("includes LOC_EXTENSIONS and review_enabled", () => {
     expect(KNOWN_CONFIG_KEYS.has("LOC_EXTENSIONS")).toBe(true);
-    expect(KNOWN_CONFIG_KEYS.has("webhook_url")).toBe(true);
+    expect(KNOWN_CONFIG_KEYS.has("review_enabled")).toBe(true);
   });
 
   it("includes review config keys", () => {

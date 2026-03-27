@@ -2,7 +2,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, basename } from "path";
-import { BOLD, CYAN, DIM, RESET } from "../output.ts";
+import { BOLD, DIM, RESET } from "../output.ts";
 import { run } from "../shell.ts";
 import {
   isDaemonRunning,
@@ -289,11 +289,6 @@ export function renderStatus(worktreeDir: string, projectRoot: string, flat: boo
       const items = daemonStateToStatusItems(daemonState);
       const termWidth = getTerminalWidth();
       lines.push(formatStatusTable(items, termWidth, daemonState.wipLimit, flat));
-
-      // Show dashboard URL when active
-      if (daemonState.dashboardUrl) {
-        lines.push(`\n  ${CYAN}Dashboard: ${daemonState.dashboardUrl}${RESET}`);
-      }
 
       const agoStr = formatAge(stateAgeMs) + " ago";
       if (daemonPid !== null) {

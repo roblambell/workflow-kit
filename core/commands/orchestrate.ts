@@ -50,16 +50,6 @@ import {
   type SupervisorState,
 } from "../supervisor.ts";
 import {
-  resolveWebhookUrl,
-  createWebhookNotifier,
-  type WebhookNotifyFn,
-} from "../webhooks.ts";
-import {
-  startDashboard,
-  stopDashboard,
-  type DashboardServer,
-} from "../session-server.ts";
-import {
   collectRunMetrics,
   writeRunMetrics,
   commitAnalyticsFiles,
@@ -821,7 +811,7 @@ export function getAvailableMemory(): number {
 // ── Run-complete and action-execution helpers ─────────────────────
 
 /**
- * Handle post-completion processing: cleanup sweep, logging, webhooks, analytics.
+ * Handle post-completion processing: cleanup sweep, logging, analytics.
  * Extracted from orchestrateLoop for readability.
  */
 function handleRunComplete(
@@ -882,12 +872,6 @@ function handleRunComplete(
     stuck: stuckCount,
     total: allItems.length,
     items: itemSummaries,
-  });
-
-  // Webhook: orchestrate_complete
-  deps.notify?.("orchestrate_complete", {
-    items: allItems.map((i) => ({ id: i.id, state: i.state, prNumber: i.prNumber })),
-    summary: { done: doneCount, stuck: stuckCount, total: allItems.length },
   });
 
   // Analytics: write structured metrics file
@@ -958,7 +942,7 @@ function handleRunComplete(
 }
 
 /**
- * Execute a single orchestrator action with logging, cost capture, webhooks, and reconcile.
+ * Execute a single orchestrator action with logging, cost capture, and reconcile.
  * Extracted from orchestrateLoop for readability.
  */
 function handleActionExecution(
@@ -1058,23 +1042,6 @@ function handleActionExecution(
     });
   }
 
-  // Webhook: pr_merged on successful merge
-  if (action.type === "merge" && result.success) {
-    deps.notify?.("pr_merged", {
-      itemId: action.itemId,
-      prNumber: action.prNumber,
-    });
-  }
-
-  // Webhook: ci_failed on CI failure notification
-  if (action.type === "notify-ci-failure") {
-    deps.notify?.("ci_failed", {
-      itemId: action.itemId,
-      prNumber: action.prNumber,
-      error: action.message,
-    });
-  }
-
   // After a successful merge, reconcile todo files with GitHub state
   // so list --ready reflects reality for the rest of the run.
   if (action.type === "merge" && result.success && deps.reconcile) {
@@ -1114,8 +1081,6 @@ export interface OrchestrateLoopDeps {
   reconcile?: (todosDir: string, worktreeDir: string, projectRoot: string) => void;
   /** Supervisor dependencies (injected when supervisor is active). */
   supervisorDeps?: SupervisorDeps;
-  /** Webhook notifier for lifecycle events (fire-and-forget). No-op when absent. */
-  notify?: WebhookNotifyFn;
   /** File I/O for analytics metrics (injectable for testing). When absent, analytics is skipped. */
   analyticsIO?: AnalyticsIO;
   /** Git operations for auto-committing analytics files. When absent, commit is skipped. */
@@ -1141,8 +1106,6 @@ export interface OrchestrateLoopConfig {
   analyticsDir?: string;
   /** AI tool identifier for per-item metrics (e.g., "claude", "cursor"). */
   aiTool?: string;
-  /** Public dashboard URL (from session URL provider). When set, a PR comment is posted once per run. */
-  dashboardPublicUrl?: string;
   /**
    * Max loop iterations before forced exit. Guards against event-loop starvation:
    * when tests use `sleep: () => Promise.resolve()`, a stuck loop monopolizes the
@@ -1213,7 +1176,6 @@ export async function orchestrateLoop(
 
   const runStartTime = new Date().toISOString();
   const costData = new Map<string, CostSummary>();
-  let dashboardCommentPosted = false;
 
   wrappedLog({
     ts: runStartTime,
@@ -1325,11 +1287,8 @@ export async function orchestrateLoop(
       break;
     }
 
-    // Capture pre-transition states for logging and batch_complete detection
+    // Capture pre-transition states for logging
     const prevStates = new Map<string, OrchestratorItemState>();
-    const prevDoneCount = allItems.filter(
-      (i) => i.state === "done" || i.state === "stuck",
-    ).length;
     for (const item of allItems) {
       prevStates.set(item.id, item.state);
     }
@@ -1398,52 +1357,6 @@ export async function orchestrateLoop(
       states[item.state]!.push(item.id);
     }
     wrappedLog({ ts: new Date().toISOString(), level: "debug", event: "state_summary", states });
-
-    // Dashboard PR comment: post once per run when a public URL is available
-    // and the first PR number is detected on any item.
-    if (config.dashboardPublicUrl && !dashboardCommentPosted) {
-      const itemWithPr = orch.getAllItems().find((i) => i.prNumber != null);
-      if (itemWithPr?.prNumber) {
-        try {
-          const body = `**[Orchestrator]** Live dashboard: ${config.dashboardPublicUrl}`;
-          deps.actionDeps.prComment(ctx.projectRoot, itemWithPr.prNumber, body);
-          dashboardCommentPosted = true;
-          wrappedLog({
-            ts: new Date().toISOString(),
-            level: "info",
-            event: "dashboard_comment_posted",
-            prNumber: itemWithPr.prNumber,
-            url: config.dashboardPublicUrl,
-          });
-        } catch {
-          // Non-fatal — dashboard comment failure doesn't block orchestration
-          wrappedLog({
-            ts: new Date().toISOString(),
-            level: "warn",
-            event: "dashboard_comment_failed",
-            prNumber: itemWithPr.prNumber,
-          });
-        }
-      }
-    }
-
-    // Webhook: batch_complete when items finish and non-terminal items remain
-    if (deps.notify) {
-      const currentItems = orch.getAllItems();
-      const currentTerminalCount = currentItems.filter(
-        (i) => i.state === "done" || i.state === "stuck",
-      ).length;
-      const newlyTerminal = currentTerminalCount - prevDoneCount;
-      const hasRemaining = currentTerminalCount < currentItems.length;
-      if (newlyTerminal > 0 && hasRemaining) {
-        const doneNow = currentItems.filter((i) => i.state === "done").length;
-        const stuckNow = currentItems.filter((i) => i.state === "stuck").length;
-        deps.notify("batch_complete", {
-          items: currentItems.map((i) => ({ id: i.id, state: i.state, prNumber: i.prNumber })),
-          summary: { done: doneNow, stuck: stuckNow, total: currentItems.length },
-        });
-      }
-    }
 
     // ── Supervisor tick ──────────────────────────────────────────
     if (supervisorState && !supervisorState.disabled && config.supervisor && deps.supervisorDeps) {
@@ -1714,7 +1627,7 @@ export async function cmdOrchestrate(
   let daemonMode = false;
   let isDaemonChild = false;
   let noSandbox = false;
-  let remoteFlag = false;
+  let clickupListId: string | undefined;
   let reviewEnabled = false;
   let reviewWipLimit: number | undefined;
   let reviewAutoFix: "off" | "direct" | "pr" | undefined;
@@ -1785,9 +1698,9 @@ export async function cmdOrchestrate(
         isDaemonChild = true;
         i += 1;
         break;
-      case "--remote":
-        remoteFlag = true;
-        i += 1;
+      case "--clickup-list":
+        clickupListId = args[i + 1];
+        i += 2;
         break;
       case "--review":
         reviewEnabled = true;
@@ -2080,60 +1993,9 @@ export async function cmdOrchestrate(
     });
   }
 
-  // Resolve webhook URL and create notifier (fire-and-forget)
-  const webhookUrl = resolveWebhookUrl(projectRoot);
-  const notify = createWebhookNotifier(webhookUrl, undefined, (msg) =>
-    log({ ts: new Date().toISOString(), level: "warn", event: "webhook_error", error: msg }),
-  );
-  if (webhookUrl) {
-    log({
-      ts: new Date().toISOString(),
-      level: "info",
-      event: "webhook_configured",
-      url: webhookUrl,
-    });
-  }
-
   // Resolve config-file flags
   const projectConfig = loadConfig(projectRoot);
-  const remoteEnabled = remoteFlag || projectConfig["remote_sessions"] === "true";
   const reviewExternalEnabled = reviewExternal || projectConfig["review_external"] === "true";
-
-  // Start dashboard server when --remote is enabled
-  let dashboardServer: DashboardServer | null = null;
-  let dashboardPublicUrl: string | null = null;
-  let dashboardLocalUrl: string | null = null;
-
-  if (remoteEnabled) {
-    try {
-      dashboardServer = startDashboard(
-        () => orch.getAllItems(),
-        (ref, lines) => mux.readScreen(ref, lines),
-      );
-      dashboardLocalUrl = `http://localhost:${dashboardServer.port}`;
-      const tokenPreview = dashboardServer.token.length > 8
-        ? `${dashboardServer.token.slice(0, 4)}...${dashboardServer.token.slice(-4)}`
-        : dashboardServer.token;
-
-      log({
-        ts: new Date().toISOString(),
-        level: "info",
-        event: "dashboard_started",
-        port: dashboardServer.port,
-        localUrl: dashboardLocalUrl,
-      });
-      console.log(`Dashboard: ${dashboardLocalUrl} (token: ${tokenPreview})`);
-    } catch (e: unknown) {
-      // Graceful degradation: log warning, continue without dashboard
-      const msg = e instanceof Error ? e.message : String(e);
-      log({
-        ts: new Date().toISOString(),
-        level: "warn",
-        event: "dashboard_start_failed",
-        error: msg,
-      });
-    }
-  }
 
   // Analytics directory — always enabled, writes to .ninthwave/analytics/
   const analyticsDir = join(projectRoot, ".ninthwave", "analytics");
@@ -2167,7 +2029,6 @@ export async function cmdOrchestrate(
       const state = serializeOrchestratorState(items, process.pid, daemonStartedAt, {
         statusPaneRef,
         wipLimit,
-        dashboardUrl: dashboardLocalUrl,
       });
       writeStateFile(projectRoot, state);
     } catch {
@@ -2230,7 +2091,6 @@ export async function cmdOrchestrate(
     getFreeMem: getAvailableMemory,
     reconcile,
     supervisorDeps: supervisorActive ? createSupervisorDeps(log) : undefined,
-    notify,
     analyticsIO: { mkdirSync, writeFileSync },
     analyticsCommit: { hasChanges, gitAdd, getStagedFiles, gitCommit, gitReset },
     readScreen: (ref, lines) => mux.readScreen(ref, lines),
@@ -2254,7 +2114,6 @@ export async function cmdOrchestrate(
     ...(repoUrl ? { repoUrl } : {}),
     analyticsDir,
     aiTool,
-    ...(dashboardPublicUrl ? { dashboardPublicUrl } : {}),
     ...(reviewExternalEnabled ? { reviewExternal: true } : {}),
     ...(watchMode ? { watch: true } : {}),
     ...(watchIntervalSecs !== undefined ? { watchIntervalMs: watchIntervalSecs * 1000 } : {}),
@@ -2323,20 +2182,6 @@ export async function cmdOrchestrate(
         event: "status_pane_closed",
         ref: statusPaneRef,
       });
-    }
-
-    // Stop dashboard server on shutdown
-    if (dashboardServer) {
-      try {
-        stopDashboard(dashboardServer);
-        log({
-          ts: new Date().toISOString(),
-          level: "info",
-          event: "dashboard_stopped",
-        });
-      } catch {
-        // Non-fatal — best-effort cleanup
-      }
     }
 
     // Always clean up state file on exit (written in both daemon and interactive mode)

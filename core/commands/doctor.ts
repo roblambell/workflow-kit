@@ -209,39 +209,6 @@ export function checkPreCommitHook(projectRoot: string): CheckResult {
   };
 }
 
-/** Check: cloudflared installed for remote session access. */
-export function checkCloudflared(runner: ShellRunner): CheckResult {
-  const result = runner("which", ["cloudflared"]);
-  if (result.exitCode === 0) {
-    return { status: "pass", message: "cloudflared installed" };
-  }
-  return {
-    status: "info",
-    message:
-      "cloudflared not installed \u2014 remote session access unavailable",
-    detail: "Install: brew install cloudflared",
-  };
-}
-
-/** Check: webhook URL configured for notifications. */
-export function checkWebhookUrl(projectRoot: string): CheckResult {
-  const configPath = join(projectRoot, ".ninthwave", "config");
-  if (existsSync(configPath)) {
-    try {
-      const content = readFileSync(configPath, "utf-8");
-      if (content.match(/^webhook_url\s*=/m)) {
-        return { status: "pass", message: "Webhook URL configured" };
-      }
-    } catch {
-      // Fall through to info
-    }
-  }
-  return {
-    status: "info",
-    message: "Webhook URL not configured \u2014 no notifications",
-  };
-}
-
 /**
  * Check: custom GitHub identity configured and scopes validated.
  * When NINTHWAVE_GITHUB_TOKEN or github_token config is set, verifies the
@@ -332,8 +299,6 @@ export function buildChecks(
     { category: "Recommended", run: () => checkPreCommitHook(projectRoot) },
 
     // Optional
-    { category: "Optional", run: () => checkCloudflared(runner) },
-    { category: "Optional", run: () => checkWebhookUrl(projectRoot) },
     { category: "Optional", run: () => checkGithubIdentity(projectRoot, runner) },
   ];
 }
