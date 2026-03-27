@@ -286,26 +286,6 @@ export function generateConfig(detection: DetectionResult): string {
     lines.push("# AI_TOOLS=claude,opencode,copilot");
   }
 
-  // Observability backends
-  if (detection.observabilityBackends.length > 0) {
-    lines.push("");
-    lines.push("# Observability backends");
-  }
-  if (detection.observabilityBackends.includes("sentry")) {
-    lines.push("# Sentry integration (SENTRY_AUTH_TOKEN detected)");
-    lines.push("# sentry_org=your-org");
-    lines.push("# sentry_project=your-project");
-  }
-  if (detection.observabilityBackends.includes("pagerduty")) {
-    lines.push("# PagerDuty integration (PAGERDUTY_API_TOKEN detected)");
-    lines.push("# pagerduty_service_id=your-service-id");
-    lines.push("# pagerduty_from_email=your@email.com");
-  }
-  if (detection.observabilityBackends.includes("linear")) {
-    lines.push("# Linear integration (LINEAR_API_KEY detected)");
-    lines.push("# linear_team_key=ENG");
-  }
-
   lines.push("");
   lines.push(
     "# File extensions for LOC counting in version-bump (space-separated glob patterns)",

@@ -56,8 +56,8 @@ function checkNoLeakedServer(
   const violations: Violation[] = [];
   const lines = file.content.split("\n");
 
-  // Find lines with Bun.serve( or startDashboard( calls
-  const serverPatterns = [/Bun\.serve\s*\(/, /startDashboard\s*\(/];
+  // Find lines with Bun.serve( calls
+  const serverPatterns = [/Bun\.serve\s*\(/];
   let hasServerCall = false;
   const serverCallLines: number[] = [];
 
@@ -331,20 +331,6 @@ describe("test", () => {
       };
       const violations = checkNoLeakedServer(file);
       expect(violations.length).toBe(0);
-    });
-
-    it("detects startDashboard without cleanup", () => {
-      const file = {
-        name: "fixture.test.ts",
-        content: `
-describe("test", () => {
-  it("starts dashboard", () => {
-    const srv = startDashboard(getItems, readScreen);
-  });
-});`,
-      };
-      const violations = checkNoLeakedServer(file);
-      expect(violations.length).toBeGreaterThan(0);
     });
 
     it("ignores string literals", () => {

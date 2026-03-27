@@ -80,14 +80,14 @@ describe("loadConfig", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config"),
-      "LOC_EXTENSIONS=*.ts\nreview_enabled=true\n",
+      "LOC_EXTENSIONS=*.ts\nreview_external=true\n",
     );
 
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const config = loadConfig(repo);
       expect(config["LOC_EXTENSIONS"]).toBe("*.ts");
-      expect(config["review_enabled"]).toBe("true");
+      expect(config["review_external"]).toBe("true");
       expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
@@ -136,36 +136,40 @@ describe("loadConfig", () => {
 });
 
 describe("KNOWN_CONFIG_KEYS", () => {
-  it("includes LOC_EXTENSIONS and review_enabled", () => {
+  it("includes LOC_EXTENSIONS and review_external", () => {
     expect(KNOWN_CONFIG_KEYS.has("LOC_EXTENSIONS")).toBe(true);
-    expect(KNOWN_CONFIG_KEYS.has("review_enabled")).toBe(true);
-  });
-
-  it("includes review config keys", () => {
-    expect(KNOWN_CONFIG_KEYS.has("review_enabled")).toBe(true);
-    expect(KNOWN_CONFIG_KEYS.has("review_wip_limit")).toBe(true);
-    expect(KNOWN_CONFIG_KEYS.has("review_auto_fix")).toBe(true);
-    expect(KNOWN_CONFIG_KEYS.has("review_can_approve")).toBe(true);
+    expect(KNOWN_CONFIG_KEYS.has("review_external")).toBe(true);
   });
 
   it("includes github_token config key", () => {
     expect(KNOWN_CONFIG_KEYS.has("github_token")).toBe(true);
   });
 
-  it("does not warn on review config keys", () => {
+  it("does not include removed config keys", () => {
+    expect(KNOWN_CONFIG_KEYS.has("webhook_url")).toBe(false);
+    expect(KNOWN_CONFIG_KEYS.has("CLICKUP_LIST_ID")).toBe(false);
+    expect(KNOWN_CONFIG_KEYS.has("sentry_org")).toBe(false);
+    expect(KNOWN_CONFIG_KEYS.has("remote_sessions")).toBe(false);
+    expect(KNOWN_CONFIG_KEYS.has("review_enabled")).toBe(false);
+    expect(KNOWN_CONFIG_KEYS.has("review_wip_limit")).toBe(false);
+    expect(KNOWN_CONFIG_KEYS.has("review_auto_fix")).toBe(false);
+    expect(KNOWN_CONFIG_KEYS.has("review_can_approve")).toBe(false);
+  });
+
+  it("does not warn on review_external config key", () => {
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config"),
-      "review_enabled=true\nreview_wip_limit=3\nreview_auto_fix=direct\nreview_can_approve=true\n",
+      "review_external=true\ngithub_token=ghp_test\n",
     );
 
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const config = loadConfig(repo);
-      expect(config["review_enabled"]).toBe("true");
-      expect(config["review_auto_fix"]).toBe("direct");
+      expect(config["review_external"]).toBe("true");
+      expect(config["github_token"]).toBe("ghp_test");
       expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();

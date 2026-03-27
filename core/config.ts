@@ -8,17 +8,6 @@ import { DEFAULT_LOC_EXTENSIONS } from "./types.ts";
 /** Keys recognised by ninthwave. Anything else triggers a warning. */
 export const KNOWN_CONFIG_KEYS = new Set([
   "LOC_EXTENSIONS",
-  "webhook_url",
-  "CLICKUP_LIST_ID",
-  "sentry_org",
-  "sentry_project",
-  "pagerduty_service_id",
-  "pagerduty_from_email",
-  "remote_sessions",
-  "review_enabled",
-  "review_wip_limit",
-  "review_auto_fix",
-  "review_can_approve",
   "review_external",
   "github_token",
 ]);

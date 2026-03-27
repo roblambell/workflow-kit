@@ -621,41 +621,7 @@ describe("detectObservabilityBackends", () => {
 // --- generateConfig with observability backends ---
 
 describe("generateConfig observability", () => {
-  it("writes Sentry config placeholders when sentry is detected", () => {
-    const detection: DetectionResult = {
-      ci: null,
-      testCommand: null,
-      mux: null,
-      aiTools: [],
-      repoType: "single",
-      observabilityBackends: ["sentry"],
-    };
-
-    const config = generateConfig(detection);
-
-    expect(config).toContain("# Sentry integration (SENTRY_AUTH_TOKEN detected)");
-    expect(config).toContain("# sentry_org=your-org");
-    expect(config).toContain("# sentry_project=your-project");
-  });
-
-  it("writes PagerDuty config placeholders when pagerduty is detected", () => {
-    const detection: DetectionResult = {
-      ci: null,
-      testCommand: null,
-      mux: null,
-      aiTools: [],
-      repoType: "single",
-      observabilityBackends: ["pagerduty"],
-    };
-
-    const config = generateConfig(detection);
-
-    expect(config).toContain("# PagerDuty integration (PAGERDUTY_API_TOKEN detected)");
-    expect(config).toContain("# pagerduty_service_id=your-service-id");
-    expect(config).toContain("# pagerduty_from_email=your@email.com");
-  });
-
-  it("writes both backend placeholders when both are detected", () => {
+  it("omits observability config keys (removed in 0.2.0)", () => {
     const detection: DetectionResult = {
       ci: null,
       testCommand: null,
@@ -667,26 +633,11 @@ describe("generateConfig observability", () => {
 
     const config = generateConfig(detection);
 
-    expect(config).toContain("# Observability backends");
-    expect(config).toContain("# sentry_org=your-org");
-    expect(config).toContain("# pagerduty_service_id=your-service-id");
-  });
-
-  it("omits observability section when no backends detected", () => {
-    const detection: DetectionResult = {
-      ci: null,
-      testCommand: null,
-      mux: null,
-      aiTools: [],
-      repoType: "single",
-      observabilityBackends: [],
-    };
-
-    const config = generateConfig(detection);
-
-    expect(config).not.toContain("Observability backends");
     expect(config).not.toContain("sentry_org");
+    expect(config).not.toContain("sentry_project");
     expect(config).not.toContain("pagerduty_service_id");
+    expect(config).not.toContain("pagerduty_from_email");
+    expect(config).not.toContain("Observability backends");
   });
 });
 

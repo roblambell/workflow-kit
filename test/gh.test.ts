@@ -221,7 +221,7 @@ describe("resolveGithubToken", () => {
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
-    writeFileSync(join(configDir, "config"), "webhook_url=https://example.com\n");
+    writeFileSync(join(configDir, "config"), "review_external=true\n");
 
     const token = resolveGithubToken(repo);
     expect(token).toBeUndefined();
