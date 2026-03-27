@@ -14,8 +14,6 @@ import {
   checkNono,
   checkSandboxProfile,
   checkPreCommitHook,
-  checkCloudflared,
-  checkWebhookUrl,
   checkGithubIdentity,
   runDoctor,
   formatDoctorOutput,
@@ -333,47 +331,6 @@ describe("checkPreCommitHook", () => {
     const repo = setupTempRepo();
     const result = checkPreCommitHook(repo);
     expect(result.status).toBe("warn");
-  });
-});
-
-describe("checkCloudflared", () => {
-  it("passes when cloudflared is installed", () => {
-    const runner = mockRunner({
-      "which cloudflared": {
-        stdout: "/usr/local/bin/cloudflared",
-        stderr: "",
-        exitCode: 0,
-      },
-    });
-    const result = checkCloudflared(runner);
-    expect(result.status).toBe("pass");
-  });
-
-  it("returns info when cloudflared is not installed", () => {
-    const runner = allFailRunner();
-    const result = checkCloudflared(runner);
-    expect(result.status).toBe("info");
-    expect(result.message).toContain("remote session access unavailable");
-  });
-});
-
-describe("checkWebhookUrl", () => {
-  it("passes when webhook_url is configured", () => {
-    const repo = setupTempRepo();
-    mkdirSync(join(repo, ".ninthwave"), { recursive: true });
-    writeFileSync(
-      join(repo, ".ninthwave", "config"),
-      "webhook_url=https://example.com/hook\n",
-    );
-    const result = checkWebhookUrl(repo);
-    expect(result.status).toBe("pass");
-  });
-
-  it("returns info when webhook_url is not configured", () => {
-    const repo = setupTempRepo();
-    const result = checkWebhookUrl(repo);
-    expect(result.status).toBe("info");
-    expect(result.message).toContain("no notifications");
   });
 });
 
