@@ -218,6 +218,19 @@ export function formatElapsed(item: StatusItem): string {
 }
 
 /**
+ * Format duration for the DURATION column.
+ * Uses startedAt/endedAt when available (via formatElapsed), falls back to formatAge(item.ageMs)
+ * for the worktree-scan path where startedAt is not set.
+ */
+export function formatDuration(item: StatusItem): string {
+  if (item.startedAt) {
+    const elapsed = formatElapsed(item);
+    if (elapsed) return elapsed;
+  }
+  return formatAge(item.ageMs);
+}
+
+/**
  * Format telemetry suffix for an item row.
  * Active workers: show elapsed duration.
  * Failed workers: show exit code and stderr tail.
@@ -255,22 +268,22 @@ export function formatTelemetrySuffix(item: StatusItem): string {
 /**
  * Format a single item row for the status table.
  * Returns a string with ANSI color codes.
- * When blockedByStr is provided, it's displayed as the BLOCKED BY column.
+ * When depsStr is provided, it's displayed as the DEPS column.
  */
-export function formatItemRow(item: StatusItem, titleWidth: number, blockedByStr?: string): string {
+export function formatItemRow(item: StatusItem, titleWidth: number, depsStr?: string): string {
   const icon = stateIcon(item.state);
   const id = pad(item.id, 12);
   const color = stateColor(item.state);
   const label = pad(stateLabel(item.state), 14);
   const pr = item.prNumber ? pad(`#${item.prNumber}`, 7) : pad("-", 7);
-  const age = pad(formatAge(item.ageMs), 8);
-  const blockedCol = blockedByStr !== undefined ? pad(blockedByStr, 13) : "";
+  const duration = pad(formatDuration(item), 8);
+  const depsCol = depsStr !== undefined ? pad(depsStr, 5) : "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` ${DIM}[${item.repoLabel}]${RESET}` : "";
   const reason = item.failureReason ? ` ${DIM}(${item.failureReason})${RESET}` : "";
   const telemetry = formatTelemetrySuffix(item);
 
-  return `  ${color}${icon}${RESET} ${id}${color}${label}${RESET} ${pr} ${age} ${blockedCol}${title}${repo}${reason}${telemetry}`;
+  return `  ${color}${icon}${RESET} ${id}${color}${label}${RESET} ${pr} ${duration} ${depsCol}${title}${repo}${reason}${telemetry}`;
 }
 
 /**
@@ -332,17 +345,17 @@ export function formatSummary(items: StatusItem[]): string {
  * Format a fully dimmed item row for the queue section.
  * Returns a string with DIM applied to the entire row.
  */
-export function formatQueuedItemRow(item: StatusItem, titleWidth: number, blockedByStr?: string): string {
+export function formatQueuedItemRow(item: StatusItem, titleWidth: number, depsStr?: string): string {
   const icon = stateIcon(item.state);
   const id = pad(item.id, 12);
   const label = pad(stateLabel(item.state), 14);
   const pr = item.prNumber ? pad(`#${item.prNumber}`, 7) : pad("-", 7);
-  const age = pad(formatAge(item.ageMs), 8);
-  const blockedCol = blockedByStr !== undefined ? pad(blockedByStr, 13) : "";
+  const duration = pad(formatDuration(item), 8);
+  const depsCol = depsStr !== undefined ? pad(depsStr, 5) : "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` [${item.repoLabel}]` : "";
 
-  return `  ${DIM}${icon} ${id}${label} ${pr} ${age} ${blockedCol}${title}${repo}${RESET}`;
+  return `  ${DIM}${icon} ${id}${label} ${pr} ${duration} ${depsCol}${title}${repo}${RESET}`;
 }
 
 // ─── Dependency tree building ─────────────────────────────────────────────────
@@ -425,14 +438,14 @@ export function formatTreeItemRow(
   const color = stateColor(item.state);
   const label = pad(stateLabel(item.state), 14);
   const pr = item.prNumber ? pad(`#${item.prNumber}`, 7) : pad("-", 7);
-  const age = pad(formatAge(item.ageMs), 8);
+  const duration = pad(formatDuration(item), 8);
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` ${DIM}[${item.repoLabel}]${RESET}` : "";
 
   if (item.state === "queued") {
-    return `  ${DIM}${prefix}${icon} ${id}${label} ${pr} ${age} ${title}${repo}${RESET}`;
+    return `  ${DIM}${prefix}${icon} ${id}${label} ${pr} ${duration} ${title}${repo}${RESET}`;
   }
-  return `  ${prefix ? `${DIM}${prefix}${RESET}` : ""}${color}${icon}${RESET} ${id}${color}${label}${RESET} ${pr} ${age} ${title}${repo}`;
+  return `  ${prefix ? `${DIM}${prefix}${RESET}` : ""}${color}${icon}${RESET} ${id}${color}${label}${RESET} ${pr} ${duration} ${title}${repo}`;
 }
 
 /**
@@ -500,15 +513,15 @@ export function formatStatusTable(
   // Check if any items have dependency relationships
   const hasDeps = !flat && items.some((i) => (i.dependencies ?? []).length > 0);
 
-  // Column widths — add BLOCKED BY column (13 chars) when deps exist
-  // Base: 2 indent + 2 icon+space + 12 ID + 14 state + 1 + 7 PR + 1 + 8 age + 1 = 48
-  const blockedColWidth = hasDeps ? 13 : 0;
-  const fixedWidth = 48 + blockedColWidth;
+  // Column widths — add DEPS column (5 chars) when deps exist
+  // Base: 2 indent + 2 icon+space + 12 ID + 14 state + 1 + 7 PR + 1 + 8 duration + 1 = 48
+  const depsColWidth = hasDeps ? 5 : 0;
+  const fixedWidth = 48 + depsColWidth;
   const titleWidth = Math.max(10, termWidth - fixedWidth);
 
   // Header
-  const blockedHeader = hasDeps ? `${pad("BLOCKED BY", 13)}` : "";
-  const header = `  ${DIM}  ${pad("ID", 12)}${pad("STATE", 14)} ${pad("PR", 7)} ${pad("AGE", 8)} ${blockedHeader}TITLE${RESET}`;
+  const depsHeader = hasDeps ? `${pad("DEPS", 5)}` : "";
+  const header = `  ${DIM}  ${pad("ID", 12)}${pad("STATE", 14)} ${pad("PR", 7)} ${pad("DURATION", 8)} ${depsHeader}TITLE${RESET}`;
   lines.push(header);
 
   // Separator
@@ -526,13 +539,13 @@ export function formatStatusTable(
 
     for (const item of activeItems) {
       const blockers = blockedBy.get(item.id) ?? [];
-      const blockedStr = blockers.length > 0 ? blockers.join(", ") : "-";
-      lines.push(formatItemRow(item, titleWidth, blockedStr));
+      const depsStr = blockers.length > 0 ? String(blockers.length) : "-";
+      lines.push(formatItemRow(item, titleWidth, depsStr));
     }
     for (const item of mergedItems) {
       const blockers = blockedBy.get(item.id) ?? [];
-      const blockedStr = blockers.length > 0 ? blockers.join(", ") : "-";
-      lines.push(formatItemRow(item, titleWidth, blockedStr));
+      const depsStr = blockers.length > 0 ? String(blockers.length) : "-";
+      lines.push(formatItemRow(item, titleWidth, depsStr));
     }
 
     // Queue section
@@ -552,8 +565,8 @@ export function formatStatusTable(
 
       for (const item of queuedItems) {
         const blockers = blockedBy.get(item.id) ?? [];
-        const blockedStr = blockers.length > 0 ? blockers.join(", ") : "-";
-        lines.push(formatQueuedItemRow(item, titleWidth, blockedStr));
+        const depsStr = blockers.length > 0 ? String(blockers.length) : "-";
+        lines.push(formatQueuedItemRow(item, titleWidth, depsStr));
       }
     }
   } else {

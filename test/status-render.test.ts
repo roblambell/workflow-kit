@@ -8,6 +8,7 @@ import {
   stateLabel,
   truncateTitle,
   formatAge,
+  formatDuration,
   pad,
   formatItemRow,
   formatQueuedItemRow,
@@ -150,6 +151,42 @@ describe("formatAge", () => {
   });
 });
 
+describe("formatDuration", () => {
+  it("uses startedAt and endedAt when both are present", () => {
+    const item = makeStatusItem({
+      startedAt: "2026-01-01T00:00:00Z",
+      endedAt: "2026-01-01T01:30:00Z",
+      ageMs: 999 * 60_000, // should be ignored
+    });
+    expect(formatDuration(item)).toBe("1h 30m");
+  });
+
+  it("uses startedAt to now for active items (no endedAt)", () => {
+    const tenMinAgo = new Date(Date.now() - 10 * 60_000).toISOString();
+    const item = makeStatusItem({
+      startedAt: tenMinAgo,
+      ageMs: 999 * 60_000, // should be ignored
+    });
+    // Should be approximately 10m (allow some test execution time)
+    expect(formatDuration(item)).toBe("10m");
+  });
+
+  it("falls back to ageMs when startedAt is not set", () => {
+    const item = makeStatusItem({
+      ageMs: 2 * 3600_000 + 15 * 60_000,
+    });
+    expect(formatDuration(item)).toBe("2h 15m");
+  });
+
+  it("falls back to ageMs when startedAt is invalid", () => {
+    const item = makeStatusItem({
+      startedAt: "not-a-date",
+      ageMs: 5 * 60_000,
+    });
+    expect(formatDuration(item)).toBe("5m");
+  });
+});
+
 describe("pad", () => {
   it("pads shorter strings to specified width", () => {
     expect(pad("AB", 5)).toBe("AB   ");
@@ -281,6 +318,13 @@ describe("formatStatusTable", () => {
     expect(() => formatStatusTable(items, 200)).not.toThrow();
   });
 
+  it("renders DURATION header instead of AGE", () => {
+    const items = [makeStatusItem()];
+    const table = stripAnsi(formatStatusTable(items, 80));
+    expect(table).toContain("DURATION");
+    expect(table).not.toContain(" AGE ");
+  });
+
   it("separator width matches data row content width across terminal widths", () => {
     const items = [makeStatusItem({ id: "TEST-1", title: "A title" })];
     // No deps: fixedWidth=48, titleWidth=max(10, termWidth-48)
@@ -299,7 +343,7 @@ describe("formatStatusTable", () => {
     }
   });
 
-  it("separator width with BLOCKED BY column active (hasDeps=true) exceeds 78", () => {
+  it("separator width with DEPS column active (hasDeps=true) exceeds 78", () => {
     const items = [
       makeStatusItem({ id: "A-1", state: "implementing", dependencies: [] }),
       makeStatusItem({ id: "B-2", state: "queued", dependencies: ["A-1"], title: "A longer title for testing width" }),
@@ -308,29 +352,29 @@ describe("formatStatusTable", () => {
     const lines = table.split("\n");
     const sepLines = lines.filter(l => /^\s+─+$/.test(l));
     expect(sepLines.length).toBeGreaterThan(0);
-    // With a 120-char terminal and BLOCKED BY column, separator should be wider than 80 (2 + 78)
+    // With a 120-char terminal and DEPS column, separator should be wider than 80 (2 + 78)
     expect(sepLines[0]!.length).toBeGreaterThan(80);
   });
 
-  it("shows BLOCKED BY header when items have dependencies", () => {
+  it("shows DEPS header when items have dependencies", () => {
     const items = [
       makeStatusItem({ id: "A", state: "merged", dependencies: [] }),
       makeStatusItem({ id: "B", state: "queued", dependencies: ["A"] }),
     ];
     const table = stripAnsi(formatStatusTable(items, 100));
-    expect(table).toContain("BLOCKED BY");
+    expect(table).toContain("DEPS");
   });
 
-  it("does not show BLOCKED BY header when no items have dependencies", () => {
+  it("does not show DEPS header when no items have dependencies", () => {
     const items = [
       makeStatusItem({ id: "A", state: "implementing" }),
       makeStatusItem({ id: "B", state: "queued" }),
     ];
     const table = stripAnsi(formatStatusTable(items, 100));
-    expect(table).not.toContain("BLOCKED BY");
+    expect(table).not.toContain("DEPS");
   });
 
-  it("shows unresolved blockers for multi-dep items", () => {
+  it("shows unresolved blocker count for multi-dep items", () => {
     const items = [
       makeStatusItem({ id: "H-NW-1", state: "merged", dependencies: [] }),
       makeStatusItem({ id: "H-NW-2", state: "ci-pending", dependencies: [] }),
@@ -340,13 +384,50 @@ describe("formatStatusTable", () => {
       makeStatusItem({ id: "M-NW-6", state: "queued", dependencies: ["M-NW-5"] }),
     ];
     const table = stripAnsi(formatStatusTable(items, 120));
-    // M-NW-5 should show H-NW-2 as the only unresolved blocker (others merged)
-    expect(table).toContain("H-NW-2");
-    // M-NW-6 should show M-NW-5 as blocker
-    expect(table).toContain("M-NW-5");
+    const lines = table.split("\n");
+    // M-NW-5 has 1 unresolved blocker (H-NW-2) — DEPS column shows "1"
+    const m5Line = lines.find(l => l.includes("M-NW-5"));
+    expect(m5Line).toBeDefined();
+    expect(m5Line).toContain("1");
+    // M-NW-6 has 1 unresolved blocker (M-NW-5) — DEPS column shows "1"
+    const m6Line = lines.find(l => l.includes("M-NW-6"));
+    expect(m6Line).toBeDefined();
+    expect(m6Line).toContain("1");
     // Should NOT use tree nesting
     expect(table).not.toContain("└──");
     expect(table).not.toContain("├──");
+  });
+
+  it("DEPS column shows count and never overflows 5 chars", () => {
+    // Create an item with many unresolved blockers
+    const deps = Array.from({ length: 15 }, (_, i) => `DEP-${i}`);
+    const items = [
+      ...deps.map(id => makeStatusItem({ id, state: "implementing", dependencies: [] })),
+      makeStatusItem({ id: "TARGET", state: "queued", dependencies: deps }),
+    ];
+    const table = stripAnsi(formatStatusTable(items, 120));
+    const lines = table.split("\n");
+    const targetLine = lines.find(l => l.includes("TARGET"));
+    expect(targetLine).toBeDefined();
+    // DEPS column should show "15" (count), not the full list of IDs
+    expect(targetLine).toContain("15");
+    // Verify DEPS header is present and only 4 chars + space
+    expect(table).toContain("DEPS");
+    // The column header "DEPS " is 5 chars, verify it doesn't say "BLOCKED BY"
+    expect(table).not.toContain("BLOCKED BY");
+  });
+
+  it("DEPS column shows dash for items with no unresolved blockers", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "merged", dependencies: [] }),
+      makeStatusItem({ id: "B-2", state: "queued", dependencies: ["A-1"] }),
+    ];
+    const table = stripAnsi(formatStatusTable(items, 100));
+    const lines = table.split("\n");
+    // B-2's only dep (A-1) is merged, so DEPS should show "-"
+    const b2Line = lines.find(l => l.includes("B-2"));
+    expect(b2Line).toBeDefined();
+    expect(b2Line).toContain("-");
   });
 
   it("sorts by blocked-by count ascending then ID alphanumeric", () => {

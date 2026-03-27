@@ -362,7 +362,7 @@ describe("formatStatusTable", () => {
     expect(output).toContain("ID");
     expect(output).toContain("STATE");
     expect(output).toContain("PR");
-    expect(output).toContain("AGE");
+    expect(output).toContain("DURATION");
     expect(output).toContain("TITLE");
     expect(output).toContain("H-STU-1");
     expect(output).toContain("H-MUX-2");
@@ -1379,7 +1379,7 @@ describe("formatTreeRows", () => {
 // ─── formatStatusTable with dependency trees ──────────────────────────────────
 
 describe("formatStatusTable blocked-by rendering", () => {
-  it("renders dependency chain as flat list with BLOCKED BY column", () => {
+  it("renders dependency chain as flat list with DEPS column", () => {
     const items = [
       makeItem("H-PRX-4", "merged", "Add session CA", 123, 3600000),
       makeItem("H-PRX-5", "merged", "Add Cedar policy", 124, 3600000, ["H-PRX-4"]),
@@ -1391,13 +1391,13 @@ describe("formatStatusTable blocked-by rendering", () => {
     expect(output).toContain("H-PRX-5");
     expect(output).toContain("H-PRX-6");
     expect(output).toContain("H-PRX-7");
-    expect(output).toContain("BLOCKED BY");
+    expect(output).toContain("DEPS");
     // No tree chars
     expect(output).not.toContain("└──");
     expect(output).not.toContain("├──");
   });
 
-  it("root items (no deps) show dash in BLOCKED BY", () => {
+  it("root items (no deps) show dash in DEPS", () => {
     const items = [
       makeItem("A-1", "merged", "Root"),
       makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
@@ -1435,24 +1435,24 @@ describe("formatStatusTable blocked-by rendering", () => {
     expect(output).toContain("A-2");
     expect(output).toContain("B-1");
     expect(output).toContain("B-2");
-    expect(output).toContain("BLOCKED BY");
+    expect(output).toContain("DEPS");
     // No tree chars
     expect(output).not.toContain("└──");
     expect(output).not.toContain("├──");
   });
 
-  it("--flat flag forces flat rendering without BLOCKED BY column", () => {
+  it("--flat flag forces flat rendering without DEPS column", () => {
     const items = [
       makeItem("A-1", "merged", "Root"),
       makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),
       makeItem("A-3", "queued", "Grandchild", null, 3600000, ["A-2"]),
     ];
     const output = stripAnsi(formatStatusTable(items, 80, undefined, true));
-    // Should not have tree connectors or BLOCKED BY
+    // Should not have tree connectors or DEPS
     expect(output).not.toContain("├──");
     expect(output).not.toContain("└──");
     expect(output).not.toContain("│");
-    expect(output).not.toContain("BLOCKED BY");
+    expect(output).not.toContain("DEPS");
     // Items should still be present
     expect(output).toContain("A-1");
     expect(output).toContain("A-2");
