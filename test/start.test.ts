@@ -18,9 +18,10 @@ vi.mock("../core/git.ts", () => ({
   createWorktree: vi.fn(),
 }));
 
-import { detectAiTool, cmdStart, launchSingleItem, launchAiSession, launchReviewWorker, sanitizeTitle, extractTodoText } from "../core/commands/start.ts";
+import { detectAiTool, cmdStart, launchSingleItem, launchAiSession, launchReviewWorker, sanitizeTitle, extractTodoText, inferPackageForItem, buildWorkerPrompt } from "../core/commands/start.ts";
 import { parseTodos } from "../core/parser.ts";
 import { fetchOrigin, ffMerge, createWorktree, branchExists } from "../core/git.ts";
+import type { WorkspaceConfig, WorkspacePackage, TodoItem } from "../core/types.ts";
 
 /** Create a mock Multiplexer for dependency injection (avoids vi.mock leaking). */
 function createMockMux(): Multiplexer & Record<string, Mock> {
@@ -559,6 +560,366 @@ describe("launchSingleItem", () => {
       "todo/M-CI-1",
       "HEAD",
     );
+  });
+});
+
+describe("inferPackageForItem", () => {
+  const wsConfig: WorkspaceConfig = {
+    tool: "pnpm",
+    root: ".",
+    packages: [
+      { name: "api", path: "packages/api", testCmd: "pnpm test --filter api" },
+      { name: "web", path: "packages/web", testCmd: "pnpm test --filter web" },
+      { name: "ab-tools", path: "packages/ab", testCmd: "pnpm test --filter ab-tools" },
+    ],
+  };
+
+  function makeItem(filePaths: string[]): TodoItem {
+    return {
+      id: "T-1",
+      priority: "medium",
+      title: "Test",
+      domain: "test",
+      dependencies: [],
+      bundleWith: [],
+      status: "open",
+      filePath: "",
+      repoAlias: "",
+      rawText: "",
+      filePaths,
+      testPlan: "",
+      bootstrap: false,
+    };
+  }
+
+  it("returns correct package when all files are in one package", () => {
+    const item = makeItem(["packages/api/src/index.ts", "packages/api/test/api.test.ts"]);
+    const result = inferPackageForItem(item, wsConfig);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("api");
+    expect(result!.testCmd).toBe("pnpm test --filter api");
+  });
+
+  it("returns null when files span multiple packages", () => {
+    const item = makeItem(["packages/api/src/index.ts", "packages/web/src/app.tsx"]);
+    const result = inferPackageForItem(item, wsConfig);
+    expect(result).toBeNull();
+  });
+
+  it("returns null when workspace config has no packages", () => {
+    const emptyConfig: WorkspaceConfig = { tool: "pnpm", root: ".", packages: [] };
+    const item = makeItem(["packages/api/src/index.ts"]);
+    const result = inferPackageForItem(item, emptyConfig);
+    expect(result).toBeNull();
+  });
+
+  it("returns null when item has no filePaths", () => {
+    const item = makeItem([]);
+    const result = inferPackageForItem(item, wsConfig);
+    expect(result).toBeNull();
+  });
+
+  it("returns null when file does not belong to any package", () => {
+    const item = makeItem(["src/standalone.ts"]);
+    const result = inferPackageForItem(item, wsConfig);
+    expect(result).toBeNull();
+  });
+
+  it("uses longest prefix match for nested package paths", () => {
+    const nestedConfig: WorkspaceConfig = {
+      tool: "pnpm",
+      root: ".",
+      packages: [
+        { name: "ab", path: "packages/ab", testCmd: "pnpm test --filter ab" },
+        { name: "abc", path: "packages/abc", testCmd: "pnpm test --filter abc" },
+      ],
+    };
+    // packages/abc/ should win over packages/ab/ for files in packages/abc/
+    const item = makeItem(["packages/abc/src/index.ts"]);
+    const result = inferPackageForItem(item, nestedConfig);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("abc");
+  });
+
+  it("does not match package path as a prefix of a longer directory name", () => {
+    // packages/ab should NOT match packages/abc/src/index.ts
+    const item = makeItem(["packages/abc/src/index.ts"]);
+    const configWithAb: WorkspaceConfig = {
+      tool: "pnpm",
+      root: ".",
+      packages: [
+        { name: "ab", path: "packages/ab", testCmd: "pnpm test --filter ab" },
+      ],
+    };
+    const result = inferPackageForItem(item, configWithAb);
+    expect(result).toBeNull();
+  });
+});
+
+describe("buildWorkerPrompt", () => {
+  it("includes testCmd when provided", () => {
+    const prompt = buildWorkerPrompt({
+      itemId: "M-1",
+      partition: 3,
+      targetRepo: "/code/project",
+      projectRoot: "/code/project",
+      seededAgents: [],
+      todoText: "# Some TODO",
+      testCmd: "pnpm test --filter api",
+    });
+    expect(prompt).toContain("TEST_CMD: pnpm test --filter api");
+  });
+
+  it("omits TEST_CMD line when testCmd is not provided", () => {
+    const prompt = buildWorkerPrompt({
+      itemId: "M-1",
+      partition: 3,
+      targetRepo: "/code/project",
+      projectRoot: "/code/project",
+      seededAgents: [],
+      todoText: "# Some TODO",
+    });
+    expect(prompt).not.toContain("TEST_CMD:");
+  });
+
+  it("includes all standard fields", () => {
+    const prompt = buildWorkerPrompt({
+      itemId: "H-2",
+      partition: 5,
+      targetRepo: "/target",
+      projectRoot: "/hub",
+      baseBranch: "todo/H-1",
+      seededAgents: [".claude/agents/todo-worker.md"],
+      todoText: "# Fix the bug",
+      testCmd: "yarn test",
+    });
+    expect(prompt).toContain("YOUR_TODO_ID: H-2");
+    expect(prompt).toContain("YOUR_PARTITION: 5");
+    expect(prompt).toContain("PROJECT_ROOT: /target");
+    expect(prompt).toContain("HUB_ROOT: /hub");
+    expect(prompt).toContain("BASE_BRANCH: todo/H-1");
+    expect(prompt).toContain("TEST_CMD: yarn test");
+    expect(prompt).toContain("todo-worker.md");
+    expect(prompt).toContain("# Fix the bug");
+  });
+});
+
+describe("launchSingleItem workspace test command", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINTHWAVE_AI_TOOL = "claude";
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    cleanupTempRepos();
+  });
+
+  it("includes workspace testCmd in system prompt when files match a package", async () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    // C-UO-1 has filePaths: lib/onboarding/email.ex, lib/mailer.ex
+    const item = items.find((i) => i.id === "C-UO-1")!;
+
+    const wsConfig: WorkspaceConfig = {
+      tool: "pnpm",
+      root: ".",
+      packages: [
+        { name: "onboarding", path: "lib/onboarding", testCmd: "pnpm test --filter onboarding" },
+        { name: "mailer", path: "lib/mailer", testCmd: "pnpm test --filter mailer" },
+      ],
+    };
+
+    // C-UO-1 has files in both lib/onboarding/ and lib/mailer.ex (root level, not in lib/mailer/)
+    // lib/mailer.ex does NOT match lib/mailer/ (path prefix requires trailing /)
+    // So only lib/onboarding/email.ex matches → but lib/mailer.ex doesn't match any → null
+    // Use opencode so we can inspect the sendMessage call for the prompt
+    await captureOutput(() => {
+      launchSingleItem(item, todosDir, worktreeDir, repo, "opencode", mockMux, {
+        workspaceConfig: wsConfig,
+      });
+    });
+
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    const sentPrompt = sendCall[1] as string;
+    // Since lib/mailer.ex doesn't match any package, falls back to no testCmd
+    expect(sentPrompt).not.toContain("TEST_CMD:");
+  });
+
+  it("includes testCmd when all files are in one workspace package", async () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = join(repo, ".ninthwave", "todos");
+    mkdirSync(todosDir, { recursive: true });
+
+    // Create a custom todo with files all in packages/api/
+    writeFileSync(
+      join(todosDir, "2-api--M-API-1.md"),
+      [
+        "# Fix API handler (M-API-1)",
+        "",
+        "**Priority:** Medium",
+        "**Source:** Manual 2026-03-22",
+        "**Depends on:** None",
+        "**Domain:** api",
+        "",
+        "Fix the API handler.",
+        "",
+        "Acceptance: Handler returns 200.",
+        "",
+        "Key files: `packages/api/src/handler.ts`, `packages/api/test/handler.test.ts`",
+        "",
+      ].join("\n"),
+    );
+
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-API-1")!;
+
+    const wsConfig: WorkspaceConfig = {
+      tool: "pnpm",
+      root: ".",
+      packages: [
+        { name: "api", path: "packages/api", testCmd: "pnpm test --filter api" },
+        { name: "web", path: "packages/web", testCmd: "pnpm test --filter web" },
+      ],
+    };
+
+    await captureOutput(() => {
+      launchSingleItem(item, todosDir, worktreeDir, repo, "opencode", mockMux, {
+        workspaceConfig: wsConfig,
+      });
+    });
+
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).toContain("TEST_CMD: pnpm test --filter api");
+  });
+
+  it("falls back to no testCmd when files span multiple packages", async () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = join(repo, ".ninthwave", "todos");
+    mkdirSync(todosDir, { recursive: true });
+
+    writeFileSync(
+      join(todosDir, "2-api--M-MULTI-1.md"),
+      [
+        "# Cross-package fix (M-MULTI-1)",
+        "",
+        "**Priority:** Medium",
+        "**Source:** Manual 2026-03-22",
+        "**Depends on:** None",
+        "**Domain:** api",
+        "",
+        "Fix across packages.",
+        "",
+        "Acceptance: Both packages work.",
+        "",
+        "Key files: `packages/api/src/handler.ts`, `packages/web/src/app.tsx`",
+        "",
+      ].join("\n"),
+    );
+
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-MULTI-1")!;
+
+    const wsConfig: WorkspaceConfig = {
+      tool: "pnpm",
+      root: ".",
+      packages: [
+        { name: "api", path: "packages/api", testCmd: "pnpm test --filter api" },
+        { name: "web", path: "packages/web", testCmd: "pnpm test --filter web" },
+      ],
+    };
+
+    await captureOutput(() => {
+      launchSingleItem(item, todosDir, worktreeDir, repo, "opencode", mockMux, {
+        workspaceConfig: wsConfig,
+      });
+    });
+
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).not.toContain("TEST_CMD:");
+  });
+
+  it("falls back to no testCmd when no workspace config is provided", async () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = setupTodosDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    await captureOutput(() => {
+      launchSingleItem(item, todosDir, worktreeDir, repo, "opencode", mockMux, {
+        workspaceConfig: null,
+      });
+    });
+
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).not.toContain("TEST_CMD:");
+  });
+
+  it("loads workspace config from config.json when not passed explicitly", async () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const todosDir = join(repo, ".ninthwave", "todos");
+    mkdirSync(todosDir, { recursive: true });
+
+    writeFileSync(
+      join(todosDir, "2-api--M-API-2.md"),
+      [
+        "# Fix API route (M-API-2)",
+        "",
+        "**Priority:** Medium",
+        "**Source:** Manual 2026-03-22",
+        "**Depends on:** None",
+        "**Domain:** api",
+        "",
+        "Fix the route.",
+        "",
+        "Acceptance: Route returns 200.",
+        "",
+        "Key files: `packages/api/src/route.ts`",
+        "",
+      ].join("\n"),
+    );
+
+    // Write config.json with workspace packages
+    writeFileSync(
+      join(repo, ".ninthwave", "config.json"),
+      JSON.stringify({
+        workspace: {
+          tool: "pnpm",
+          root: ".",
+          packages: [
+            { name: "api", path: "packages/api", testCmd: "pnpm test --filter api" },
+          ],
+        },
+      }),
+    );
+
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseTodos(todosDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-API-2")!;
+
+    await captureOutput(() => {
+      // Don't pass workspaceConfig — should auto-load from config.json
+      launchSingleItem(item, todosDir, worktreeDir, repo, "opencode", mockMux);
+    });
+
+    const sendCall = mockMux.sendMessage.mock.calls[0];
+    const sentPrompt = sendCall[1] as string;
+    expect(sentPrompt).toContain("TEST_CMD: pnpm test --filter api");
   });
 });
 

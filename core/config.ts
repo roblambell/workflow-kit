@@ -2,7 +2,7 @@
 
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-import type { ProjectConfig } from "./types.ts";
+import type { ProjectConfig, WorkspaceConfig } from "./types.ts";
 import { DEFAULT_LOC_EXTENSIONS } from "./types.ts";
 
 /** Keys recognised by ninthwave. Anything else triggers a warning. */
@@ -56,6 +56,25 @@ export function loadConfig(projectRoot: string): ProjectConfig {
   }
 
   return config;
+}
+
+/**
+ * Load workspace config from .ninthwave/config.json.
+ * Returns null if the file doesn't exist or has no workspace section.
+ */
+export function loadWorkspaceConfig(projectRoot: string): WorkspaceConfig | null {
+  const configJsonPath = join(projectRoot, ".ninthwave", "config.json");
+  if (!existsSync(configJsonPath)) return null;
+
+  try {
+    const raw = JSON.parse(readFileSync(configJsonPath, "utf-8"));
+    if (raw?.workspace?.packages && Array.isArray(raw.workspace.packages)) {
+      return raw.workspace as WorkspaceConfig;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**

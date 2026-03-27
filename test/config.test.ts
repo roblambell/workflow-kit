@@ -3,7 +3,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { join } from "path";
 import { mkdirSync, writeFileSync } from "fs";
-import { loadConfig, loadDomainMappings, KNOWN_CONFIG_KEYS } from "../core/config.ts";
+import { loadConfig, loadDomainMappings, loadWorkspaceConfig, KNOWN_CONFIG_KEYS } from "../core/config.ts";
 import { DEFAULT_LOC_EXTENSIONS } from "../core/types.ts";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 
@@ -226,5 +226,49 @@ describe("normalizeDomain with custom mappings", () => {
     expect(normalizeDomain("User Onboarding", mappings)).toBe(
       "user-onboarding",
     );
+  });
+});
+
+describe("loadWorkspaceConfig", () => {
+  it("returns null when config.json does not exist", () => {
+    const repo = setupTempRepo();
+    expect(loadWorkspaceConfig(repo)).toBeNull();
+  });
+
+  it("returns workspace config when config.json has valid workspace section", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({
+        workspace: {
+          tool: "pnpm",
+          root: ".",
+          packages: [{ name: "api", path: "packages/api", testCmd: "pnpm test --filter api" }],
+        },
+      }),
+    );
+    const result = loadWorkspaceConfig(repo);
+    expect(result).not.toBeNull();
+    expect(result!.tool).toBe("pnpm");
+    expect(result!.packages).toHaveLength(1);
+    expect(result!.packages[0]!.name).toBe("api");
+  });
+
+  it("returns null when config.json has no workspace section", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config.json"), JSON.stringify({ other: "data" }));
+    expect(loadWorkspaceConfig(repo)).toBeNull();
+  });
+
+  it("returns null when config.json is invalid JSON", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config.json"), "not json");
+    expect(loadWorkspaceConfig(repo)).toBeNull();
   });
 });

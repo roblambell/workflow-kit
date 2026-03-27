@@ -30,7 +30,8 @@ import {
 import { cmdConflicts } from "./conflicts.ts";
 import { readTodo } from "../todo-files.ts";
 import { applyGithubToken, prList } from "../gh.ts";
-import type { TodoItem } from "../types.ts";
+import { loadWorkspaceConfig } from "../config.ts";
+import type { TodoItem, WorkspaceConfig, WorkspacePackage } from "../types.ts";
 
 /**
  * Sanitize a title for safe shell interpolation.
@@ -262,6 +263,78 @@ export function extractTodoText(todosDir: string, targetId: string): string {
 }
 
 /**
+ * Infer which workspace package a TODO item belongs to based on its affected files.
+ * Returns the package when all files map to a single package, null otherwise.
+ *
+ * For each file path, finds the package whose `path` is the longest matching prefix.
+ * If files span multiple packages or no workspace config is present, returns null.
+ */
+export function inferPackageForItem(
+  item: TodoItem,
+  workspaceConfig: WorkspaceConfig,
+): WorkspacePackage | null {
+  if (!item.filePaths || item.filePaths.length === 0) return null;
+  if (!workspaceConfig.packages || workspaceConfig.packages.length === 0) return null;
+
+  let resolvedPackage: WorkspacePackage | null = null;
+
+  for (const filePath of item.filePaths) {
+    let bestMatch: WorkspacePackage | null = null;
+    let bestLen = 0;
+
+    for (const pkg of workspaceConfig.packages) {
+      // Normalize: ensure package path ends with / for prefix matching
+      const prefix = pkg.path.endsWith("/") ? pkg.path : `${pkg.path}/`;
+      if (filePath.startsWith(prefix) && prefix.length > bestLen) {
+        bestMatch = pkg;
+        bestLen = prefix.length;
+      }
+    }
+
+    if (!bestMatch) return null; // file doesn't belong to any package
+
+    if (resolvedPackage === null) {
+      resolvedPackage = bestMatch;
+    } else if (resolvedPackage.name !== bestMatch.name) {
+      return null; // files span multiple packages
+    }
+  }
+
+  return resolvedPackage;
+}
+
+/** Options for building the worker system prompt. */
+export interface WorkerPromptOptions {
+  itemId: string;
+  partition: number;
+  targetRepo: string;
+  projectRoot: string;
+  baseBranch?: string;
+  seededAgents: string[];
+  todoText: string;
+  testCmd?: string;
+}
+
+/**
+ * Build the system prompt appended to worker sessions.
+ * Includes item metadata, partition, paths, and optional workspace test command.
+ */
+export function buildWorkerPrompt(opts: WorkerPromptOptions): string {
+  const baseBranchLine = opts.baseBranch ? `BASE_BRANCH: ${opts.baseBranch}\n` : "";
+  const seededAgentsLine = opts.seededAgents.length > 0
+    ? `\nNOTE: The following files were seeded into this worktree by ninthwave and should be included in your first commit: ${opts.seededAgents.join(", ")}\n`
+    : "";
+  const testCmdLine = opts.testCmd ? `TEST_CMD: ${opts.testCmd}\n` : "";
+
+  return `YOUR_TODO_ID: ${opts.itemId}
+YOUR_PARTITION: ${opts.partition}
+PROJECT_ROOT: ${opts.targetRepo}
+HUB_ROOT: ${opts.projectRoot}
+${baseBranchLine}${testCmdLine}${seededAgentsLine}
+${opts.todoText}`;
+}
+
+/**
  * Launch a single TODO item: create worktree, allocate partition, start AI session.
  * Used by the orchestrator to launch items one at a time as WIP slots open.
  */
@@ -272,7 +345,7 @@ export function launchSingleItem(
   projectRoot: string,
   aiTool: string,
   mux: Multiplexer = getMux(),
-  options: { baseBranch?: string } = {},
+  options: { baseBranch?: string; workspaceConfig?: WorkspaceConfig | null } = {},
 ): LaunchResult | null {
   let targetRepo: string;
   try {
@@ -392,16 +465,24 @@ export function launchSingleItem(
 
   // Build system prompt
   const todoText = extractTodoText(todosDir, item.id);
-  const baseBranchLine = options.baseBranch ? `BASE_BRANCH: ${options.baseBranch}\n` : "";
-  const seededAgentsLine = seededAgents.length > 0
-    ? `\nNOTE: The following files were seeded into this worktree by ninthwave and should be included in your first commit: ${seededAgents.join(", ")}\n`
-    : "";
-  const systemPrompt = `YOUR_TODO_ID: ${item.id}
-YOUR_PARTITION: ${partition}
-PROJECT_ROOT: ${targetRepo}
-HUB_ROOT: ${projectRoot}
-${baseBranchLine}${seededAgentsLine}
-${todoText}`;
+
+  // Resolve workspace-scoped test command
+  const wsConfig = options.workspaceConfig !== undefined
+    ? options.workspaceConfig
+    : loadWorkspaceConfig(projectRoot);
+  const matchedPkg = wsConfig ? inferPackageForItem(item, wsConfig) : null;
+  const testCmd = matchedPkg?.testCmd;
+
+  const systemPrompt = buildWorkerPrompt({
+    itemId: item.id,
+    partition,
+    targetRepo,
+    projectRoot,
+    baseBranch: options.baseBranch,
+    seededAgents,
+    todoText,
+    testCmd,
+  });
 
   // Write system prompt to a temp file
   const promptFile = join(tmpdir(), `nw-prompt-${item.id}-${Date.now()}`);
