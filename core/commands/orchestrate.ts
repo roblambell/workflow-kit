@@ -215,12 +215,17 @@ export function buildSnapshot(
 
       switch (status) {
         case "merged": {
-          // During live polling, the branch name `todo/{ID}` is the definitive
-          // identity — if checkPrStatus finds a merged PR for that branch, it's
-          // ours regardless of how the worker titled the PR. Title collision
-          // checks are only needed in reconstructState (cross-cycle ambiguity
-          // after daemon restart).
-          snap.prState = "merged";
+          // Title collision check: when a TODO ID is reused, the old merged PR
+          // still shows up for the same branch name. If the orchestrator already
+          // assigned a PR number to this item (during this session), trust it.
+          // Otherwise, compare the merged PR's title against the TODO title.
+          const mergedPrTitle = parts[5] ?? "";
+          const todoTitle = orchItem.todo.title;
+          const alreadyTracked = orchItem.prNumber != null && snap.prNumber === orchItem.prNumber;
+          if (alreadyTracked || !mergedPrTitle || prTitleMatchesTodo(mergedPrTitle, todoTitle)) {
+            snap.prState = "merged";
+          }
+          // else: title mismatch — stale merged PR from a previous cycle, ignore it
           break;
         }
         case "ready":

@@ -1647,16 +1647,16 @@ describe("buildSnapshot merge detection", () => {
     };
   }
 
-  it("detects merged PR even when prNumber is unset and title differs from TODO", () => {
+  it("ignores stale merged PR when prNumber is unset and title differs from TODO", () => {
     const orch = new Orchestrator({ wipLimit: 2 });
     const todo = makeTodo("MRG-1-1");
     todo.title = "Fix the daemon polling loop";
     orch.addItem(todo);
     orch.setState("MRG-1-1", "implementing");
-    // prNumber is never set (auto-merged before daemon saw it as open)
+    // prNumber is never set — either stale PR or auto-merged before daemon saw it
     expect(orch.getItem("MRG-1-1")!.prNumber).toBeUndefined();
 
-    // checkPr returns merged with a completely different title
+    // checkPr returns merged with a completely different title — stale PR from previous cycle
     const checkPr = () => "MRG-1-1\t99\tmerged\t\t\trefactor: rewrite polling internals";
     const mux = mockMux();
 
@@ -1664,8 +1664,8 @@ describe("buildSnapshot merge detection", () => {
 
     const snapItem = snapshot.items.find((i) => i.id === "MRG-1-1");
     expect(snapItem).toBeDefined();
-    expect(snapItem!.prState).toBe("merged");
-    expect(snapItem!.prNumber).toBe(99);
+    // Title mismatch + no tracked prNumber = stale PR, ignored
+    expect(snapItem!.prState).toBeUndefined();
   });
 });
 

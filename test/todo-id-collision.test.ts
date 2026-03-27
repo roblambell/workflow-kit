@@ -374,9 +374,9 @@ describe("reconstructState: TODO ID collision safety", () => {
 // ── buildSnapshot collision tests ────────────────────────────────────
 
 describe("buildSnapshot: TODO ID collision safety", () => {
-  it("reports merged regardless of title mismatch (trusts branch name during live polling)", () => {
-    // After H-MRG-1: buildSnapshot trusts the branch name `todo/{ID}` as definitive
-    // identity during live polling. Title checks are only in reconstructState.
+  it("ignores stale merged PR when title does not match TODO (ID collision)", () => {
+    // When a TODO ID is reused, the old merged PR still shows up for the same
+    // branch name. buildSnapshot must compare titles and ignore the stale PR.
     const orch = new Orchestrator();
     orch.addItem(makeTodo("H-FOO-1", "new work"));
     orch.setState("H-FOO-1", "implementing");
@@ -411,8 +411,8 @@ describe("buildSnapshot: TODO ID collision safety", () => {
 
     const snap = snapshot.items.find((s) => s.id === "H-FOO-1");
     expect(snap).toBeDefined();
-    // prState IS "merged" — branch name is authoritative during live polling
-    expect(snap!.prState).toBe("merged");
+    // prState should be undefined — title mismatch means this is a stale PR
+    expect(snap!.prState).toBeUndefined();
   });
 
   it("reports merged when orchestrator already tracks the PR number (skips title check)", () => {
@@ -461,14 +461,14 @@ describe("buildSnapshot: TODO ID collision safety", () => {
     expect(snap!.prState).toBe("merged");
   });
 
-  it("reports merged even when prNumber differs from tracked (branch name is authoritative)", () => {
-    // After H-MRG-1: buildSnapshot trusts branch name, so even a prNumber mismatch
-    // doesn't prevent merge detection during live polling.
+  it("ignores stale merged PR when prNumber differs and title doesn't match", () => {
+    // When the orchestrator tracks prNumber=99 but finds a merged PR #42 with a
+    // different title, it should ignore it — this is an old PR from a previous cycle.
     const orch = new Orchestrator();
     orch.addItem(makeTodo("H-FOO-1", "new work"));
     orch.setState("H-FOO-1", "ci-passed");
     const item = orch.getItem("H-FOO-1")!;
-    item.prNumber = 99; // Different PR number
+    item.prNumber = 99; // Different PR number — not the one that merged
 
     const mockCheckPr = (id: string) => {
       if (id === "H-FOO-1") {
@@ -500,8 +500,8 @@ describe("buildSnapshot: TODO ID collision safety", () => {
 
     const snap = snapshot.items.find((s) => s.id === "H-FOO-1");
     expect(snap).toBeDefined();
-    // prState IS "merged" — branch name is authoritative during live polling
-    expect(snap!.prState).toBe("merged");
+    // prState should be undefined — title mismatch + different PR number
+    expect(snap!.prState).toBeUndefined();
   });
 
   it("reports merged when PR title matches TODO title", () => {

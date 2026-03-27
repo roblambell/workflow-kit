@@ -116,13 +116,15 @@ describe("Merge detection lifecycle (integration)", () => {
       expect(cleanAction).toBeDefined();
     });
 
-    it("rephrased title: PR title differs from TODO title, still detected via branch identity", () => {
+    it("rephrased title: PR title differs but prNumber is tracked, still detected as merged", () => {
       const orch = new Orchestrator();
       orch.addItem(makeTodo("MRG-RT-1", "Add error handling to parser"));
-      orch.setState("MRG-RT-1", "implementing");
+      orch.setState("MRG-RT-1", "ci-passed");
+      // Orchestrator tracked this PR during the run (worker created it, snapshot detected it)
+      orch.getItem("MRG-RT-1")!.prNumber = 55;
 
       // Worker used a completely different PR title than the TODO title.
-      // During live polling, branch name is the identity — title doesn't matter.
+      // Since prNumber matches, title check is skipped.
       const checkPr = (_id: string, _root: string) =>
         "MRG-RT-1\t55\tmerged\t\t\trefactor: rewrite parser error paths";
 
@@ -141,9 +143,34 @@ describe("Merge detection lifecycle (integration)", () => {
 
       const actions = orch.processTransitions(snapshot, NOW);
 
-      // Still detected as merged — branch name is definitive during live polling
+      // Detected as merged — prNumber is tracked so title is irrelevant
       expect(orch.getItem("MRG-RT-1")!.state).toBe("merged");
       expect(actions.some((a) => a.type === "clean" && a.itemId === "MRG-RT-1")).toBe(true);
+    });
+
+    it("stale merged PR with different title and no tracked prNumber is ignored", () => {
+      const orch = new Orchestrator();
+      orch.addItem(makeTodo("MRG-RT-1", "Add error handling to parser"));
+      orch.setState("MRG-RT-1", "implementing");
+      // No prNumber tracked — worker hasn't created a PR yet
+
+      // Old merged PR from previous cycle with different title
+      const checkPr = (_id: string, _root: string) =>
+        "MRG-RT-1\t55\tmerged\t\t\trefactor: rewrite parser error paths";
+
+      const snapshot = buildSnapshot(
+        orch,
+        PROJECT_ROOT,
+        join(PROJECT_ROOT, ".worktrees"),
+        stubMux(),
+        () => null,
+        checkPr,
+      );
+
+      const snap = snapshot.items.find((s) => s.id === "MRG-RT-1");
+      expect(snap).toBeDefined();
+      // prState should be undefined — title mismatch + no tracked prNumber = stale PR
+      expect(snap!.prState).toBeUndefined();
     });
   });
 
