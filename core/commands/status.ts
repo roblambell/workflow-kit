@@ -371,7 +371,10 @@ export function renderStatus(worktreeDir: string, projectRoot: string, flat: boo
     if (isFresh || daemonPid !== null) {
       const items = daemonStateToStatusItems(daemonState);
       const termWidth = getTerminalWidth();
-      lines.push(formatStatusTable(items, termWidth, daemonState.wipLimit, flat, viewOptions));
+      // Merge sessionStartedAt from daemon state into viewOptions so metrics
+      // (session duration, throughput) display actual values instead of "-".
+      const mergedOpts = { ...viewOptions, sessionStartedAt: daemonState.startedAt };
+      lines.push(formatStatusTable(items, termWidth, daemonState.wipLimit, flat, mergedOpts));
 
       const agoStr = formatAge(stateAgeMs) + " ago";
       if (daemonPid !== null) {

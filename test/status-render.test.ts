@@ -771,6 +771,41 @@ describe("renderTuiFrame", () => {
     );
     expect(() => renderTuiFrame(items, 5, (s) => written.push(s))).not.toThrow();
   });
+
+  it("threads viewOptions with sessionStartedAt to formatStatusTable", () => {
+    const written: string[] = [];
+    const items = [
+      makeOrchestratorItem("A-1", "merged"),
+      makeOrchestratorItem("A-2", "merged"),
+      makeOrchestratorItem("A-3", "merged"),
+    ];
+    const sessionStart = new Date(Date.now() - 2 * 3_600_000).toISOString(); // 2 hours ago
+    renderTuiFrame(items, undefined, (s) => written.push(s), {
+      showMetrics: true,
+      sessionStartedAt: sessionStart,
+    });
+    const full = stripAnsi(written.join(""));
+    // Metrics panel should appear with actual values (not dashes)
+    expect(full).toContain("Session Metrics");
+    expect(full).toContain("Session Duration:");
+    expect(full).toContain("Throughput:");
+    // Session duration should show an actual time, not "-"
+    const durationLine = full.split("\n").find(l => l.includes("Session Duration:"));
+    expect(durationLine).toBeDefined();
+    expect(durationLine).not.toMatch(/Session Duration:\s+-$/);
+    // Throughput should show actual value since there are merged items
+    const throughputLine = full.split("\n").find(l => l.includes("Throughput:"));
+    expect(throughputLine).toBeDefined();
+    expect(throughputLine).toContain("/hr");
+  });
+
+  it("without viewOptions, metrics panel is not shown", () => {
+    const written: string[] = [];
+    const items = [makeOrchestratorItem("C-1-1", "merged")];
+    renderTuiFrame(items, undefined, (s) => written.push(s));
+    const full = stripAnsi(written.join(""));
+    expect(full).not.toContain("Session Metrics");
+  });
 });
 
 // ── getTerminalWidth ──────────────────────────────────────────────────────────
