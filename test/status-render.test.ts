@@ -17,11 +17,16 @@ import {
   formatStatusTable,
   computeBlockedBy,
   sortByBlockedThenId,
+  computeSessionMetrics,
+  formatMetricsPanel,
+  formatHelpFooter,
   mapDaemonItemState,
   daemonStateToStatusItems,
   getTerminalWidth,
   type StatusItem,
   type ItemState,
+  type ViewOptions,
+  type SessionMetrics,
 } from "../core/status-render.ts";
 import {
   detectTuiMode,
@@ -790,5 +795,391 @@ describe("getTerminalWidth", () => {
         delete (process.stdout as Record<string, unknown>)["columns"];
       }
     }
+  });
+});
+
+// ── computeSessionMetrics ─────────────────────────────────────────────────────
+
+describe("computeSessionMetrics", () => {
+  it("returns nulls when no merged items", () => {
+    const items = [
+      makeStatusItem({ state: "implementing" }),
+      makeStatusItem({ id: "B", state: "queued" }),
+    ];
+    const metrics = computeSessionMetrics(items);
+    expect(metrics.leadTimeMedianMs).toBeNull();
+    expect(metrics.leadTimeP95Ms).toBeNull();
+    expect(metrics.successRate).toBeNull();
+    expect(metrics.throughputPerHour).toBeNull();
+    expect(metrics.sessionDurationMs).toBeNull();
+  });
+
+  it("computes lead time for all merged items", () => {
+    const items = [
+      makeStatusItem({
+        id: "A",
+        state: "merged",
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: "2026-01-01T00:30:00Z",
+      }),
+      makeStatusItem({
+        id: "B",
+        state: "merged",
+        startedAt: "2026-01-01T01:00:00Z",
+        endedAt: "2026-01-01T02:00:00Z",
+      }),
+    ];
+    const metrics = computeSessionMetrics(items);
+    // Lead times: 30min (1.8M ms), 60min (3.6M ms). Median = (1.8M + 3.6M) / 2 = 2.7M
+    expect(metrics.leadTimeMedianMs).toBe(2_700_000);
+    // P95 with 2 items: nearest-rank index = ceil(0.95 * 2) - 1 = 1 → 60min
+    expect(metrics.leadTimeP95Ms).toBe(3_600_000);
+  });
+
+  it("computes lead time for a mix of merged and failed items", () => {
+    const items = [
+      makeStatusItem({
+        id: "A",
+        state: "merged",
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: "2026-01-01T00:10:00Z",
+      }),
+      makeStatusItem({
+        id: "B",
+        state: "ci-failed",
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: "2026-01-01T01:00:00Z",
+      }),
+    ];
+    const metrics = computeSessionMetrics(items);
+    // Only merged item A contributes to lead time: 10min = 600_000ms
+    expect(metrics.leadTimeMedianMs).toBe(600_000);
+    // Success rate: 1 merged / (1 merged + 1 failed) = 0.5
+    expect(metrics.successRate).toBe(0.5);
+  });
+
+  it("handles single merged item", () => {
+    const items = [
+      makeStatusItem({
+        id: "A",
+        state: "merged",
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: "2026-01-01T00:45:00Z",
+      }),
+    ];
+    const metrics = computeSessionMetrics(items);
+    expect(metrics.leadTimeMedianMs).toBe(2_700_000); // 45min
+    expect(metrics.leadTimeP95Ms).toBe(2_700_000);
+    expect(metrics.successRate).toBe(1);
+  });
+
+  it("skips merged items without startedAt", () => {
+    const items = [
+      makeStatusItem({ id: "A", state: "merged" }), // no startedAt
+      makeStatusItem({
+        id: "B",
+        state: "merged",
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: "2026-01-01T00:20:00Z",
+      }),
+    ];
+    const metrics = computeSessionMetrics(items);
+    // Only B contributes: 20min = 1_200_000ms
+    expect(metrics.leadTimeMedianMs).toBe(1_200_000);
+  });
+
+  it("computes throughput when sessionStartedAt is provided", () => {
+    const sessionStart = new Date(Date.now() - 2 * 3_600_000).toISOString(); // 2 hours ago
+    const items = [
+      makeStatusItem({ id: "A", state: "merged" }),
+      makeStatusItem({ id: "B", state: "merged" }),
+      makeStatusItem({ id: "C", state: "merged" }),
+    ];
+    const metrics = computeSessionMetrics(items, sessionStart);
+    // 3 merged in ~2 hours ≈ 1.5/hr
+    expect(metrics.throughputPerHour).toBeCloseTo(1.5, 0);
+    expect(metrics.sessionDurationMs).toBeGreaterThan(0);
+  });
+
+  it("returns null throughput without sessionStartedAt", () => {
+    const items = [makeStatusItem({ id: "A", state: "merged" })];
+    const metrics = computeSessionMetrics(items);
+    expect(metrics.throughputPerHour).toBeNull();
+    expect(metrics.sessionDurationMs).toBeNull();
+  });
+
+  it("handles zero session duration (avoid division by zero)", () => {
+    // sessionStartedAt = now → 0ms duration
+    const items = [makeStatusItem({ id: "A", state: "merged" })];
+    const metrics = computeSessionMetrics(items, new Date().toISOString());
+    // sessionDurationMs is 0, throughput should be null (avoids division by zero)
+    // Note: Due to timing, sessionDurationMs may be 0 or a small positive number
+    if (metrics.sessionDurationMs === 0) {
+      expect(metrics.throughputPerHour).toBeNull();
+    } else {
+      // Very small duration → very high throughput, which is fine
+      expect(metrics.throughputPerHour).not.toBeNull();
+    }
+  });
+
+  it("returns null success rate when all items are queued (no lead time data)", () => {
+    const items = [
+      makeStatusItem({ id: "A", state: "queued" }),
+      makeStatusItem({ id: "B", state: "queued" }),
+    ];
+    const metrics = computeSessionMetrics(items);
+    expect(metrics.successRate).toBeNull();
+    expect(metrics.leadTimeMedianMs).toBeNull();
+  });
+
+  it("computes correct success rate for all merged (100%)", () => {
+    const items = [
+      makeStatusItem({ id: "A", state: "merged" }),
+      makeStatusItem({ id: "B", state: "merged" }),
+    ];
+    const metrics = computeSessionMetrics(items);
+    expect(metrics.successRate).toBe(1);
+  });
+});
+
+// ── formatMetricsPanel ────────────────────────────────────────────────────────
+
+describe("formatMetricsPanel", () => {
+  it("renders layout structure with all sections", () => {
+    const metrics: SessionMetrics = {
+      leadTimeMedianMs: 1_800_000,  // 30min
+      leadTimeP95Ms: 3_600_000,     // 1h
+      throughputPerHour: 2.5,
+      successRate: 0.85,
+      sessionDurationMs: 7_200_000, // 2h
+    };
+    const panel = stripAnsi(formatMetricsPanel(metrics));
+    expect(panel).toContain("Session Metrics");
+    expect(panel).toContain("─");
+  });
+
+  it("formats lead time values", () => {
+    const metrics: SessionMetrics = {
+      leadTimeMedianMs: 1_800_000,
+      leadTimeP95Ms: 3_600_000,
+      throughputPerHour: null,
+      successRate: null,
+      sessionDurationMs: null,
+    };
+    const panel = stripAnsi(formatMetricsPanel(metrics));
+    expect(panel).toContain("Lead Time (median):  30m");
+    expect(panel).toContain("Lead Time (P95):     1h");
+  });
+
+  it("formats throughput", () => {
+    const metrics: SessionMetrics = {
+      leadTimeMedianMs: null,
+      leadTimeP95Ms: null,
+      throughputPerHour: 2.5,
+      successRate: null,
+      sessionDurationMs: null,
+    };
+    const panel = stripAnsi(formatMetricsPanel(metrics));
+    expect(panel).toContain("Throughput:          2.5/hr");
+  });
+
+  it("formats success rate as percentage", () => {
+    const metrics: SessionMetrics = {
+      leadTimeMedianMs: null,
+      leadTimeP95Ms: null,
+      throughputPerHour: null,
+      successRate: 0.75,
+      sessionDurationMs: null,
+    };
+    const panel = stripAnsi(formatMetricsPanel(metrics));
+    expect(panel).toContain("Success Rate:        75%");
+  });
+
+  it("formats session duration", () => {
+    const metrics: SessionMetrics = {
+      leadTimeMedianMs: null,
+      leadTimeP95Ms: null,
+      throughputPerHour: null,
+      successRate: null,
+      sessionDurationMs: 5_400_000, // 1h 30m
+    };
+    const panel = stripAnsi(formatMetricsPanel(metrics));
+    expect(panel).toContain("Session Duration:    1h 30m");
+  });
+
+  it("shows dashes for null values", () => {
+    const metrics: SessionMetrics = {
+      leadTimeMedianMs: null,
+      leadTimeP95Ms: null,
+      throughputPerHour: null,
+      successRate: null,
+      sessionDurationMs: null,
+    };
+    const panel = stripAnsi(formatMetricsPanel(metrics));
+    const lines = panel.split("\n").filter(l => l.includes(":"));
+    // All metric lines should show "-"
+    for (const line of lines) {
+      expect(line).toMatch(/-$/);
+    }
+  });
+});
+
+// ── formatHelpFooter ──────────────────────────────────────────────────────────
+
+describe("formatHelpFooter", () => {
+  it("renders key bindings", () => {
+    const footer = stripAnsi(formatHelpFooter());
+    expect(footer).toContain("q: quit");
+    expect(footer).toContain("m: metrics");
+    expect(footer).toContain("b: blocker detail");
+    expect(footer).toContain("h: help");
+  });
+});
+
+// ── formatStatusTable with ViewOptions ────────────────────────────────────────
+
+describe("formatStatusTable with ViewOptions", () => {
+  it("backward compatible: calling without viewOptions still works", () => {
+    const items = [makeStatusItem()];
+    const table = stripAnsi(formatStatusTable(items, 80));
+    expect(table).toContain("ninthwave status");
+    expect(table).toContain("TEST-1");
+    // Should NOT contain metrics or help by default
+    expect(table).not.toContain("Session Metrics");
+    expect(table).not.toContain("q: quit");
+  });
+
+  it("showMetrics=true includes metrics panel", () => {
+    const items = [
+      makeStatusItem({
+        id: "A",
+        state: "merged",
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: "2026-01-01T00:30:00Z",
+      }),
+      makeStatusItem({
+        id: "B",
+        state: "merged",
+        startedAt: "2026-01-01T01:00:00Z",
+        endedAt: "2026-01-01T02:00:00Z",
+      }),
+    ];
+    const table = stripAnsi(formatStatusTable(items, 100, undefined, false, {
+      showMetrics: true,
+      sessionStartedAt: "2026-01-01T00:00:00Z",
+    }));
+    expect(table).toContain("Session Metrics");
+    expect(table).toContain("Lead Time (median):");
+    expect(table).toContain("Lead Time (P95):");
+    expect(table).toContain("Throughput:");
+    expect(table).toContain("Success Rate:");
+    expect(table).toContain("Session Duration:");
+  });
+
+  it("showMetrics=false does not include metrics panel", () => {
+    const items = [makeStatusItem({ state: "merged" })];
+    const table = stripAnsi(formatStatusTable(items, 100, undefined, false, {
+      showMetrics: false,
+    }));
+    expect(table).not.toContain("Session Metrics");
+  });
+
+  it("showBlockerDetail=true shows full blocker IDs in DEPS column", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "B-2", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "C-3", state: "queued", dependencies: ["A-1", "B-2"] }),
+    ];
+    const table = stripAnsi(formatStatusTable(items, 120, undefined, false, {
+      showBlockerDetail: true,
+    }));
+    const lines = table.split("\n");
+    const c3Line = lines.find(l => l.includes("C-3"));
+    expect(c3Line).toBeDefined();
+    // Should show full IDs instead of count
+    expect(c3Line).toContain("A-1,B-2");
+  });
+
+  it("showBlockerDetail=false shows counts (default behavior)", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "B-2", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "C-3", state: "queued", dependencies: ["A-1", "B-2"] }),
+    ];
+    const table = stripAnsi(formatStatusTable(items, 120, undefined, false, {
+      showBlockerDetail: false,
+    }));
+    const lines = table.split("\n");
+    const c3Line = lines.find(l => l.includes("C-3"));
+    expect(c3Line).toBeDefined();
+    // Should show count "2", not full IDs
+    expect(c3Line).toContain("2");
+    expect(c3Line).not.toContain("A-1,B-2");
+  });
+
+  it("showBlockerDetail widens DEPS column dynamically", () => {
+    const items = [
+      makeStatusItem({ id: "LONG-ID-1", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "LONG-ID-2", state: "implementing", dependencies: [] }),
+      makeStatusItem({
+        id: "TARGET",
+        state: "queued",
+        dependencies: ["LONG-ID-1", "LONG-ID-2"],
+      }),
+    ];
+    const tableNormal = stripAnsi(formatStatusTable(items, 120));
+    const tableDetail = stripAnsi(formatStatusTable(items, 120, undefined, false, {
+      showBlockerDetail: true,
+    }));
+    const detailLines = tableDetail.split("\n");
+    const targetLine = detailLines.find(l => l.includes("TARGET"));
+    expect(targetLine).toContain("LONG-ID-1,LONG-ID-2");
+    // Header should still say DEPS
+    expect(tableDetail).toContain("DEPS");
+  });
+
+  it("showHelp=true shows key legend footer", () => {
+    const items = [makeStatusItem()];
+    const table = stripAnsi(formatStatusTable(items, 80, undefined, false, {
+      showHelp: true,
+    }));
+    expect(table).toContain("q: quit");
+    expect(table).toContain("m: metrics");
+    expect(table).toContain("h: help");
+  });
+
+  it("showHelp=false does not show key legend", () => {
+    const items = [makeStatusItem()];
+    const table = stripAnsi(formatStatusTable(items, 80, undefined, false, {
+      showHelp: false,
+    }));
+    expect(table).not.toContain("q: quit");
+  });
+
+  it("all options can be combined", () => {
+    const items = [
+      makeStatusItem({
+        id: "A-1",
+        state: "merged",
+        startedAt: "2026-01-01T00:00:00Z",
+        endedAt: "2026-01-01T00:30:00Z",
+        dependencies: [],
+      }),
+      makeStatusItem({
+        id: "B-2",
+        state: "queued",
+        dependencies: ["A-1"],
+      }),
+    ];
+    const table = stripAnsi(formatStatusTable(items, 120, undefined, false, {
+      showMetrics: true,
+      showBlockerDetail: true,
+      showHelp: true,
+      sessionStartedAt: "2026-01-01T00:00:00Z",
+    }));
+    expect(table).toContain("Session Metrics");
+    expect(table).toContain("q: quit");
+    // A-1 is merged, so B-2 has no unresolved blockers → shows "-"
+    expect(table).toContain("DEPS");
   });
 });

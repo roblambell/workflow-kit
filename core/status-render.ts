@@ -15,6 +15,21 @@ import type { DaemonState } from "./daemon.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+export interface ViewOptions {
+  showMetrics?: boolean;
+  showBlockerDetail?: boolean;
+  showHelp?: boolean;
+  sessionStartedAt?: string;
+}
+
+export interface SessionMetrics {
+  leadTimeMedianMs: number | null;
+  leadTimeP95Ms: number | null;
+  throughputPerHour: number | null;
+  successRate: number | null;
+  sessionDurationMs: number | null;
+}
+
 export type ItemState =
   | "merged"
   | "bootstrapping"
@@ -277,7 +292,7 @@ export function formatItemRow(item: StatusItem, titleWidth: number, depsStr?: st
   const label = pad(stateLabel(item.state), 14);
   const pr = item.prNumber ? pad(`#${item.prNumber}`, 7) : pad("-", 7);
   const duration = pad(formatDuration(item), 8);
-  const depsCol = depsStr !== undefined ? pad(depsStr, 5) : "";
+  const depsCol = depsStr ?? "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` ${DIM}[${item.repoLabel}]${RESET}` : "";
   const reason = item.failureReason ? ` ${DIM}(${item.failureReason})${RESET}` : "";
@@ -351,7 +366,7 @@ export function formatQueuedItemRow(item: StatusItem, titleWidth: number, depsSt
   const label = pad(stateLabel(item.state), 14);
   const pr = item.prNumber ? pad(`#${item.prNumber}`, 7) : pad("-", 7);
   const duration = pad(formatDuration(item), 8);
-  const depsCol = depsStr !== undefined ? pad(depsStr, 5) : "";
+  const depsCol = depsStr ?? "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` [${item.repoLabel}]` : "";
 
@@ -482,6 +497,128 @@ export function formatTreeRows(
   return lines;
 }
 
+// ─── Session metrics (DORA-style) ─────────────────────────────────────────────
+
+/** Compute the median of a sorted numeric array. Returns null for empty arrays. */
+function median(sorted: number[]): number | null {
+  if (sorted.length === 0) return null;
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1]! + sorted[mid]!) / 2;
+  }
+  return sorted[mid]!;
+}
+
+/** Compute the P-th percentile of a sorted numeric array using nearest-rank. */
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
+  const idx = Math.min(
+    Math.ceil((p / 100) * sorted.length) - 1,
+    sorted.length - 1,
+  );
+  return sorted[Math.max(0, idx)]!;
+}
+
+/**
+ * Compute DORA-style session metrics from StatusItems.
+ *
+ * - Lead time (median/P95): endedAt − startedAt for merged items.
+ * - Throughput: merged items per hour (requires sessionStartedAt).
+ * - Success rate: merged / (merged + failed).
+ * - Session duration: now − sessionStartedAt.
+ */
+export function computeSessionMetrics(
+  items: StatusItem[],
+  sessionStartedAt?: string,
+): SessionMetrics {
+  const mergedItems = items.filter((i) => i.state === "merged");
+  const failedItems = items.filter((i) => i.state === "ci-failed");
+
+  // Collect lead times from merged items with valid timestamps
+  const leadTimes: number[] = [];
+  for (const item of mergedItems) {
+    if (item.startedAt && item.endedAt) {
+      const start = new Date(item.startedAt).getTime();
+      const end = new Date(item.endedAt).getTime();
+      if (!isNaN(start) && !isNaN(end) && end >= start) {
+        leadTimes.push(end - start);
+      }
+    }
+  }
+  leadTimes.sort((a, b) => a - b);
+
+  const leadTimeMedianMs = median(leadTimes);
+  const leadTimeP95Ms = percentile(leadTimes, 95);
+
+  // Session duration
+  let sessionDurationMs: number | null = null;
+  if (sessionStartedAt) {
+    const start = new Date(sessionStartedAt).getTime();
+    if (!isNaN(start)) {
+      sessionDurationMs = Math.max(0, Date.now() - start);
+    }
+  }
+
+  // Throughput: merged / session-hours
+  const throughputPerHour =
+    sessionDurationMs !== null && sessionDurationMs > 0
+      ? (mergedItems.length / sessionDurationMs) * 3_600_000
+      : null;
+
+  // Success rate
+  const total = mergedItems.length + failedItems.length;
+  const successRate = total > 0 ? mergedItems.length / total : null;
+
+  return {
+    leadTimeMedianMs,
+    leadTimeP95Ms,
+    throughputPerHour,
+    successRate,
+    sessionDurationMs,
+  };
+}
+
+/**
+ * Format a DORA-style metrics panel for display below the status table.
+ * Returns a multi-line string.
+ */
+export function formatMetricsPanel(metrics: SessionMetrics): string {
+  const lines: string[] = [];
+  lines.push("");
+  lines.push(`  ${BOLD}Session Metrics${RESET}`);
+  lines.push(`  ${DIM}${"─".repeat(40)}${RESET}`);
+
+  const lt = metrics.leadTimeMedianMs !== null ? formatAge(metrics.leadTimeMedianMs) : "-";
+  lines.push(`  Lead Time (median):  ${lt}`);
+
+  const p95 = metrics.leadTimeP95Ms !== null ? formatAge(metrics.leadTimeP95Ms) : "-";
+  lines.push(`  Lead Time (P95):     ${p95}`);
+
+  const tp =
+    metrics.throughputPerHour !== null
+      ? `${metrics.throughputPerHour.toFixed(1)}/hr`
+      : "-";
+  lines.push(`  Throughput:          ${tp}`);
+
+  const sr =
+    metrics.successRate !== null
+      ? `${(metrics.successRate * 100).toFixed(0)}%`
+      : "-";
+  lines.push(`  Success Rate:        ${sr}`);
+
+  const dur = metrics.sessionDurationMs !== null ? formatAge(metrics.sessionDurationMs) : "-";
+  lines.push(`  Session Duration:    ${dur}`);
+
+  return lines.join("\n");
+}
+
+/**
+ * Format a help footer line showing available key bindings.
+ */
+export function formatHelpFooter(): string {
+  return `  ${DIM}q: quit  m: metrics  b: blocker detail  h: help${RESET}`;
+}
+
 /**
  * Format the complete status table from a list of StatusItems.
  * Returns a multi-line string ready for console output.
@@ -489,12 +626,19 @@ export function formatTreeRows(
  *
  * When items have dependencies, renders a flat list sorted by blocked-by count
  * (ascending) then ID alphanumeric, with a BLOCKED BY column showing unresolved deps.
+ *
+ * viewOptions controls optional panels:
+ * - showMetrics: render DORA-style metrics panel below the table.
+ * - showBlockerDetail: expand DEPS column to show full blocker IDs instead of counts.
+ * - showHelp: render a key-bindings footer line.
+ * - sessionStartedAt: ISO timestamp for throughput/session duration calculations.
  */
 export function formatStatusTable(
   items: StatusItem[],
   termWidth: number = 80,
   wipLimit?: number,
   flat: boolean = false,
+  viewOptions?: ViewOptions,
 ): string {
   const lines: string[] = [];
 
@@ -510,17 +654,37 @@ export function formatStatusTable(
     return lines.join("\n");
   }
 
+  const opts = viewOptions ?? {};
+
   // Check if any items have dependency relationships
   const hasDeps = !flat && items.some((i) => (i.dependencies ?? []).length > 0);
 
-  // Column widths — add DEPS column (5 chars) when deps exist
+  // Precompute blocked-by map (needed for DEPS column and blocker detail)
+  const blockedBy = hasDeps ? computeBlockedBy(items) : undefined;
+
+  // DEPS column width: dynamic when showBlockerDetail is true, fixed 5 otherwise
+  let depsColWidth = 0;
+  if (hasDeps) {
+    if (opts.showBlockerDetail && blockedBy) {
+      // Compute max width needed for full blocker ID lists
+      let maxLen = 4; // minimum "DEPS" header width
+      for (const [, blockers] of blockedBy) {
+        const str = blockers.length > 0 ? blockers.join(",") : "-";
+        if (str.length > maxLen) maxLen = str.length;
+      }
+      depsColWidth = maxLen + 1; // +1 for padding
+    } else {
+      depsColWidth = 5;
+    }
+  }
+
+  // Column widths
   // Base: 2 indent + 2 icon+space + 12 ID + 14 state + 1 + 7 PR + 1 + 8 duration + 1 = 48
-  const depsColWidth = hasDeps ? 5 : 0;
   const fixedWidth = 48 + depsColWidth;
   const titleWidth = Math.max(10, termWidth - fixedWidth);
 
   // Header
-  const depsHeader = hasDeps ? `${pad("DEPS", 5)}` : "";
+  const depsHeader = hasDeps ? `${pad("DEPS", depsColWidth)}` : "";
   const header = `  ${DIM}  ${pad("ID", 12)}${pad("STATE", 14)} ${pad("PR", 7)} ${pad("DURATION", 8)} ${depsHeader}TITLE${RESET}`;
   lines.push(header);
 
@@ -528,24 +692,29 @@ export function formatStatusTable(
   const sep = `  ${DIM}${"─".repeat(Math.min(termWidth - 2, fixedWidth + titleWidth))}${RESET}`;
   lines.push(sep);
 
+  /** Format the DEPS column string for an item. */
+  function depsStr(itemId: string): string {
+    if (!blockedBy) return "-";
+    const blockers = blockedBy.get(itemId) ?? [];
+    if (opts.showBlockerDetail) {
+      return blockers.length > 0 ? blockers.join(",") : "-";
+    }
+    return blockers.length > 0 ? String(blockers.length) : "-";
+  }
+
   if (hasDeps) {
     // Flat blocked-by mode: sort by blocked count asc, then ID alpha
-    const blockedBy = computeBlockedBy(items);
-    const sorted = sortByBlockedThenId(items, blockedBy);
+    const sorted = sortByBlockedThenId(items, blockedBy!);
 
     const activeItems = sorted.filter((i) => i.state !== "queued" && i.state !== "merged");
     const mergedItems = sorted.filter((i) => i.state === "merged");
     const queuedItems = sorted.filter((i) => i.state === "queued");
 
     for (const item of activeItems) {
-      const blockers = blockedBy.get(item.id) ?? [];
-      const depsStr = blockers.length > 0 ? String(blockers.length) : "-";
-      lines.push(formatItemRow(item, titleWidth, depsStr));
+      lines.push(formatItemRow(item, titleWidth, pad(depsStr(item.id), depsColWidth)));
     }
     for (const item of mergedItems) {
-      const blockers = blockedBy.get(item.id) ?? [];
-      const depsStr = blockers.length > 0 ? String(blockers.length) : "-";
-      lines.push(formatItemRow(item, titleWidth, depsStr));
+      lines.push(formatItemRow(item, titleWidth, pad(depsStr(item.id), depsColWidth)));
     }
 
     // Queue section
@@ -564,9 +733,7 @@ export function formatStatusTable(
       lines.push(sep);
 
       for (const item of queuedItems) {
-        const blockers = blockedBy.get(item.id) ?? [];
-        const depsStr = blockers.length > 0 ? String(blockers.length) : "-";
-        lines.push(formatQueuedItemRow(item, titleWidth, depsStr));
+        lines.push(formatQueuedItemRow(item, titleWidth, pad(depsStr(item.id), depsColWidth)));
       }
     }
   } else {
@@ -605,6 +772,18 @@ export function formatStatusTable(
   lines.push(sep);
   lines.push(formatBatchProgress(items));
   lines.push(formatSummary(items));
+
+  // Metrics panel (DORA-style)
+  if (opts.showMetrics) {
+    const metrics = computeSessionMetrics(items, opts.sessionStartedAt);
+    lines.push(formatMetricsPanel(metrics));
+  }
+
+  // Help footer
+  if (opts.showHelp) {
+    lines.push("");
+    lines.push(formatHelpFooter());
+  }
 
   return lines.join("\n");
 }
