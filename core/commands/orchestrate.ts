@@ -1211,6 +1211,7 @@ export async function orchestrateLoop(
   let __lastActions: import("../orchestrator.ts").Action[] = [];
   let __lastTransitionIter = 0;
   const prevScreenHealth = new Map<string, string>();
+  const __mergedEventEmitted = new Set<string>();
   while (true) {
     __iterations++;
     if (config.maxIterations != null && __iterations > config.maxIterations) {
@@ -1389,11 +1390,14 @@ export async function orchestrateLoop(
             failureReason: item.failureReason,
           }, log);
         } else if (item.state === "merged" || item.state === "done") {
-          sendSupervisorEvent(config.supervisorSessionRef, deps.actionDeps.sendMessage, {
-            type: "item-merged",
-            itemId: item.id,
-            prNumber: item.prNumber,
-          }, log);
+          if (!__mergedEventEmitted.has(item.id)) {
+            __mergedEventEmitted.add(item.id);
+            sendSupervisorEvent(config.supervisorSessionRef, deps.actionDeps.sendMessage, {
+              type: "item-merged",
+              itemId: item.id,
+              prNumber: item.prNumber,
+            }, log);
+          }
         } else if (item.state === "stuck") {
           sendSupervisorEvent(config.supervisorSessionRef, deps.actionDeps.sendMessage, {
             type: "item-stuck",

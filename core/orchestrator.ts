@@ -469,6 +469,7 @@ export class Orchestrator {
 
   /** Set state and update timestamp. Records detection latency when eventTime is provided. */
   private transition(item: OrchestratorItem, state: OrchestratorItemState, eventTime?: string): void {
+    if (item.state === state) return;
     const detectedTime = new Date().toISOString();
     item.state = state;
     item.lastTransition = detectedTime;
