@@ -269,3 +269,116 @@ export function applyGithubToken(projectRoot: string): void {
     process.env.GH_TOKEN = token;
   }
 }
+
+// ── PR comment CRUD (for upsert pattern) ──────────────────────────
+
+/** List all issue comments on a PR. Returns array of {id, body}. */
+export function listPrComments(
+  repoRoot: string,
+  prNumber: number,
+): Array<{ id: number; body: string }> {
+  let ownerRepo: string;
+  try {
+    ownerRepo = getRepoOwner(repoRoot);
+  } catch {
+    return [];
+  }
+  const result = ghInRepo(repoRoot, [
+    "api",
+    `repos/${ownerRepo}/issues/${prNumber}/comments`,
+    "--jq",
+    "[.[] | {id: .id, body: .body}]",
+  ]);
+  if (result.exitCode !== 0 || !result.stdout) return [];
+  try {
+    return JSON.parse(result.stdout) as Array<{ id: number; body: string }>;
+  } catch {
+    return [];
+  }
+}
+
+/** Update an existing issue comment by ID. Returns true on success. */
+export function updatePrComment(
+  repoRoot: string,
+  commentId: number,
+  body: string,
+): boolean {
+  let ownerRepo: string;
+  try {
+    ownerRepo = getRepoOwner(repoRoot);
+  } catch {
+    return false;
+  }
+  const result = ghInRepo(repoRoot, [
+    "api",
+    "--method",
+    "PATCH",
+    `repos/${ownerRepo}/issues/comments/${commentId}`,
+    "-f",
+    `body=${body}`,
+  ]);
+  return result.exitCode === 0;
+}
+
+// ── Living orchestrator comment (upsert pattern) ──────────────────
+
+/** Hidden HTML comment marker to identify orchestrator status comments. */
+export const ORCHESTRATOR_COMMENT_MARKER = "<!-- ninthwave-orchestrator-status -->";
+
+/** Interface for PR comment operations (dependency injection for testability). */
+export interface PrCommentClient {
+  listComments(repoRoot: string, prNumber: number): Array<{ id: number; body: string }>;
+  createComment(repoRoot: string, prNumber: number, body: string): boolean;
+  updateComment(repoRoot: string, commentId: number, body: string): boolean;
+}
+
+/** Default PrCommentClient backed by the gh CLI. */
+export const defaultPrCommentClient: PrCommentClient = {
+  listComments: listPrComments,
+  createComment: prComment,
+  updateComment: updatePrComment,
+};
+
+/**
+ * Create or update a living orchestrator status comment on a PR.
+ * Each event is appended as a row in a timestamped table.
+ * Uses a hidden marker to find the existing comment.
+ *
+ * @param repoRoot - Repo root for gh CLI context
+ * @param prNumber - PR number to comment on
+ * @param itemId - TODO item ID (e.g., "H-FOO-1")
+ * @param eventLine - Event description (e.g., "CI failure detected. Worker notified.")
+ * @param client - PR comment client (injected for testability)
+ */
+export function upsertOrchestratorComment(
+  repoRoot: string,
+  prNumber: number,
+  itemId: string,
+  eventLine: string,
+  client: PrCommentClient = defaultPrCommentClient,
+): boolean {
+  const timeStr = new Date().toISOString().slice(11, 16); // "HH:MM"
+  const newRow = `| ${timeStr} | ${eventLine} |`;
+
+  // Try to find existing marker comment
+  const comments = client.listComments(repoRoot, prNumber);
+  const existing = comments.find((c) => c.body.includes(ORCHESTRATOR_COMMENT_MARKER));
+
+  if (existing) {
+    // Append the new row to the existing table
+    const updatedBody = existing.body + "\n" + newRow;
+    return client.updateComment(repoRoot, existing.id, updatedBody);
+  }
+
+  // Create new comment with header + first row
+  const body = [
+    ORCHESTRATOR_COMMENT_MARKER,
+    `**[Orchestrator]** Status for ${itemId}`,
+    "",
+    "| Time | Event |",
+    "|------|-------|",
+    newRow,
+  ].join("\n");
+
+  return client.createComment(repoRoot, prNumber, body);
+}

@@ -264,6 +264,17 @@ export interface OrchestratorDeps {
    * Actual logic lives in H-RVW-3; stub for now.
    */
   cleanReview?: (itemId: string, reviewWorkspaceRef: string) => boolean;
+  /**
+   * Upsert a living orchestrator status comment on a PR.
+   * Appends an event row to a single persistent comment identified by a marker.
+   * When not provided, falls back to deps.prComment for backward compatibility.
+   */
+  upsertOrchestratorComment?: (
+    repoRoot: string,
+    prNumber: number,
+    itemId: string,
+    eventLine: string,
+  ) => boolean;
 }
 
 /** Result of executing a single action. */
@@ -1324,11 +1335,11 @@ export class Orchestrator {
     item.mergeFailCount = 0;
 
     // Audit trail
-    deps.prComment(
-      repoRoot,
-      prNum,
-      `**[Orchestrator]** Auto-merged PR #${prNum} for ${item.id}.`,
-    );
+    if (deps.upsertOrchestratorComment) {
+      deps.upsertOrchestratorComment(repoRoot, prNum, item.id, `Auto-merged PR #${prNum}.`);
+    } else {
+      deps.prComment(repoRoot, prNum, `**[Orchestrator]** Auto-merged PR #${prNum} for ${item.id}.`);
+    }
 
     // Merge was initiated by us, so eventTime is now
     this.transition(item, "merged");
@@ -1514,11 +1525,12 @@ export class Orchestrator {
     }
 
     if (item.prNumber) {
-      deps.prComment(
-        item.resolvedRepoRoot ?? ctx.projectRoot,
-        item.prNumber,
-        `**[Orchestrator]** CI failure detected for ${item.id}. Worker notified.`,
-      );
+      const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
+      if (deps.upsertOrchestratorComment) {
+        deps.upsertOrchestratorComment(repoRoot, item.prNumber, item.id, "CI failure detected. Worker notified.");
+      } else {
+        deps.prComment(repoRoot, item.prNumber, `**[Orchestrator]** CI failure detected for ${item.id}. Worker notified.`);
+      }
     }
 
     return { success: true };

@@ -484,6 +484,54 @@ describe("serializeOrchestratorState", () => {
     const restored2 = readStateFile("/project", io);
     expect(restored2!.items[0]!.reviewCompleted).toBe(true);
   });
+
+  it("includes ciFailureNotified and ciFailureNotifiedAt when present", () => {
+    const item = makeOrchestratorItem("N-1-1", "ci-failed", 33);
+    item.ciFailureNotified = true;
+    item.ciFailureNotifiedAt = "2026-03-27T14:00:00.000Z";
+
+    const state = serializeOrchestratorState(
+      [item],
+      42,
+      "2026-03-27T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.ciFailureNotified).toBe(true);
+    expect(state.items[0]!.ciFailureNotifiedAt).toBe("2026-03-27T14:00:00.000Z");
+  });
+
+  it("omits ciFailureNotified and ciFailureNotifiedAt when absent", () => {
+    const item = makeOrchestratorItem("N-1-2", "implementing");
+
+    const state = serializeOrchestratorState(
+      [item],
+      42,
+      "2026-03-27T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.ciFailureNotified).toBeUndefined();
+    expect(state.items[0]!.ciFailureNotifiedAt).toBeUndefined();
+  });
+
+  it("roundtrips ciFailureNotified and ciFailureNotifiedAt through write/read", () => {
+    const io = createMockIO();
+    const item = makeOrchestratorItem("N-1-3", "ci-failed", 55);
+    item.ciFailureNotified = true;
+    item.ciFailureNotifiedAt = "2026-03-27T14:30:00.000Z";
+
+    const state = serializeOrchestratorState(
+      [item],
+      99,
+      "2026-03-27T00:00:00.000Z",
+    );
+
+    writeStateFile("/project", state, io);
+    const restored = readStateFile("/project", io);
+
+    expect(restored).not.toBeNull();
+    expect(restored!.items[0]!.ciFailureNotified).toBe(true);
+    expect(restored!.items[0]!.ciFailureNotifiedAt).toBe("2026-03-27T14:30:00.000Z");
+  });
 });
 
 // ── archiveStateFile ─────────────────────────────────────────────────

@@ -42,6 +42,10 @@ export interface DaemonStateItem {
   lastCommentCheck?: string;
   /** Whether a rebase request is in progress for this item. */
   rebaseRequested?: boolean;
+  /** Whether a CI failure notification has been sent for the current failure. */
+  ciFailureNotified?: boolean;
+  /** The lastCommitTime when ciFailureNotified was set. */
+  ciFailureNotifiedAt?: string | null;
 }
 
 export interface DaemonState {
@@ -409,6 +413,8 @@ export function serializeOrchestratorState(
       ...(item.stderrTail ? { stderrTail: item.stderrTail } : {}),
       ...(item.lastCommentCheck ? { lastCommentCheck: item.lastCommentCheck } : {}),
       ...(item.rebaseRequested ? { rebaseRequested: item.rebaseRequested } : {}),
+      ...(item.ciFailureNotified ? { ciFailureNotified: item.ciFailureNotified } : {}),
+      ...(item.ciFailureNotifiedAt ? { ciFailureNotifiedAt: item.ciFailureNotifiedAt } : {}),
     })),
   };
 }

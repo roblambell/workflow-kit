@@ -27,7 +27,7 @@ import { resolveRepo, getWorktreeInfo, bootstrapRepo } from "../cross-repo.ts";
 import { checkPrStatus, scanExternalPRs } from "./watch.ts";
 import { launchSingleItem, launchReviewWorker, detectAiTool, cleanStaleBranchForReuse } from "./start.ts";
 import { cleanSingleWorktree } from "./clean.ts";
-import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments } from "../gh.ts";
+import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments, upsertOrchestratorComment } from "../gh.ts";
 import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset, daemonRebase } from "../git.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
@@ -586,7 +586,7 @@ export function reconstructState(
   daemonState?: DaemonState | null,
 ): void {
   // Build a lookup map from saved daemon state for restoring persisted counters and review fields
-  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; lastCommentCheck?: string; rebaseRequested?: boolean }>();
+  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
       savedItems.set(si.id, {
@@ -596,6 +596,8 @@ export function reconstructState(
         reviewCompleted: si.reviewCompleted,
         lastCommentCheck: si.lastCommentCheck,
         rebaseRequested: si.rebaseRequested,
+        ciFailureNotified: si.ciFailureNotified,
+        ciFailureNotifiedAt: si.ciFailureNotifiedAt,
       });
     }
   }
@@ -616,6 +618,8 @@ export function reconstructState(
       if (saved.reviewCompleted) item.reviewCompleted = saved.reviewCompleted;
       if (saved.lastCommentCheck) item.lastCommentCheck = saved.lastCommentCheck;
       if (saved.rebaseRequested) item.rebaseRequested = saved.rebaseRequested;
+      if (saved.ciFailureNotified) item.ciFailureNotified = saved.ciFailureNotified;
+      if (saved.ciFailureNotifiedAt) item.ciFailureNotifiedAt = saved.ciFailureNotifiedAt;
     }
 
     // Check for worktree: cross-repo index first, then hub-local fallback
@@ -1840,6 +1844,8 @@ export async function cmdOrchestrate(
     cleanSingleWorktree,
     prMerge: (repoRoot, prNumber) => prMerge(repoRoot, prNumber),
     prComment: (repoRoot, prNumber, body) => prComment(repoRoot, prNumber, body),
+    upsertOrchestratorComment: (repoRoot, prNumber, itemId, eventLine) =>
+      upsertOrchestratorComment(repoRoot, prNumber, itemId, eventLine),
     sendMessage: (ref, msg) => mux.sendMessage(ref, msg),
     closeWorkspace: (ref) => mux.closeWorkspace(ref),
     readScreen: (ref, lines) => mux.readScreen(ref, lines),
