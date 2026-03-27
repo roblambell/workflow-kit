@@ -616,7 +616,7 @@ export function formatMetricsPanel(metrics: SessionMetrics): string {
  * Format a help footer line showing available key bindings.
  */
 export function formatHelpFooter(): string {
-  return `  ${DIM}q: quit  m: metrics  b: blocker detail  h: help${RESET}`;
+  return `  ${DIM}q: quit  m: metrics  d: deps detail  ?: help${RESET}`;
 }
 
 /**

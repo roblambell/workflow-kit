@@ -16,6 +16,7 @@ import {
   type ItemState,
   type StatusItem,
   type TreeNode,
+  type ViewOptions,
   stateColor,
   stateIcon,
   stateLabel,
@@ -37,7 +38,7 @@ import {
   getTerminalWidth,
 } from "../status-render.ts";
 
-export type { ItemState, StatusItem, TreeNode };
+export type { ItemState, StatusItem, TreeNode, ViewOptions };
 export {
   stateColor,
   stateIcon,
@@ -233,7 +234,16 @@ function getWorktreeAge(wtDir: string): number {
 /**
  * Run `ninthwave status` in watch mode: refresh in-place every intervalMs.
  * Uses cursor-home + clear-trailing to avoid visible flicker.
- * Exits when the abort signal fires (or Ctrl-C).
+ * Exits when the abort signal fires, `q` is pressed, or Ctrl-C.
+ *
+ * Keyboard shortcuts (TTY only):
+ *   m — toggle metrics panel
+ *   d — toggle deps detail view
+ *   ? — toggle help footer
+ *   q — quit
+ *
+ * Each keypress triggers an immediate re-render (does not wait for interval).
+ * Non-TTY mode uses default ViewOptions and skips keyboard setup.
  */
 export async function cmdStatusWatch(
   worktreeDir: string,
@@ -242,39 +252,111 @@ export async function cmdStatusWatch(
   signal?: AbortSignal,
   flat: boolean = false,
 ): Promise<void> {
-  while (!signal?.aborted) {
-    // Move cursor to top-left (no full-screen clear — avoids flicker)
-    process.stdout.write("\x1B[H");
-    // Write status content with clear-to-end-of-line (\x1B[K) after each line
-    // to prevent stale characters from previous renders bleeding through
-    // when lines become shorter between refreshes
-    const content = renderStatus(worktreeDir, projectRoot, flat);
-    process.stdout.write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-    // Clear from cursor to end of screen (removes stale trailing lines)
-    process.stdout.write("\x1B[J");
-    await new Promise<void>((resolve) => {
-      if (signal?.aborted) {
-        resolve();
-        return;
+  // Mutable view state — toggled by keyboard shortcuts
+  const viewOpts: ViewOptions = {
+    showMetrics: false,
+    showBlockerDetail: false,
+    showHelp: false,
+  };
+
+  const isTTY = process.stdin.isTTY === true;
+  let quitRequested = false;
+
+  // Resolver to wake the sleep early on keypress
+  let wakeResolver: (() => void) | null = null;
+
+  function handleKey(key: string) {
+    switch (key) {
+      case "m":
+        viewOpts.showMetrics = !viewOpts.showMetrics;
+        break;
+      case "d":
+        viewOpts.showBlockerDetail = !viewOpts.showBlockerDetail;
+        break;
+      case "?":
+        viewOpts.showHelp = !viewOpts.showHelp;
+        break;
+      case "q":
+        quitRequested = true;
+        break;
+      default:
+        return; // Don't wake for unknown keys
+    }
+    // Wake the interval sleep to trigger immediate re-render
+    if (wakeResolver) {
+      wakeResolver();
+      wakeResolver = null;
+    }
+  }
+
+  // Enter raw mode for TTY so individual keypresses are received
+  if (isTTY) {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", handleKey);
+  }
+
+  function cleanup() {
+    if (isTTY) {
+      process.stdin.removeListener("data", handleKey);
+      try {
+        process.stdin.setRawMode(false);
+      } catch {
+        // stdin may already be destroyed
       }
-      const timer = setTimeout(resolve, intervalMs);
-      signal?.addEventListener(
-        "abort",
-        () => {
+      process.stdin.pause();
+    }
+  }
+
+  try {
+    while (!signal?.aborted && !quitRequested) {
+      // Move cursor to top-left (no full-screen clear — avoids flicker)
+      process.stdout.write("\x1B[H");
+      // Write status content with clear-to-end-of-line (\x1B[K) after each line
+      // to prevent stale characters from previous renders bleeding through
+      // when lines become shorter between refreshes
+      const content = renderStatus(worktreeDir, projectRoot, flat, viewOpts);
+      process.stdout.write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+      // Clear from cursor to end of screen (removes stale trailing lines)
+      process.stdout.write("\x1B[J");
+
+      // Wait for interval, abort signal, or keypress (whichever comes first)
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted || quitRequested) {
+          resolve();
+          return;
+        }
+        const timer = setTimeout(resolve, intervalMs);
+
+        // Allow keypress handler to wake us early
+        wakeResolver = () => {
           clearTimeout(timer);
           resolve();
-        },
-        { once: true },
-      );
-    });
+        };
+
+        signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            wakeResolver = null;
+            resolve();
+          },
+          { once: true },
+        );
+      });
+    }
+  } finally {
+    cleanup();
   }
 }
 
 /**
  * Render the full status output as a string (no side effects).
  * Used by both cmdStatus (prints it) and cmdStatusWatch (writes it flicker-free).
+ * Optional viewOptions controls metrics panel, deps detail, and help footer.
  */
-export function renderStatus(worktreeDir: string, projectRoot: string, flat: boolean = false): string {
+export function renderStatus(worktreeDir: string, projectRoot: string, flat: boolean = false, viewOptions?: ViewOptions): string {
   const lines: string[] = [];
 
   // Fast path: read state file (written by orchestrator in both daemon and interactive mode)
@@ -289,7 +371,7 @@ export function renderStatus(worktreeDir: string, projectRoot: string, flat: boo
     if (isFresh || daemonPid !== null) {
       const items = daemonStateToStatusItems(daemonState);
       const termWidth = getTerminalWidth();
-      lines.push(formatStatusTable(items, termWidth, daemonState.wipLimit, flat));
+      lines.push(formatStatusTable(items, termWidth, daemonState.wipLimit, flat, viewOptions));
 
       const agoStr = formatAge(stateAgeMs) + " ago";
       if (daemonPid !== null) {
@@ -303,7 +385,7 @@ export function renderStatus(worktreeDir: string, projectRoot: string, flat: boo
 
   if (!existsSync(worktreeDir)) {
     const termWidth = getTerminalWidth();
-    lines.push(formatStatusTable([], termWidth));
+    lines.push(formatStatusTable([], termWidth, undefined, false, viewOptions));
     lines.push(`\n  ${DIM}Worktree directory: ${worktreeDir} (not found)${RESET}`);
     return lines.join("\n") + "\n";
   }
@@ -361,7 +443,7 @@ export function renderStatus(worktreeDir: string, projectRoot: string, flat: boo
     }
   }
 
-  return formatStatusTable(items, getTerminalWidth(), undefined, flat) + "\n";
+  return formatStatusTable(items, getTerminalWidth(), undefined, flat, viewOptions) + "\n";
 }
 
 export function cmdStatus(worktreeDir: string, projectRoot: string, flat: boolean = false): void {

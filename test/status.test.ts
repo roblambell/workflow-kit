@@ -26,6 +26,7 @@ import {
   type StatusItem,
   type ItemState,
   type TreeNode,
+  type ViewOptions,
 } from "../core/commands/status.ts";
 import type { DaemonState } from "../core/daemon.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
@@ -1550,6 +1551,92 @@ describe("daemonStateToStatusItems with dependencies", () => {
     expect(items).toHaveLength(2);
     expect(items[0]!.dependencies).toEqual([]);
     expect(items[1]!.dependencies).toEqual(["A-1"]);
+  });
+});
+
+// ─── renderStatus with ViewOptions ────────────────────────────────────────────
+
+describe("renderStatus with ViewOptions", () => {
+  it("passes ViewOptions through to formatStatusTable (showHelp)", () => {
+    // renderStatus with no daemon state and nonexistent worktreeDir uses the empty-items path
+    const output = stripAnsi(renderStatus("/nonexistent", "/nonexistent", false, { showHelp: true }));
+    // Even with no items, the empty-items formatStatusTable branch should receive viewOptions
+    // The help footer only shows when there are items, so just verify it doesn't throw
+    expect(output).toContain("ninthwave status");
+  });
+
+  it("backward compatible: calling without viewOptions still works", () => {
+    const output = stripAnsi(renderStatus("/nonexistent", "/nonexistent"));
+    expect(output).toContain("ninthwave status");
+    expect(output).not.toContain("Session Metrics");
+  });
+});
+
+// ─── cmdStatusWatch keyboard handling ─────────────────────────────────────────
+
+describe("cmdStatusWatch keyboard handling", () => {
+  it("handles AbortSignal correctly without hanging (non-TTY)", async () => {
+    const controller = new AbortController();
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    // In test environment, process.stdin.isTTY is false, so no raw mode is entered
+    const watchPromise = cmdStatusWatch(
+      "/nonexistent",
+      "/nonexistent",
+      10,
+      controller.signal,
+    );
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
+    controller.abort();
+    await watchPromise;
+
+    // Should complete without hanging
+    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
+    expect(allWrites.some((s) => s.includes("\x1B[H"))).toBe(true);
+
+    writeSpy.mockRestore();
+  });
+
+  it("resolves immediately when signal is pre-aborted (non-TTY)", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    const start = Date.now();
+    await cmdStatusWatch("/nonexistent", "/nonexistent", 5000, controller.signal);
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(100);
+
+    writeSpy.mockRestore();
+  });
+
+  it("non-TTY mode uses default ViewOptions (no metrics/help in output)", async () => {
+    const controller = new AbortController();
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    const watchPromise = cmdStatusWatch(
+      "/nonexistent",
+      "/nonexistent",
+      10,
+      controller.signal,
+    );
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
+    controller.abort();
+    await watchPromise;
+
+    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
+    const allOutput = stripAnsi(allWrites.join(""));
+
+    // Default ViewOptions has showMetrics=false, showHelp=false
+    expect(allOutput).not.toContain("Session Metrics");
+    // Help footer text should not appear by default
+    expect(allOutput).not.toContain("q: quit");
+
+    writeSpy.mockRestore();
   });
 });
 

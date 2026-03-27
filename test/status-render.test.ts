@@ -1031,8 +1031,8 @@ describe("formatHelpFooter", () => {
     const footer = stripAnsi(formatHelpFooter());
     expect(footer).toContain("q: quit");
     expect(footer).toContain("m: metrics");
-    expect(footer).toContain("b: blocker detail");
-    expect(footer).toContain("h: help");
+    expect(footer).toContain("d: deps detail");
+    expect(footer).toContain("?: help");
   });
 });
 
@@ -1145,7 +1145,7 @@ describe("formatStatusTable with ViewOptions", () => {
     }));
     expect(table).toContain("q: quit");
     expect(table).toContain("m: metrics");
-    expect(table).toContain("h: help");
+    expect(table).toContain("?: help");
   });
 
   it("showHelp=false does not show key legend", () => {
