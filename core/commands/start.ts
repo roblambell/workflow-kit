@@ -196,9 +196,9 @@ export function launchAiSession(
     case "copilot": {
       // Write a launcher script that reads the prompt from a file and passes
       // it to copilot via -i. This avoids all shell quoting issues with
-      // multiline/unicode content going through tmux.
-      const launcherScript = `${promptFile}.copilot.sh`;
-      const promptDataFile = `${promptFile}.copilot`;
+      // multiline/unicode content going through multiplexers.
+      const launcherScript = `/tmp/nw-launch-${id}-${Date.now()}.sh`;
+      const promptDataFile = `/tmp/nw-prompt-${id}-${Date.now()}`;
       writeFileSync(
         promptDataFile,
         `${readFileSync(promptFile, "utf-8")}\n\nStart implementing this TODO now.`,

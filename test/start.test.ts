@@ -807,8 +807,8 @@ describe("launchAiSession agentName", () => {
     const launchCall = mockMux.launchWorkspace.mock.calls[0];
     expect(launchCall).toBeDefined();
     const cmd = launchCall[1] as string;
-    // cmd is a launcher script path — verify the script contents
-    expect(cmd).toMatch(/\.copilot\.sh$/);
+    // cmd is a launcher script path in /tmp
+    expect(cmd).toMatch(/^\/tmp\/nw-launch-.*\.sh$/);
     const script = readFileSync(cmd, "utf-8");
     expect(script).toContain("--agent=review-worker");
     expect(script).toContain("--allow-all");
@@ -829,7 +829,7 @@ describe("launchAiSession agentName", () => {
     // Launcher script should exist and contain the prompt file reference
     const launchCall = mockMux.launchWorkspace.mock.calls[0];
     const cmd = launchCall[1] as string;
-    expect(cmd).toMatch(/\.copilot\.sh$/);
+    expect(cmd).toMatch(/^\/tmp\/nw-launch-.*\.sh$/);
   });
 });
 
