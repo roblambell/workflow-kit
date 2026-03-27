@@ -40,6 +40,7 @@ import { loadConfig } from "../config.ts";
 import {
   shouldActivateSupervisor,
 } from "../supervisor.ts";
+import { preflight } from "../preflight.ts";
 import {
   collectRunMetrics,
   writeRunMetrics,
@@ -1599,6 +1600,7 @@ export async function cmdOrchestrate(
   let watchMode = false;
   let watchIntervalSecs: number | undefined;
   let jsonFlag = false;
+  let skipPreflight = false;
 
   // Parse args
   let i = 0;
@@ -1698,8 +1700,23 @@ export async function cmdOrchestrate(
         jsonFlag = true;
         i += 1;
         break;
+      case "--skip-preflight":
+        skipPreflight = true;
+        i += 1;
+        break;
       default:
         die(`Unknown option: ${args[i]}`);
+    }
+  }
+
+  // ── Pre-flight environment validation ────────────────────────────────
+  if (!skipPreflight) {
+    const pf = preflight();
+    if (!pf.passed) {
+      for (const err of pf.errors) {
+        console.error(`Pre-flight failed: ${err}`);
+      }
+      die("Environment checks failed. Fix the issues above or use --skip-preflight to bypass.");
     }
   }
 
