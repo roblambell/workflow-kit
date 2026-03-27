@@ -1,5 +1,6 @@
 import { run } from "./shell.ts";
 import { sendMessageImpl } from "./send-message.ts";
+import { setStatusImpl, setProgressImpl } from "./cmux-status.ts";
 import type { RunResult } from "./types.ts";
 export type { SendMessageDeps, Runner, Sleeper } from "./send-message.ts";
 export { verifyDelivery } from "./send-message.ts";
@@ -81,6 +82,36 @@ export function closeWorkspace(workspaceRef: string): boolean {
     workspaceRef,
   ]);
   return result.exitCode === 0;
+}
+
+/**
+ * Set status text, icon, and color for a cmux workspace.
+ * Best-effort — returns true on success, false on failure.
+ *
+ * Wraps: `cmux set-status <key> <text> --icon <icon> --color <color> --workspace <ref>`
+ */
+export function setStatus(
+  ref: string,
+  key: string,
+  text: string,
+  icon: string,
+  color: string,
+): boolean {
+  return setStatusImpl(ref, key, text, icon, color, run);
+}
+
+/**
+ * Set progress value (0–100) and optional label for a cmux workspace.
+ * Best-effort — returns true on success, false on failure.
+ *
+ * Wraps: `cmux set-progress <value> [--label <label>] --workspace <ref>`
+ */
+export function setProgress(
+  ref: string,
+  value: number,
+  label?: string,
+): boolean {
+  return setProgressImpl(ref, value, label, run);
 }
 
 /**

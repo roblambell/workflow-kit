@@ -31,6 +31,10 @@ export interface Multiplexer {
   listWorkspaces(): string;
   /** Close a workspace. Returns true on success. */
   closeWorkspace(ref: string): boolean;
+  /** Set status text, icon, and color for a workspace. Best-effort — returns boolean success. */
+  setStatus(ref: string, key: string, text: string, icon: string, color: string): boolean;
+  /** Set progress value (0–100) and optional label for a workspace. Best-effort — returns boolean success. */
+  setProgress(ref: string, value: number, label?: string): boolean;
 }
 
 /** Adapter that delegates to the cmux CLI binary. */
@@ -61,6 +65,12 @@ export class CmuxAdapter implements Multiplexer {
   }
   closeWorkspace(ref: string): boolean {
     return cmux.closeWorkspace(ref);
+  }
+  setStatus(ref: string, key: string, text: string, icon: string, color: string): boolean {
+    return cmux.setStatus(ref, key, text, icon, color);
+  }
+  setProgress(ref: string, value: number, label?: string): boolean {
+    return cmux.setProgress(ref, value, label);
   }
 }
 

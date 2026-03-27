@@ -11,6 +11,8 @@ vi.mock("../core/cmux.ts", () => ({
   readScreen: vi.fn(() => "line1\nline2\nline3\n"),
   listWorkspaces: vi.fn(() => "workspace:1 TODO T-1 test"),
   closeWorkspace: vi.fn(() => true),
+  setStatus: vi.fn(() => true),
+  setProgress: vi.fn(() => true),
 }));
 
 import * as cmux from "../core/cmux.ts";
@@ -87,6 +89,27 @@ describe("CmuxAdapter", () => {
     expect(cmux.splitPane).toHaveBeenCalledWith("ninthwave status --watch");
   });
 
+  it("delegates setStatus to cmux.setStatus", () => {
+    const adapter = new CmuxAdapter();
+    const result = adapter.setStatus("workspace:1", "build", "Building", "hammer.fill", "#b45309");
+    expect(result).toBe(true);
+    expect(cmux.setStatus).toHaveBeenCalledWith("workspace:1", "build", "Building", "hammer.fill", "#b45309");
+  });
+
+  it("delegates setProgress to cmux.setProgress", () => {
+    const adapter = new CmuxAdapter();
+    const result = adapter.setProgress("workspace:1", 75, "3/4 done");
+    expect(result).toBe(true);
+    expect(cmux.setProgress).toHaveBeenCalledWith("workspace:1", 75, "3/4 done");
+  });
+
+  it("delegates setProgress without label to cmux.setProgress", () => {
+    const adapter = new CmuxAdapter();
+    const result = adapter.setProgress("workspace:1", 50);
+    expect(result).toBe(true);
+    expect(cmux.setProgress).toHaveBeenCalledWith("workspace:1", 50, undefined);
+  });
+
   it("has type 'cmux'", () => {
     const adapter = new CmuxAdapter();
     expect(adapter.type).toBe("cmux");
@@ -151,6 +174,8 @@ describe("getMux", () => {
     expect(typeof mux.readScreen).toBe("function");
     expect(typeof mux.listWorkspaces).toBe("function");
     expect(typeof mux.closeWorkspace).toBe("function");
+    expect(typeof mux.setStatus).toBe("function");
+    expect(typeof mux.setProgress).toBe("function");
   });
 
   it("falls back to CmuxAdapter when no mux available", () => {
@@ -175,6 +200,8 @@ describe("waitForReady", () => {
       readScreen: () => "Welcome to Claude\nReady for input\nType your message\n>",
       listWorkspaces: () => "",
       closeWorkspace: () => true,
+      setStatus: () => true,
+      setProgress: () => true,
     };
     const sleepCalls: number[] = [];
     const sleep = (ms: number) => sleepCalls.push(ms);
@@ -198,6 +225,8 @@ describe("waitForReady", () => {
       readScreen: () => `changing content ${callCount++}\nline2\nline3`,
       listWorkspaces: () => "",
       closeWorkspace: () => true,
+      setStatus: () => true,
+      setProgress: () => true,
     };
     const sleep = () => {};
 
@@ -217,6 +246,8 @@ describe("waitForReady", () => {
       readScreen: () => "just one line",
       listWorkspaces: () => "",
       closeWorkspace: () => true,
+      setStatus: () => true,
+      setProgress: () => true,
     };
     const sleep = () => {};
 
@@ -241,6 +272,8 @@ describe("waitForReady", () => {
       },
       listWorkspaces: () => "",
       closeWorkspace: () => true,
+      setStatus: () => true,
+      setProgress: () => true,
     };
     const sleepCalls: number[] = [];
     const sleep = (ms: number) => sleepCalls.push(ms);
