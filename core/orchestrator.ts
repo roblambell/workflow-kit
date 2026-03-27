@@ -139,8 +139,6 @@ export interface ItemSnapshot {
   isMergeable?: boolean;
   /** Whether the worker session is alive. */
   workerAlive?: boolean;
-  /** Worker health status from screen inspection (loading, prompt, processing, stalled, error). */
-  workerHealth?: "loading" | "prompt" | "processing" | "stalled" | "error";
 /** ISO timestamp of the most recent commit on the worktree branch, or null if none beyond base. */
   lastCommitTime?: string | null;
   /** Timestamp from the external system for the current state (ISO string).
@@ -314,6 +312,9 @@ export function calculateMemoryWipLimit(
   const memorySlots = Math.floor(freeMemBytes / memPerWorkerBytes);
   return Math.max(1, Math.min(memorySlots, configuredLimit));
 }
+
+/** Heartbeat recency threshold: a heartbeat within this window means the worker is healthy. */
+export const HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 // ── WIP states: states that count toward the WIP limit ───────────────
 
@@ -697,8 +698,21 @@ export class Orchestrator {
       item.notAliveCount = 0;
     }
 
-    // Time-based heartbeat: detect workers that are alive but not making progress
+    // ── Heartbeat-based health detection ──
+    // Primary signal: a recent heartbeat means the worker is healthy.
+    // If heartbeat exists and is fresh (< 5 min), skip commit-based timeout checks entirely.
     const nowMs = now.getTime();
+    const heartbeat = snap?.lastHeartbeat;
+    if (heartbeat?.ts) {
+      const heartbeatAge = nowMs - new Date(heartbeat.ts).getTime();
+      if (heartbeatAge < HEARTBEAT_TIMEOUT_MS) {
+        // Worker is actively heartbeating — healthy, skip timeout checks
+        return [];
+      }
+      // Stale heartbeat — fall through to commit-based timeout as backstop
+    }
+
+    // Commit-based timeout: final backstop for workers with no/stale heartbeat
     const commitTime = snap?.lastCommitTime ?? item.lastCommitTime;
     if (!commitTime) {
       // No commits yet — check against launch timeout
