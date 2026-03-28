@@ -1074,6 +1074,42 @@ describe("launchAiSession agentName", () => {
     const cmd = launchCall[1] as string;
     expect(cmd).toMatch(/^\/tmp\/nw-launch-.*\.sh$/);
   });
+
+  it("passes Start as positional CLI arg for claude (no post-launch send)", () => {
+    const mockMux = createMockMux();
+    const repo = setupTempRepo();
+    const promptFile = join(repo, "prompt.txt");
+    writeFileSync(promptFile, "implement the work item");
+
+    const wsRef = launchAiSession("claude", repo, "T-1", "Test", promptFile, mockMux);
+
+    expect(wsRef).not.toBeNull();
+    // Command should include -- Start as positional argument
+    const launchCall = mockMux.launchWorkspace.mock.calls[0];
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain("-- Start");
+    // No message should be sent after launch — prompt is embedded as positional arg
+    expect(mockMux.sendMessage.mock.calls.length).toBe(0);
+  });
+
+  it("opencode still uses sendMessage for post-launch prompt delivery", () => {
+    const mockMux = createMockMux();
+    // Return processing indicators so sendWithReadyWait succeeds
+    mockMux.readScreen = vi.fn(() => "⠋ Thinking...\nLine2\nLine3\nLine4");
+    const repo = setupTempRepo();
+    const promptFile = join(repo, "prompt.txt");
+    writeFileSync(promptFile, "implement the work item");
+
+    const wsRef = launchAiSession("opencode", repo, "T-1", "Test", promptFile, mockMux);
+
+    expect(wsRef).not.toBeNull();
+    // OpenCode command should NOT include -- Start
+    const launchCall = mockMux.launchWorkspace.mock.calls[0];
+    const cmd = launchCall[1] as string;
+    expect(cmd).not.toContain("-- Start");
+    // OpenCode should use sendMessage for post-launch delivery
+    expect(mockMux.sendMessage.mock.calls.length).toBeGreaterThan(0);
+  });
 });
 
 describe("launchSingleItem agentName default", () => {

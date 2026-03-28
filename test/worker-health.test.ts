@@ -149,6 +149,11 @@ describe("isWorkerProcessing", () => {
     expect(isWorkerProcessing(screen)).toBe(true);
   });
 
+  it("detects 'Herding' keyword", () => {
+    const screen = "Herding cats...\nPlease wait";
+    expect(isWorkerProcessing(screen)).toBe(true);
+  });
+
   it("returns false for empty screen", () => {
     expect(isWorkerProcessing("")).toBe(false);
   });
