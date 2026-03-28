@@ -86,7 +86,7 @@ User runs /decompose
 
 User runs /work
   └─→ skill reads .ninthwave/todos/, presents item selection
-      └─→ calls ninthwave start <IDs>
+      └─→ calls nw <IDs>
             ├─ git worktree create .worktrees/todo-<ID>
             ├─ allocate partition (port/DB isolation) via core/partitions.ts
             ├─ seed agent files into worktree (core/commands/launch.ts seedAgentFiles)
@@ -98,7 +98,7 @@ Worker session (per TODO)
   ├─ git push → gh pr create
   └─ idles, waiting for orchestrator messages
 
-ninthwave orchestrate (event loop, ~10s poll)
+nw watch (event loop, ~10s poll)
   ├─ poll GitHub for PR/CI/review status (core/commands/watch.ts checkPrStatus)
   ├─ poll multiplexer for worker liveness (core/mux.ts readScreen)
   ├─ run processTransitions (pure state machine → list of Actions)

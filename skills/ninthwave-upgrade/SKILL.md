@@ -38,7 +38,7 @@ if [ "$INSTALL_TYPE" != "brew" ]; then
     INSTALL_TYPE="vendored"
   else
     # No .ninthwave/dir and not brew — unknown
-    echo "Cannot detect ninthwave installation. Run 'ninthwave setup' first."
+    echo "Cannot detect ninthwave installation. Run 'nw init' first."
     exit 1
   fi
 fi
@@ -63,7 +63,7 @@ brew upgrade ninthwave
 After upgrading, re-run setup to update skill symlinks and agent files:
 
 ```bash
-ninthwave setup
+nw init
 ```
 
 **Git clone installs:**
@@ -87,7 +87,7 @@ git pull --ff-only origin main
 After pulling, re-run setup:
 
 ```bash
-ninthwave setup
+nw init
 ```
 
 **Vendored installs (no .git):**
@@ -101,7 +101,7 @@ To upgrade a vendored install, re-download from GitHub:
 
 Then re-run setup:
 ```bash
-ninthwave setup
+nw init
 ```
 
 ### 4. Report

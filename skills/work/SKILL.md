@@ -2,7 +2,7 @@
 name: work
 description: |
   Batch-process work items through parallel AI coding sessions.
-  Interactively select items, then delegate execution to `ninthwave orchestrate`.
+  Interactively select items, then delegate execution to `nw watch`.
   Includes continuous delivery loop with friction review, vision exploration, and
   autonomous self-improvement when dogfooding.
   Use when asked to "process work items", "batch work", "run work", "start work",
@@ -35,11 +35,11 @@ This skill is highly interactive. You MUST use your interactive question tool to
 
 ## Instructions
 
-This skill interactively selects TODO items, then delegates all orchestration to `ninthwave orchestrate` — a deterministic TypeScript daemon that handles launching workers, polling CI, merging PRs, cleaning up, and marking items done. The skill has three phases: Phase 1 (interactive selection), Phase 2 (launching the daemon), and Phase 3 (continuous delivery loop — checking for remaining work and looping back).
+This skill interactively selects TODO items, then delegates all orchestration to `nw watch` — a deterministic TypeScript daemon that handles launching workers, polling CI, merging PRs, cleaning up, and marking items done. The skill has three phases: Phase 1 (interactive selection), Phase 2 (launching the daemon), and Phase 3 (continuous delivery loop — checking for remaining work and looping back).
 
 > **CLI shortcut:** You can skip the interactive selection and run the orchestrator directly from any terminal:
 > ```
-> ninthwave orchestrate --items ID1,ID2 --merge-strategy asap --wip-limit 4
+> nw watch --items ID1,ID2 --merge-strategy asap --wip-limit 4
 > ```
 > No AI tool session required.
 
@@ -154,12 +154,12 @@ Skip this step if nothing changed in `.ninthwave/todos/` during Phase 1.
 
 ### Phase 2: ORCHESTRATE
 
-**Goal:** Launch the `ninthwave orchestrate` daemon and monitor its output.
+**Goal:** Launch the `nw watch` daemon and monitor its output.
 
 1. Build the orchestrate command from the user's selections:
 
    ```bash
-   ninthwave orchestrate \
+   nw watch \
      --items <comma-separated-IDs> \
      --merge-strategy <MERGE_STRATEGY> \
      --wip-limit <WIP_LIMIT>
@@ -168,7 +168,7 @@ Skip this step if nothing changed in `.ninthwave/todos/` during Phase 1.
    **Output modes:** When run in a TTY, the daemon shows an interactive TUI with a live status table. Use `--json` for structured JSON log lines (useful for piping to other tools or CI):
 
    ```bash
-   ninthwave orchestrate \
+   nw watch \
      --items <comma-separated-IDs> \
      --json
    ```
