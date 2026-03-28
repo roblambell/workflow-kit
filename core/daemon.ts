@@ -54,6 +54,8 @@ export interface DaemonStateItem {
   mergeCommitSha?: string;
   /** Number of times CI verification on main has failed. */
   verifyFailCount?: number;
+  /** cmux workspace reference for the verifier worker session. */
+  verifyWorkspaceRef?: string;
 }
 
 export interface DaemonState {
@@ -443,6 +445,7 @@ export function serializeOrchestratorState(
       ...(item.repairWorkspaceRef ? { repairWorkspaceRef: item.repairWorkspaceRef } : {}),
       ...(item.mergeCommitSha ? { mergeCommitSha: item.mergeCommitSha } : {}),
       ...(item.verifyFailCount ? { verifyFailCount: item.verifyFailCount } : {}),
+      ...(item.verifyWorkspaceRef ? { verifyWorkspaceRef: item.verifyWorkspaceRef } : {}),
     })),
   };
 }
