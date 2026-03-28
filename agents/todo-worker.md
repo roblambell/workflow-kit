@@ -116,7 +116,7 @@ Sometimes a TODO requires no code change. Valid reasons include:
 
 1. **Verify thoroughly** — read the affected files, run relevant tests, and confirm the TODO's acceptance criteria are already met or not applicable. Document your reasoning.
 2. **Skip Phases 5–6** (no code to commit or test).
-3. **Skip Phase 7** quality review (no diff to review).
+3. **Skip Phase 7** pre-PR check (no diff to review).
 4. **Proceed to Phase 8** — remove your TODO file as usual.
 5. **Create a no-op PR in Phase 9** using the adjusted template below.
 
@@ -199,19 +199,17 @@ If any criterion is not met, fix the implementation before proceeding.
 nw heartbeat --progress 0.7 --label "Tests passing"
 ```
 
-## 7. Quality Review
+## 7. Pre-PR Check
 
-**If `/review` skill is available:** Run it for a pre-landing code review. Fix any issues it raises.
+Run `git diff origin/main` and verify:
+1. **No scope drift** — only files related to the TODO were modified
+2. **No exposed secrets** — no API keys, tokens, passwords, or credentials in the diff
+3. **No debug artifacts** — no `console.log`, stray `TODO` comments, or commented-out code
 
-**If `/review` is not available:** Self-review the diff before creating the PR:
-1. Run `git diff origin/main` to see all changes
-2. Check for: scope drift (changes beyond the TODO), missing error handling at boundaries, untested code paths, hardcoded values, and security issues (injection, exposed secrets)
-3. Fix any issues found
-
-For UI/visual changes, run `/design-review` if available. For bug fixes with UI impact, run `/qa` if available. These are optional -- skip if not installed.
+Fix any issues found before proceeding.
 
 ```bash
-nw heartbeat --progress 0.85 --label "Reviewed"
+nw heartbeat --progress 0.85 --label "Checked diff"
 ```
 
 ## 8. Remove Your TODO File
