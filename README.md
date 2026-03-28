@@ -18,11 +18,11 @@
 
 ---
 
-**ninthwave orchestrates parallel AI coding sessions from todo files.** Each work item gets a full native instance of Claude Code, OpenCode, or Copilot CLI with the latest agent features, full capability, focused on one task. Workers open a PR then idle with full context. Review comments, CI failures, and rebase requests go straight back to the worker to handle. Switch into any session to steer. The orchestrator sequences dependencies, auto-merges, and cleans up.
+**ninthwave orchestrates parallel AI coding sessions from todo files.** Each work item gets its own git worktree and a full native instance of Claude Code, OpenCode, or Copilot CLI — focused on one task. Workers open PRs, handle review feedback and CI failures, and idle with full context until needed. The orchestrator sequences dependencies as stacked PRs, runs automated code review, auto-rebases, auto-merges, and cleans up. Two skills — `/decompose` and `/work` — take you from spec to shipped code.
 
 - **Parallel sessions.** Each work item gets its own git worktree and AI coding session.
-- **Dependency sequencing.** Items launch in batch order. Dependent items target their dependency's branch (stacked PRs).
-- **Review relay.** PR comments from reviewers are forwarded directly into the worker's session.
+- **Stacked PRs.** Dependent items target their dependency's branch. Reviewers see clean diffs. GitHub retargets on merge.
+- **Automated review.** Code review runs on every PR by default. Review comments route back into the worker's session for fixes.
 - **CI failure recovery.** Orchestrator detects failures, notifies the worker, retries up to 3x, marks stuck if unresolvable.
 - **Auto-rebase.** Daemon rebases branches automatically. Falls back to a repair worker on conflicts.
 - **Auto-merge.** Approved PRs merge on CI pass, or gate on manual confirmation.
