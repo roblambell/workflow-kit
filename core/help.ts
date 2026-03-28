@@ -174,21 +174,22 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
   },
   {
     name: "status",
-    usage: "status [--watch] [--flat]",
-    description: "Show active worktrees (--watch: refresh, --flat: no tree)",
+    usage: "status [--once] [--flat]",
+    description: "Live status dashboard (--once: single snapshot, --flat: no tree)",
     group: "workflow",
     needsRoot: true,
     needsTodos: false,
     handler: async (ctx) => {
       const flatFlag = ctx.args.includes("--flat");
-      if (ctx.args.includes("--watch")) {
-        await cmdStatusWatch(ctx.worktreeDir, ctx.projectRoot, 5_000, undefined, flatFlag);
-      } else {
+      if (ctx.args.includes("--once")) {
         cmdStatus(ctx.worktreeDir, ctx.projectRoot, flatFlag);
+      } else {
+        // Default is live refresh. --watch accepted silently for backwards compat.
+        await cmdStatusWatch(ctx.worktreeDir, ctx.projectRoot, 5_000, undefined, flatFlag);
       }
     },
-    flags: ["--watch", "--flat"],
-    examples: ["nw status", "nw status --watch", "nw status --flat"],
+    flags: ["--once", "--watch", "--flat"],
+    examples: ["nw status", "nw status --once", "nw status --flat"],
   },
   {
     name: "close-workspaces",

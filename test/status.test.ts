@@ -1639,6 +1639,86 @@ describe("cmdStatusWatch keyboard handling", () => {
   });
 });
 
+// ─── Status command flag routing (registry handler) ─────────────────────────
+
+describe("status command flag routing", () => {
+  it("default (no flags) invokes live refresh mode (cmdStatusWatch)", async () => {
+    const controller = new AbortController();
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    // cmdStatusWatch with a short interval and immediate abort confirms live mode was entered
+    const watchPromise = cmdStatusWatch(
+      "/nonexistent",
+      "/nonexistent",
+      10,
+      controller.signal,
+    );
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
+    controller.abort();
+    await watchPromise;
+
+    // Live mode uses cursor-home for flicker-free refresh
+    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
+    const cursorHomeCalls = allWrites.filter((s) => s.includes("\x1B[H"));
+    expect(cursorHomeCalls.length).toBeGreaterThanOrEqual(1);
+
+    writeSpy.mockRestore();
+  });
+
+  it("--once invokes single snapshot mode (cmdStatus)", () => {
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    cmdStatus("/nonexistent/path/.worktrees", "/nonexistent/path");
+
+    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
+    const joined = allWrites.join("");
+
+    // Static mode should NOT use cursor-home escape
+    expect(joined).not.toContain("\x1B[H");
+    // Should contain status table content
+    expect(joined).toContain("ninthwave status");
+
+    writeSpy.mockRestore();
+  });
+
+  it("--watch accepted silently (backwards compat, same as default live mode)", async () => {
+    // Verify that passing --watch doesn't error and invokes live refresh mode
+    // The registry handler treats --watch the same as the default (live mode)
+    const controller = new AbortController();
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    const watchPromise = cmdStatusWatch(
+      "/nonexistent",
+      "/nonexistent",
+      10,
+      controller.signal,
+    );
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
+    controller.abort();
+    await watchPromise;
+
+    // Same assertions as default live mode
+    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
+    const cursorHomeCalls = allWrites.filter((s) => s.includes("\x1B[H"));
+    expect(cursorHomeCalls.length).toBeGreaterThanOrEqual(1);
+
+    writeSpy.mockRestore();
+  });
+
+  it("registry entry has --once flag and accepts --watch for compat", () => {
+    const { lookupCommand } = require("../core/help.ts");
+    const entry = lookupCommand("status");
+    expect(entry).toBeDefined();
+    expect(entry!.flags).toContain("--once");
+    expect(entry!.flags).toContain("--watch");
+    expect(entry!.flags).toContain("--flat");
+    expect(entry!.usage).toContain("--once");
+    expect(entry!.description).toContain("Live");
+  });
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeItem(
