@@ -906,6 +906,152 @@ describe("mock-broker", () => {
     });
   });
 
+  describe("schedule claim", () => {
+    /** Send schedule_claim and wait for schedule_claim_response. */
+    async function sendScheduleClaim(
+      ws: WebSocket,
+      daemonId: string,
+      taskId: string,
+      scheduleTime: string,
+    ): Promise<{ granted: boolean; requestId: string; taskId: string }> {
+      const requestId = `req-sc-${Math.random().toString(36).slice(2, 8)}`;
+      ws.send(JSON.stringify({ type: "schedule_claim", requestId, daemonId, taskId, scheduleTime }));
+      const resp = await waitForMessageByType<{
+        type: string;
+        requestId: string;
+        taskId: string;
+        granted: boolean;
+      }>(ws, "schedule_claim_response");
+      return { granted: resp.granted, requestId: resp.requestId, taskId: resp.taskId };
+    }
+
+    it("first daemon claims schedule -> granted", async () => {
+      const { port } = startBroker();
+      const code = await createCrew(port);
+      const ws1 = await connectWs(port, code, "d1", "worker-1");
+      await sendSync(ws1, "d1", []);
+
+      const result = await sendScheduleClaim(ws1, "d1", "daily-test", "2026-03-28T10:00:00.000Z");
+      expect(result.granted).toBe(true);
+      expect(result.taskId).toBe("daily-test");
+
+      ws1.close();
+    });
+
+    it("second daemon claims same key -> denied", async () => {
+      const { port } = startBroker();
+      const code = await createCrew(port);
+      const ws1 = await connectWs(port, code, "d1", "worker-1");
+      const ws2 = await connectWs(port, code, "d2", "worker-2");
+      await sendSync(ws1, "d1", []);
+      await sendSync(ws2, "d2", []);
+
+      // d1 claims first
+      const r1 = await sendScheduleClaim(ws1, "d1", "daily-test", "2026-03-28T10:00:00.000Z");
+      expect(r1.granted).toBe(true);
+
+      // d2 claims same key -> denied
+      const r2 = await sendScheduleClaim(ws2, "d2", "daily-test", "2026-03-28T10:00:00.000Z");
+      expect(r2.granted).toBe(false);
+
+      ws1.close();
+      ws2.close();
+    });
+
+    it("different schedule times are independent keys", async () => {
+      const { port } = startBroker();
+      const code = await createCrew(port);
+      const ws1 = await connectWs(port, code, "d1", "worker-1");
+      const ws2 = await connectWs(port, code, "d2", "worker-2");
+      await sendSync(ws1, "d1", []);
+      await sendSync(ws2, "d2", []);
+
+      const r1 = await sendScheduleClaim(ws1, "d1", "daily-test", "2026-03-28T10:00:00.000Z");
+      expect(r1.granted).toBe(true);
+
+      // Different schedule time -- different key, should be granted
+      const r2 = await sendScheduleClaim(ws2, "d2", "daily-test", "2026-03-28T11:00:00.000Z");
+      expect(r2.granted).toBe(true);
+
+      ws1.close();
+      ws2.close();
+    });
+
+    it("claim key expires after timeout -> re-claimable", async () => {
+      // Use a broker with fast check interval to observe expiry
+      const { port, broker } = startBroker({ checkIntervalMs: 50 });
+      const code = await createCrew(port);
+      const ws1 = await connectWs(port, code, "d1", "worker-1");
+      const ws2 = await connectWs(port, code, "d2", "worker-2");
+      await sendSync(ws1, "d1", []);
+      await sendSync(ws2, "d2", []);
+
+      // d1 claims
+      const r1 = await sendScheduleClaim(ws1, "d1", "daily-test", "2026-03-28T10:00:00.000Z");
+      expect(r1.granted).toBe(true);
+
+      // Manually expire the claim by setting expiresAt in the past
+      const crew = broker.getCrew(code);
+      const entry = crew!.scheduleClaims.get("daily-test:2026-03-28T10:00:00.000Z");
+      expect(entry).toBeDefined();
+      entry!.expiresAt = Date.now() - 1;
+
+      // Wait for cleanup cycle
+      await tick(100);
+
+      // d2 should now be able to claim the same key
+      const r2 = await sendScheduleClaim(ws2, "d2", "daily-test", "2026-03-28T10:00:00.000Z");
+      expect(r2.granted).toBe(true);
+
+      ws1.close();
+      ws2.close();
+    });
+
+    it("different task IDs at same time are independent", async () => {
+      const { port } = startBroker();
+      const code = await createCrew(port);
+      const ws1 = await connectWs(port, code, "d1", "worker-1");
+      const ws2 = await connectWs(port, code, "d2", "worker-2");
+      await sendSync(ws1, "d1", []);
+      await sendSync(ws2, "d2", []);
+
+      const r1 = await sendScheduleClaim(ws1, "d1", "task-a", "2026-03-28T10:00:00.000Z");
+      expect(r1.granted).toBe(true);
+
+      // Different task ID -- independent key
+      const r2 = await sendScheduleClaim(ws2, "d2", "task-b", "2026-03-28T10:00:00.000Z");
+      expect(r2.granted).toBe(true);
+
+      ws1.close();
+      ws2.close();
+    });
+
+    it("schedule_claim events are logged", async () => {
+      const { port, eventLogPath } = startBroker();
+      const code = await createCrew(port);
+      const ws1 = await connectWs(port, code, "d1", "worker-1");
+      const ws2 = await connectWs(port, code, "d2", "worker-2");
+      await sendSync(ws1, "d1", []);
+      await sendSync(ws2, "d2", []);
+
+      await sendScheduleClaim(ws1, "d1", "daily-test", "2026-03-28T10:00:00.000Z");
+      await sendScheduleClaim(ws2, "d2", "daily-test", "2026-03-28T10:00:00.000Z");
+
+      await tick(50);
+
+      const events = readEventLog(eventLogPath);
+      const scEvents = events.filter((e) => e.event === "schedule_claim");
+      expect(scEvents).toHaveLength(2);
+
+      // First should be granted, second denied
+      expect((scEvents[0]!.metadata as { granted: boolean }).granted).toBe(true);
+      expect((scEvents[1]!.metadata as { granted: boolean }).granted).toBe(false);
+
+      ws1.close();
+      ws2.close();
+    });
+  });
+
   describe("edge cases", () => {
     it("ignores duplicate syncs of the same path (preserves creator)", async () => {
       const { port, broker } = startBroker();

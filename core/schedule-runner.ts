@@ -10,6 +10,7 @@ import type {
   ScheduleState,
   ScheduleWorkerEntry,
 } from "./schedule-state.ts";
+import type { CrewBroker } from "./crew.ts";
 
 // ── Check schedules ─────────────────────────────────────────────────
 
@@ -250,6 +251,62 @@ const defaultTriggerFileIO: TriggerFileIO = {
   readdirSync,
   unlinkSync,
 };
+
+// ── Schedule claim (crew mode) ─────────────────────────────────────
+
+/** Result of a schedule claim attempt. */
+export type ScheduleClaimResult =
+  | { action: "launch"; reason: "solo" | "crew-granted" | "crew-disconnected" }
+  | { action: "skip"; reason: "crew-denied" };
+
+/**
+ * Compute the schedule fire time for crew claim deduplication.
+ *
+ * Truncates to minute precision so all daemons polling at the same
+ * cron minute generate the same key for the broker.
+ */
+export function computeScheduleTime(now: Date): string {
+  const truncated = new Date(now);
+  truncated.setSeconds(0, 0);
+  return truncated.toISOString();
+}
+
+/**
+ * Attempt to claim a schedule slot via the crew broker before launching.
+ *
+ * - Solo mode (no broker): always returns "launch" with reason "solo".
+ * - Crew mode, connected: calls scheduleClaim(). Granted -> "launch".
+ *   Denied -> "skip" with reason "crew-denied".
+ * - Crew mode, disconnected: falls back to solo execution with reason
+ *   "crew-disconnected" (log a warning at the call site).
+ */
+export async function tryScheduleClaim(
+  crewBroker: CrewBroker | null | undefined,
+  taskId: string,
+  scheduleTime: string,
+): Promise<ScheduleClaimResult> {
+  // Solo mode -- no broker
+  if (!crewBroker) {
+    return { action: "launch", reason: "solo" };
+  }
+
+  // Crew mode but disconnected -- fallback to solo execution
+  if (!crewBroker.isConnected()) {
+    return { action: "launch", reason: "crew-disconnected" };
+  }
+
+  // Try to claim via the broker
+  try {
+    const granted = await crewBroker.scheduleClaim(taskId, scheduleTime);
+    if (granted) {
+      return { action: "launch", reason: "crew-granted" };
+    }
+    return { action: "skip", reason: "crew-denied" };
+  } catch {
+    // Claim failed (e.g., WS disconnected mid-request) -- fallback to solo
+    return { action: "launch", reason: "crew-disconnected" };
+  }
+}
 
 // ── Schedule triggers directory ─────────────────────────────────────
 

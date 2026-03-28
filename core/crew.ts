@@ -73,6 +73,21 @@ export interface ReconnectStateMessage {
   reclaimed: string[];  // TODOs re-claimed by another daemon -- kill worker
 }
 
+export interface ScheduleClaimMessage {
+  type: "schedule_claim";
+  requestId: string;
+  daemonId: string;
+  taskId: string;
+  scheduleTime: string;
+}
+
+export interface ScheduleClaimResponseMessage {
+  type: "schedule_claim_response";
+  requestId: string;
+  taskId: string;
+  granted: boolean;
+}
+
 export interface ErrorMessage {
   type: "error";
   message: string;
@@ -82,7 +97,8 @@ export type ClientMessage =
   | SyncMessage
   | ClaimMessage
   | CompleteMessage
-  | HeartbeatMessage;
+  | HeartbeatMessage
+  | ScheduleClaimMessage;
 
 export type ServerMessage =
   | SyncAckMessage
@@ -90,6 +106,7 @@ export type ServerMessage =
   | CompleteAckMessage
   | HeartbeatAckMessage
   | ReconnectStateMessage
+  | ScheduleClaimResponseMessage
   | ErrorMessage;
 
 // ── Reconnect reconciliation callback ───────────────────────────────
@@ -125,6 +142,9 @@ export interface CrewBroker {
 
   /** Mark a TODO as complete. */
   complete(todoId: string): void;
+
+  /** Claim a schedule slot. Returns true if granted, false if denied or timeout. */
+  scheduleClaim(taskId: string, scheduleTime: string): Promise<boolean>;
 
   /** Send a heartbeat to the server. */
   heartbeat(): void;
@@ -262,6 +282,10 @@ export class WebSocketCrewBroker implements CrewBroker {
     resolve: (todoId: string | null) => void;
     timer: ReturnType<typeof setTimeout>;
   }>();
+  private pendingScheduleClaims = new Map<string, {
+    resolve: (granted: boolean) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
   private connectPromise: {
     resolve: () => void;
     reject: (err: Error) => void;
@@ -372,6 +396,30 @@ export class WebSocketCrewBroker implements CrewBroker {
     });
   }
 
+  async scheduleClaim(taskId: string, scheduleTime: string): Promise<boolean> {
+    if (!this.connected || !this.ws) return false;
+
+    const requestId = randomUUID();
+    const timeoutMs = this.deps.claimTimeoutMs ?? CLAIM_TIMEOUT_MS;
+
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingScheduleClaims.delete(requestId);
+        resolve(false);
+      }, timeoutMs);
+
+      this.pendingScheduleClaims.set(requestId, { resolve, timer });
+
+      this.send({
+        type: "schedule_claim",
+        requestId,
+        daemonId: this.daemonId,
+        taskId,
+        scheduleTime,
+      });
+    });
+  }
+
   complete(todoId: string): void {
     this.send({
       type: "complete",
@@ -440,6 +488,16 @@ export class WebSocketCrewBroker implements CrewBroker {
           clearTimeout(pending.timer);
           this.pendingClaims.delete(data.requestId);
           pending.resolve(data.todoId ?? null);
+        }
+        break;
+      }
+
+      case "schedule_claim_response": {
+        const schedulePending = this.pendingScheduleClaims.get(data.requestId);
+        if (schedulePending) {
+          clearTimeout(schedulePending.timer);
+          this.pendingScheduleClaims.delete(data.requestId);
+          schedulePending.resolve(data.granted ?? false);
         }
         break;
       }
@@ -531,5 +589,11 @@ export class WebSocketCrewBroker implements CrewBroker {
       pending.resolve(null);
     }
     this.pendingClaims.clear();
+
+    for (const [id, pending] of this.pendingScheduleClaims) {
+      clearTimeout(pending.timer);
+      pending.resolve(false);
+    }
+    this.pendingScheduleClaims.clear();
   }
 }

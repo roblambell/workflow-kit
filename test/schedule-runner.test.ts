@@ -12,10 +12,14 @@ import {
   monitorScheduleWorkers,
   processTriggerFiles,
   isScheduleWorkerAlive,
+  tryScheduleClaim,
+  computeScheduleTime,
   type MonitorScheduleDeps,
   type LaunchScheduledDeps,
   type TriggerFileIO,
+  type ScheduleClaimResult,
 } from "../core/schedule-runner.ts";
+import type { CrewBroker } from "../core/crew.ts";
 import { processScheduledTasks, type ScheduleLoopDeps, type LogEntry } from "../core/commands/orchestrate.ts";
 import { Orchestrator } from "../core/orchestrator.ts";
 
@@ -512,6 +516,94 @@ describe("processScheduledTasks", () => {
     // Should have a completion log
     const completed = logs.filter((l) => l.event === "schedule-completed");
     expect(completed).toHaveLength(1);
+  });
+});
+
+// ── computeScheduleTime ────────────────────────────────────────────
+
+describe("computeScheduleTime", () => {
+  it("truncates to minute precision", () => {
+    const now = new Date("2026-03-28T10:05:33.456Z");
+    const result = computeScheduleTime(now);
+    expect(result).toBe("2026-03-28T10:05:00.000Z");
+  });
+
+  it("produces identical keys for same minute regardless of seconds", () => {
+    const a = computeScheduleTime(new Date("2026-03-28T10:00:01.000Z"));
+    const b = computeScheduleTime(new Date("2026-03-28T10:00:59.999Z"));
+    expect(a).toBe(b);
+  });
+
+  it("produces different keys for different minutes", () => {
+    const a = computeScheduleTime(new Date("2026-03-28T10:00:00.000Z"));
+    const b = computeScheduleTime(new Date("2026-03-28T10:01:00.000Z"));
+    expect(a).not.toBe(b);
+  });
+});
+
+// ── tryScheduleClaim ───────────────────────────────────────────────
+
+describe("tryScheduleClaim", () => {
+  /** Minimal mock CrewBroker for testing tryScheduleClaim. */
+  function mockBroker(opts: {
+    connected?: boolean;
+    grantClaim?: boolean;
+    throwOnClaim?: boolean;
+  } = {}): CrewBroker {
+    return {
+      connect: async () => {},
+      sync: () => {},
+      claim: async () => null,
+      complete: () => {},
+      scheduleClaim: async () => {
+        if (opts.throwOnClaim) throw new Error("WS disconnected");
+        return opts.grantClaim ?? false;
+      },
+      heartbeat: () => {},
+      disconnect: () => {},
+      isConnected: () => opts.connected ?? true,
+      getCrewStatus: () => null,
+    };
+  }
+
+  it("solo mode (no broker) -> launch with reason solo", async () => {
+    const result = await tryScheduleClaim(null, "task-1", "2026-03-28T10:00:00.000Z");
+    expect(result.action).toBe("launch");
+    expect(result.reason).toBe("solo");
+  });
+
+  it("solo mode (undefined broker) -> launch with reason solo", async () => {
+    const result = await tryScheduleClaim(undefined, "task-1", "2026-03-28T10:00:00.000Z");
+    expect(result.action).toBe("launch");
+    expect(result.reason).toBe("solo");
+  });
+
+  it("crew mode claim granted -> launch", async () => {
+    const broker = mockBroker({ connected: true, grantClaim: true });
+    const result = await tryScheduleClaim(broker, "task-1", "2026-03-28T10:00:00.000Z");
+    expect(result.action).toBe("launch");
+    expect(result.reason).toBe("crew-granted");
+  });
+
+  it("crew mode claim denied -> skip", async () => {
+    const broker = mockBroker({ connected: true, grantClaim: false });
+    const result = await tryScheduleClaim(broker, "task-1", "2026-03-28T10:00:00.000Z");
+    expect(result.action).toBe("skip");
+    expect(result.reason).toBe("crew-denied");
+  });
+
+  it("crew disconnected -> fallback to solo execution", async () => {
+    const broker = mockBroker({ connected: false });
+    const result = await tryScheduleClaim(broker, "task-1", "2026-03-28T10:00:00.000Z");
+    expect(result.action).toBe("launch");
+    expect(result.reason).toBe("crew-disconnected");
+  });
+
+  it("WS disconnect during claim (exception) -> fallback to solo", async () => {
+    const broker = mockBroker({ connected: true, throwOnClaim: true });
+    const result = await tryScheduleClaim(broker, "task-1", "2026-03-28T10:00:00.000Z");
+    expect(result.action).toBe("launch");
+    expect(result.reason).toBe("crew-disconnected");
   });
 });
 

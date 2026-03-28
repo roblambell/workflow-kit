@@ -2676,6 +2676,9 @@ export async function cmdOrchestrate(
   const reviewExternalEnabled = reviewExternal || projectConfig["review_external"] === "true";
   const scheduleEnabled = projectConfig["schedule_enabled"] === "true";
 
+  // Analytics directory -- always enabled, writes to .ninthwave/analytics/
+  const analyticsDir = join(projectRoot, ".ninthwave", "analytics");
+
   // State persistence: serialize state each poll cycle so the status pane can display all items.
   // Written in both daemon and interactive mode -- the status pane reads this file to show
   // the full queue including queued items that don't have worktrees yet.

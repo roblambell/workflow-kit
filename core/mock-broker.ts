@@ -33,10 +33,17 @@ export interface BrokerOptions {
   checkIntervalMs?: number;
 }
 
+export interface ScheduleClaimEntry {
+  daemonId: string;
+  expiresAt: number;
+}
+
 export interface CrewState {
   code: string;
   items: Map<string, WorkEntry>;
   daemons: Map<string, DaemonState>;
+  /** Schedule claim deduplication: key = "taskId:scheduleTime" -> claim entry. */
+  scheduleClaims: Map<string, ScheduleClaimEntry>;
 }
 
 export interface WorkEntry {
@@ -67,7 +74,7 @@ export interface CrewEvent {
   ts: string;
   crew_id: string;
   daemon_id: string;
-  event: "claim" | "sync" | "complete" | "disconnect" | "reconnect" | "abandon";
+  event: "claim" | "sync" | "complete" | "disconnect" | "reconnect" | "abandon" | "schedule_claim";
   todo_path: string;
   metadata: { affinity: "author" | "pool" } | Record<string, unknown>;
 }
@@ -98,7 +105,8 @@ type InboundMessage =
   | { type: "sync"; daemonId: string; items: SyncItemPayload[] }
   | { type: "claim"; requestId: string; daemonId: string }
   | { type: "complete"; todoId: string; daemonId: string }
-  | { type: "heartbeat"; daemonId: string; ts: string };
+  | { type: "heartbeat"; daemonId: string; ts: string }
+  | { type: "schedule_claim"; requestId: string; daemonId: string; taskId: string; scheduleTime: string };
 
 type OutboundMessage =
   | { type: "sync_ack"; crewCode: string; todoIds: string[] }
@@ -106,8 +114,12 @@ type OutboundMessage =
   | { type: "complete_ack"; todoId: string }
   | { type: "heartbeat_ack"; ts: string }
   | { type: "reconnect_state"; resumed: string[]; released: string[]; reclaimed: string[] }
+  | { type: "schedule_claim_response"; requestId: string; taskId: string; granted: boolean }
   | CrewStatusUpdate
   | { type: "error"; message: string };
+
+/** Default expiry for schedule claims: 30 minutes. */
+const SCHEDULE_CLAIM_EXPIRY_MS = 30 * 60 * 1_000;
 
 // ── Broker ──────────────────────────────────────────────────────────
 
@@ -252,6 +264,7 @@ export class MockBroker {
       code,
       items: new Map(),
       daemons: new Map(),
+      scheduleClaims: new Map(),
     });
     return code;
   }
@@ -364,6 +377,9 @@ export class MockBroker {
       case "complete":
         this.handleComplete(crew, daemonId, msg.todoId, ws);
         break;
+      case "schedule_claim":
+        this.handleScheduleClaim(crew, daemonId, msg.requestId, msg.taskId, msg.scheduleTime, ws);
+        break;
       case "heartbeat":
         daemon.lastHeartbeat = Date.now();
         this.send(ws, { type: "heartbeat_ack", ts: msg.ts });
@@ -466,12 +482,49 @@ export class MockBroker {
     this.broadcastCrewUpdate(crew);
   }
 
+  // ── Schedule claim handling ───────────────────────────────────────
+
+  private handleScheduleClaim(
+    crew: CrewState,
+    daemonId: string,
+    requestId: string,
+    taskId: string,
+    scheduleTime: string,
+    ws: WebSocket,
+  ): void {
+    const key = `${taskId}:${scheduleTime}`;
+    const now = Date.now();
+    const existing = crew.scheduleClaims.get(key);
+
+    if (existing && existing.expiresAt > now) {
+      // Already claimed and not expired -- deny
+      this.logEvent(crew.code, daemonId, "schedule_claim", taskId, { granted: false, key });
+      this.send(ws, { type: "schedule_claim_response", requestId, taskId, granted: false });
+      return;
+    }
+
+    // Grant the claim: first-to-arrive wins (sequential message processing).
+    crew.scheduleClaims.set(key, {
+      daemonId,
+      expiresAt: now + SCHEDULE_CLAIM_EXPIRY_MS,
+    });
+    this.logEvent(crew.code, daemonId, "schedule_claim", taskId, { granted: true, key });
+    this.send(ws, { type: "schedule_claim_response", requestId, taskId, granted: true });
+  }
+
   // ── Heartbeat monitoring ──────────────────────────────────────────
 
   private checkHeartbeats(): void {
     const now = Date.now();
 
     for (const crew of this.crews.values()) {
+      // Cleanup expired schedule claims
+      for (const [key, entry] of crew.scheduleClaims) {
+        if (now >= entry.expiresAt) {
+          crew.scheduleClaims.delete(key);
+        }
+      }
+
       for (const daemon of crew.daemons.values()) {
         // Check for heartbeat timeout on connected daemons
         if (daemon.ws !== null && now - daemon.lastHeartbeat > this.heartbeatTimeoutMs) {
