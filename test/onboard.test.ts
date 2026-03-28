@@ -579,8 +579,11 @@ describe("cmdNoArgs", () => {
       isDaemonRunning: () => null,
       displayItemsSummary: () => { summaryCalled = true; },
       promptMode: async () => "orchestrate",
-      promptMergeStrategy: async () => "approved" as MergeStrategy,
-      promptWipLimit: async () => 3,
+      runInteractiveFlow: async () => ({
+        itemIds: ["H-FOO-1", "H-FOO-2"],
+        mergeStrategy: "approved" as MergeStrategy,
+        wipLimit: 3,
+      }),
       runWatch: async (args) => {
         watchCalled = true;
         watchArgs = args;
@@ -599,7 +602,7 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).toContain("3");
   });
 
-  it("launch subset path: calls promptItems then cmdRunItems with selected IDs", async () => {
+  it("launch subset path: calls runInteractiveFlow then cmdRunItems with selected IDs", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -607,7 +610,7 @@ describe("cmdNoArgs", () => {
       fakeWorkItem("H-FOO-1", "First task"),
       fakeWorkItem("H-FOO-2", "Second task"),
     ];
-    let promptItemsCalled = false;
+    let interactiveCalled = false;
     let runSelectedCalled = false;
     let runSelectedIds: string[] = [];
 
@@ -617,9 +620,13 @@ describe("cmdNoArgs", () => {
       isDaemonRunning: () => null,
       displayItemsSummary: () => {},
       promptMode: async () => "launch",
-      promptItems: async () => {
-        promptItemsCalled = true;
-        return ["H-FOO-1"];
+      runInteractiveFlow: async () => {
+        interactiveCalled = true;
+        return {
+          itemIds: ["H-FOO-1"],
+          mergeStrategy: "auto" as MergeStrategy,
+          wipLimit: 4,
+        };
       },
       runSelected: async (ids) => {
         runSelectedCalled = true;
@@ -627,7 +634,7 @@ describe("cmdNoArgs", () => {
       },
     });
 
-    expect(promptItemsCalled).toBe(true);
+    expect(interactiveCalled).toBe(true);
     expect(runSelectedCalled).toBe(true);
     expect(runSelectedIds).toEqual(["H-FOO-1"]);
   });
@@ -646,8 +653,11 @@ describe("cmdNoArgs", () => {
       isDaemonRunning: () => null,
       displayItemsSummary: () => {},
       promptMode: async () => "orchestrate",
-      promptMergeStrategy: async () => "auto" as MergeStrategy,
-      promptWipLimit: async () => 4,
+      runInteractiveFlow: async () => ({
+        itemIds: ["H-1"],
+        mergeStrategy: "auto" as MergeStrategy,
+        wipLimit: 4,
+      }),
       runWatch: async () => { watchCalled = true; },
     });
 
@@ -687,14 +697,14 @@ describe("cmdNoArgs", () => {
       isDaemonRunning: () => null,
       displayItemsSummary: () => {},
       promptMode: async () => "launch",
-      promptItems: async () => [], // User quit
+      runInteractiveFlow: async () => null, // User cancelled
       runSelected: async () => { runCalled = true; },
     });
 
     expect(runCalled).toBe(false);
   });
 
-  it("orchestrate path never calls promptItems (no double-prompting)", async () => {
+  it("orchestrate path uses runInteractiveFlow (no separate readline prompts)", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -702,6 +712,7 @@ describe("cmdNoArgs", () => {
       fakeWorkItem("H-FOO-1", "First task"),
       fakeWorkItem("H-FOO-2", "Second task"),
     ];
+    let interactiveCalled = false;
     let promptItemsCalled = false;
 
     await cmdNoArgs(projectDir, {
@@ -710,8 +721,14 @@ describe("cmdNoArgs", () => {
       isDaemonRunning: () => null,
       displayItemsSummary: () => {},
       promptMode: async () => "orchestrate",
-      promptMergeStrategy: async () => "auto" as MergeStrategy,
-      promptWipLimit: async () => 4,
+      runInteractiveFlow: async () => {
+        interactiveCalled = true;
+        return {
+          itemIds: ["H-FOO-1", "H-FOO-2"],
+          mergeStrategy: "auto" as MergeStrategy,
+          wipLimit: 4,
+        };
+      },
       promptItems: async () => {
         promptItemsCalled = true;
         return ["H-FOO-1"];
@@ -719,6 +736,7 @@ describe("cmdNoArgs", () => {
       runWatch: async () => {},
     });
 
+    expect(interactiveCalled).toBe(true);
     expect(promptItemsCalled).toBe(false);
   });
 });

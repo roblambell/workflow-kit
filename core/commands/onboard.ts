@@ -25,8 +25,8 @@ import { initProject } from "./init.ts";
 import { getBundleDir } from "../paths.ts";
 import { isDaemonRunning } from "../daemon.ts";
 import { parseWorkItems } from "../parser.ts";
-import { promptItems, displayItemsSummary, promptMode, promptMergeStrategy, promptWipLimit } from "../interactive.ts";
-import type { Mode } from "../interactive.ts";
+import { promptItems, displayItemsSummary, promptMode, promptMergeStrategy, promptWipLimit, runInteractiveFlow } from "../interactive.ts";
+import type { Mode, InteractiveResult } from "../interactive.ts";
 import type { MergeStrategy } from "../orchestrator.ts";
 import { printHelp } from "../help.ts";
 
@@ -109,6 +109,7 @@ export interface NoArgsDeps extends OnboardDeps {
   promptMergeStrategy?: (prompt: PromptFn) => Promise<MergeStrategy>;
   promptWipLimit?: (defaultLimit: number, prompt: PromptFn) => Promise<number>;
   promptItems?: (todos: WorkItem[], prompt: PromptFn) => Promise<string[]>;
+  runInteractiveFlow?: (todos: WorkItem[], defaultWipLimit: number) => Promise<InteractiveResult | null>;
   runSelected?: (ids: string[], workDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
   runWatch?: (args: string[], workDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
   runStatusWatch?: (worktreeDir: string, projectRoot: string) => Promise<void>;
@@ -498,14 +499,15 @@ export async function cmdNoArgs(
   if (mode === "quit") return;
 
   if (mode === "orchestrate") {
-    // Prompt for merge strategy and WIP limit, then pass all item IDs to cmdWatch
-    const strategy = await doPromptMergeStrategy(prompt);
-    const wipLimit = await doPromptWipLimit(4, prompt);
-    const allItemIds = todos.map((t) => t.id);
+    // TUI selection flow: items + merge strategy + WIP limit in-screen
+    const doInteractive = deps.runInteractiveFlow ?? runInteractiveFlow;
+    const result = await doInteractive(todos, 4);
+    if (!result) return; // User cancelled
+
     const watchArgs = [
-      "--items", ...allItemIds,
-      "--merge-strategy", strategy,
-      "--wip-limit", String(wipLimit),
+      "--items", ...result.itemIds,
+      "--merge-strategy", result.mergeStrategy,
+      "--wip-limit", String(result.wipLimit),
     ];
 
     if (deps.runWatch) {
@@ -515,15 +517,16 @@ export async function cmdNoArgs(
       await cmdWatch(watchArgs, workDir, worktreeDir, projectRoot);
     }
   } else {
-    // "launch" -- prompt for item selection, then run selected
-    const selectedIds = await doPromptItems(todos, prompt);
-    if (selectedIds.length === 0) return;
+    // "launch" -- TUI selection for item subset
+    const doInteractive = deps.runInteractiveFlow ?? runInteractiveFlow;
+    const result = await doInteractive(todos, 4);
+    if (!result) return; // User cancelled
 
     if (deps.runSelected) {
-      await deps.runSelected(selectedIds, workDir, worktreeDir, projectRoot);
+      await deps.runSelected(result.itemIds, workDir, worktreeDir, projectRoot);
     } else {
       const { cmdRunItems } = await import("./launch.ts");
-      await cmdRunItems(selectedIds, workDir, worktreeDir, projectRoot);
+      await cmdRunItems(result.itemIds, workDir, worktreeDir, projectRoot);
     }
   }
 }

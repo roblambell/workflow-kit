@@ -1,5 +1,7 @@
 // Interactive CLI prompts for the orchestrate command.
-// Uses Node's built-in readline -- no external dependencies.
+// Two modes:
+// 1. TUI widgets (default for TTY) -- in-screen selection with raw keypresses
+// 2. Readline fallback (legacy, non-TTY, or when TUI is explicitly disabled)
 // All I/O is injectable for testing.
 
 import { createInterface } from "readline";
@@ -7,6 +9,12 @@ import { BOLD, DIM, GREEN, YELLOW, CYAN, RESET } from "./output.ts";
 import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
+import {
+  runSelectionScreen,
+  createProcessIO,
+  type WidgetIO,
+  type SelectionScreenResult,
+} from "./tui-widgets.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -21,6 +29,10 @@ export interface InteractiveResult {
 export interface InteractiveDeps {
   prompt?: PromptFn;
   isTTY?: boolean;
+  /** When true, skip TUI widgets and use readline prompts. */
+  useLegacyPrompts?: boolean;
+  /** Injectable WidgetIO for testing the TUI path. */
+  widgetIO?: WidgetIO;
 }
 
 // ── Default prompt using readline ────────────────────────────────────
@@ -334,13 +346,76 @@ export async function confirmSummary(
   return answer.toLowerCase() !== "n" && answer.toLowerCase() !== "no";
 }
 
+// ── TUI widget flow ─────────────────────────────────────────────────
+
+/**
+ * Run the in-TUI selection flow using raw-mode widgets.
+ * Enters raw mode, runs widgets, then restores terminal state.
+ * Returns null if cancelled.
+ */
+export async function runTuiSelectionFlow(
+  todos: WorkItem[],
+  defaultWipLimit: number,
+  deps: InteractiveDeps = {},
+): Promise<InteractiveResult | null> {
+  const io = deps.widgetIO ?? createProcessIO();
+  const stdin = process.stdin;
+
+  // Enter raw mode for widget key handling (unless testing with injected IO)
+  const needsRawMode = !deps.widgetIO && stdin.isTTY && stdin.setRawMode;
+  if (needsRawMode) {
+    stdin.setRawMode!(true);
+    stdin.resume();
+    stdin.setEncoding("utf8");
+  }
+
+  try {
+    const result = await runSelectionScreen(io, todos, defaultWipLimit);
+    if (!result || result.cancelled) return null;
+
+    return {
+      itemIds: result.itemIds,
+      mergeStrategy: result.mergeStrategy,
+      wipLimit: result.wipLimit,
+    };
+  } finally {
+    // Restore terminal state
+    if (needsRawMode) {
+      stdin.setRawMode!(false);
+      stdin.pause();
+    }
+  }
+}
+
 // ── Main interactive flow ────────────────────────────────────────────
 
 /**
  * Run the full interactive selection flow.
+ * Uses TUI widgets by default on TTY; falls back to readline when
+ * useLegacyPrompts is true or not a TTY.
  * Returns null if the user cancels at any point.
  */
 export async function runInteractiveFlow(
+  todos: WorkItem[],
+  defaultWipLimit: number,
+  deps: InteractiveDeps = {},
+): Promise<InteractiveResult | null> {
+  const isTTY = deps.isTTY ?? (process.stdin.isTTY === true);
+
+  // Use TUI widgets unless explicitly disabled or not a TTY
+  if (!deps.useLegacyPrompts && (isTTY || deps.widgetIO)) {
+    return runTuiSelectionFlow(todos, defaultWipLimit, deps);
+  }
+
+  // Legacy readline fallback
+  return runReadlineFlow(todos, defaultWipLimit, deps);
+}
+
+/**
+ * Legacy readline-based interactive flow.
+ * Kept as fallback for non-TTY or explicit opt-in.
+ */
+async function runReadlineFlow(
   todos: WorkItem[],
   defaultWipLimit: number,
   deps: InteractiveDeps = {},

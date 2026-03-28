@@ -3595,16 +3595,15 @@ export async function cmdOrchestrate(
       );
 
       if (result.completionAction === "run-more" && tuiMode) {
-        // Temporarily leave alt screen for interactive selection
-        process.stdout.write(ALT_SCREEN_OFF);
+        // Release keyboard shortcuts so TUI widgets can handle raw keys
         cleanupKeyboard();
 
         // Re-parse work items and re-enter interactive selection
+        // Widgets render in the same alt-screen buffer -- no screen switch needed
         const freshItems = parseWorkItems(workDir, worktreeDir, projectRoot);
         const interactiveResult = await runInteractiveFlow(freshItems, wipLimit);
         if (!interactiveResult) {
-          // User cancelled selection -- exit
-          process.stdout.write(ALT_SCREEN_ON);
+          // User cancelled selection -- restore keyboard and exit loop
           cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
           break;
         }
@@ -3622,8 +3621,7 @@ export async function cmdOrchestrate(
         mergeStrategy = interactiveResult.mergeStrategy;
         orch.setMergeStrategy(mergeStrategy);
 
-        // Re-enter alt screen and restore keyboard
-        process.stdout.write(ALT_SCREEN_ON);
+        // Restore keyboard shortcuts for the main TUI
         cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
 
         log({
