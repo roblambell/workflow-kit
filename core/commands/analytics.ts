@@ -32,6 +32,14 @@ export interface AnalyticsSummary {
   totalTokensUsed: number | null;
   /** Total cost in USD across all runs. Null when no cost data is available. */
   totalCostUsd: number | null;
+  /** Total input tokens across all runs. Null when unavailable. */
+  totalInputTokens: number | null;
+  /** Total output tokens across all runs. Null when unavailable. */
+  totalOutputTokens: number | null;
+  /** Cost per merged PR across all runs. Null when unavailable. */
+  costPerPr: number | null;
+  /** Model usage breakdown across all runs. */
+  modelBreakdown: Record<string, number>;
   /** Aggregate detection latency across all runs. Null when no latency data. */
   detectionLatency: DetectionLatencyStats | null;
   runs: RunMetrics[];
@@ -117,6 +125,10 @@ export function computeSummary(runs: RunMetrics[]): AnalyticsSummary {
       latestCiRetryRate: 0,
       totalTokensUsed: null,
       totalCostUsd: null,
+      totalInputTokens: null,
+      totalOutputTokens: null,
+      costPerPr: null,
+      modelBreakdown: {},
       detectionLatency: null,
       runs: [],
     };
@@ -156,6 +168,35 @@ export function computeSummary(runs: RunMetrics[]): AnalyticsSummary {
     ? runsWithCost.reduce((sum, r) => sum + r.totalCostUsd!, 0)
     : null;
 
+  // Aggregate input/output tokens across all runs
+  const runsWithInput = runs.filter((r) => r.totalInputTokens != null);
+  const runsWithOutput = runs.filter((r) => r.totalOutputTokens != null);
+  const totalInputTokens = runsWithInput.length > 0
+    ? runsWithInput.reduce((sum, r) => sum + r.totalInputTokens!, 0)
+    : null;
+  const totalOutputTokens = runsWithOutput.length > 0
+    ? runsWithOutput.reduce((sum, r) => sum + r.totalOutputTokens!, 0)
+    : null;
+
+  // Cost per PR across all runs
+  const totalPRsCompleted = runs.reduce(
+    (sum, r) => sum + r.items.filter((i) => i.state === "done" && i.prNumber != null).length,
+    0,
+  );
+  const costPerPr = totalCostUsd != null && totalPRsCompleted > 0
+    ? Math.round((totalCostUsd / totalPRsCompleted) * 100) / 100
+    : null;
+
+  // Model breakdown across all runs
+  const modelBreakdown: Record<string, number> = {};
+  for (const run of runs) {
+    if (run.modelBreakdown) {
+      for (const [model, count] of Object.entries(run.modelBreakdown)) {
+        modelBreakdown[model] = (modelBreakdown[model] ?? 0) + count;
+      }
+    }
+  }
+
   // Aggregate detection latency across all runs — collect all per-item latencies
   const allLatencies = runs.flatMap((r) =>
     r.items
@@ -176,6 +217,10 @@ export function computeSummary(runs: RunMetrics[]): AnalyticsSummary {
     latestCiRetryRate,
     totalTokensUsed,
     totalCostUsd,
+    totalInputTokens,
+    totalOutputTokens,
+    costPerPr,
+    modelBreakdown,
     detectionLatency,
     runs,
   };
@@ -297,12 +342,34 @@ export function formatAnalytics(summary: AnalyticsSummary, showAll: boolean): st
   lines.push(`  ${CYAN}Total items shipped:${RESET}  ${summary.totalItemsShipped}`);
   lines.push(`  ${CYAN}Items per day:${RESET}        ${summary.itemsPerDay.toFixed(1)}`);
 
-  // Cost summary — only shown when cost data exists
-  if (summary.totalCostUsd != null) {
-    lines.push(`  ${CYAN}Total cost:${RESET}           ${formatCost(summary.totalCostUsd)}`);
-  }
-  if (summary.totalTokensUsed != null) {
-    lines.push(`  ${CYAN}Total tokens:${RESET}         ${formatTokens(summary.totalTokensUsed)}`);
+  // Cost summary section — only shown when any cost data exists
+  const hasCostSummary = summary.totalCostUsd != null || summary.totalTokensUsed != null;
+  if (hasCostSummary) {
+    lines.push("");
+    lines.push(`${BOLD}Cost Summary${RESET}`);
+
+    if (summary.totalTokensUsed != null) {
+      const inOut = (summary.totalInputTokens != null || summary.totalOutputTokens != null)
+        ? ` (${formatTokens(summary.totalInputTokens ?? 0)} in / ${formatTokens(summary.totalOutputTokens ?? 0)} out)`
+        : "";
+      lines.push(`  ${CYAN}Total tokens:${RESET}         ${formatTokens(summary.totalTokensUsed)}${inOut}`);
+    }
+    if (summary.totalCostUsd != null) {
+      lines.push(`  ${CYAN}Estimated cost:${RESET}       ${formatCost(summary.totalCostUsd)}`);
+    }
+    if (summary.costPerPr != null) {
+      const prCount = summary.runs.reduce(
+        (sum, r) => sum + r.items.filter((i) => i.state === "done" && i.prNumber != null).length,
+        0,
+      );
+      lines.push(`  ${CYAN}Cost per PR:${RESET}          ${formatCost(summary.costPerPr)} (${prCount} PRs)`);
+    }
+    if (Object.keys(summary.modelBreakdown).length > 0) {
+      const parts = Object.entries(summary.modelBreakdown)
+        .sort((a, b) => b[1] - a[1])
+        .map(([model, count]) => `${model} (${count})`);
+      lines.push(`  ${CYAN}Model breakdown:${RESET}      ${parts.join(", ")}`);
+    }
   }
 
   // Detection latency — only shown when latency data exists

@@ -18,6 +18,10 @@ import {
   type DetectionLatencyStats,
 } from "../core/analytics.ts";
 import {
+  estimateCost,
+  MODEL_PRICING,
+} from "../core/types.ts";
+import {
   loadRuns,
   computeSummary,
   formatAnalytics,
@@ -173,18 +177,26 @@ describe("collectRunMetrics", () => {
       id: "T-1-1",
       state: "done",
       ciRetryCount: 0,
+      retryCount: undefined,
       tool: "cursor",
       tokensUsed: null,
       costUsd: null,
+      inputTokens: null,
+      outputTokens: null,
+      model: null,
     });
     expect(metrics.items[1]).toEqual({
       id: "T-1-2",
       state: "done",
       ciRetryCount: 3,
+      retryCount: undefined,
       tool: "cursor",
       prNumber: 42,
       tokensUsed: null,
       costUsd: null,
+      inputTokens: null,
+      outputTokens: null,
+      model: null,
     });
   });
 
@@ -1444,7 +1456,7 @@ describe("formatAnalytics with cost data", () => {
     const summary = computeSummary(runs);
     const output = formatAnalytics(summary, false).join("\n");
 
-    expect(output).toContain("Total cost");
+    expect(output).toContain("Estimated cost");
     expect(output).toContain("$3.50");
     expect(output).toContain("Total tokens");
     expect(output).toContain("50.0k");
@@ -1457,7 +1469,7 @@ describe("formatAnalytics with cost data", () => {
     const summary = computeSummary(runs);
     const output = formatAnalytics(summary, false).join("\n");
 
-    expect(output).not.toContain("Total cost");
+    expect(output).not.toContain("Estimated cost");
     expect(output).not.toContain("Total tokens");
   });
 
@@ -2140,5 +2152,324 @@ describe("commitFrictionFiles", () => {
 
     expect(result.committed).toBe(true);
     expect(result.reason).toBe("committed");
+  });
+});
+
+// ── estimateCost pricing lookup ─────────────────────────────────────
+
+describe("estimateCost", () => {
+  it("estimates cost for known model with both token types", () => {
+    const cost = estimateCost("claude-sonnet-4-20250514", 100_000, 10_000);
+    // input: 100k * 3/1M = 0.3, output: 10k * 15/1M = 0.15 → 0.45
+    expect(cost).toBe(0.45);
+  });
+
+  it("estimates cost with only input tokens", () => {
+    const cost = estimateCost("gpt-4o", 500_000, undefined);
+    // 500k * 2.5/1M = 1.25
+    expect(cost).toBe(1.25);
+  });
+
+  it("estimates cost with only output tokens", () => {
+    const cost = estimateCost("gpt-4o", undefined, 200_000);
+    // 200k * 10/1M = 2.0
+    expect(cost).toBe(2.0);
+  });
+
+  it("returns null for unknown model", () => {
+    expect(estimateCost("unknown-model", 10000, 5000)).toBeNull();
+  });
+
+  it("returns null when model is undefined", () => {
+    expect(estimateCost(undefined, 10000, 5000)).toBeNull();
+  });
+
+  it("returns null when both token counts are undefined", () => {
+    expect(estimateCost("gpt-4o", undefined, undefined)).toBeNull();
+  });
+
+  it("handles zero tokens", () => {
+    const cost = estimateCost("gpt-4o", 0, 0);
+    expect(cost).toBe(0);
+  });
+
+  it("pricing table has reasonable values for known models", () => {
+    // All prices should be positive
+    for (const [, pricing] of Object.entries(MODEL_PRICING)) {
+      expect(pricing.inputPerMillion).toBeGreaterThan(0);
+      expect(pricing.outputPerMillion).toBeGreaterThan(0);
+      // Output typically costs more than input
+      expect(pricing.outputPerMillion).toBeGreaterThanOrEqual(pricing.inputPerMillion);
+    }
+  });
+});
+
+// ── collectRunMetrics with input/output tokens and model ────────────
+
+describe("collectRunMetrics with detailed cost data", () => {
+  const config: OrchestratorConfig = {
+    wipLimit: 4,
+    mergeStrategy: "asap",
+    maxCiRetries: 2,
+  };
+
+  it("populates input/output tokens and model per item", () => {
+    const items: OrchestratorItem[] = [
+      {
+        id: "T-1-1",
+        todo: makeTodo("T-1-1"),
+        state: "done",
+        ciFailCount: 0,
+        prNumber: 10,
+        lastTransition: new Date().toISOString(),
+      },
+    ];
+
+    const costData = new Map<string, CostSummary>([
+      ["T-1-1", {
+        tokensUsed: 55000,
+        costUsd: 0.45,
+        inputTokens: 45000,
+        outputTokens: 10000,
+        model: "claude-sonnet-4-20250514",
+      }],
+    ]);
+
+    const metrics = collectRunMetrics(items, config, "2026-03-24T10:00:00.000Z", "2026-03-24T10:05:00.000Z", "claude", costData);
+
+    expect(metrics.items[0]!.inputTokens).toBe(45000);
+    expect(metrics.items[0]!.outputTokens).toBe(10000);
+    expect(metrics.items[0]!.model).toBe("claude-sonnet-4-20250514");
+    expect(metrics.totalInputTokens).toBe(45000);
+    expect(metrics.totalOutputTokens).toBe(10000);
+  });
+
+  it("computes model breakdown across items", () => {
+    const items: OrchestratorItem[] = [
+      { id: "T-1-1", todo: makeTodo("T-1-1"), state: "done", ciFailCount: 0, prNumber: 1, lastTransition: new Date().toISOString() },
+      { id: "T-1-2", todo: makeTodo("T-1-2"), state: "done", ciFailCount: 0, prNumber: 2, lastTransition: new Date().toISOString() },
+      { id: "T-1-3", todo: makeTodo("T-1-3"), state: "done", ciFailCount: 0, prNumber: 3, lastTransition: new Date().toISOString() },
+    ];
+
+    const costData = new Map<string, CostSummary>([
+      ["T-1-1", { tokensUsed: 10000, costUsd: 0.5, model: "claude-sonnet-4-20250514" }],
+      ["T-1-2", { tokensUsed: 20000, costUsd: 1.0, model: "claude-sonnet-4-20250514" }],
+      ["T-1-3", { tokensUsed: 15000, costUsd: 0.8, model: "gpt-4o" }],
+    ]);
+
+    const metrics = collectRunMetrics(items, config, "2026-03-24T10:00:00.000Z", "2026-03-24T10:05:00.000Z", "claude", costData);
+
+    expect(metrics.modelBreakdown).toEqual({
+      "claude-sonnet-4-20250514": 2,
+      "gpt-4o": 1,
+    });
+  });
+
+  it("computes cost-per-PR for completed items with PRs", () => {
+    const items: OrchestratorItem[] = [
+      { id: "T-1-1", todo: makeTodo("T-1-1"), state: "done", ciFailCount: 0, prNumber: 1, lastTransition: new Date().toISOString() },
+      { id: "T-1-2", todo: makeTodo("T-1-2"), state: "done", ciFailCount: 0, prNumber: 2, lastTransition: new Date().toISOString() },
+      { id: "T-1-3", todo: makeTodo("T-1-3"), state: "stuck", ciFailCount: 2, lastTransition: new Date().toISOString() },
+    ];
+
+    const costData = new Map<string, CostSummary>([
+      ["T-1-1", { tokensUsed: 10000, costUsd: 1.00 }],
+      ["T-1-2", { tokensUsed: 20000, costUsd: 3.00 }],
+      ["T-1-3", { tokensUsed: 5000, costUsd: 0.50 }],
+    ]);
+
+    const metrics = collectRunMetrics(items, config, "2026-03-24T10:00:00.000Z", "2026-03-24T10:05:00.000Z", "claude", costData);
+
+    // Total cost = 4.50, completed with PR = 2 items → 4.50/2 = 2.25
+    expect(metrics.costPerPr).toBe(2.25);
+  });
+
+  it("returns null costPerPr when no cost data", () => {
+    const items: OrchestratorItem[] = [
+      { id: "T-1-1", todo: makeTodo("T-1-1"), state: "done", ciFailCount: 0, prNumber: 1, lastTransition: new Date().toISOString() },
+    ];
+
+    const metrics = collectRunMetrics(items, config, "2026-03-24T10:00:00.000Z", "2026-03-24T10:05:00.000Z", "claude");
+
+    expect(metrics.costPerPr).toBeNull();
+  });
+
+  it("returns undefined modelBreakdown when no model data", () => {
+    const items: OrchestratorItem[] = [
+      { id: "T-1-1", todo: makeTodo("T-1-1"), state: "done", ciFailCount: 0, lastTransition: new Date().toISOString() },
+    ];
+
+    const metrics = collectRunMetrics(items, config, "2026-03-24T10:00:00.000Z", "2026-03-24T10:05:00.000Z", "claude");
+
+    expect(metrics.modelBreakdown).toBeUndefined();
+  });
+});
+
+// ── computeSummary with detailed cost data ──────────────────────────
+
+describe("computeSummary with detailed cost data", () => {
+  it("aggregates input/output tokens across runs", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        runTimestamp: "2026-03-24T10:00:00.000Z",
+        totalTokensUsed: 55000,
+        totalCostUsd: 1.00,
+        totalInputTokens: 45000,
+        totalOutputTokens: 10000,
+      }),
+      makeRun({
+        runTimestamp: "2026-03-25T10:00:00.000Z",
+        totalTokensUsed: 80000,
+        totalCostUsd: 2.00,
+        totalInputTokens: 60000,
+        totalOutputTokens: 20000,
+      }),
+    ];
+
+    const summary = computeSummary(runs);
+    expect(summary.totalInputTokens).toBe(105000);
+    expect(summary.totalOutputTokens).toBe(30000);
+  });
+
+  it("returns null input/output tokens when no runs have them", () => {
+    const runs: RunMetrics[] = [
+      makeRun({ totalTokensUsed: 50000, totalCostUsd: 1.00 }),
+    ];
+
+    const summary = computeSummary(runs);
+    expect(summary.totalInputTokens).toBeNull();
+    expect(summary.totalOutputTokens).toBeNull();
+  });
+
+  it("aggregates model breakdown across runs", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        runTimestamp: "2026-03-24T10:00:00.000Z",
+        modelBreakdown: { "claude-sonnet-4-20250514": 3, "gpt-4o": 1 },
+      }),
+      makeRun({
+        runTimestamp: "2026-03-25T10:00:00.000Z",
+        modelBreakdown: { "claude-sonnet-4-20250514": 2, "gpt-4o": 2 },
+      }),
+    ];
+
+    const summary = computeSummary(runs);
+    expect(summary.modelBreakdown).toEqual({
+      "claude-sonnet-4-20250514": 5,
+      "gpt-4o": 3,
+    });
+  });
+
+  it("computes cost-per-PR across all runs", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        runTimestamp: "2026-03-24T10:00:00.000Z",
+        totalCostUsd: 3.00,
+        items: [
+          { id: "A", state: "done", ciRetryCount: 0, tool: "claude", prNumber: 1, tokensUsed: 10000, costUsd: 1.50 },
+          { id: "B", state: "done", ciRetryCount: 0, tool: "claude", prNumber: 2, tokensUsed: 10000, costUsd: 1.50 },
+        ],
+      }),
+      makeRun({
+        runTimestamp: "2026-03-25T10:00:00.000Z",
+        totalCostUsd: 2.00,
+        items: [
+          { id: "C", state: "done", ciRetryCount: 0, tool: "claude", prNumber: 3, tokensUsed: 20000, costUsd: 2.00 },
+        ],
+      }),
+    ];
+
+    const summary = computeSummary(runs);
+    // Total cost $5.00, 3 completed PRs → $1.67
+    expect(summary.costPerPr).toBe(1.67);
+  });
+
+  it("returns null costPerPr when no cost data", () => {
+    const runs: RunMetrics[] = [
+      makeRun({ totalCostUsd: null }),
+    ];
+    const summary = computeSummary(runs);
+    expect(summary.costPerPr).toBeNull();
+  });
+});
+
+// ── formatAnalytics Cost Summary section ────────────────────────────
+
+describe("formatAnalytics Cost Summary section", () => {
+  it("shows Cost Summary header when cost data exists", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        totalTokensUsed: 1_200_000,
+        totalCostUsd: 4.20,
+        totalInputTokens: 890_000,
+        totalOutputTokens: 310_000,
+        costPerPr: 0.60,
+        modelBreakdown: { "claude-sonnet-4-20250514": 5, "gpt-4o": 2 },
+        items: [
+          { id: "A", state: "done", ciRetryCount: 0, tool: "claude", prNumber: 1, tokensUsed: 100000, costUsd: 0.60 },
+          { id: "B", state: "done", ciRetryCount: 0, tool: "claude", prNumber: 2, tokensUsed: 100000, costUsd: 0.60 },
+        ],
+      }),
+    ];
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    expect(output).toContain("Cost Summary");
+    expect(output).toContain("Total tokens");
+    expect(output).toContain("1.2M");
+    expect(output).toContain("890.0k in");
+    expect(output).toContain("310.0k out");
+    expect(output).toContain("Estimated cost");
+    expect(output).toContain("$4.20");
+    expect(output).toContain("Cost per PR");
+    expect(output).toContain("Model breakdown");
+    expect(output).toContain("claude-sonnet-4-20250514 (5)");
+    expect(output).toContain("gpt-4o (2)");
+  });
+
+  it("hides Cost Summary section when no cost data", () => {
+    const runs: RunMetrics[] = [
+      makeRun({ totalTokensUsed: null, totalCostUsd: null }),
+    ];
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    expect(output).not.toContain("Cost Summary");
+    expect(output).not.toContain("Model breakdown");
+  });
+
+  it("shows dash for workers without cost data in run history", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        totalTokensUsed: 10000,
+        totalCostUsd: 1.00,
+      }),
+      makeRun({
+        runTimestamp: "2026-03-25T10:00:00.000Z",
+        totalTokensUsed: null,
+        totalCostUsd: null,
+      }),
+    ];
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    expect(output).toContain("$1.00");
+    expect(output).toContain("—");
+  });
+
+  it("omits input/output breakdown when not available", () => {
+    const runs: RunMetrics[] = [
+      makeRun({
+        totalTokensUsed: 50000,
+        totalCostUsd: 2.00,
+        // No totalInputTokens/totalOutputTokens
+      }),
+    ];
+    const summary = computeSummary(runs);
+    const output = formatAnalytics(summary, false).join("\n");
+
+    expect(output).toContain("Total tokens");
+    expect(output).toContain("50.0k");
+    expect(output).not.toContain(" in /");
   });
 });

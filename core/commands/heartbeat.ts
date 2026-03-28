@@ -2,7 +2,7 @@
 // Usage: nw heartbeat --progress 0.3 --label "Writing tests"
 
 import { die } from "../output.ts";
-import { writeHeartbeat, type DaemonIO } from "../daemon.ts";
+import { writeHeartbeat, type DaemonIO, type HeartbeatCostFields } from "../daemon.ts";
 import {
   existsSync,
   readFileSync,
@@ -43,19 +43,34 @@ export function extractTodoId(branch: string): string | null {
 export interface HeartbeatArgs {
   progress: number;
   label: string;
+  model?: string;
+  tokensIn?: number;
+  tokensOut?: number;
 }
 
-/** Parse --progress and --label from CLI args. Throws on invalid input. */
+/** Parse --progress, --label, --model, --tokens-in, --tokens-out from CLI args. Throws on invalid input. */
 export function parseHeartbeatArgs(args: string[]): HeartbeatArgs {
   let progress: number | undefined;
   let label: string | undefined;
+  let model: string | undefined;
+  let tokensIn: number | undefined;
+  let tokensOut: number | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--progress" && i + 1 < args.length) {
-      progress = parseFloat(args[i + 1]);
+      progress = parseFloat(args[i + 1]!);
       i++;
     } else if (args[i] === "--label" && i + 1 < args.length) {
       label = args[i + 1];
+      i++;
+    } else if (args[i] === "--model" && i + 1 < args.length) {
+      model = args[i + 1];
+      i++;
+    } else if (args[i] === "--tokens-in" && i + 1 < args.length) {
+      tokensIn = parseInt(args[i + 1]!, 10);
+      i++;
+    } else if (args[i] === "--tokens-out" && i + 1 < args.length) {
+      tokensOut = parseInt(args[i + 1]!, 10);
       i++;
     }
   }
@@ -72,8 +87,22 @@ export function parseHeartbeatArgs(args: string[]): HeartbeatArgs {
     die(`Invalid progress value: ${progress}. Must be between 0.0 and 1.0`);
     return { progress: 0, label: "" }; // unreachable
   }
+  if (tokensIn !== undefined && (isNaN(tokensIn) || tokensIn < 0)) {
+    die(`Invalid --tokens-in value: must be a non-negative integer`);
+    return { progress: 0, label: "" }; // unreachable
+  }
+  if (tokensOut !== undefined && (isNaN(tokensOut) || tokensOut < 0)) {
+    die(`Invalid --tokens-out value: must be a non-negative integer`);
+    return { progress: 0, label: "" }; // unreachable
+  }
 
-  return { progress, label };
+  return {
+    progress,
+    label,
+    ...(model ? { model } : {}),
+    ...(tokensIn !== undefined ? { tokensIn } : {}),
+    ...(tokensOut !== undefined ? { tokensOut } : {}),
+  };
 }
 
 // ── Command implementation ───────────────────────────────────────────
@@ -88,7 +117,7 @@ export function cmdHeartbeat(
   projectRoot: string,
   deps: HeartbeatDeps = defaultDeps,
 ): string {
-  const { progress, label } = parseHeartbeatArgs(args);
+  const { progress, label, model, tokensIn, tokensOut } = parseHeartbeatArgs(args);
 
   const branch = deps.getBranch();
   if (!branch) {
@@ -102,7 +131,12 @@ export function cmdHeartbeat(
     return ""; // unreachable
   }
 
-  writeHeartbeat(projectRoot, id, progress, label, deps.io);
+  const costFields: HeartbeatCostFields | undefined =
+    (model || tokensIn != null || tokensOut != null)
+      ? { model, inputTokens: tokensIn, outputTokens: tokensOut }
+      : undefined;
+
+  writeHeartbeat(projectRoot, id, progress, label, deps.io, costFields);
 
   const msg = `Heartbeat: ${id} ${(progress * 100).toFixed(0)}% — ${label}`;
   console.log(msg);

@@ -18,6 +18,12 @@ export interface ItemMetric {
   tokensUsed?: number | null;
   /** Total cost in USD for this item's worker session. Null when cost data is unavailable. */
   costUsd?: number | null;
+  /** Input tokens used. Null when unavailable. */
+  inputTokens?: number | null;
+  /** Output tokens used. Null when unavailable. */
+  outputTokens?: number | null;
+  /** Model identifier used by the worker. Null when unavailable. */
+  model?: string | null;
   /** Detection latency in milliseconds for this item's last transition. */
   detectionLatencyMs?: number;
   /** ISO timestamp of when the worker was launched. */
@@ -61,6 +67,14 @@ export interface RunMetrics {
   totalTokensUsed: number | null;
   /** Aggregate cost in USD across all items. Null when no cost data is available. */
   totalCostUsd: number | null;
+  /** Aggregate input tokens across all items. Null when unavailable. */
+  totalInputTokens?: number | null;
+  /** Aggregate output tokens across all items. Null when unavailable. */
+  totalOutputTokens?: number | null;
+  /** Cost per merged PR. Null when no cost or PR data. */
+  costPerPr?: number | null;
+  /** Count of unique models used by workers. */
+  modelBreakdown?: Record<string, number>;
   /** Detection latency percentiles for this run. Null when no latency data is available. */
   detectionLatency: DetectionLatencyStats | null;
 }
@@ -106,10 +120,13 @@ export function computeDetectionLatency(
 
 // ── Cost/token parsing ────────────────────────────────────────────────
 
-/** Parsed cost summary from a worker session's exit output. */
+/** Parsed cost summary from a worker session's exit output or heartbeat. */
 export interface CostSummary {
   tokensUsed: number | null;
   costUsd: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  model?: string | null;
 }
 
 /**
@@ -232,6 +249,9 @@ export function collectRunMetrics(
       ...(item.prNumber != null ? { prNumber: item.prNumber } : {}),
       tokensUsed: cost?.tokensUsed ?? null,
       costUsd: cost?.costUsd ?? null,
+      inputTokens: cost?.inputTokens ?? null,
+      outputTokens: cost?.outputTokens ?? null,
+      model: cost?.model ?? null,
       ...(item.detectionLatencyMs != null ? { detectionLatencyMs: item.detectionLatencyMs } : {}),
       ...(item.startedAt ? { startedAt: item.startedAt } : {}),
       ...(item.endedAt ? { endedAt: item.endedAt } : {}),
@@ -256,6 +276,30 @@ export function collectRunMetrics(
     ? itemsWithCost.reduce((sum, i) => sum + i.costUsd!, 0)
     : null;
 
+  // Aggregate input/output tokens
+  const itemsWithInput = items.filter((i) => i.inputTokens != null);
+  const itemsWithOutput = items.filter((i) => i.outputTokens != null);
+  const totalInputTokens = itemsWithInput.length > 0
+    ? itemsWithInput.reduce((sum, i) => sum + i.inputTokens!, 0)
+    : null;
+  const totalOutputTokens = itemsWithOutput.length > 0
+    ? itemsWithOutput.reduce((sum, i) => sum + i.outputTokens!, 0)
+    : null;
+
+  // Model breakdown: count items per model
+  const modelBreakdown: Record<string, number> = {};
+  for (const item of items) {
+    if (item.model) {
+      modelBreakdown[item.model] = (modelBreakdown[item.model] ?? 0) + 1;
+    }
+  }
+
+  // Cost per PR: total cost / items with PRs that completed
+  const completedWithPR = items.filter((i) => i.state === "done" && i.prNumber != null);
+  const costPerPr = totalCostUsd != null && completedWithPR.length > 0
+    ? Math.round((totalCostUsd / completedWithPR.length) * 100) / 100
+    : null;
+
   return {
     runTimestamp: startTime,
     wallClockMs,
@@ -266,6 +310,10 @@ export function collectRunMetrics(
     items,
     totalTokensUsed,
     totalCostUsd,
+    totalInputTokens,
+    totalOutputTokens,
+    costPerPr,
+    modelBreakdown: Object.keys(modelBreakdown).length > 0 ? modelBreakdown : undefined,
     detectionLatency,
   };
 }

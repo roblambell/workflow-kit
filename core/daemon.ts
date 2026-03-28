@@ -286,6 +286,12 @@ export interface WorkerProgress {
   progress: number;
   label: string;
   ts: string;
+  /** Model identifier, e.g., "claude-sonnet-4-20250514". */
+  model?: string;
+  /** Number of input tokens consumed. */
+  inputTokens?: number;
+  /** Number of output tokens consumed. */
+  outputTokens?: number;
 }
 
 /** Directory for heartbeat files: ~/.ninthwave/projects/{slug}/heartbeats/ */
@@ -314,6 +320,13 @@ export function readHeartbeat(
   }
 }
 
+/** Optional cost fields for heartbeat writes. */
+export interface HeartbeatCostFields {
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 /** Write a heartbeat file atomically. Creates the directory if needed. */
 export function writeHeartbeat(
   projectRoot: string,
@@ -321,6 +334,7 @@ export function writeHeartbeat(
   progress: number,
   label: string,
   io: DaemonIO = defaultIO,
+  costFields?: HeartbeatCostFields,
 ): void {
   const dir = heartbeatDir(projectRoot);
   if (!io.existsSync(dir)) {
@@ -331,6 +345,9 @@ export function writeHeartbeat(
     progress,
     label,
     ts: new Date().toISOString(),
+    ...(costFields?.model ? { model: costFields.model } : {}),
+    ...(costFields?.inputTokens != null ? { inputTokens: costFields.inputTokens } : {}),
+    ...(costFields?.outputTokens != null ? { outputTokens: costFields.outputTokens } : {}),
   };
   io.writeFileSync(
     heartbeatFilePath(projectRoot, id),

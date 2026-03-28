@@ -89,6 +89,20 @@ Implementing, CI Pending, CI Failed, CI Passed, In Review, Merging, Done, Stuck,
 "Reading code", "Writing code", "Writing tests", "Running tests", "Fixing lint",
 "Reviewing diff", "Creating PR", "Fixing CI", "Addressing feedback", "Rebasing onto main"
 
+### Cost tracking
+
+The heartbeat command supports optional cost/token flags for analytics. If your AI tool surfaces token usage or model info (e.g., Claude Code prints usage on exit), include it in your **final** heartbeat:
+
+```bash
+nw heartbeat --progress 1.0 --label "PR created" --tokens-in 45000 --tokens-out 12000 --model "claude-sonnet-4-20250514"
+```
+
+- `--tokens-in <N>` — input tokens consumed (optional)
+- `--tokens-out <N>` — output tokens consumed (optional)
+- `--model <name>` — model identifier (optional)
+
+This data powers cost-per-PR analytics in `nw analytics`. Omit the flags if token data is not available — the analytics display will show `-` for workers without cost data.
+
 ### No-Op Path: When No Code Change Is Needed
 
 Sometimes a TODO requires no code change. Valid reasons include:

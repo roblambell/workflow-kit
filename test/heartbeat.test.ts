@@ -5,6 +5,7 @@ import {
   cmdHeartbeat,
   extractTodoId,
   parseHeartbeatArgs,
+  type HeartbeatArgs,
   type HeartbeatDeps,
 } from "../core/commands/heartbeat.ts";
 import {
@@ -297,5 +298,143 @@ describe("cmdHeartbeat", () => {
     const data = JSON.parse(io.files.get(filePath)!) as WorkerProgress;
     expect(data.progress).toBe(0.3);
     expect(data.label).toBe("Writing tests");
+  });
+
+  it("includes cost fields when --tokens-in, --tokens-out, --model provided", () => {
+    const io = createMockIO();
+    const deps = createDeps(io, "todo/H-FOO-1");
+    cmdHeartbeat(
+      ["--progress", "1.0", "--label", "PR created", "--tokens-in", "45000", "--tokens-out", "12000", "--model", "claude-sonnet-4-20250514"],
+      "/project",
+      deps,
+    );
+
+    const filePath = heartbeatFilePath("/project", "H-FOO-1");
+    const data = JSON.parse(io.files.get(filePath)!) as WorkerProgress;
+    expect(data.model).toBe("claude-sonnet-4-20250514");
+    expect(data.inputTokens).toBe(45000);
+    expect(data.outputTokens).toBe(12000);
+  });
+
+  it("omits cost fields when not provided", () => {
+    const io = createMockIO();
+    const deps = createDeps(io, "todo/H-FOO-1");
+    cmdHeartbeat(
+      ["--progress", "0.5", "--label", "test"],
+      "/project",
+      deps,
+    );
+
+    const filePath = heartbeatFilePath("/project", "H-FOO-1");
+    const data = JSON.parse(io.files.get(filePath)!) as WorkerProgress;
+    expect(data.model).toBeUndefined();
+    expect(data.inputTokens).toBeUndefined();
+    expect(data.outputTokens).toBeUndefined();
+  });
+});
+
+// ── parseHeartbeatArgs with cost flags ────────────────────────────
+
+describe("parseHeartbeatArgs with cost flags", () => {
+  it("parses --model flag", () => {
+    const result = parseHeartbeatArgs([
+      "--progress", "1.0",
+      "--label", "Done",
+      "--model", "claude-sonnet-4-20250514",
+    ]);
+    expect(result.model).toBe("claude-sonnet-4-20250514");
+  });
+
+  it("parses --tokens-in flag", () => {
+    const result = parseHeartbeatArgs([
+      "--progress", "1.0",
+      "--label", "Done",
+      "--tokens-in", "45000",
+    ]);
+    expect(result.tokensIn).toBe(45000);
+  });
+
+  it("parses --tokens-out flag", () => {
+    const result = parseHeartbeatArgs([
+      "--progress", "1.0",
+      "--label", "Done",
+      "--tokens-out", "12000",
+    ]);
+    expect(result.tokensOut).toBe(12000);
+  });
+
+  it("parses all cost flags together", () => {
+    const result = parseHeartbeatArgs([
+      "--progress", "1.0",
+      "--label", "PR created",
+      "--tokens-in", "50000",
+      "--tokens-out", "15000",
+      "--model", "gpt-4o",
+    ]);
+    expect(result.tokensIn).toBe(50000);
+    expect(result.tokensOut).toBe(15000);
+    expect(result.model).toBe("gpt-4o");
+  });
+
+  it("omits cost fields when not provided", () => {
+    const result = parseHeartbeatArgs([
+      "--progress", "0.5",
+      "--label", "test",
+    ]);
+    expect(result.model).toBeUndefined();
+    expect(result.tokensIn).toBeUndefined();
+    expect(result.tokensOut).toBeUndefined();
+  });
+
+  it("exits on negative --tokens-in", () => {
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    parseHeartbeatArgs(["--progress", "1.0", "--label", "test", "--tokens-in", "-5"]);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+  });
+
+  it("exits on non-numeric --tokens-out", () => {
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    parseHeartbeatArgs(["--progress", "1.0", "--label", "test", "--tokens-out", "abc"]);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+  });
+});
+
+// ── writeHeartbeat with cost fields ─────────────────────────────────
+
+describe("writeHeartbeat with cost fields", () => {
+  it("includes cost fields in JSON when provided", () => {
+    const io = createMockIO();
+    const { writeHeartbeat: wh } = require("../core/daemon.ts");
+    wh("/project", "H-FOO-1", 1.0, "Done", io, {
+      model: "claude-sonnet-4-20250514",
+      inputTokens: 45000,
+      outputTokens: 12000,
+    });
+
+    const filePath = heartbeatFilePath("/project", "H-FOO-1");
+    const data = JSON.parse(io.files.get(filePath)!) as WorkerProgress;
+    expect(data.model).toBe("claude-sonnet-4-20250514");
+    expect(data.inputTokens).toBe(45000);
+    expect(data.outputTokens).toBe(12000);
+  });
+
+  it("omits cost fields when costFields is undefined", () => {
+    const io = createMockIO();
+    const { writeHeartbeat: wh } = require("../core/daemon.ts");
+    wh("/project", "H-FOO-1", 0.5, "Working", io, undefined);
+
+    const filePath = heartbeatFilePath("/project", "H-FOO-1");
+    const data = JSON.parse(io.files.get(filePath)!) as WorkerProgress;
+    expect(data.model).toBeUndefined();
+    expect(data.inputTokens).toBeUndefined();
+    expect(data.outputTokens).toBeUndefined();
   });
 });
