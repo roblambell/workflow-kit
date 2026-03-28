@@ -127,6 +127,8 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
       "--watch": "Enable TUI watch mode",
       "--no-review": "Disable review workers (on by default)",
       "--review": "Enable review workers (default)",
+      "--no-verify-main": "Skip post-merge CI verification on main",
+      "--verify-main": "Enable post-merge CI verification (default)",
     },
     examples: [
       "nw watch",

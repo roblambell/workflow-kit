@@ -34,6 +34,9 @@ export type OrchestratorItemState =
   | "reviewing"
   | "merging"
   | "merged"
+  | "verifying"
+  | "verify-failed"
+  | "repairing-main"
   | "done"
   | "stuck";
 
@@ -101,6 +104,10 @@ export interface OrchestratorItem {
   repairAttemptCount?: number;
   /** Set when a CI failure notification failed because no worker was running. Signals executeLaunch to force-launch a worker even when an existing PR is found. Cleared after launch. */
   needsCiFix?: boolean;
+  /** SHA of the merge commit on main after PR is merged. Used to poll CI on main. */
+  mergeCommitSha?: string;
+  /** Number of times CI verification on main has failed for this item. */
+  verifyFailCount?: number;
 }
 
 export interface OrchestratorConfig {
@@ -130,6 +137,10 @@ export interface OrchestratorConfig {
   maxMergeRetries: number;
   /** Max consecutive repair worker launches before marking stuck. Default: 3. */
   maxRepairAttempts: number;
+  /** Whether to verify CI passes on main after merge before transitioning to done. Default: true. */
+  verifyMain: boolean;
+  /** Max CI verification failures on main before marking stuck. Default: 2. */
+  maxVerifyRetries: number;
   /** Optional callback invoked on every state transition. Receives item ID, previous state, new state, detected timestamp, and detection latency in ms. */
   onTransition?: (itemId: string, from: string, to: string, timestamp: string, latencyMs: number) => void;
 }
@@ -159,6 +170,8 @@ export interface ItemSnapshot {
   newComments?: Array<{ body: string; author: string; createdAt: string }>;
   /** Worker heartbeat data read from the heartbeat file. Null if no heartbeat file exists. */
   lastHeartbeat?: import("./daemon.ts").WorkerProgress | null;
+  /** CI status of the merge commit on main (for post-merge verification). */
+  mergeCommitCIStatus?: "pass" | "fail" | "pending";
 }
 
 export interface PollSnapshot {
@@ -316,6 +329,16 @@ export interface OrchestratorDeps {
     context: string,
     description: string,
   ) => boolean;
+  /**
+   * Get the merge commit SHA for a merged PR.
+   * Returns the SHA string, or null if it can't be determined.
+   */
+  getMergeCommitSha?: (repoRoot: string, prNumber: number) => string | null;
+  /**
+   * Check CI status on a specific commit (e.g., merge commit on main).
+   * Returns "pass", "fail", or "pending".
+   */
+  checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending";
 }
 
 /** Result of executing a single action. */
@@ -340,6 +363,8 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   reviewCanApprove: false,
   maxMergeRetries: 3,
   maxRepairAttempts: 3,
+  verifyMain: true,
+  maxVerifyRetries: 2,
 };
 
 // ── Memory-aware WIP limit ──────────────────────────────────────────
@@ -427,6 +452,12 @@ export function statusDisplayForState(state: OrchestratorItemState, flags?: { re
       return { text: "In Review", icon: "eye.fill", color: "#7c3aed" };
     case "merging":
       return { text: "Merging", icon: "arrow.triangle.merge", color: "#22c55e" };
+    case "verifying":
+      return { text: "Verifying", icon: "clock.fill", color: "#06b6d4" };
+    case "verify-failed":
+      return { text: "Verify Failed", icon: "xmark.circle", color: "#ef4444" };
+    case "repairing-main":
+      return { text: "Repairing Main", icon: "wrench.fill", color: "#f59e0b" };
     case "done":
     case "merged":
       return { text: "Done", icon: "checkmark.seal.fill", color: "#22c55e" };
@@ -598,7 +629,7 @@ export class Orchestrator {
       item.ciFailureNotifiedAt = undefined;
     }
     // Clear failureReason when recovering from a failure state
-    if (state !== "ci-failed" && state !== "stuck") {
+    if (state !== "ci-failed" && state !== "stuck" && state !== "verify-failed") {
       item.failureReason = undefined;
     }
     // Telemetry: record startedAt when worker begins implementing
@@ -680,7 +711,24 @@ export class Orchestrator {
         break;
 
       case "merged":
-        this.transition(item, "done");
+        if (this.config.verifyMain && item.mergeCommitSha) {
+          this.transition(item, "verifying");
+        } else {
+          this.transition(item, "done");
+        }
+        actions = [];
+        break;
+
+      case "verifying":
+        actions = this.handleVerifying(item, snap);
+        break;
+
+      case "verify-failed":
+        actions = this.handleVerifyFailed(item, snap);
+        break;
+
+      case "repairing-main":
+        // Wired in H-VF-3 — for now, treat as stuck if it somehow gets here
         actions = [];
         break;
 
@@ -1089,6 +1137,57 @@ export class Orchestrator {
     return actions;
   }
 
+  /**
+   * Handle "verifying" state: polling CI on the merge commit on main.
+   * Transitions to done when CI passes, verify-failed when CI fails.
+   */
+  private handleVerifying(
+    item: OrchestratorItem,
+    snap: ItemSnapshot | undefined,
+  ): Action[] {
+    if (!snap?.mergeCommitCIStatus) return [];
+
+    switch (snap.mergeCommitCIStatus) {
+      case "pass":
+        this.transition(item, "done");
+        return [];
+      case "fail":
+        item.verifyFailCount = (item.verifyFailCount ?? 0) + 1;
+        this.transition(item, "verify-failed");
+        item.failureReason = `verify-failed: CI failed on main for merge commit ${item.mergeCommitSha}`;
+        return [];
+      case "pending":
+        // Still waiting — no transition
+        return [];
+    }
+  }
+
+  /**
+   * Handle "verify-failed" state: CI failed on main after merge.
+   * If max retries exceeded, transition to stuck.
+   * Otherwise, wait for H-VF-3 to wire repairing-main.
+   */
+  private handleVerifyFailed(
+    item: OrchestratorItem,
+    snap: ItemSnapshot | undefined,
+  ): Action[] {
+    // Circuit breaker: exceeded max verify retries → stuck
+    if ((item.verifyFailCount ?? 0) >= this.config.maxVerifyRetries) {
+      this.transition(item, "stuck");
+      item.failureReason = `verify-failed: exceeded max verify retries (${this.config.maxVerifyRetries}) for merge commit ${item.mergeCommitSha}`;
+      return [];
+    }
+
+    // If CI is now passing on the merge commit (e.g., flaky test recovered), go to done
+    if (snap?.mergeCommitCIStatus === "pass") {
+      this.transition(item, "done");
+      return [];
+    }
+
+    // Otherwise remain in verify-failed (H-VF-3 wires repairing-main transition)
+    return [];
+  }
+
   // ── States where PR comment relay is active ────────────────────
   private static readonly COMMENT_RELAY_STATES: Set<OrchestratorItemState> = new Set([
     "pr-open", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing",
@@ -1476,6 +1575,18 @@ export class Orchestrator {
 
     // Reset merge failure counter on success
     item.mergeFailCount = 0;
+
+    // Capture merge commit SHA for post-merge CI verification
+    if (this.config.verifyMain && deps.getMergeCommitSha) {
+      try {
+        const sha = deps.getMergeCommitSha(repoRoot, prNum);
+        if (sha) {
+          item.mergeCommitSha = sha;
+        }
+      } catch {
+        // Non-fatal — fall back to done (skip verification)
+      }
+    }
 
     // Audit trail
     if (deps.upsertOrchestratorComment) {
@@ -2105,8 +2216,8 @@ export class Orchestrator {
       const dep = this.items.get(depId);
       if (!dep) return { canStack: false }; // unknown dep — can't stack
 
-      if (dep.state === "done" || dep.state === "merged") {
-        continue; // this dep is finished
+      if (dep.state === "done" || dep.state === "merged" || dep.state === "verifying" || dep.state === "verify-failed") {
+        continue; // this dep is finished (code is on main)
       }
 
       if (STACKABLE_STATES.has(dep.state)) {
@@ -2168,9 +2279,10 @@ export class Orchestrator {
       current = child;
     }
 
-    // Filter to active items with PRs (exclude merged/done — their PRs are closed)
+    // Filter to active items with PRs (exclude merged/done/verifying — their PRs are closed)
+    const POST_MERGE_STATES = new Set(["done", "merged", "verifying", "verify-failed", "repairing-main"]);
     return chain
-      .filter((i) => i.prNumber != null && i.state !== "done" && i.state !== "merged")
+      .filter((i) => i.prNumber != null && !POST_MERGE_STATES.has(i.state))
       .map((i) => ({ id: i.id, prNumber: i.prNumber!, title: i.todo.title }));
   }
 

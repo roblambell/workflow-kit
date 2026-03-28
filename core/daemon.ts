@@ -50,6 +50,10 @@ export interface DaemonStateItem {
   ciFailureNotifiedAt?: string | null;
   /** cmux workspace reference for the repair worker session (rebase-only). */
   repairWorkspaceRef?: string;
+  /** SHA of the merge commit on main (for post-merge CI verification). */
+  mergeCommitSha?: string;
+  /** Number of times CI verification on main has failed. */
+  verifyFailCount?: number;
 }
 
 export interface DaemonState {
@@ -437,6 +441,8 @@ export function serializeOrchestratorState(
       ...(item.ciFailureNotified ? { ciFailureNotified: item.ciFailureNotified } : {}),
       ...(item.ciFailureNotifiedAt ? { ciFailureNotifiedAt: item.ciFailureNotifiedAt } : {}),
       ...(item.repairWorkspaceRef ? { repairWorkspaceRef: item.repairWorkspaceRef } : {}),
+      ...(item.mergeCommitSha ? { mergeCommitSha: item.mergeCommitSha } : {}),
+      ...(item.verifyFailCount ? { verifyFailCount: item.verifyFailCount } : {}),
     })),
   };
 }

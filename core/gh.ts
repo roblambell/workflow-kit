@@ -202,6 +202,87 @@ export function resolveGithubToken(projectRoot: string): string | undefined {
   return undefined;
 }
 
+// ── Merge commit SHA ────────────────────────────────────────────────
+
+/**
+ * Get the merge commit SHA for a merged PR.
+ * Uses `gh pr view` to retrieve the mergeCommit.oid field.
+ * @returns The merge commit SHA, or null if it can't be determined.
+ */
+export function getMergeCommitSha(repoRoot: string, prNumber: number): string | null {
+  const data = prView(repoRoot, prNumber, ["mergeCommit"]);
+  const mergeCommit = data.mergeCommit as { oid?: string } | undefined;
+  return mergeCommit?.oid ?? null;
+}
+
+// ── Commit CI check ─────────────────────────────────────────────────
+
+/** Name of the ninthwave review status check to ignore in commit CI checks. */
+const IGNORED_CHECK_NAMES = new Set(["ninthwave/review"]);
+
+/**
+ * Check CI status on a specific commit SHA (e.g., merge commit on main).
+ * Uses the GitHub Check Runs API to get check statuses.
+ * Ignores the ninthwave/review check to avoid self-referential loops.
+ *
+ * @returns "pass" if all checks passed, "fail" if any failed, "pending" if still running or no checks found.
+ */
+export function checkCommitCI(
+  repoRoot: string,
+  sha: string,
+): "pass" | "fail" | "pending" {
+  let ownerRepo: string;
+  try {
+    ownerRepo = getRepoOwner(repoRoot);
+  } catch {
+    return "pending";
+  }
+
+  const result = ghInRepo(repoRoot, [
+    "api",
+    `repos/${ownerRepo}/commits/${sha}/check-runs`,
+    "--jq",
+    "[.check_runs[] | {name: .name, status: .status, conclusion: .conclusion}]",
+  ]);
+
+  if (result.exitCode !== 0 || !result.stdout) {
+    return "pending";
+  }
+
+  let checkRuns: Array<{ name: string; status: string; conclusion: string | null }>;
+  try {
+    checkRuns = JSON.parse(result.stdout);
+  } catch {
+    return "pending";
+  }
+
+  // Filter out ignored checks (e.g., ninthwave/review to avoid self-referential loops)
+  const relevantRuns = checkRuns.filter((r) => !IGNORED_CHECK_NAMES.has(r.name));
+
+  if (relevantRuns.length === 0) {
+    return "pending"; // No checks found yet
+  }
+
+  let hasFailure = false;
+  let allCompleted = true;
+
+  for (const run of relevantRuns) {
+    if (run.status !== "completed") {
+      allCompleted = false;
+      continue;
+    }
+    // Map conclusion: success/neutral/skipped = pass, failure/cancelled/timed_out/action_required = fail
+    const conclusion = run.conclusion?.toLowerCase();
+    if (conclusion === "failure" || conclusion === "cancelled" || conclusion === "timed_out" || conclusion === "action_required") {
+      hasFailure = true;
+    }
+  }
+
+  if (hasFailure) return "fail";
+  if (!allCompleted) return "pending";
+  return "pass";
+}
+
 // ── Commit Status API ───────────────────────────────────────────────
 
 /**

@@ -27,7 +27,7 @@ import { resolveRepo, getWorktreeInfo, bootstrapRepo } from "../cross-repo.ts";
 import { checkPrStatus, scanExternalPRs } from "./pr-monitor.ts";
 import { launchSingleItem, launchReviewWorker, launchRepairWorker, detectAiTool, cleanStaleBranchForReuse } from "./launch.ts";
 import { cleanSingleWorktree } from "./clean.ts";
-import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha } from "../gh.ts";
+import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI } from "../gh.ts";
 import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitPush, gitReset, daemonRebase } from "../git.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
@@ -218,6 +218,7 @@ export function buildSnapshot(
   getLastCommitTime: (projectRoot: string, branchName: string) => string | null = getWorktreeLastCommitTime,
   checkPr: (id: string, projectRoot: string) => string | null = checkPrStatus,
   fetchComments?: (repoRoot: string, prNumber: number, since: string) => Array<{ body: string; author: string; createdAt: string }>,
+  checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending",
 ): PollSnapshot {
   const items: ItemSnapshot[] = [];
   const readyIds: string[] = [];
@@ -239,6 +240,21 @@ export function buildSnapshot(
 
     // Skip terminal states — nothing to poll
     if (orchItem.state === "done" || orchItem.state === "stuck") continue;
+
+    // Post-merge verification: poll CI on the merge commit (no PR polling needed)
+    if ((orchItem.state === "verifying" || orchItem.state === "verify-failed") && orchItem.mergeCommitSha) {
+      const snap: ItemSnapshot = { id: orchItem.id };
+      if (checkCommitCI) {
+        const repoRoot = orchItem.resolvedRepoRoot ?? projectRoot;
+        try {
+          snap.mergeCommitCIStatus = checkCommitCI(repoRoot, orchItem.mergeCommitSha);
+        } catch {
+          // Non-fatal — will retry next cycle
+        }
+      }
+      items.push(snap);
+      continue;
+    }
 
     const snap: ItemSnapshot = { id: orchItem.id };
 
@@ -619,7 +635,7 @@ export function reconstructState(
   daemonState?: DaemonState | null,
 ): void {
   // Build a lookup map from saved daemon state for restoring persisted counters and review fields
-  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; repairWorkspaceRef?: string }>();
+  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; repairWorkspaceRef?: string; mergeCommitSha?: string; verifyFailCount?: number }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
       savedItems.set(si.id, {
@@ -632,6 +648,8 @@ export function reconstructState(
         ciFailureNotified: si.ciFailureNotified,
         ciFailureNotifiedAt: si.ciFailureNotifiedAt,
         repairWorkspaceRef: si.repairWorkspaceRef,
+        mergeCommitSha: si.mergeCommitSha,
+        verifyFailCount: si.verifyFailCount,
       });
     }
   }
@@ -655,6 +673,17 @@ export function reconstructState(
       if (saved.ciFailureNotified) item.ciFailureNotified = saved.ciFailureNotified;
       if (saved.ciFailureNotifiedAt) item.ciFailureNotifiedAt = saved.ciFailureNotifiedAt;
       if (saved.repairWorkspaceRef) item.repairWorkspaceRef = saved.repairWorkspaceRef;
+      if (saved.mergeCommitSha) item.mergeCommitSha = saved.mergeCommitSha;
+      if (saved.verifyFailCount) item.verifyFailCount = saved.verifyFailCount;
+    }
+
+    // Restore post-merge verification states from daemon state (these items have no worktree)
+    if (saved && item.mergeCommitSha) {
+      const savedState = daemonState?.items.find((si) => si.id === item.id)?.state;
+      if (savedState === "verifying" || savedState === "verify-failed" || savedState === "repairing-main") {
+        orch.setState(item.id, savedState as OrchestratorItemState);
+        continue;
+      }
     }
 
     // Check for worktree: cross-repo index first, then hub-local fallback
@@ -1751,6 +1780,7 @@ export async function cmdOrchestrate(
   let reviewAutoFix: "off" | "direct" | "pr" | undefined;
   let reviewCanApprove = false;
   let reviewExternal = false;
+  let verifyMain = true;
   let watchMode = false;
   let noWatch = false;
   let watchIntervalSecs: number | undefined;
@@ -1832,6 +1862,14 @@ export async function cmdOrchestrate(
         break;
       case "--review-external":
         reviewExternal = true;
+        i += 1;
+        break;
+      case "--no-verify-main":
+        verifyMain = false;
+        i += 1;
+        break;
+      case "--verify-main":
+        verifyMain = true;
         i += 1;
         break;
       case "--watch":
@@ -2032,6 +2070,7 @@ export async function cmdOrchestrate(
     wipLimit,
     mergeStrategy,
     reviewEnabled,
+    verifyMain,
     ...(reviewWipLimit !== undefined ? { reviewWipLimit } : {}),
     ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
     ...(reviewCanApprove ? { reviewCanApprove } : {}),
@@ -2165,6 +2204,8 @@ export async function cmdOrchestrate(
       if (!sha) return false;
       return ghSetCommitStatus(repoRoot, sha, state, context, description);
     },
+    getMergeCommitSha: (repoRoot, prNumber) => ghGetMergeCommitSha(repoRoot, prNumber),
+    checkCommitCI: (repoRoot, sha) => ghCheckCommitCI(repoRoot, sha),
   };
 
   // ── Crew mode setup ──────────────────────────────────────────────
@@ -2345,7 +2386,7 @@ export async function cmdOrchestrate(
   }
 
   const loopDeps: OrchestrateLoopDeps = {
-    buildSnapshot: (o, pr, wd) => buildSnapshot(o, pr, wd, mux, undefined, undefined, fetchTrustedPrComments),
+    buildSnapshot: (o, pr, wd) => buildSnapshot(o, pr, wd, mux, undefined, undefined, fetchTrustedPrComments, ghCheckCommitCI),
     sleep: (ms) => interruptibleSleep(ms, abortController.signal),
     log,
     actionDeps,
