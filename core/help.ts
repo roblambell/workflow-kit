@@ -31,6 +31,7 @@ import { cmdInit } from "./commands/init.ts";
 import { cmdWatch } from "./commands/orchestrate.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
 import { cmdAnalytics } from "./commands/analytics.ts";
+import { cmdHistory } from "./commands/history.ts";
 import { cmdStop } from "./commands/stop.ts";
 import { cmdRetry } from "./commands/retry.ts";
 import { cmdDoctor } from "./commands/doctor.ts";
@@ -244,6 +245,17 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
       "--all": "Show all-time analytics instead of recent",
     },
     examples: ["nw analytics", "nw analytics --all"],
+  },
+  {
+    name: "history",
+    usage: "history <ID>",
+    description: "Show state transition timeline for an item",
+    group: "diagnostic",
+    needsRoot: true,
+    needsTodos: false,
+    handler: (ctx) => cmdHistory(ctx.args, ctx.projectRoot),
+    flags: {},
+    examples: ["nw history H-CR-1", "nw history H-OBS-2"],
   },
   {
     name: "logs",
