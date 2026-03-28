@@ -3,6 +3,7 @@
 
 import * as cmux from "./cmux.ts";
 import { run as defaultRun } from "./shell.ts";
+import { die } from "./output.ts";
 import type { RunResult } from "./types.ts";
 
 /** Shell runner signature — injectable for testing. */
@@ -135,6 +136,124 @@ export function getMux(deps?: DetectMuxDeps): Multiplexer {
     // No mux available — fall back to CmuxAdapter (isAvailable() will report false)
     return new CmuxAdapter();
   }
+}
+
+// ── Auto-launch: ensure we're inside cmux, or spawn it ─────────────
+
+/** Injectable dependencies for auto-launch detection. */
+export interface AutoLaunchDeps {
+  env: Record<string, string | undefined>;
+  isTTY: boolean;
+  checkBinary: (name: string) => boolean;
+}
+
+/** Possible outcomes from auto-launch detection. */
+export type AutoLaunchResult =
+  | { action: "proceed" }
+  | { action: "auto-launch" }
+  | { action: "error"; message: string };
+
+/**
+ * Pure detection logic: determine whether to proceed, auto-launch, or error.
+ *
+ * Detection chain:
+ * 1. CMUX_WORKSPACE_ID set → proceed (already inside cmux)
+ * 2. NINTHWAVE_AUTO_LAUNCHED=1 → error (recursive launch guard)
+ * 3. cmux available + TTY → auto-launch
+ * 4. cmux available + non-TTY → error (parallel sessions need TTY)
+ * 5. cmux not available → error (install prompt)
+ */
+export function checkAutoLaunch(deps: AutoLaunchDeps): AutoLaunchResult {
+  const { env, isTTY, checkBinary } = deps;
+
+  // 1. Already inside cmux — proceed normally
+  if (env.CMUX_WORKSPACE_ID) return { action: "proceed" };
+
+  // 2. Recursive launch guard
+  if (env.NINTHWAVE_AUTO_LAUNCHED === "1") {
+    return {
+      action: "error",
+      message: "Recursive auto-launch detected. cmux did not set CMUX_WORKSPACE_ID.",
+    };
+  }
+
+  const hasCmux = checkBinary("cmux");
+
+  // 3. cmux available + TTY → auto-launch
+  if (hasCmux && isTTY) return { action: "auto-launch" };
+
+  // 4. cmux available + non-TTY → error
+  if (hasCmux) {
+    return {
+      action: "error",
+      message: "cmux required for parallel sessions. Run in a TTY or inside cmux.",
+    };
+  }
+
+  // 5. cmux not available → install prompt
+  return {
+    action: "error",
+    message: "Install cmux: brew install --cask manaflow-ai/cmux/cmux",
+  };
+}
+
+/** Injectable spawn function for auto-launch (enables testing without side effects). */
+export type SpawnFn = (
+  cmd: string[],
+  env: Record<string, string>,
+) => { exitCode: number | null };
+
+const defaultAutoLaunchDeps: AutoLaunchDeps = {
+  env: process.env,
+  isTTY: process.stdin.isTTY === true,
+  checkBinary: (name: string): boolean => {
+    try {
+      return defaultRun(name, ["--version"]).exitCode === 0;
+    } catch {
+      return false;
+    }
+  },
+};
+
+const defaultSpawn: SpawnFn = (cmd, env) => {
+  const proc = Bun.spawnSync(cmd, {
+    env: { ...process.env, ...env },
+    stdio: ["inherit", "inherit", "inherit"],
+  });
+  return { exitCode: proc.exitCode };
+};
+
+/**
+ * Ensure we're inside a cmux session, or auto-launch cmux with the original command.
+ *
+ * For commands that need a multiplexer (watch, start, <ID>, no-args interactive),
+ * call this before proceeding. If outside cmux, spawns `cmux -- nw <originalArgs>`
+ * with NINTHWAVE_AUTO_LAUNCHED=1 and replaces the current process.
+ *
+ * @param originalArgs - The original CLI args (process.argv.slice(2))
+ * @param deps - Injectable for testing
+ * @param spawn - Injectable spawn function for testing
+ */
+export function ensureMuxOrAutoLaunch(
+  originalArgs: string[],
+  deps: AutoLaunchDeps = defaultAutoLaunchDeps,
+  spawn: SpawnFn = defaultSpawn,
+): void {
+  const result = checkAutoLaunch(deps);
+
+  if (result.action === "proceed") return;
+
+  if (result.action === "auto-launch") {
+    // Replace this process with cmux running nw inside it
+    const proc = spawn(
+      ["cmux", "--", "nw", ...originalArgs],
+      { NINTHWAVE_AUTO_LAUNCHED: "1" },
+    );
+    process.exit(proc.exitCode ?? 1);
+  }
+
+  // Error — die with message
+  die(result.message);
 }
 
 /**

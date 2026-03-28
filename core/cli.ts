@@ -8,6 +8,10 @@ import { run } from "./shell.ts";
 import { lookupCommand, printHelp, printHelpAll, printCommandHelp } from "./help.ts";
 import { cmdNoArgs } from "./commands/onboard.ts";
 import { WORK_ITEM_ID_CLI_PATTERN, cmdRunItems } from "./commands/launch.ts";
+import { ensureMuxOrAutoLaunch } from "./mux.ts";
+
+/** Commands that require a multiplexer and should auto-launch cmux. */
+const COMMANDS_NEEDING_MUX = new Set(["watch", "start"]);
 
 // ── Project root resolution ──────────────────────────────────────────
 
@@ -47,6 +51,8 @@ if (command === "--help" || command === "-h") {
 
 // No args: detect project state and route to the appropriate flow
 if (!command) {
+  ensureMuxOrAutoLaunch(process.argv.slice(2));
+
   // Try to detect project root without dying on failure
   const gitResult = run("git", [
     "rev-parse",
@@ -73,6 +79,8 @@ const allAreIds = allPositional.length > 0 && allPositional.every(
 );
 
 if (allAreIds) {
+  ensureMuxOrAutoLaunch(process.argv.slice(2));
+
   const projectRoot = getProjectRoot();
   const workDir = join(projectRoot, ".ninthwave", "work");
   const worktreeDir = join(projectRoot, ".worktrees");
@@ -113,6 +121,11 @@ if (args.includes("--help") || args.includes("-h")) {
 }
 
 // ── Dispatch ─────────────────────────────────────────────────────────
+
+// Auto-launch cmux for commands that need a multiplexer
+if (COMMANDS_NEEDING_MUX.has(command)) {
+  ensureMuxOrAutoLaunch(process.argv.slice(2));
+}
 
 if (!entry.needsRoot) {
   // Commands that don't need a project root (init, setup, version)
