@@ -2804,3 +2804,144 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
     expect(item.needsCiFix).toBe(false);
   });
 });
+
+// ── onTransition callback ──────────────────────────────────────────
+
+describe("onTransition callback", () => {
+  it("is called for every state change with correct arguments", () => {
+    const calls: Array<{ itemId: string; from: string; to: string; timestamp: string; latencyMs: number }> = [];
+    const orch = new Orchestrator({
+      onTransition: (itemId, from, to, timestamp, latencyMs) => {
+        calls.push({ itemId, from, to, timestamp, latencyMs });
+      },
+    });
+    orch.addItem(makeTodo("H-1-1"));
+
+    // processTransitions will trigger queued → ready → launching in one call
+    const snapshot = snapshotWith([], ["H-1-1"]);
+    orch.processTransitions(snapshot);
+
+    // Expect at least 2 calls: queued→ready and ready→launching
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(calls[0]!.itemId).toBe("H-1-1");
+    expect(calls[0]!.from).toBe("queued");
+    expect(calls[0]!.to).toBe("ready");
+    expect(typeof calls[0]!.timestamp).toBe("string");
+    expect(calls[0]!.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(calls[1]!.from).toBe("ready");
+    expect(calls[1]!.to).toBe("launching");
+  });
+
+  it("does not fire on no-op transitions (same state)", () => {
+    const calls: Array<{ from: string; to: string }> = [];
+    const orch = new Orchestrator({
+      onTransition: (_itemId, from, to) => {
+        calls.push({ from, to });
+      },
+    });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+    // First call: implementing stays implementing (worker alive, no PR)
+    orch.processTransitions(snapshotWith([{ id: "H-1-1", workerAlive: true }]));
+    const countAfterFirst = calls.length;
+
+    // Second call with same snapshot: still implementing, no-op — no new callbacks
+    orch.processTransitions(snapshotWith([{ id: "H-1-1", workerAlive: true }]));
+    expect(calls.length).toBe(countAfterFirst);
+  });
+
+  it("omitting onTransition does not break construction or polling", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeTodo("H-1-1"));
+
+    // Should not throw — item transitions through ready → launching
+    const actions = orch.processTransitions(snapshotWith([], ["H-1-1"]));
+    expect(["ready", "launching"]).toContain(orch.getItem("H-1-1")!.state);
+    expect(actions).toBeDefined();
+  });
+
+  it("fires for multiple items in the same poll cycle", () => {
+    const calls: Array<{ itemId: string; from: string; to: string }> = [];
+    const orch = new Orchestrator({
+      wipLimit: 2,
+      onTransition: (itemId, from, to) => {
+        calls.push({ itemId, from, to });
+      },
+    });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.addItem(makeTodo("H-1-2"));
+
+    // Both become ready (and then launching)
+    orch.processTransitions(snapshotWith([], ["H-1-1", "H-1-2"]));
+
+    // Each item gets queued→ready and ready→launching = 4 total (at minimum)
+    expect(calls.length).toBeGreaterThanOrEqual(4);
+    const readyCalls = calls.filter((c) => c.from === "queued" && c.to === "ready");
+    expect(readyCalls.length).toBe(2);
+    const readyIds = readyCalls.map((c) => c.itemId).sort();
+    expect(readyIds).toEqual(["H-1-1", "H-1-2"]);
+  });
+
+  it("tracks multiple sequential transitions for the same item", () => {
+    const calls: Array<{ itemId: string; from: string; to: string }> = [];
+    const orch = new Orchestrator({
+      onTransition: (itemId, from, to) => {
+        calls.push({ itemId, from, to });
+      },
+    });
+    orch.addItem(makeTodo("H-1-1"));
+
+    // First poll: queued → ready → launching in one processTransitions call
+    orch.processTransitions(snapshotWith([], ["H-1-1"]));
+
+    // Should see the full chain: queued→ready, ready→launching
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(calls[0]).toMatchObject({ from: "queued", to: "ready" });
+    expect(calls[1]).toMatchObject({ from: "ready", to: "launching" });
+
+    // Now simulate implementing state and a PR appearing
+    orch.setState("H-1-1", "implementing");
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+    orch.getItem("H-1-1")!.prNumber = 42;
+    const prevCount = calls.length;
+
+    // Second poll: implementing → pr-open (PR appears with pending CI)
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prNumber: 42, ciStatus: "pending", prState: "open", workerAlive: true }]),
+    );
+
+    // Should have new transition(s) beyond the previous count
+    expect(calls.length).toBeGreaterThan(prevCount);
+    const newCalls = calls.slice(prevCount);
+    expect(newCalls.some((c) => c.to === "ci-pending")).toBe(true);
+  });
+
+  it("includes detection latency from eventTime", () => {
+    const calls: Array<{ latencyMs: number }> = [];
+    const orch = new Orchestrator({
+      onTransition: (_itemId, _from, _to, _ts, latencyMs) => {
+        calls.push({ latencyMs });
+      },
+    });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+    // Provide an eventTime in the past to produce measurable latency
+    const pastTime = new Date(Date.now() - 5000).toISOString();
+    orch.processTransitions(
+      snapshotWith([
+        { id: "H-1-1", prNumber: 42, ciStatus: "pass", prState: "open", workerAlive: true, eventTime: pastTime },
+      ]),
+    );
+
+    // Should have a transition (e.g., implementing → ci-passed or pr-open)
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+    // The latency should reflect the ~5s gap between eventTime and detectedTime
+    const lastCall = calls[calls.length - 1]!;
+    expect(lastCall.latencyMs).toBeGreaterThanOrEqual(4000);
+  });
+});

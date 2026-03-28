@@ -1263,6 +1263,30 @@ export async function orchestrateLoop(
 ): Promise<void> {
   const { log } = deps;
 
+  // Wire onTransition callback for structured transition logging.
+  // This fires from inside Orchestrator.transition() on every state change,
+  // replacing the manual prevStates diff that previously lived in the poll loop.
+  if (!orch.config.onTransition) {
+    orch.config.onTransition = (itemId, from, to, timestamp, latencyMs) => {
+      const entry: Record<string, unknown> = {
+        ts: timestamp,
+        level: "info",
+        event: "transition",
+        itemId,
+        from,
+        to,
+        latencyMs,
+      };
+      // Enrich with stacking info when promoted from queued → ready with a base branch
+      const item = orch.getItem(itemId);
+      if (item && from === "queued" && to === "ready" && item.baseBranch) {
+        entry.stacked = true;
+        entry.baseBranch = item.baseBranch;
+      }
+      log(entry as LogEntry);
+    };
+  }
+
   // Initialize external review state from persisted file
   let externalReviews: ExternalReviewItem[] = [];
   if (config.reviewExternal && deps.externalReviewDeps) {
@@ -1475,29 +1499,14 @@ export async function orchestrateLoop(
       }
     }
 
-    // Log state transitions
+    // Detect whether any transition occurred this cycle (for stale-detection bookkeeping).
+    // Transition logging is handled by the Orchestrator's onTransition callback.
     let __hadTransition = false;
     for (const item of orch.getAllItems()) {
       const prev = prevStates.get(item.id);
       if (prev && prev !== item.state) {
         __hadTransition = true;
-        const transitionLog: Record<string, unknown> = {
-          ts: new Date().toISOString(),
-          level: "info",
-          event: "transition",
-          itemId: item.id,
-          from: prev,
-          to: item.state,
-          eventTime: item.eventTime,
-          detectedTime: item.detectedTime,
-          detectionLatencyMs: item.detectionLatencyMs,
-        };
-        // Log stacking info when an item is promoted from queued → ready with a baseBranch
-        if (prev === "queued" && item.state === "ready" && item.baseBranch) {
-          transitionLog.stacked = true;
-          transitionLog.baseBranch = item.baseBranch;
-        }
-        log(transitionLog);
+        break;
       }
     }
 

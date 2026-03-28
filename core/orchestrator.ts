@@ -130,6 +130,8 @@ export interface OrchestratorConfig {
   maxMergeRetries: number;
   /** Max consecutive repair worker launches before marking stuck. Default: 3. */
   maxRepairAttempts: number;
+  /** Optional callback invoked on every state transition. Receives item ID, previous state, new state, detected timestamp, and detection latency in ms. */
+  onTransition?: (itemId: string, from: string, to: string, timestamp: string, latencyMs: number) => void;
 }
 
 // ── Poll snapshot ────────────────────────────────────────────────────
@@ -557,6 +559,7 @@ export class Orchestrator {
   /** Set state and update timestamp. Records detection latency when eventTime is provided. */
   private transition(item: OrchestratorItem, state: OrchestratorItemState, eventTime?: string): void {
     if (item.state === state) return;
+    const prevState = item.state;
     const detectedTime = new Date().toISOString();
     item.state = state;
     item.lastTransition = detectedTime;
@@ -590,6 +593,8 @@ export class Orchestrator {
     if (state === "done" || state === "stuck") {
       item.endedAt = detectedTime;
     }
+    // Emit structured transition event
+    this.config.onTransition?.(item.id, prevState, state, detectedTime, item.detectionLatencyMs);
   }
 
   /** Transition a single item based on its snapshot. Returns actions. */
