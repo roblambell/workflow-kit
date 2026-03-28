@@ -13,10 +13,17 @@ import { userStateDir } from "./daemon.ts";
 // ── Shared message types ────────────────────────────────────────────
 // Imported by mock-broker.ts for type-safe server implementation.
 
+export interface SyncItem {
+  id: string;
+  dependencies: string[];
+  priority: number;
+  author: string;
+}
+
 export interface SyncMessage {
   type: "sync";
   daemonId: string;
-  activeItemIds: string[];
+  items: SyncItem[];
 }
 
 export interface SyncAckMessage {
@@ -110,8 +117,8 @@ export interface CrewBroker {
   /** Connect to the crew server. Resolves when the initial sync_ack is received. */
   connect(): Promise<void>;
 
-  /** Send sync message with current active TODO IDs. */
-  sync(activeItemIds: string[]): void;
+  /** Send sync message with current active items and their metadata. */
+  sync(items: SyncItem[]): void;
 
   /** Claim the next available TODO. Returns todoId or null (5s timeout). */
   claim(): Promise<string | null>;
@@ -332,11 +339,11 @@ export class WebSocketCrewBroker implements CrewBroker {
     });
   }
 
-  sync(activeItemIds: string[]): void {
+  sync(items: SyncItem[]): void {
     this.send({
       type: "sync",
       daemonId: this.daemonId,
-      activeItemIds,
+      items,
     });
   }
 

@@ -218,7 +218,7 @@ describe("WebSocketCrewBroker", () => {
     const connectPromise = broker2.connect();
     // Wait a tick for WS to open, then send sync
     await new Promise((r) => setTimeout(r, 50));
-    broker2.sync(["H-TEST-1"]);
+    broker2.sync([{ id: "H-TEST-1", dependencies: [], priority: 1, author: "" }]);
     await connectPromise;
 
     expect(broker2.isConnected()).toBe(true);
@@ -533,7 +533,7 @@ describe("WebSocketCrewBroker", () => {
         // Wait for reconnect (100ms interval) + WS open + send sync
         await new Promise((r) => setTimeout(r, 200));
         // After reconnect, ws.onopen fires → connected=true. Then we need sync for reconciliation.
-        broker.sync(["H-TEST-1"]);
+        broker.sync([{ id: "H-TEST-1", dependencies: [], priority: 1, author: "" }]);
         await new Promise((r) => setTimeout(r, 100));
 
         expect(reconnectState).not.toBeNull();

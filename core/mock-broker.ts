@@ -39,6 +39,8 @@ export interface CrewState {
 export interface WorkEntry {
   path: string;
   priority: number; // lower = higher priority
+  dependencies: string[]; // dependency IDs (from sync metadata)
+  author: string; // git author email (from sync metadata)
   syncedAt: number;
   creatorDaemonId: string;
   claimedBy: string | null;
@@ -82,8 +84,15 @@ export interface CrewStatusUpdate {
 // ── Message types ───────────────────────────────────────────────────
 // Aligned with crew.ts ClientMessage / ServerMessage protocol.
 
+type SyncItemPayload = {
+  id: string;
+  dependencies: string[];
+  priority: number;
+  author: string;
+};
+
 type InboundMessage =
-  | { type: "sync"; daemonId: string; activeItemIds: string[] }
+  | { type: "sync"; daemonId: string; items: SyncItemPayload[] }
   | { type: "claim"; requestId: string; daemonId: string }
   | { type: "complete"; todoId: string; daemonId: string }
   | { type: "heartbeat"; daemonId: string; ts: string };
@@ -344,7 +353,7 @@ export class MockBroker {
 
     switch (msg.type) {
       case "sync":
-        this.handleSync(crew, daemonId, msg.activeItemIds, ws);
+        this.handleSync(crew, daemonId, msg.items, ws);
         break;
       case "claim":
         this.handleClaimRequest(crew, daemonId, msg.requestId, ws);
@@ -359,18 +368,26 @@ export class MockBroker {
     }
   }
 
-  private handleSync(crew: CrewState, daemonId: string, activeItemIds: string[], ws: WebSocket): void {
-    for (const todoId of activeItemIds) {
-      if (!crew.items.has(todoId)) {
-        crew.items.set(todoId, {
-          path: todoId,
-          priority: 1, // Default priority; orchestrator handles real priority
+  private handleSync(crew: CrewState, daemonId: string, items: SyncItemPayload[], ws: WebSocket): void {
+    for (const item of items) {
+      const existing = crew.items.get(item.id);
+      if (existing) {
+        // Idempotent upsert: update priority, dependencies, and author from latest sync
+        existing.priority = item.priority;
+        existing.dependencies = item.dependencies;
+        existing.author = item.author;
+      } else {
+        crew.items.set(item.id, {
+          path: item.id,
+          priority: item.priority,
+          dependencies: item.dependencies,
+          author: item.author,
           syncedAt: Date.now(),
           creatorDaemonId: daemonId,
           claimedBy: null,
           completedBy: null,
         });
-        this.logEvent(crew.code, daemonId, "sync", todoId, { affinity: "creator" });
+        this.logEvent(crew.code, daemonId, "sync", item.id, { affinity: "creator" });
       }
     }
     // Respond with sync_ack containing all known todo IDs

@@ -91,9 +91,20 @@ function waitForMessageByType<T = unknown>(ws: WebSocket, type: string, timeoutM
   });
 }
 
+/** Build a SyncItem payload with defaults for testing convenience. */
+function syncItem(id: string, opts?: { dependencies?: string[]; priority?: number; author?: string }) {
+  return {
+    id,
+    dependencies: opts?.dependencies ?? [],
+    priority: opts?.priority ?? 1,
+    author: opts?.author ?? "",
+  };
+}
+
 /** Send sync and wait for sync_ack. */
-async function sendSync(ws: WebSocket, daemonId: string, todoIds: string[]): Promise<void> {
-  ws.send(JSON.stringify({ type: "sync", daemonId, activeItemIds: todoIds }));
+async function sendSync(ws: WebSocket, daemonId: string, todoIds: string[], itemOpts?: Record<string, { dependencies?: string[]; priority?: number; author?: string }>): Promise<void> {
+  const items = todoIds.map((id) => syncItem(id, itemOpts?.[id]));
+  ws.send(JSON.stringify({ type: "sync", daemonId, items }));
   await waitForMessageByType(ws, "sync_ack");
 }
 
@@ -293,18 +304,22 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      // Sync all TODOs (priority comes from default; order is stable by syncedAt)
-      await sendSync(ws, "d1", ["low-pri", "high-pri", "med-pri"]);
+      // Sync with explicit priorities: high-pri=0, med-pri=2, low-pri=3
+      await sendSync(ws, "d1", ["low-pri", "high-pri", "med-pri"], {
+        "low-pri": { priority: 3 },
+        "high-pri": { priority: 0 },
+        "med-pri": { priority: 2 },
+      });
 
-      // All have same default priority (1), so claim order is by syncedAt (insertion order)
+      // Claim order should be by priority: 0 (high), 2 (med), 3 (low)
       const claim1 = await sendClaim(ws, "d1");
-      expect(claim1.todoId).toBe("low-pri");
+      expect(claim1.todoId).toBe("high-pri");
 
       const claim2 = await sendClaim(ws, "d1");
-      expect(claim2.todoId).toBe("high-pri");
+      expect(claim2.todoId).toBe("med-pri");
 
       const claim3 = await sendClaim(ws, "d1");
-      expect(claim3.todoId).toBe("med-pri");
+      expect(claim3.todoId).toBe("low-pri");
 
       ws.close();
     });
@@ -641,15 +656,96 @@ describe("mock-broker", () => {
     });
   });
 
+  describe("enriched sync metadata", () => {
+    it("stores dependencies, priority, and author from sync payload", async () => {
+      const { port, broker } = startBroker();
+      const code = await createCrew(port);
+      const ws = await connectWs(port, code, "d1", "worker-1");
+
+      await sendSync(ws, "d1", ["todo-A", "todo-B"], {
+        "todo-A": { dependencies: ["todo-B"], priority: 0, author: "alice@example.com" },
+        "todo-B": { dependencies: [], priority: 2, author: "bob@example.com" },
+      });
+
+      const crew = broker.getCrew(code);
+      expect(crew).toBeDefined();
+
+      const todoA = crew!.items.get("todo-A");
+      expect(todoA).toBeDefined();
+      expect(todoA!.dependencies).toEqual(["todo-B"]);
+      expect(todoA!.priority).toBe(0);
+      expect(todoA!.author).toBe("alice@example.com");
+
+      const todoB = crew!.items.get("todo-B");
+      expect(todoB).toBeDefined();
+      expect(todoB!.dependencies).toEqual([]);
+      expect(todoB!.priority).toBe(2);
+      expect(todoB!.author).toBe("bob@example.com");
+
+      ws.close();
+    });
+
+    it("re-sync with updated priority/deps updates the existing WorkEntry (idempotent upsert)", async () => {
+      const { port, broker } = startBroker();
+      const code = await createCrew(port);
+      const ws = await connectWs(port, code, "d1", "worker-1");
+
+      // First sync: priority 2, no deps
+      await sendSync(ws, "d1", ["todo-A"], {
+        "todo-A": { dependencies: [], priority: 2, author: "alice@example.com" },
+      });
+
+      const crew = broker.getCrew(code);
+      const todoAfterFirst = crew!.items.get("todo-A");
+      expect(todoAfterFirst!.priority).toBe(2);
+      expect(todoAfterFirst!.dependencies).toEqual([]);
+      expect(todoAfterFirst!.author).toBe("alice@example.com");
+      const originalSyncedAt = todoAfterFirst!.syncedAt;
+
+      // Re-sync with updated priority, deps, and author
+      await sendSync(ws, "d1", ["todo-A"], {
+        "todo-A": { dependencies: ["todo-B"], priority: 0, author: "bob@example.com" },
+      });
+
+      const todoAfterSecond = crew!.items.get("todo-A");
+      expect(todoAfterSecond!.priority).toBe(0);
+      expect(todoAfterSecond!.dependencies).toEqual(["todo-B"]);
+      expect(todoAfterSecond!.author).toBe("bob@example.com");
+      // creatorDaemonId and syncedAt should not change on upsert
+      expect(todoAfterSecond!.creatorDaemonId).toBe("d1");
+      expect(todoAfterSecond!.syncedAt).toBe(originalSyncedAt);
+
+      ws.close();
+    });
+
+    it("sync with empty dependencies array stores [], not undefined", async () => {
+      const { port, broker } = startBroker();
+      const code = await createCrew(port);
+      const ws = await connectWs(port, code, "d1", "worker-1");
+
+      await sendSync(ws, "d1", ["todo-A"], {
+        "todo-A": { dependencies: [], priority: 1, author: "" },
+      });
+
+      const crew = broker.getCrew(code);
+      const todo = crew!.items.get("todo-A");
+      expect(todo).toBeDefined();
+      expect(todo!.dependencies).toEqual([]);
+      expect(Array.isArray(todo!.dependencies)).toBe(true);
+
+      ws.close();
+    });
+  });
+
   describe("edge cases", () => {
-    it("ignores duplicate syncs of the same path", async () => {
+    it("ignores duplicate syncs of the same path (preserves creator)", async () => {
       const { port, broker } = startBroker();
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       await sendSync(ws, "d1", ["todo-A"]);
 
-      // Sync same path again from different daemon — should not overwrite
+      // Sync same path again from different daemon — should not overwrite creatorDaemonId
       const ws2 = await connectWs(port, code, "d2", "worker-2");
       await sendSync(ws2, "d2", ["todo-A"]);
 

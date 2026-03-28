@@ -35,7 +35,7 @@ import { die, warn, info, ALT_SCREEN_ON, ALT_SCREEN_OFF } from "../output.ts";
 import { confirmPrompt } from "../prompt.ts";
 import { shouldEnterInteractive, runInteractiveFlow } from "../interactive.ts";
 import type { WorkItem } from "../types.ts";
-import { ID_IN_FILENAME } from "../types.ts";
+import { ID_IN_FILENAME, PRIORITY_NUM } from "../types.ts";
 import { prTitleMatchesWorkItem } from "../work-item-utils.ts";
 import { loadConfig } from "../config.ts";
 import { preflight, checkUncommittedWorkItems } from "../preflight.ts";
@@ -84,7 +84,7 @@ import {
   type ViewOptions,
   type CrewStatusInfo,
 } from "../status-render.ts";
-import type { CrewBroker, CrewStatus } from "../crew.ts";
+import type { CrewBroker, CrewStatus, SyncItem } from "../crew.ts";
 import { WebSocketCrewBroker, getOrCreateDaemonId, resolveOperatorId } from "../crew.ts";
 import { MockBroker } from "../mock-broker.ts";
 import { AuthorCache } from "../git-author.ts";
@@ -1487,14 +1487,16 @@ export async function orchestrateLoop(
       try {
         const activeItems = orch.getAllItems()
           .filter((i) => i.state !== "done" && i.state !== "stuck");
-        const activeIds = activeItems.map((i) => i.id);
-        // Pre-resolve authors for active items (populates cache for H-CA-1 enrichment)
-        for (const item of activeItems) {
-          if (item.workItem.filePath) {
-            authorCache.resolve(item.workItem.filePath, ctx.projectRoot);
-          }
-        }
-        deps.crewBroker.sync(activeIds);
+        // Build enriched sync items with priority, dependencies, and author
+        const syncItems: SyncItem[] = activeItems.map((item) => ({
+          id: item.id,
+          dependencies: item.workItem.dependencies ?? [],
+          priority: PRIORITY_NUM[item.workItem.priority] ?? 2,
+          author: item.workItem.filePath
+            ? authorCache.resolve(item.workItem.filePath, ctx.projectRoot)
+            : "",
+        }));
+        deps.crewBroker.sync(syncItems);
       } catch { /* best-effort — sync failure doesn't block the orchestrator */ }
     }
 
