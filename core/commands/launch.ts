@@ -93,6 +93,14 @@ const AGENT_FILES: { source: string; targets: { dir: string; suffix: string }[] 
       { dir: ".github/agents", suffix: ".agent.md" },
     ],
   },
+  {
+    source: "verifier.md",
+    targets: [
+      { dir: ".claude/agents", suffix: ".md" },
+      { dir: ".opencode/agents", suffix: ".md" },
+      { dir: ".github/agents", suffix: ".agent.md" },
+    ],
+  },
 ];
 
 /**
@@ -774,6 +782,97 @@ PROJECT_ROOT: ${repoRoot}`;
     );
     if (!workspaceRef) return null;
     return { workspaceRef };
+  } finally {
+    try {
+      unlinkSync(promptFile);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/** Result of launching a verifier worker session. */
+export interface VerifierLaunchResult {
+  worktreePath: string;
+  workspaceRef: string;
+}
+
+/**
+ * Launch a verifier worker session for post-merge CI failure diagnosis.
+ *
+ * The verifier runs in a fresh worktree from main (not the original item's branch,
+ * which is already merged). It diagnoses why CI failed and creates a fix-forward PR.
+ *
+ * Worktree path: .worktrees/ninthwave-verify-{id}
+ */
+export function launchVerifierWorker(
+  itemId: string,
+  mergeCommitSha: string,
+  repoRoot: string,
+  aiTool: string,
+  mux: Multiplexer = getMux(),
+): VerifierLaunchResult | null {
+  const worktreePath = join(repoRoot, ".worktrees", `ninthwave-verify-${itemId}`);
+  const branch = `ninthwave/verify-${itemId}`;
+
+  if (existsSync(worktreePath)) {
+    warn(`Verifier worktree already exists for ${itemId} at ${worktreePath}, reusing`);
+  } else {
+    mkdirSync(join(repoRoot, ".worktrees"), { recursive: true });
+    ensureWorktreeExcluded(repoRoot);
+
+    info(`Fetching main in ${basename(repoRoot)} for verifier of ${itemId}`);
+    try {
+      fetchOrigin(repoRoot, "main");
+    } catch (e) {
+      warn(
+        `Failed to fetch origin/main in ${basename(repoRoot)} for verifier of ${itemId}: ${e instanceof Error ? e.message : e}`,
+      );
+      return null;
+    }
+
+    // Handle branch collision
+    if (branchExists(repoRoot, branch)) {
+      warn(`Branch ${branch} already exists in ${basename(repoRoot)}. Deleting stale branch.`);
+      try {
+        deleteBranch(repoRoot, branch);
+      } catch {
+        // ignore
+      }
+    }
+
+    info(`Creating verifier worktree for ${itemId} on branch ${branch}`);
+    createWorktree(repoRoot, worktreePath, branch, "origin/main");
+  }
+
+  // Seed agent files into the verifier worktree
+  seedAgentFiles(worktreePath, repoRoot);
+
+  const systemPrompt = `YOUR_VERIFY_ITEM_ID: ${itemId}
+YOUR_VERIFY_MERGE_SHA: ${mergeCommitSha}
+PROJECT_ROOT: ${repoRoot}
+REPO_ROOT: ${repoRoot}`;
+
+  const safeTitle = sanitizeTitle(`Verify ${itemId}`);
+  info(
+    `Launching ${aiTool} verifier session for ${itemId}: merge SHA ${mergeCommitSha.slice(0, 8)}`,
+  );
+
+  const promptFile = join(tmpdir(), `nw-verify-prompt-${itemId}-${Date.now()}`);
+  writeFileSync(promptFile, systemPrompt);
+
+  try {
+    const workspaceRef = launchAiSession(
+      aiTool,
+      worktreePath,
+      itemId,
+      safeTitle,
+      promptFile,
+      mux,
+      { projectRoot: repoRoot, agentName: "ninthwave-verifier" },
+    );
+    if (!workspaceRef) return null;
+    return { worktreePath, workspaceRef };
   } finally {
     try {
       unlinkSync(promptFile);

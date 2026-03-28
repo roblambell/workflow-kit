@@ -25,7 +25,7 @@ import {
 import { parseTodos } from "../parser.ts";
 import { resolveRepo, getWorktreeInfo, bootstrapRepo } from "../cross-repo.ts";
 import { checkPrStatus, scanExternalPRs } from "./pr-monitor.ts";
-import { launchSingleItem, launchReviewWorker, launchRepairWorker, detectAiTool, cleanStaleBranchForReuse } from "./launch.ts";
+import { launchSingleItem, launchReviewWorker, launchRepairWorker, launchVerifierWorker, detectAiTool, cleanStaleBranchForReuse } from "./launch.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI } from "../gh.ts";
 import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitPush, gitReset, daemonRebase } from "../git.ts";
@@ -339,6 +339,14 @@ export function buildSnapshot(
       );
     }
 
+    // Check verifier worker health for items in repairing-main state
+    if (orchItem.state === "repairing-main" && orchItem.verifyWorkspaceRef) {
+      snap.workerAlive = isWorkerAlive(
+        { ...orchItem, workspaceRef: orchItem.verifyWorkspaceRef } as OrchestratorItem,
+        mux,
+      );
+    }
+
     // Check worker alive and commit freshness for active items
     if (orchItem.state === "launching" || orchItem.state === "implementing" || orchItem.state === "ci-failed") {
       snap.workerAlive = isWorkerAlive(orchItem, mux);
@@ -635,7 +643,7 @@ export function reconstructState(
   daemonState?: DaemonState | null,
 ): void {
   // Build a lookup map from saved daemon state for restoring persisted counters and review fields
-  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; repairWorkspaceRef?: string; mergeCommitSha?: string; verifyFailCount?: number }>();
+  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; repairWorkspaceRef?: string; mergeCommitSha?: string; verifyFailCount?: number; verifyWorkspaceRef?: string }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
       savedItems.set(si.id, {
@@ -650,6 +658,7 @@ export function reconstructState(
         repairWorkspaceRef: si.repairWorkspaceRef,
         mergeCommitSha: si.mergeCommitSha,
         verifyFailCount: si.verifyFailCount,
+        verifyWorkspaceRef: si.verifyWorkspaceRef,
       });
     }
   }
@@ -675,6 +684,7 @@ export function reconstructState(
       if (saved.repairWorkspaceRef) item.repairWorkspaceRef = saved.repairWorkspaceRef;
       if (saved.mergeCommitSha) item.mergeCommitSha = saved.mergeCommitSha;
       if (saved.verifyFailCount) item.verifyFailCount = saved.verifyFailCount;
+      if (saved.verifyWorkspaceRef) item.verifyWorkspaceRef = saved.verifyWorkspaceRef;
     }
 
     // Restore post-merge verification states from daemon state (these items have no worktree)
@@ -2211,6 +2221,18 @@ export async function cmdOrchestrate(
     },
     getMergeCommitSha: (repoRoot, prNumber) => ghGetMergeCommitSha(repoRoot, prNumber),
     checkCommitCI: (repoRoot, sha) => ghCheckCommitCI(repoRoot, sha),
+    launchVerifier: (itemId, mergeCommitSha, repoRoot) => {
+      const result = launchVerifierWorker(itemId, mergeCommitSha, repoRoot, aiTool, mux);
+      if (!result) return null;
+      return { worktreePath: result.worktreePath, workspaceRef: result.workspaceRef };
+    },
+    cleanVerifier: (itemId, verifyWorkspaceRef) => {
+      try { mux.closeWorkspace(verifyWorkspaceRef); } catch { /* best-effort */ }
+      try {
+        cleanSingleWorktree(`ninthwave-verify-${itemId}`, join(projectRoot, ".worktrees"), projectRoot);
+      } catch { /* best-effort — verifier worktree may already be cleaned */ }
+      return true;
+    },
   };
 
   // ── Crew mode setup ──────────────────────────────────────────────

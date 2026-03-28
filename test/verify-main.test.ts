@@ -162,20 +162,20 @@ describe("verify-failed → stuck after maxVerifyRetries exceeded", () => {
     expect(orch.getItem("H-1-1")!.failureReason).toContain("max verify retries");
   });
 
-  it("stays in verify-failed when verifyFailCount < maxVerifyRetries and CI still fails", () => {
+  it("transitions verify-failed → repairing-main and emits launch-verifier when retries remain", () => {
     const orch = new Orchestrator({ verifyMain: true, maxVerifyRetries: 2, reviewEnabled: false });
     orch.addItem(makeTodo("H-1-1"));
     orch.setState("H-1-1", "verify-failed");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
     orch.getItem("H-1-1")!.verifyFailCount = 1;
 
-    orch.processTransitions(
+    const actions = orch.processTransitions(
       snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "fail" }]),
       NOW,
     );
 
-    // Still in verify-failed — retries not exceeded
-    expect(orch.getItem("H-1-1")!.state).toBe("verify-failed");
+    expect(orch.getItem("H-1-1")!.state).toBe("repairing-main");
+    expect(actions).toContainEqual({ type: "launch-verifier", itemId: "H-1-1" });
   });
 
   it("verify-failed → done when CI recovers (flaky test)", () => {
@@ -550,8 +550,34 @@ describe("end-to-end: merge → verify → done flow", () => {
     expect(orch.getItem("H-1-1")!.state).toBe("done");
   });
 
-  it("complete flow with CI failure: merged → verifying → verify-failed → stuck", () => {
+  it("complete flow with CI failure: merged → verifying → verify-failed → stuck (max retries)", () => {
     const orch = new Orchestrator({ verifyMain: true, maxVerifyRetries: 1, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "merged");
+    orch.getItem("H-1-1")!.mergeCommitSha = "sha-abc";
+
+    // Step 1: merged → verifying
+    orch.processTransitions(emptySnapshot(), NOW);
+    expect(orch.getItem("H-1-1")!.state).toBe("verifying");
+
+    // Step 2: CI fails → verifying → verify-failed (verifyFailCount = 1)
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "fail" }]),
+      NOW,
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("verify-failed");
+    expect(orch.getItem("H-1-1")!.verifyFailCount).toBe(1);
+
+    // Step 3: maxVerifyRetries=1, so verify-failed → stuck (circuit breaker)
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "fail" }]),
+      NOW,
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("stuck");
+  });
+
+  it("complete flow with verifier: merged → verifying → verify-failed → repairing-main → done", () => {
+    const orch = new Orchestrator({ verifyMain: true, maxVerifyRetries: 3, reviewEnabled: false });
     orch.addItem(makeTodo("H-1-1"));
     orch.setState("H-1-1", "merged");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-abc";
@@ -566,13 +592,328 @@ describe("end-to-end: merge → verify → done flow", () => {
       NOW,
     );
     expect(orch.getItem("H-1-1")!.state).toBe("verify-failed");
-    expect(orch.getItem("H-1-1")!.verifyFailCount).toBe(1);
 
-    // Step 3: maxVerifyRetries=1, so verify-failed → stuck
-    orch.processTransitions(
+    // Step 3: verify-failed → repairing-main (launch verifier)
+    const actions = orch.processTransitions(
       snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "fail" }]),
       NOW,
     );
+    expect(orch.getItem("H-1-1")!.state).toBe("repairing-main");
+    expect(actions).toContainEqual({ type: "launch-verifier", itemId: "H-1-1" });
+
+    // Step 4: verifier fixes CI → repairing-main → done
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "pass" }]),
+      NOW,
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("done");
+  });
+});
+
+// ── Verify-failed → repairing-main → launch-verifier (H-VF-3) ──────
+
+describe("verify-failed → repairing-main transition triggers launch-verifier", () => {
+  it("emits launch-verifier action when transitioning to repairing-main", () => {
+    const orch = new Orchestrator({ verifyMain: true, maxVerifyRetries: 3, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "verify-failed");
+    orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
+    orch.getItem("H-1-1")!.verifyFailCount = 1;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "fail" }]),
+      NOW,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("repairing-main");
+    expect(actions).toContainEqual({ type: "launch-verifier", itemId: "H-1-1" });
+  });
+
+  it("does not emit launch-verifier when no mergeCommitSha", () => {
+    const orch = new Orchestrator({ verifyMain: true, maxVerifyRetries: 3, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "verify-failed");
+    // No mergeCommitSha set
+    orch.getItem("H-1-1")!.verifyFailCount = 1;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "fail" }]),
+      NOW,
+    );
+
+    // Stays in verify-failed since no SHA to hand to verifier
+    expect(orch.getItem("H-1-1")!.state).toBe("verify-failed");
+    expect(actions).not.toContainEqual(expect.objectContaining({ type: "launch-verifier" }));
+  });
+});
+
+// ── Repairing-main: verifier completion and failure ────────────────
+
+describe("repairing-main state handling", () => {
+  it("repairing-main → done when merge commit CI passes", () => {
+    const orch = new Orchestrator({ verifyMain: true, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "repairing-main");
+    orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
+    orch.getItem("H-1-1")!.verifyWorkspaceRef = "workspace:5";
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "pass" }]),
+      NOW,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("done");
+    expect(actions).toContainEqual({ type: "clean-verifier", itemId: "H-1-1" });
+  });
+
+  it("repairing-main → stuck when verifier worker dies (3 consecutive polls)", () => {
+    const orch = new Orchestrator({ verifyMain: true, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "repairing-main");
+    orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
+    orch.getItem("H-1-1")!.verifyWorkspaceRef = "workspace:5";
+
+    // Poll 1: worker not alive
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: false }]),
+      NOW,
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("repairing-main");
+
+    // Poll 2: still not alive
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: false }]),
+      NOW,
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("repairing-main");
+
+    // Poll 3: third consecutive — transition to stuck
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: false }]),
+      NOW,
+    );
     expect(orch.getItem("H-1-1")!.state).toBe("stuck");
+    expect(orch.getItem("H-1-1")!.failureReason).toContain("verifier worker died");
+    expect(actions).toContainEqual({ type: "clean-verifier", itemId: "H-1-1" });
+  });
+
+  it("repairing-main stays when CI still failing and worker alive", () => {
+    const orch = new Orchestrator({ verifyMain: true, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "repairing-main");
+    orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
+    orch.getItem("H-1-1")!.verifyWorkspaceRef = "workspace:5";
+
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "fail", workerAlive: true }]),
+      NOW,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("repairing-main");
+  });
+
+  it("repairing-main → done without clean-verifier when no verifyWorkspaceRef", () => {
+    const orch = new Orchestrator({ verifyMain: true, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "repairing-main");
+    orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
+    // No verifyWorkspaceRef
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "pass" }]),
+      NOW,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("done");
+    expect(actions).not.toContainEqual(expect.objectContaining({ type: "clean-verifier" }));
+  });
+});
+
+// ── executeLaunchVerifier ──────────────────────────────────────────
+
+describe("executeLaunchVerifier action", () => {
+  const ctx: ExecutionContext = {
+    projectRoot: "/tmp/proj",
+    worktreeDir: "/tmp/proj/.worktrees",
+    workDir: "/tmp/proj/.ninthwave/work",
+    aiTool: "test",
+  };
+
+  const baseDeps: OrchestratorDeps = {
+    launchSingleItem: () => null,
+    cleanSingleWorktree: () => true,
+    prMerge: () => true,
+    prComment: () => true,
+    sendMessage: () => true,
+    closeWorkspace: () => true,
+    fetchOrigin: () => {},
+    ffMerge: () => {},
+  };
+
+  it("sets verifyWorkspaceRef on successful launch", () => {
+    const orch = new Orchestrator({ verifyMain: true, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "repairing-main");
+    orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
+
+    const deps: OrchestratorDeps = {
+      ...baseDeps,
+      launchVerifier: (_itemId, _sha, _repoRoot) => ({
+        worktreePath: "/tmp/proj/.worktrees/ninthwave-verify-H-1-1",
+        workspaceRef: "workspace:7",
+      }),
+    };
+
+    const result = orch.executeAction(
+      { type: "launch-verifier", itemId: "H-1-1" },
+      ctx,
+      deps,
+    );
+
+    expect(result.success).toBe(true);
+    expect(orch.getItem("H-1-1")!.verifyWorkspaceRef).toBe("workspace:7");
+  });
+
+  it("fails when launchVerifier dep is not provided", () => {
+    const orch = new Orchestrator({ verifyMain: true, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "repairing-main");
+    orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
+
+    const result = orch.executeAction(
+      { type: "launch-verifier", itemId: "H-1-1" },
+      ctx,
+      baseDeps,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("not available");
+  });
+
+  it("fails when no mergeCommitSha", () => {
+    const orch = new Orchestrator({ verifyMain: true, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "repairing-main");
+    // No mergeCommitSha
+
+    const deps: OrchestratorDeps = {
+      ...baseDeps,
+      launchVerifier: () => ({ worktreePath: "/tmp", workspaceRef: "workspace:7" }),
+    };
+
+    const result = orch.executeAction(
+      { type: "launch-verifier", itemId: "H-1-1" },
+      ctx,
+      deps,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No merge commit SHA");
+  });
+});
+
+// ── executeCleanVerifier ─────────────────────────────────────────────
+
+describe("executeCleanVerifier action", () => {
+  const ctx: ExecutionContext = {
+    projectRoot: "/tmp/proj",
+    worktreeDir: "/tmp/proj/.worktrees",
+    workDir: "/tmp/proj/.ninthwave/work",
+    aiTool: "test",
+  };
+
+  const baseDeps: OrchestratorDeps = {
+    launchSingleItem: () => null,
+    cleanSingleWorktree: () => true,
+    prMerge: () => true,
+    prComment: () => true,
+    sendMessage: () => true,
+    closeWorkspace: () => true,
+    fetchOrigin: () => {},
+    ffMerge: () => {},
+  };
+
+  it("cleans up verifier workspace and clears verifyWorkspaceRef", () => {
+    const orch = new Orchestrator({ verifyMain: true, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "done");
+    orch.getItem("H-1-1")!.verifyWorkspaceRef = "workspace:7";
+
+    let cleanCalled = false;
+    const deps: OrchestratorDeps = {
+      ...baseDeps,
+      cleanVerifier: (_itemId, _wsRef) => {
+        cleanCalled = true;
+        return true;
+      },
+    };
+
+    const result = orch.executeAction(
+      { type: "clean-verifier", itemId: "H-1-1" },
+      ctx,
+      deps,
+    );
+
+    expect(result.success).toBe(true);
+    expect(cleanCalled).toBe(true);
+    expect(orch.getItem("H-1-1")!.verifyWorkspaceRef).toBeUndefined();
+  });
+
+  it("succeeds as no-op when cleanVerifier not provided", () => {
+    const orch = new Orchestrator({ verifyMain: true, reviewEnabled: false });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "done");
+    orch.getItem("H-1-1")!.verifyWorkspaceRef = "workspace:7";
+
+    const result = orch.executeAction(
+      { type: "clean-verifier", itemId: "H-1-1" },
+      ctx,
+      baseDeps,
+    );
+
+    expect(result.success).toBe(true);
+    expect(orch.getItem("H-1-1")!.verifyWorkspaceRef).toBeUndefined();
+  });
+});
+
+// ── AGENT_SOURCES includes verifier.md ─────────────────────────────
+
+describe("AGENT_SOURCES includes verifier", () => {
+  it("verifier.md is in AGENT_SOURCES", async () => {
+    const { AGENT_SOURCES } = await import("../core/commands/setup.ts");
+    expect(AGENT_SOURCES).toContain("verifier.md");
+  });
+
+  it("verifier.md has description in AGENT_DESCRIPTIONS", async () => {
+    const { AGENT_DESCRIPTIONS } = await import("../core/commands/setup.ts");
+    expect(AGENT_DESCRIPTIONS["verifier.md"]).toBeDefined();
+    expect(AGENT_DESCRIPTIONS["verifier.md"]).toContain("fix-forward");
+  });
+});
+
+// ── Verifier agent file exists with correct frontmatter ────────────
+
+describe("verifier agent file", () => {
+  it("agents/verifier.md exists and has correct frontmatter", async () => {
+    const { readFileSync, existsSync } = await import("fs");
+    const { join } = await import("path");
+    const agentPath = join(import.meta.dir, "..", "agents", "verifier.md");
+    expect(existsSync(agentPath)).toBe(true);
+
+    const content = readFileSync(agentPath, "utf-8");
+    expect(content).toContain("name: ninthwave-verifier");
+    expect(content).toContain("ninthwave orchestration agent");
+    expect(content).toContain("YOUR_VERIFY_ITEM_ID");
+    expect(content).toContain("YOUR_VERIFY_MERGE_SHA");
+    expect(content).toContain("PROJECT_ROOT");
+  });
+
+  it("has scope isolation guard", async () => {
+    const { readFileSync } = await import("fs");
+    const { join } = await import("path");
+    const agentPath = join(import.meta.dir, "..", "agents", "verifier.md");
+    const content = readFileSync(agentPath, "utf-8");
+    expect(content).toContain("no ninthwave verification context");
+    expect(content).toContain("nw watch");
   });
 });

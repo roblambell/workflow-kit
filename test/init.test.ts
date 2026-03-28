@@ -84,6 +84,10 @@ function createFakeBundle(dir: string): string {
     join(bundleDir, "agents", "reviewer.md"),
     "# Reviewer Agent\n",
   );
+  writeFileSync(
+    join(bundleDir, "agents", "verifier.md"),
+    "# Verifier Agent\n",
+  );
 
   // Create VERSION file
   writeFileSync(join(bundleDir, "VERSION"), "0.1.0\n");

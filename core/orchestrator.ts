@@ -108,6 +108,8 @@ export interface OrchestratorItem {
   mergeCommitSha?: string;
   /** Number of times CI verification on main has failed for this item. */
   verifyFailCount?: number;
+  /** cmux workspace reference for the verifier worker session. */
+  verifyWorkspaceRef?: string;
 }
 
 export interface OrchestratorConfig {
@@ -197,6 +199,8 @@ export type ActionType =
   | "sync-stack-comments"
   | "launch-review"
   | "clean-review"
+  | "launch-verifier"
+  | "clean-verifier"
   | "send-message"
   | "set-commit-status";
 
@@ -339,6 +343,16 @@ export interface OrchestratorDeps {
    * Returns "pass", "fail", or "pending".
    */
   checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending";
+  /**
+   * Launch a verifier worker for post-merge CI failure diagnosis and fix-forward.
+   * Creates a worktree from main and launches the verifier agent.
+   * Returns a workspace reference and worktree path on success.
+   */
+  launchVerifier?: (itemId: string, mergeCommitSha: string, repoRoot: string) => { worktreePath: string; workspaceRef: string } | null;
+  /**
+   * Clean up a verifier worker session and worktree.
+   */
+  cleanVerifier?: (itemId: string, verifyWorkspaceRef: string) => boolean;
 }
 
 /** Result of executing a single action. */
@@ -728,8 +742,7 @@ export class Orchestrator {
         break;
 
       case "repairing-main":
-        // Wired in H-VF-3 — for now, treat as stuck if it somehow gets here
-        actions = [];
+        actions = this.handleRepairingMain(item, snap);
         break;
 
       case "done":
@@ -1165,7 +1178,7 @@ export class Orchestrator {
   /**
    * Handle "verify-failed" state: CI failed on main after merge.
    * If max retries exceeded, transition to stuck.
-   * Otherwise, wait for H-VF-3 to wire repairing-main.
+   * Otherwise, launch a verifier worker to diagnose and fix-forward.
    */
   private handleVerifyFailed(
     item: OrchestratorItem,
@@ -1184,8 +1197,49 @@ export class Orchestrator {
       return [];
     }
 
-    // Otherwise remain in verify-failed (H-VF-3 wires repairing-main transition)
+    // Launch verifier worker to diagnose and fix-forward
+    if (item.mergeCommitSha) {
+      this.transition(item, "repairing-main");
+      return [{ type: "launch-verifier", itemId: item.id }];
+    }
+
     return [];
+  }
+
+  /**
+   * Handle "repairing-main" state: a verifier worker is diagnosing and fixing
+   * the post-merge CI failure.
+   *
+   * When the verifier creates a fix PR that merges and CI passes on main,
+   * the merge commit CI will turn green. Re-poll CI to detect recovery.
+   * If the verifier worker dies without fixing, mark stuck.
+   */
+  private handleRepairingMain(
+    item: OrchestratorItem,
+    snap: ItemSnapshot | undefined,
+  ): Action[] {
+    const actions: Action[] = [];
+
+    // CI recovered on main (verifier's fix merged, or flaky test resolved)
+    if (snap?.mergeCommitCIStatus === "pass") {
+      this.transition(item, "done");
+      if (item.verifyWorkspaceRef) {
+        actions.push({ type: "clean-verifier", itemId: item.id });
+      }
+      return actions;
+    }
+
+    // Verifier worker died without fixing
+    if (snap?.workerAlive === false && item.verifyWorkspaceRef) {
+      item.notAliveCount = (item.notAliveCount ?? 0) + 1;
+      if (item.notAliveCount >= 3) {
+        this.transition(item, "stuck");
+        item.failureReason = `verify-repair-failed: verifier worker died without fixing CI for merge commit ${item.mergeCommitSha}`;
+        actions.push({ type: "clean-verifier", itemId: item.id });
+      }
+    }
+
+    return actions;
   }
 
   // ── States where PR comment relay is active ────────────────────
@@ -1391,6 +1445,10 @@ export class Orchestrator {
         return this.executeLaunchReview(item, action, ctx, deps);
       case "clean-review":
         return this.executeCleanReview(item, deps);
+      case "launch-verifier":
+        return this.executeLaunchVerifier(item, ctx, deps);
+      case "clean-verifier":
+        return this.executeCleanVerifier(item, deps);
       case "send-message":
         return this.executeSendMessage(item, action, deps);
       case "set-commit-status":
@@ -2162,6 +2220,54 @@ export class Orchestrator {
       const msg = e instanceof Error ? e.message : String(e);
       item.reviewWorkspaceRef = undefined;
       return { success: false, error: `Review cleanup failed for ${item.id}: ${msg}` };
+    }
+  }
+
+  /** Launch a verifier worker for post-merge CI failure diagnosis. */
+  private executeLaunchVerifier(
+    item: OrchestratorItem,
+    ctx: ExecutionContext,
+    deps: OrchestratorDeps,
+  ): ActionResult {
+    if (!deps.launchVerifier) {
+      return { success: false, error: `Verifier worker not available for ${item.id}` };
+    }
+
+    if (!item.mergeCommitSha) {
+      return { success: false, error: `No merge commit SHA for verifier launch of ${item.id}` };
+    }
+
+    const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
+    try {
+      const result = deps.launchVerifier(item.id, item.mergeCommitSha, repoRoot);
+      if (result) {
+        item.verifyWorkspaceRef = result.workspaceRef;
+      }
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { success: false, error: `Verifier launch failed for ${item.id}: ${msg}` };
+    }
+  }
+
+  /** Clean up a verifier worker session and worktree. */
+  private executeCleanVerifier(
+    item: OrchestratorItem,
+    deps: OrchestratorDeps,
+  ): ActionResult {
+    if (!deps.cleanVerifier || !item.verifyWorkspaceRef) {
+      item.verifyWorkspaceRef = undefined;
+      return { success: true };
+    }
+
+    try {
+      deps.cleanVerifier(item.id, item.verifyWorkspaceRef);
+      item.verifyWorkspaceRef = undefined;
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      item.verifyWorkspaceRef = undefined;
+      return { success: false, error: `Verifier cleanup failed for ${item.id}: ${msg}` };
     }
   }
 
