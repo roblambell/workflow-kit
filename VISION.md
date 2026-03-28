@@ -36,7 +36,7 @@ v0.1.0 shipped March 2026. Twelve grind cycles (0-11) have shipped since then. S
 
 **0.2.0 scope reduction.** Narrowed focus to the core orchestration pipeline. Removed: external task backends (GitHub Issues, ClickUp, Sentry, PagerDuty), sandboxing (nono, policy proxy), remote dashboard server, webhook notifications, and legacy migration commands. These features were working but added surface area beyond the narrowest wedge. They may return as separate packages or plugins.
 
-**Crew mode foundation.** Multi-daemon coordination via WebSocket broker with creator-affinity scheduling. Mock broker for local testing, persistent daemon IDs, and reconnect state reconciliation. TUI displays crew status when connected.
+**Crew mode foundation.** Multi-daemon coordination via WebSocket broker with creator-affinity scheduling — items prefer the daemon whose human decomposed them, enabling easier steering and intervention. Affinity is a WIP-bounded preference, not a hard rule: when the creator's daemon hits its WIP limit, queued items overflow to other daemons. Review jobs are local-only and do not participate in crew claim scheduling. Mock broker for local testing, persistent daemon IDs, and reconnect state reconciliation. TUI displays crew status when connected.
 
 **Self-developing.** ninthwave dogfoods itself. The friction log has surfaced 25+ issues across 12+ grind cycles, driving improvements from poll interval tuning to deterministic worker health monitoring.
 

@@ -26,7 +26,7 @@
 - **CI failure recovery.** Orchestrator detects failures, notifies the worker, retries up to 3x, marks stuck if unresolvable.
 - **Auto-rebase.** Daemon rebases branches automatically. Falls back to a repair worker on conflicts.
 - **Auto-merge.** Approved PRs merge on CI pass, or gate on manual confirmation.
-- **Crew mode.** Multiple daemons on different machines coordinate via [ninthwave.sh](https://ninthwave.sh) broker with creator-affinity scheduling.
+- **Crew mode.** Multiple daemons on different machines coordinate via [ninthwave.sh](https://ninthwave.sh) broker. Creator-affinity scheduling prefers routing items to the daemon whose human decomposed them — enabling easier steering and intervention. Affinity is a preference within WIP limits: when the creator's daemon is full, queued items overflow to other daemons.
 - **Convention over configuration.** Cross-repo via sibling directories, port isolation, domain mapping. Zero config for the common case.
 
 ## Install

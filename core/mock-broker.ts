@@ -1,7 +1,16 @@
 // Mock localhost WebSocket broker for crew coordination.
 // Runs in-process via Bun.serve(). Implements the full crew protocol:
 // crew creation, WebSocket messaging, claim/sync/complete/heartbeat,
-// creator affinity scheduling, disconnect/reconnect, and JSONL event logging.
+// creator-affinity scheduling, disconnect/reconnect, and JSONL event logging.
+//
+// Creator affinity rationale: AI agents do NOT carry persistent context between
+// work items — each session starts fresh. The benefit of creator affinity is
+// human steering: the person who decomposed work items can intervene, steer, and
+// review more easily when those items run on their own machine. Affinity is a
+// preference within WIP limits, not a hard rule. When the creator's daemon hits
+// its WIP limit, queued items with no unresolved dependencies overflow to other
+// daemons. Review jobs are local-only and do not participate in crew claim
+// scheduling.
 
 import { appendFileSync, mkdirSync } from "fs";
 import { dirname } from "path";
@@ -375,7 +384,11 @@ export class MockBroker {
     const daemon = crew.daemons.get(daemonId);
     if (!daemon) return;
 
-    // Find the best available TODO for this daemon using creator affinity scheduling
+    // Find the best available TODO for this daemon using creator-affinity scheduling.
+    // Creator affinity prefers routing items back to the daemon whose human decomposed
+    // them — enabling easier steering and intervention, not agent context (agents start
+    // fresh each session). This is a soft preference: items overflow to other daemons
+    // when the creator's daemon is at its WIP limit.
     const available = Array.from(crew.items.values()).filter(
       (t) => t.claimedBy === null && t.completedBy === null,
     );
@@ -385,7 +398,7 @@ export class MockBroker {
       return;
     }
 
-    // Sort: creator affinity first, then priority (lower = higher), then oldest first
+    // Sort: creator affinity first (human steering preference), then priority (lower = higher), then oldest first
     available.sort((a, b) => {
       const aCreator = a.creatorDaemonId === daemonId ? 0 : 1;
       const bCreator = b.creatorDaemonId === daemonId ? 0 : 1;
