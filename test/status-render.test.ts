@@ -1784,11 +1784,14 @@ describe("formatTitleMetrics", () => {
         endedAt: new Date(now - 300_000).toISOString(),
       }),
     ];
-    const text = stripAnsi(formatTitleMetrics(items, 120, new Date(now - 3_600_000).toISOString()));
+    const termWidth = 120;
+    const text = stripAnsi(formatTitleMetrics(items, termWidth, new Date(now - 3_600_000).toISOString()));
     expect(text).toContain("ninthwave status");
     expect(text).toContain("Lead:");
     expect(text).toContain("Thru:");
     expect(text).toContain("Session:");
+    // Output must never fill termWidth exactly — leave 1 char safety margin
+    expect(text.length).toBeLessThanOrEqual(termWidth - 1);
   });
 
   it("falls back to plain title when terminal is too narrow (< 60)", () => {
@@ -1868,6 +1871,67 @@ describe("formatTitleMetrics", () => {
     const text = stripAnsi(formatTitleMetrics(items, 120, sessionStart));
     // All three metrics should appear on the same line
     expect(text).toMatch(/Lead:.*Thru:.*Session:/);
+  });
+
+  it("shows full metrics including unit suffix at exact boundary width", () => {
+    const now = Date.now();
+    // Use longer durations to produce metrics string > 40 chars (so minWidth > 60)
+    // Lead: 2h 25m requires endedAt - startedAt = 8_700_000ms
+    const items = [
+      makeStatusItem({
+        id: "A-1",
+        state: "merged",
+        startedAt: new Date(now - 9_000_000).toISOString(),
+        endedAt: new Date(now - 300_000).toISOString(),
+      }),
+    ];
+    // Session: 1h 30m
+    const sessionStart = new Date(now - 5_400_000).toISOString();
+
+    const plainTitle = "ninthwave status";
+    // Get the actual metrics string at a wide width
+    const wideText = stripAnsi(formatTitleMetrics(items, 200, sessionStart));
+    const metricsStr = wideText.trimEnd().slice(wideText.trimEnd().lastIndexOf("Lead:"));
+
+    // termWidth exactly at minWidth = titlePlain.length + 4 (min gap) + metricsStr.length
+    const minWidth = plainTitle.length + 4 + metricsStr.length;
+    expect(minWidth).toBeGreaterThanOrEqual(60); // sanity check
+
+    const text = stripAnsi(formatTitleMetrics(items, minWidth, sessionStart));
+    // Full metrics string including unit suffix must be present
+    expect(text).toContain(metricsStr);
+    // Session duration must have its unit suffix (e.g., "1h 30m" not "1h 30")
+    expect(text).toMatch(/Session: \d+h \d+m/);
+    // Output stays within safety margin — never fills termWidth exactly
+    expect(text.length).toBeLessThanOrEqual(minWidth - 1);
+  });
+
+  it("falls back to plain title when termWidth is too narrow for metrics with gap", () => {
+    const now = Date.now();
+    // Use longer durations so minWidth > 60 (otherwise < 60 check triggers first)
+    const items = [
+      makeStatusItem({
+        id: "A-1",
+        state: "merged",
+        startedAt: new Date(now - 9_000_000).toISOString(),
+        endedAt: new Date(now - 300_000).toISOString(),
+      }),
+    ];
+    const sessionStart = new Date(now - 5_400_000).toISOString();
+
+    const plainTitle = "ninthwave status";
+    const wideText = stripAnsi(formatTitleMetrics(items, 200, sessionStart));
+    const metricsStr = wideText.trimEnd().slice(wideText.trimEnd().lastIndexOf("Lead:"));
+    const minWidth = plainTitle.length + 4 + metricsStr.length;
+
+    // Set width 1 below minWidth — enough for the 60-char threshold but not for the gap
+    const tooNarrow = minWidth - 1;
+    expect(tooNarrow).toBeGreaterThanOrEqual(60); // sanity: not hitting the < 60 fallback
+
+    const text = stripAnsi(formatTitleMetrics(items, tooNarrow, sessionStart));
+    // Should gracefully fall back to plain title without metrics
+    expect(text).toBe("ninthwave status");
+    expect(text).not.toContain("Lead:");
   });
 });
 

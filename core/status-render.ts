@@ -1097,7 +1097,9 @@ export function formatTitleMetrics(
   const minWidth = titlePlain.length + 4 + metricsStr.length;
 
   if (termWidth >= minWidth) {
-    const gap = termWidth - titlePlain.length - metricsStr.length;
+    // Subtract 1 to leave a safety margin — some terminals clip the last
+    // character when the line fills exactly termWidth (deferred-wrap behaviour).
+    const gap = termWidth - titlePlain.length - metricsStr.length - 1;
     return `${title}${" ".repeat(gap)}${DIM}${metricsStr}${RESET}`;
   }
   // Not enough room — plain title
