@@ -646,9 +646,12 @@ export function launchReviewWorker(
   let workDir: string;
 
   if (autoFixMode === "off") {
-    // No worktree needed — review worker reads diff via gh and posts comments
-    workDir = join(tmpdir(), `nw-review-${itemId}-${Date.now()}`);
+    // No git worktree needed — review worker reads diff via gh and posts comments.
+    // Use a directory under the project root so it inherits workspace trust
+    // (launching in /tmp triggers Claude Code's interactive trust prompt).
+    workDir = join(repoRoot, ".worktrees", `review-${itemId}`);
     mkdirSync(workDir, { recursive: true });
+    ensureWorktreeExcluded(repoRoot);
   } else {
     // direct or pr: create worktree from existing ninthwave/{id} branch
     const branchName = `ninthwave/${itemId}`;
