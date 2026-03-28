@@ -832,6 +832,7 @@ describe("Orchestrator", () => {
         defaultCtx.projectRoot,
         defaultCtx.aiTool,
         undefined, // baseBranch (no stacking)
+        false, // forceWorkerLaunch (no needsCiFix)
       );
       expect(orch.getItem("H-1-1")!.workspaceRef).toBe("workspace:1");
     });
@@ -1271,7 +1272,7 @@ describe("Orchestrator", () => {
       );
     });
 
-    it("notify-ci-failure: fails without workspace ref", () => {
+    it("notify-ci-failure: transitions to ready with needsCiFix when no workspace ref (H-WR-1)", () => {
       const deps = mockDeps();
       orch.addItem(makeTodo("H-1-1"));
       orch.setState("H-1-1", "ci-failed");
@@ -1283,8 +1284,11 @@ describe("Orchestrator", () => {
         deps,
       );
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("No workspace reference");
+      // Instead of failing, transitions to ready for re-launch
+      expect(result.success).toBe(true);
+      const item = orch.getItem("H-1-1")!;
+      expect(item.state).toBe("ready");
+      expect(item.needsCiFix).toBe(true);
       expect(deps.sendMessage).not.toHaveBeenCalled();
       expect(deps.prComment).not.toHaveBeenCalled();
     });
@@ -4281,6 +4285,7 @@ describe("Orchestrator", () => {
           defaultCtx.projectRoot,
           defaultCtx.aiTool,
           "todo/A-1-0",
+          false, // forceWorkerLaunch
         );
       });
 
@@ -4302,6 +4307,7 @@ describe("Orchestrator", () => {
           defaultCtx.projectRoot,
           defaultCtx.aiTool,
           undefined,
+          false, // forceWorkerLaunch
         );
       });
     });

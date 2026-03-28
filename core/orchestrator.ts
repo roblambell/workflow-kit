@@ -99,6 +99,8 @@ export interface OrchestratorItem {
   lastCommentCheck?: string;
   /** Number of consecutive repair worker launches for rebase conflict resolution. Resets when conflicts resolve (isMergeable !== false). */
   repairAttemptCount?: number;
+  /** Set when a CI failure notification failed because no worker was running. Signals executeLaunch to force-launch a worker even when an existing PR is found. Cleared after launch. */
+  needsCiFix?: boolean;
 }
 
 export interface OrchestratorConfig {
@@ -212,6 +214,7 @@ export interface OrchestratorDeps {
     projectRoot: string,
     aiTool: string,
     baseBranch?: string,
+    forceWorkerLaunch?: boolean,
   ) => { worktreePath: string; workspaceRef: string; existingPrNumber?: number } | null;
   cleanSingleWorktree: (
     id: string,
@@ -1310,6 +1313,12 @@ export class Orchestrator {
       writeHeartbeat(ctx.projectRoot, item.id, 0, "Starting");
     } catch { /* best-effort — heartbeat reset failure doesn't block launch */ }
 
+    // When needsCiFix is set, force worker launch even if an existing PR is
+    // found. This ensures CI failures on restart are addressed by a live worker
+    // rather than silently tracked in ci-pending with no one to fix them (H-WR-1).
+    const forceWorker = item.needsCiFix === true;
+    item.needsCiFix = false;
+
     try {
       const result = deps.launchSingleItem(
         item.todo,
@@ -1318,6 +1327,7 @@ export class Orchestrator {
         ctx.projectRoot,
         ctx.aiTool,
         action.baseBranch,
+        forceWorker,
       );
       if (!result) {
         if (item.retryCount < this.config.maxRetries) {
@@ -1598,7 +1608,12 @@ export class Orchestrator {
     const message = action.message || "CI failed — please investigate and fix.";
 
     if (!item.workspaceRef) {
-      return { success: false, error: `No workspace reference for ${item.id} — cannot notify worker of CI failure` };
+      // No live worker (e.g., daemon restarted). Re-launch with a fresh worker
+      // to fix CI. The needsCiFix flag tells executeLaunch to force-launch a
+      // worker even when an existing PR is found (H-WR-1).
+      item.needsCiFix = true;
+      this.transition(item, "ready");
+      return { success: true };
     }
 
     const sent = deps.sendMessage(item.workspaceRef, message);

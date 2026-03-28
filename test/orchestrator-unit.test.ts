@@ -2629,3 +2629,178 @@ describe("repair rebase circuit breaker and worker message priority", () => {
     expect(item.repairAttemptCount).toBe(maxAttempts);
   });
 });
+
+// ── Daemon-worker worktree race prevention (H-WR-1) ──────────────────
+
+describe("daemon-worker worktree race prevention (H-WR-1)", () => {
+  function makeMinimalDeps(overrides: Partial<OrchestratorDeps> = {}): OrchestratorDeps {
+    return {
+      launchSingleItem: () => ({ worktreePath: "/tmp/wt", workspaceRef: "workspace:1" }),
+      cleanSingleWorktree: () => true,
+      prMerge: () => true,
+      prComment: () => true,
+      sendMessage: () => true,
+      closeWorkspace: () => true,
+      fetchOrigin: () => {},
+      ffMerge: () => {},
+      ...overrides,
+    };
+  }
+
+  const ctx: ExecutionContext = {
+    projectRoot: "/tmp/proj",
+    worktreeDir: "/tmp/proj/.worktrees",
+    todosDir: "/tmp/proj/.ninthwave/todos",
+    aiTool: "claude",
+  };
+
+  it("daemon-rebase is never emitted in the same cycle as a worker launch for the same item", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("H-1-1"));
+
+    // Item starts in ready state — should get a launch action, NOT daemon-rebase
+    const snap = snapshotWith([{ id: "H-1-1" }], ["H-1-1"]);
+    const actions = orch.processTransitions(snap);
+
+    const launchActions = actions.filter(a => a.type === "launch" && a.itemId === "H-1-1");
+    const rebaseActions = actions.filter(a => a.type === "daemon-rebase" && a.itemId === "H-1-1");
+
+    // Should have a launch action but NOT a daemon-rebase
+    expect(launchActions.length).toBe(1);
+    expect(rebaseActions.length).toBe(0);
+  });
+
+  it("ci-pending item with merge conflicts gets daemon-rebase but not launch", () => {
+    const orch = new Orchestrator({ wipLimit: 2 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "ci-pending");
+    const item = orch.getItem("H-1-1")!;
+    item.prNumber = 42;
+
+    const snap = snapshotWith([{
+      id: "H-1-1",
+      prNumber: 42,
+      prState: "open" as const,
+      ciStatus: "pending" as const,
+      isMergeable: false,
+    }]);
+    const actions = orch.processTransitions(snap);
+
+    const launchActions = actions.filter(a => a.type === "launch" && a.itemId === "H-1-1");
+    const rebaseActions = actions.filter(a => a.type === "daemon-rebase" && a.itemId === "H-1-1");
+
+    expect(launchActions.length).toBe(0);
+    expect(rebaseActions.length).toBe(1);
+  });
+
+  it("executeNotifyCiFailure transitions to ready with needsCiFix when no workspace", () => {
+    const orch = new Orchestrator({ wipLimit: 1 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "ci-failed");
+    const item = orch.getItem("H-1-1")!;
+    item.prNumber = 42;
+    item.ciFailCount = 1;
+    // No workspaceRef — simulating restart with dead worker
+
+    const deps = makeMinimalDeps();
+    const result = orch.executeAction(
+      { type: "notify-ci-failure", itemId: "H-1-1", prNumber: 42, message: "CI failed" },
+      ctx,
+      deps,
+    );
+
+    expect(result.success).toBe(true);
+    expect(item.state).toBe("ready");
+    expect(item.needsCiFix).toBe(true);
+  });
+
+  it("executeLaunch with needsCiFix passes forceWorkerLaunch and launches worker", () => {
+    const orch = new Orchestrator({ wipLimit: 1 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "launching");
+    const item = orch.getItem("H-1-1")!;
+    item.needsCiFix = true;
+    item.ciFailCount = 1;
+    item.prNumber = 42;
+
+    let receivedForceFlag = false;
+    const deps = makeMinimalDeps({
+      launchSingleItem: (_item, _td, _wd, _pr, _ai, _bb, forceWorkerLaunch) => {
+        receivedForceFlag = forceWorkerLaunch === true;
+        // With forceWorkerLaunch, returns normal launch result (no existingPrNumber)
+        return { worktreePath: "/tmp/wt", workspaceRef: "workspace:1" };
+      },
+    });
+
+    const result = orch.executeAction({ type: "launch", itemId: "H-1-1" }, ctx, deps);
+
+    expect(result.success).toBe(true);
+    expect(receivedForceFlag).toBe(true);
+    expect(item.workspaceRef).toBe("workspace:1");
+    expect(item.needsCiFix).toBe(false);
+  });
+
+  it("executeLaunch without needsCiFix transitions to ci-pending on existingPrNumber", () => {
+    const orch = new Orchestrator({ wipLimit: 1 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "launching");
+
+    const deps = makeMinimalDeps({
+      launchSingleItem: () => ({ worktreePath: "/tmp/wt", workspaceRef: "", existingPrNumber: 271 }),
+    });
+
+    const result = orch.executeAction({ type: "launch", itemId: "H-1-1" }, ctx, deps);
+
+    expect(result.success).toBe(true);
+    const item = orch.getItem("H-1-1")!;
+    expect(item.state).toBe("ci-pending");
+    expect(item.prNumber).toBe(271);
+    expect(item.workspaceRef).toBeUndefined();
+  });
+
+  it("full CI-failed restart cycle: ci-failed → notify fails → ready → launch with worker", () => {
+    const orch = new Orchestrator({ wipLimit: 1 });
+    orch.addItem(makeTodo("H-1-1"));
+    orch.setState("H-1-1", "ci-failed");
+    const item = orch.getItem("H-1-1")!;
+    item.prNumber = 42;
+    item.ciFailCount = 1;
+    // No workspaceRef — dead worker after restart
+
+    const deps = makeMinimalDeps({
+      launchSingleItem: (_item, _td, _wd, _pr, _ai, _bb, forceWorkerLaunch) => {
+        if (forceWorkerLaunch) {
+          return { worktreePath: "/tmp/wt", workspaceRef: "workspace:2" };
+        }
+        return { worktreePath: "/tmp/wt", workspaceRef: "", existingPrNumber: 42 };
+      },
+    });
+
+    // Step 1: handlePrLifecycle emits notify-ci-failure
+    const snap = snapshotWith([{
+      id: "H-1-1",
+      prNumber: 42,
+      prState: "open" as const,
+      ciStatus: "fail" as const,
+    }]);
+    const actions = orch.processTransitions(snap);
+    const notifyAction = actions.find(a => a.type === "notify-ci-failure");
+    expect(notifyAction).toBeDefined();
+
+    // Step 2: executeNotifyCiFailure → no workspace → ready + needsCiFix
+    orch.executeAction(notifyAction!, ctx, deps);
+    expect(item.state).toBe("ready");
+    expect(item.needsCiFix).toBe(true);
+
+    // Step 3: launchReadyItems picks it up
+    const snap2 = snapshotWith([{ id: "H-1-1" }], []);
+    const actions2 = orch.processTransitions(snap2);
+    const launchAction = actions2.find(a => a.type === "launch");
+    expect(launchAction).toBeDefined();
+
+    // Step 4: executeLaunch with forceWorkerLaunch → worker launched
+    orch.executeAction(launchAction!, ctx, deps);
+    expect(item.workspaceRef).toBe("workspace:2");
+    expect(item.needsCiFix).toBe(false);
+  });
+});
