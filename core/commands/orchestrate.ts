@@ -1714,6 +1714,9 @@ export function forkDaemon(
   return { pid, logPath };
 }
 
+/** Renamed entry point: `nw watch` dispatches here. */
+export const cmdWatch = cmdOrchestrate;
+
 export async function cmdOrchestrate(
   args: string[],
   todosDir: string,
@@ -1735,6 +1738,7 @@ export async function cmdOrchestrate(
   let reviewCanApprove = false;
   let reviewExternal = false;
   let watchMode = false;
+  let noWatch = false;
   let watchIntervalSecs: number | undefined;
   let jsonFlag = false;
   let skipPreflight = false;
@@ -1813,7 +1817,12 @@ export async function cmdOrchestrate(
         i += 1;
         break;
       case "--watch":
+        // Accepted silently for backwards compat (watch is now default for daemon)
         watchMode = true;
+        i += 1;
+        break;
+      case "--no-watch":
+        noWatch = true;
         i += 1;
         break;
       case "--watch-interval":
@@ -1847,6 +1856,11 @@ export async function cmdOrchestrate(
       default:
         die(`Unknown option: ${args[i]}`);
     }
+  }
+
+  // ── --daemon implies --watch unless --no-watch is explicitly set ─────
+  if (daemonMode && !noWatch) {
+    watchMode = true;
   }
 
   // ── Pre-flight environment validation ────────────────────────────────
@@ -1905,7 +1919,7 @@ export async function cmdOrchestrate(
     // Check if daemon is already running
     const existingPid = isDaemonRunning(projectRoot);
     if (existingPid !== null) {
-      die(`Orchestrator daemon is already running (PID ${existingPid}). Use 'ninthwave stop' first.`);
+      die(`Watch daemon is already running (PID ${existingPid}). Use 'ninthwave stop' first.`);
     }
 
     // Build child args: replace --daemon with --_daemon-child
@@ -1914,7 +1928,7 @@ export async function cmdOrchestrate(
 
     const { pid, logPath } = forkDaemon(childArgs, projectRoot);
 
-    console.log(`Orchestrator daemon started (PID ${pid})`);
+    console.log(`Watch daemon started (PID ${pid})`);
     console.log(`  Log:   ${logPath}`);
     console.log(`  State: ${stateFilePath(projectRoot)}`);
     console.log(`  Stop:  ninthwave stop`);
@@ -1943,7 +1957,7 @@ export async function cmdOrchestrate(
   // Prevent duplicate orchestrator instances (foreground or daemon-child)
   const existingPid = isDaemonRunning(projectRoot);
   if (existingPid !== null && existingPid !== process.pid) {
-    die(`Another orchestrator is already running (PID ${existingPid}). Use 'ninthwave stop' first, or kill the stale process.`);
+    die(`Another watch daemon is already running (PID ${existingPid}). Use 'ninthwave stop' first, or kill the stale process.`);
   }
 
   // Compute memory-aware WIP default, allow --wip-limit to override
@@ -1976,7 +1990,7 @@ export async function cmdOrchestrate(
 
   if (itemIds.length === 0) {
     die(
-      "Usage: ninthwave orchestrate --items ID1 ID2 ... [--merge-strategy asap|approved|ask] [--wip-limit N] [--poll-interval SECS] [--daemon] [--watch] [--watch-interval SECS]",
+      "Usage: ninthwave watch --items ID1 ID2 ... [--merge-strategy asap|approved|ask] [--wip-limit N] [--poll-interval SECS] [--daemon] [--no-watch] [--watch-interval SECS]",
     );
   }
 
@@ -2147,7 +2161,7 @@ export async function cmdOrchestrate(
 
     info(`Crew created: ${crewCode}`);
     info(`  Port: ${brokerPort}`);
-    info(`  Join: ninthwave orchestrate --crew ${crewCode} --crew-port ${brokerPort} ...`);
+    info(`  Join: ninthwave watch --crew ${crewCode} --crew-port ${brokerPort} ...`);
   }
 
   let resolvedCrewName: string | undefined;

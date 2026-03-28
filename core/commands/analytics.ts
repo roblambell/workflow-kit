@@ -300,7 +300,7 @@ export function formatAnalytics(summary: AnalyticsSummary, showAll: boolean): st
 
   if (summary.totalRuns === 0) {
     lines.push("No analytics data found.");
-    lines.push("Run `ninthwave orchestrate` to generate metrics.");
+    lines.push("Run `ninthwave watch` to generate metrics.");
     return lines;
   }
 

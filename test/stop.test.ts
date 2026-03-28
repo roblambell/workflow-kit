@@ -54,7 +54,7 @@ describe("cmdStop", () => {
   it("reports no daemon running when no PID file", () => {
     const deps = createDeps(io);
     const msg = cmdStop("/project", deps);
-    expect(msg).toContain("No orchestrator daemon is running");
+    expect(msg).toContain("No watch daemon is running");
   });
 
   it("sends SIGTERM to running daemon", () => {

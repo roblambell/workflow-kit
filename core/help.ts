@@ -29,7 +29,7 @@ import { cmdCiFailures } from "./commands/ci.ts";
 import { cmdVersionBump } from "./commands/version-bump.ts";
 import { cmdSetup } from "./commands/setup.ts";
 import { cmdInit } from "./commands/init.ts";
-import { cmdOrchestrate } from "./commands/orchestrate.ts";
+import { cmdWatch } from "./commands/orchestrate.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
 import { cmdAnalytics } from "./commands/analytics.ts";
 import { cmdStop } from "./commands/stop.ts";
@@ -346,15 +346,15 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
     examples: ["nw version-bump"],
   },
   {
-    name: "orchestrate",
-    usage: "orchestrate [--items ID1 ID2 ...] [--daemon] [--watch]",
-    description: "Orchestrate parallel processing (interactive if no --items)",
+    name: "watch",
+    usage: "watch [--items ID1 ID2 ...] [--daemon] [--no-watch]",
+    description: "Run the full pipeline (TUI, daemon, or JSON modes)",
     group: "workflow",
     needsRoot: true,
     needsTodos: true,
-    handler: async (ctx) => { await cmdOrchestrate(ctx.args, ctx.todosDir, ctx.worktreeDir, ctx.projectRoot); },
-    flags: ["--items", "--daemon", "--watch"],
-    examples: ["nw orchestrate", "nw orchestrate --items H-FOO-1 H-FOO-2"],
+    handler: async (ctx) => { await cmdWatch(ctx.args, ctx.todosDir, ctx.worktreeDir, ctx.projectRoot); },
+    flags: ["--items", "--daemon", "--no-watch", "--watch"],
+    examples: ["nw watch", "nw watch --items H-FOO-1 H-FOO-2", "nw watch --daemon"],
   },
   {
     name: "stop",

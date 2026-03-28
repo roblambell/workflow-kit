@@ -144,7 +144,7 @@ export function cmdRetry(
       }
     } else {
       deps.log(
-        `\nDaemon is not running. Start the orchestrator to process retried items:\n  ninthwave orchestrate --items ${ids.join(" ")} --daemon`,
+        `\nDaemon is not running. Start the watch daemon to process retried items:\n  ninthwave watch --items ${ids.join(" ")} --daemon`,
       );
     }
   }
