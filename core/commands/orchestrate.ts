@@ -1832,7 +1832,7 @@ export interface ParsedWatchArgs {
 
 export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   const itemIds: string[] = [];
-  let mergeStrategy: MergeStrategy = "asap";
+  let mergeStrategy: MergeStrategy = "auto";
   let wipLimitOverride: number | undefined;
   let pollIntervalOverride: number | undefined;
   let frictionDir: string | undefined;
@@ -1868,7 +1868,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         }
         break;
       case "--merge-strategy":
-        mergeStrategy = (args[i + 1] ?? "asap") as MergeStrategy;
+        mergeStrategy = (args[i + 1] ?? "auto") as MergeStrategy;
         i += 2;
         break;
       case "--wip-limit":
@@ -2152,7 +2152,7 @@ export async function cmdOrchestrate(
 
   if (itemIds.length === 0) {
     die(
-      "Usage: ninthwave watch --items ID1 ID2 ... [--merge-strategy asap|approved|ask] [--wip-limit N] [--poll-interval SECS] [--daemon] [--no-watch] [--watch-interval SECS]",
+      "Usage: ninthwave watch --items ID1 ID2 ... [--merge-strategy auto|manual] [--wip-limit N] [--poll-interval SECS] [--daemon] [--no-watch] [--watch-interval SECS]",
     );
   }
 

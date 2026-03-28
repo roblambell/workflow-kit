@@ -45,19 +45,14 @@ interface StrategyOption {
 
 const MERGE_STRATEGIES: StrategyOption[] = [
   {
-    value: "asap",
-    label: "asap",
-    description: "Auto-merge when CI passes (fastest)",
+    value: "auto",
+    label: "auto",
+    description: "Auto-merge when CI passes (and review completes, if enabled)",
   },
   {
-    value: "approved",
-    label: "approved",
-    description: "Merge after GitHub approval + CI",
-  },
-  {
-    value: "reviewed",
-    label: "reviewed",
-    description: "Merge after explicit review + CI",
+    value: "manual",
+    label: "manual",
+    description: "Create PR, never auto-merge — human clicks merge",
   },
 ];
 
@@ -257,7 +252,7 @@ export async function promptMergeStrategy(
   console.log();
   for (let i = 0; i < MERGE_STRATEGIES.length; i++) {
     const s = MERGE_STRATEGIES[i]!;
-    const defaultTag = s.value === "asap" ? ` ${GREEN}(default)${RESET}` : "";
+    const defaultTag = s.value === "auto" ? ` ${GREEN}(default)${RESET}` : "";
     console.log(
       `  ${BOLD}${i + 1}${RESET}. ${CYAN}${s.label}${RESET}  ${DIM}— ${s.description}${RESET}${defaultTag}`,
     );
@@ -269,8 +264,8 @@ export async function promptMergeStrategy(
       `${BOLD}Choose [1-${MERGE_STRATEGIES.length}]: ${RESET}`,
     );
 
-    // Default to asap on empty input
-    if (answer === "") return "asap";
+    // Default to auto on empty input
+    if (answer === "") return "auto";
 
     const idx = parseInt(answer, 10) - 1;
     if (idx >= 0 && idx < MERGE_STRATEGIES.length) {

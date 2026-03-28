@@ -40,7 +40,7 @@ export type OrchestratorItemState =
   | "done"
   | "stuck";
 
-export type MergeStrategy = "asap" | "approved" | "ask" | "reviewed";
+export type MergeStrategy = "auto" | "manual";
 
 // ── Interfaces ───────────────────────────────────────────────────────
 
@@ -117,7 +117,7 @@ export interface OrchestratorItem {
 export interface OrchestratorConfig {
   /** Max concurrent items in launching/implementing/pr-open/ci-pending/ci-passed/ci-failed/review-pending states. */
   wipLimit: number;
-  /** When to auto-merge: asap (CI pass), approved (CI + review), ask (never auto). */
+  /** When to auto-merge: auto (CI pass, respects review gate + CHANGES_REQUESTED), manual (never auto-merge). */
   mergeStrategy: MergeStrategy;
   /** Max CI failures before marking stuck. */
   maxCiRetries: number;
@@ -372,7 +372,7 @@ export interface ActionResult {
 
 export const DEFAULT_CONFIG: OrchestratorConfig = {
   wipLimit: 4,
-  mergeStrategy: "asap",
+  mergeStrategy: "auto",
   maxCiRetries: 2,
   maxRetries: 1,
   launchTimeoutMs: 30 * 60 * 1000,   // 30 minutes
@@ -1376,7 +1376,7 @@ export class Orchestrator {
     }
 
     switch (this.config.mergeStrategy) {
-      case "asap":
+      case "auto":
         // Guard: never auto-merge when a reviewer has explicitly requested changes
         if (snap?.reviewDecision === "CHANGES_REQUESTED") {
           if (item.state !== "review-pending") {
@@ -1384,7 +1384,7 @@ export class Orchestrator {
           }
           break;
         }
-        // Merge as soon as CI passes
+        // Merge as soon as CI passes (and review completes, if review is enabled)
         this.transition(item, "merging", eventTime);
         actions.push({
           type: "merge",
@@ -1393,43 +1393,11 @@ export class Orchestrator {
         });
         break;
 
-      case "approved":
-        // Need review approval before merging
-        if (snap?.reviewDecision === "APPROVED") {
-          this.transition(item, "merging", eventTime);
-          actions.push({
-            type: "merge",
-            itemId: item.id,
-            prNumber: item.prNumber,
-          });
-        } else if (item.state !== "review-pending") {
-          // Move to review-pending to wait for approval
-          this.transition(item, "review-pending", eventTime);
-        }
-        break;
-
-      case "ask":
+      case "manual":
         // Never auto-merge — just move to review-pending
         if (item.state !== "review-pending") {
           this.transition(item, "review-pending", eventTime);
         }
-        break;
-
-      case "reviewed":
-        // Merge after AI review completes (review gate in evaluateMerge handles reviewing state).
-        // Once reviewCompleted is true, merge like asap.
-        if (snap?.reviewDecision === "CHANGES_REQUESTED") {
-          if (item.state !== "review-pending") {
-            this.transition(item, "review-pending", eventTime);
-          }
-          break;
-        }
-        this.transition(item, "merging", eventTime);
-        actions.push({
-          type: "merge",
-          itemId: item.id,
-          prNumber: item.prNumber,
-        });
         break;
     }
 

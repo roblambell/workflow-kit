@@ -293,7 +293,7 @@ describe("--no-verify-main flag", () => {
 
 describe("merge commit SHA retrieval in executeMerge", () => {
   it("captures mergeCommitSha on successful merge when verifyMain=true", () => {
-    const orch = new Orchestrator({ verifyMain: true, mergeStrategy: "asap", reviewEnabled: false });
+    const orch = new Orchestrator({ verifyMain: true, mergeStrategy: "auto", reviewEnabled: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "merging");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -332,7 +332,7 @@ describe("merge commit SHA retrieval in executeMerge", () => {
   });
 
   it("falls back to done when getMergeCommitSha returns null", () => {
-    const orch = new Orchestrator({ verifyMain: true, mergeStrategy: "asap", reviewEnabled: false });
+    const orch = new Orchestrator({ verifyMain: true, mergeStrategy: "auto", reviewEnabled: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "merging");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -372,7 +372,7 @@ describe("merge commit SHA retrieval in executeMerge", () => {
   });
 
   it("falls back to done when getMergeCommitSha throws", () => {
-    const orch = new Orchestrator({ verifyMain: true, mergeStrategy: "asap", reviewEnabled: false });
+    const orch = new Orchestrator({ verifyMain: true, mergeStrategy: "auto", reviewEnabled: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "merging");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -515,7 +515,7 @@ describe("dependency resolution with verification", () => {
 
 describe("end-to-end: merge → verify → done flow", () => {
   it("complete flow: merging → merged (first cycle) → done (second cycle, no SHA)", () => {
-    const orch = new Orchestrator({ verifyMain: true, mergeStrategy: "asap", reviewEnabled: false });
+    const orch = new Orchestrator({ verifyMain: true, mergeStrategy: "auto", reviewEnabled: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "merging");
     orch.getItem("H-1-1")!.prNumber = 42;

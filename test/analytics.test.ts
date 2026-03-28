@@ -122,7 +122,7 @@ describe("collectRunMetrics", () => {
 
     const config: OrchestratorConfig = {
       wipLimit: 4,
-      mergeStrategy: "asap",
+      mergeStrategy: "auto",
       maxCiRetries: 2,
     };
 
@@ -136,7 +136,7 @@ describe("collectRunMetrics", () => {
     expect(metrics.itemsAttempted).toBe(2);
     expect(metrics.itemsCompleted).toBe(1);
     expect(metrics.itemsFailed).toBe(1);
-    expect(metrics.mergeStrategy).toBe("asap");
+    expect(metrics.mergeStrategy).toBe("auto");
   });
 
   it("tracks CI retry count per item", () => {
@@ -203,7 +203,7 @@ describe("collectRunMetrics", () => {
   it("handles zero-item run gracefully", () => {
     const config: OrchestratorConfig = {
       wipLimit: 4,
-      mergeStrategy: "asap",
+      mergeStrategy: "auto",
       maxCiRetries: 2,
     };
 
@@ -220,7 +220,7 @@ describe("collectRunMetrics", () => {
     expect(metrics.itemsFailed).toBe(0);
     expect(metrics.items).toEqual([]);
     expect(metrics.wallClockMs).toBe(1000);
-    expect(metrics.mergeStrategy).toBe("asap");
+    expect(metrics.mergeStrategy).toBe("auto");
   });
 });
 
@@ -235,7 +235,7 @@ describe("writeRunMetrics", () => {
       itemsAttempted: 1,
       itemsCompleted: 1,
       itemsFailed: 0,
-      mergeStrategy: "asap",
+      mergeStrategy: "auto",
       items: [{ id: "T-1-1", state: "done", ciRetryCount: 0, tool: "claude" }],
     };
 
@@ -262,7 +262,7 @@ describe("writeRunMetrics", () => {
       itemsAttempted: 0,
       itemsCompleted: 0,
       itemsFailed: 0,
-      mergeStrategy: "asap",
+      mergeStrategy: "auto",
       items: [],
     };
 
@@ -281,7 +281,7 @@ describe("writeRunMetrics", () => {
 
 describe("orchestrateLoop analytics integration", () => {
   it("writes metrics file on orchestrate_complete", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -329,7 +329,7 @@ describe("orchestrateLoop analytics integration", () => {
     expect(written.itemsAttempted).toBe(1);
     expect(written.itemsCompleted).toBe(1);
     expect(written.itemsFailed).toBe(0);
-    expect(written.mergeStrategy).toBe("asap");
+    expect(written.mergeStrategy).toBe("auto");
     expect(written.wallClockMs).toBeGreaterThanOrEqual(0);
     expect(written.items).toHaveLength(1);
     expect(written.items[0].id).toBe("T-1-1");
@@ -340,7 +340,7 @@ describe("orchestrateLoop analytics integration", () => {
   });
 
   it("includes CI retry count in metrics for items with failures", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -388,7 +388,7 @@ describe("orchestrateLoop analytics integration", () => {
   });
 
   it("skips analytics when analyticsDir is not configured", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -427,7 +427,7 @@ describe("orchestrateLoop analytics integration", () => {
   });
 
   it("handles analytics write failure gracefully", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -483,7 +483,7 @@ describe("orchestrateLoop analytics integration", () => {
 
   it("handles zero-item run gracefully in the loop", async () => {
     // Create orchestrator with no items — all terminal immediately
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
 
     const io = mockAnalyticsIO();
     const logs: LogEntry[] = [];
@@ -510,7 +510,7 @@ describe("orchestrateLoop analytics integration", () => {
     expect(written.itemsCompleted).toBe(0);
     expect(written.itemsFailed).toBe(0);
     expect(written.items).toEqual([]);
-    expect(written.mergeStrategy).toBe("asap");
+    expect(written.mergeStrategy).toBe("auto");
   });
 });
 
@@ -523,7 +523,7 @@ function makeRun(overrides: Partial<RunMetrics> = {}): RunMetrics {
     itemsAttempted: 3,
     itemsCompleted: 2,
     itemsFailed: 1,
-    mergeStrategy: "asap",
+    mergeStrategy: "auto",
     items: [
       { id: "T-1-1", state: "done", ciRetryCount: 0, tool: "claude", tokensUsed: null, costUsd: null },
       { id: "T-1-2", state: "done", ciRetryCount: 1, tool: "claude", tokensUsed: null, costUsd: null },
@@ -965,7 +965,7 @@ describe("commitAnalyticsFiles", () => {
 
 describe("orchestrateLoop analytics auto-commit", () => {
   it("auto-commits analytics files after writing metrics", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -1015,7 +1015,7 @@ describe("orchestrateLoop analytics auto-commit", () => {
   });
 
   it("logs skip when no analytics changes to commit", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -1063,7 +1063,7 @@ describe("orchestrateLoop analytics auto-commit", () => {
   });
 
   it("handles analytics commit failure gracefully", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -1117,7 +1117,7 @@ describe("orchestrateLoop analytics auto-commit", () => {
   });
 
   it("skips auto-commit when analyticsCommit deps not provided", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -1275,7 +1275,7 @@ Total duration: 5m 23s
 describe("collectRunMetrics with cost data", () => {
   const config: OrchestratorConfig = {
     wipLimit: 4,
-    mergeStrategy: "asap",
+    mergeStrategy: "auto",
     maxCiRetries: 2,
   };
 
@@ -1510,7 +1510,7 @@ describe("formatAnalytics with cost data", () => {
 
 describe("orchestrateLoop cost capture", () => {
   it("captures cost data from worker screen before cleanup", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -1572,7 +1572,7 @@ describe("orchestrateLoop cost capture", () => {
   });
 
   it("handles missing cost data gracefully (readScreen returns no cost info)", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -1625,7 +1625,7 @@ describe("orchestrateLoop cost capture", () => {
   });
 
   it("handles readScreen not provided (null cost data)", async () => {
-    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
 
     let cycle = 0;
@@ -1771,7 +1771,7 @@ describe("computeDetectionLatency", () => {
 describe("collectRunMetrics with detection latency", () => {
   const config: OrchestratorConfig = {
     wipLimit: 4,
-    mergeStrategy: "asap",
+    mergeStrategy: "auto",
     maxCiRetries: 2,
   };
 
@@ -2209,7 +2209,7 @@ describe("estimateCost", () => {
 describe("collectRunMetrics with detailed cost data", () => {
   const config: OrchestratorConfig = {
     wipLimit: 4,
-    mergeStrategy: "asap",
+    mergeStrategy: "auto",
     maxCiRetries: 2,
   };
 

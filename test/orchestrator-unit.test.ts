@@ -250,8 +250,8 @@ describe("buildSnapshot", () => {
 // ── evaluateMerge (tested via processTransitions) ────────────────────
 
 describe("evaluateMerge", () => {
-  it("asap strategy: merges immediately when CI passes", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+  it("auto strategy: merges immediately when CI passes", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -264,8 +264,8 @@ describe("evaluateMerge", () => {
     expect(actions.some((a) => a.type === "merge" && a.prNumber === 42)).toBe(true);
   });
 
-  it("asap strategy: blocks merge when CHANGES_REQUESTED", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+  it("auto strategy: blocks merge when CHANGES_REQUESTED", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -278,36 +278,8 @@ describe("evaluateMerge", () => {
     expect(actions.some((a) => a.type === "merge")).toBe(false);
   });
 
-  it("approved strategy: merges only when APPROVED", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
-    orch.addItem(makeWorkItem("H-1-1"));
-    orch.setState("H-1-1", "ci-passed");
-    orch.getItem("H-1-1")!.prNumber = 42;
-
-    const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
-    );
-
-    expect(orch.getItem("H-1-1")!.state).toBe("merging");
-    expect(actions.some((a) => a.type === "merge")).toBe(true);
-  });
-
-  it("approved strategy: waits in review-pending without approval", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
-    orch.addItem(makeWorkItem("H-1-1"));
-    orch.setState("H-1-1", "ci-passed");
-    orch.getItem("H-1-1")!.prNumber = 42;
-
-    const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
-    );
-
-    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
-    expect(actions.some((a) => a.type === "merge")).toBe(false);
-  });
-
-  it("ask strategy: never auto-merges, moves to review-pending", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+  it("manual strategy: never auto-merges, moves to review-pending", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -320,8 +292,8 @@ describe("evaluateMerge", () => {
     expect(actions.some((a) => a.type === "merge")).toBe(false);
   });
 
-  it("reviewed strategy: gates on reviewEnabled + reviewCompleted", () => {
-    const orch = new Orchestrator({ mergeStrategy: "reviewed", reviewEnabled: true });
+  it("auto strategy with reviewEnabled: gates on reviewCompleted", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -336,8 +308,8 @@ describe("evaluateMerge", () => {
     expect(actions.some((a) => a.type === "merge")).toBe(false);
   });
 
-  it("reviewed strategy: merges after review completes", () => {
-    const orch = new Orchestrator({ mergeStrategy: "reviewed", reviewEnabled: true });
+  it("auto strategy with reviewEnabled: merges after review completes", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -352,7 +324,7 @@ describe("evaluateMerge", () => {
   });
 
   it("review gate: respects reviewWipLimit", () => {
-    const orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true, reviewWipLimit: 1 });
+    const orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true, reviewWipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.addItem(makeWorkItem("H-1-2"));
     orch.setState("H-1-1", "reviewing"); // occupies 1 review slot
@@ -492,7 +464,7 @@ describe("handleImplementing", () => {
   });
 
   it("chains PR open through to CI handling in same cycle", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "implementing");
 
@@ -726,7 +698,7 @@ describe("process liveness timeout suppression", () => {
 
 describe("handleCiPending", () => {
   it("transitions to ci-passed when CI passes", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-pending");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -844,7 +816,7 @@ describe("handleCiPending", () => {
 
 describe("handleCiPassed", () => {
   it("recovers from ci-failed to ci-passed when CI passes", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-failed");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -888,7 +860,7 @@ describe("handleCiPassed", () => {
   });
 
   it("resets reviewCompleted on CI regression", () => {
-    const orch = new Orchestrator({ mergeStrategy: "reviewed", reviewEnabled: true });
+    const orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -907,7 +879,7 @@ describe("handleCiPassed", () => {
 
 describe("full lifecycle: queued → done", () => {
   it("drives an item through normal flow to merge", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap", wipLimit: 1 });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto", wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
 
     // Step 1: queued → ready → launching
@@ -952,7 +924,7 @@ describe("full lifecycle: queued → done", () => {
 
 describe("merge queue prioritization", () => {
   it("only merges the highest-priority item when multiple are ci-passed", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("L-1-1", [], "low"));
     orch.addItem(makeWorkItem("C-1-1", [], "critical"));
 
@@ -976,7 +948,7 @@ describe("merge queue prioritization", () => {
   });
 
   it("passes through single merge action unchanged", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -1228,7 +1200,7 @@ describe("handleReviewing", () => {
   const requestChangesVerdict = { verdict: "request-changes" as const, summary: "Found blockers.", blockerCount: 2, nitCount: 0, preExistingCount: 0 };
 
   it("transitions to ci-passed with reviewCompleted on approve verdict", () => {
-    const orch = new Orchestrator({ mergeStrategy: "reviewed", reviewEnabled: true });
+    const orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "reviewing");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -1556,7 +1528,7 @@ describe("executeMerge conflict-aware rebase", () => {
   };
 
   it("rebases and transitions to ci-pending when merge fails due to conflicts", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     const item = orch.getItem("H-1-1")!;
@@ -1584,7 +1556,7 @@ describe("executeMerge conflict-aware rebase", () => {
   });
 
   it("retries normally when merge fails but PR is not conflicting", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap", maxMergeRetries: 3 });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto", maxMergeRetries: 3 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     const item = orch.getItem("H-1-1")!;
@@ -1603,7 +1575,7 @@ describe("executeMerge conflict-aware rebase", () => {
   });
 
   it("falls back to worker rebase message when daemonRebase fails on conflicting PR", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     const item = orch.getItem("H-1-1")!;
@@ -1633,7 +1605,7 @@ describe("executeMerge conflict-aware rebase", () => {
   });
 
   it("falls back to worker rebase when daemonRebase throws on conflicting PR", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     const item = orch.getItem("H-1-1")!;
@@ -1659,7 +1631,7 @@ describe("executeMerge conflict-aware rebase", () => {
   });
 
   it("resets rebaseRequested when conflict detected", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     const item = orch.getItem("H-1-1")!;
@@ -1678,7 +1650,7 @@ describe("executeMerge conflict-aware rebase", () => {
   });
 
   it("handles merge failure without checkPrMergeable (treats as non-conflict)", () => {
-    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap", maxMergeRetries: 3 });
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto", maxMergeRetries: 3 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-passed");
     const item = orch.getItem("H-1-1")!;
@@ -1880,7 +1852,7 @@ describe("processComments (via processTransitions)", () => {
     ];
 
     for (const { state, ciStatus } of prStates) {
-      const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" }); // ask prevents auto-merge
+      const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" }); // manual prevents auto-merge
       orch.addItem(makeWorkItem("H-1-1"));
       orch.setState("H-1-1", state as any);
       orch.getItem("H-1-1")!.prNumber = 42;

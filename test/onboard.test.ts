@@ -647,7 +647,7 @@ describe("cmdNoArgs", () => {
       isDaemonRunning: () => null,
       displayItemsSummary: () => {},
       promptMode: async () => "orchestrate",
-      promptMergeStrategy: async () => "asap" as MergeStrategy,
+      promptMergeStrategy: async () => "auto" as MergeStrategy,
       promptWipLimit: async () => 4,
       runWatch: async () => { watchCalled = true; },
     });
@@ -711,7 +711,7 @@ describe("cmdNoArgs", () => {
       isDaemonRunning: () => null,
       displayItemsSummary: () => {},
       promptMode: async () => "orchestrate",
-      promptMergeStrategy: async () => "asap" as MergeStrategy,
+      promptMergeStrategy: async () => "auto" as MergeStrategy,
       promptWipLimit: async () => 4,
       promptItems: async () => {
         promptItemsCalled = true;

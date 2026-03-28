@@ -177,34 +177,29 @@ describe("promptItems", () => {
 // ── promptMergeStrategy ──────────────────────────────────────────────
 
 describe("promptMergeStrategy", () => {
-  it("returns asap for selection 1", async () => {
+  it("returns auto for selection 1", async () => {
     const result = await promptMergeStrategy(makePrompt(["1"]));
-    expect(result).toBe("asap");
+    expect(result).toBe("auto");
   });
 
-  it("returns approved for selection 2", async () => {
+  it("returns manual for selection 2", async () => {
     const result = await promptMergeStrategy(makePrompt(["2"]));
-    expect(result).toBe("approved");
+    expect(result).toBe("manual");
   });
 
-  it("returns reviewed for selection 3", async () => {
-    const result = await promptMergeStrategy(makePrompt(["3"]));
-    expect(result).toBe("reviewed");
-  });
-
-  it("defaults to asap on empty input", async () => {
+  it("defaults to auto on empty input", async () => {
     const result = await promptMergeStrategy(makePrompt([""]));
-    expect(result).toBe("asap");
+    expect(result).toBe("auto");
   });
 
   it("accepts strategy name directly", async () => {
-    const result = await promptMergeStrategy(makePrompt(["approved"]));
-    expect(result).toBe("approved");
+    const result = await promptMergeStrategy(makePrompt(["manual"]));
+    expect(result).toBe("manual");
   });
 
   it("re-prompts on invalid input", async () => {
     const result = await promptMergeStrategy(makePrompt(["99", "1"]));
-    expect(result).toBe("asap");
+    expect(result).toBe("auto");
   });
 });
 
@@ -253,7 +248,7 @@ describe("confirmSummary", () => {
   const items = [makeWorkItem("A-1", "First task")];
   const result: InteractiveResult = {
     itemIds: ["A-1"],
-    mergeStrategy: "asap",
+    mergeStrategy: "auto",
     wipLimit: 3,
   };
 
@@ -282,13 +277,13 @@ describe("runInteractiveFlow", () => {
   ];
 
   it("returns complete result for valid flow", async () => {
-    // Answers: select items "1 2", merge strategy "1" (asap), wip limit "5", confirm ""
+    // Answers: select items "1 2", merge strategy "1" (auto), wip limit "5", confirm ""
     const prompt = makePrompt(["1 2", "1", "5", ""]);
     const result = await runInteractiveFlow(items, 3, { prompt });
 
     expect(result).not.toBeNull();
     expect(result!.itemIds).toEqual(["A-1", "B-2"]);
-    expect(result!.mergeStrategy).toBe("asap");
+    expect(result!.mergeStrategy).toBe("auto");
     expect(result!.wipLimit).toBe(5);
   });
 
@@ -299,7 +294,7 @@ describe("runInteractiveFlow", () => {
   });
 
   it("returns null when user cancels at confirmation", async () => {
-    // Answers: select items "1", merge strategy "1", wip limit "", confirm "n"
+    // Answers: select items "1", merge strategy "1" (auto), wip limit "", confirm "n"
     const prompt = makePrompt(["1", "1", "", "n"]);
     const result = await runInteractiveFlow(items, 3, { prompt });
     expect(result).toBeNull();
@@ -311,13 +306,13 @@ describe("runInteractiveFlow", () => {
     expect(result).toBeNull();
   });
 
-  it("completes flow with approved strategy and custom wip", async () => {
-    // Answers: select "all", merge "2" (approved), wip "7", confirm ""
+  it("completes flow with manual strategy and custom wip", async () => {
+    // Answers: select "all", merge "2" (manual), wip "7", confirm ""
     const prompt = makePrompt(["all", "2", "7", ""]);
     const result = await runInteractiveFlow(items, 3, { prompt });
 
     expect(result).not.toBeNull();
-    expect(result!.mergeStrategy).toBe("approved");
+    expect(result!.mergeStrategy).toBe("manual");
     expect(result!.wipLimit).toBe(7);
   });
 });

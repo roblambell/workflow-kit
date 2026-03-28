@@ -350,7 +350,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
   // ── Test 7: Merge retry limit — 3 failures → stuck ────────────
   describe("7. Merge retry limit: 3 failures → stuck", () => {
     it("executeMerge fails 3 times → item transitions to stuck (not infinite loop)", () => {
-      const orch = new Orchestrator({ mergeStrategy: "asap", maxMergeRetries: 3, reviewEnabled: false });
+      const orch = new Orchestrator({ mergeStrategy: "auto", maxMergeRetries: 3, reviewEnabled: false });
       orch.addItem(makeWorkItem("MRG-7", "Feature with flaky merge"));
       orch.setState("MRG-7", "ci-passed");
       orch.getItem("MRG-7")!.prNumber = 80;
@@ -474,7 +474,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
     });
 
     it("merge conflict during executeMerge triggers rebase instead of counting as merge failure", () => {
-      const orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: false });
+      const orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: false });
       orch.addItem(makeWorkItem("MRG-E2", "Conflict scenario"));
       orch.setState("MRG-E2", "ci-passed");
       orch.getItem("MRG-E2")!.prNumber = 100;

@@ -38,7 +38,7 @@ This skill interactively selects work items, then delegates all orchestration to
 
 > **CLI shortcut:** You can skip the interactive selection and run the orchestrator directly from any terminal:
 > ```
-> nw watch --items ID1,ID2 --merge-strategy asap --wip-limit 4
+> nw watch --items ID1,ID2 --merge-strategy auto --wip-limit 4
 > ```
 > No AI tool session required.
 

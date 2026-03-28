@@ -282,10 +282,10 @@ describe("Orchestrator", () => {
     expect(actions.some((a) => a.type === "clean" && a.itemId === "H-1-1")).toBe(true);
   });
 
-  // ── 6. CI pass → merge action (asap strategy) ─────────────────
+  // ── 6. CI pass → merge action (auto strategy) ─────────────────
 
-  it("CI pass triggers merge action with asap strategy", () => {
-    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+  it("CI pass triggers merge action with auto strategy", () => {
+    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "pr-open");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -438,7 +438,7 @@ describe("Orchestrator", () => {
   // ── 8. CI fail recovery ────────────────────────────────────────
 
   it("ci-failed recovers when CI passes (chains to merge evaluation)", () => {
-    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-failed");
     orch.getItem("H-1-1")!.ciFailCount = 1;
@@ -450,8 +450,8 @@ describe("Orchestrator", () => {
     expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
   });
 
-  it("ci-failed with asap strategy chains CI pass to merge", () => {
-    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+  it("ci-failed with auto strategy chains CI pass to merge", () => {
+    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-failed");
     orch.getItem("H-1-1")!.ciFailCount = 1;
@@ -541,10 +541,10 @@ describe("Orchestrator", () => {
     expect(launchActions[0]!.itemId).toBe("H-1-2");
   });
 
-  // ── 12. Merge strategy: approved ───────────────────────────────
+  // ── 12. Merge strategy: manual ─────────────────────────────────
 
-  it("approved strategy waits for review before merging", () => {
-    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+  it("manual strategy moves to review-pending, never auto-merges", () => {
+    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "pr-open");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -560,8 +560,8 @@ describe("Orchestrator", () => {
     expect(mergeActions).toHaveLength(0);
   });
 
-  it("approved strategy merges after review approval", () => {
-    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+  it("manual strategy stays in review-pending even when APPROVED", () => {
+    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "review-pending");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -577,15 +577,14 @@ describe("Orchestrator", () => {
       ]),
     );
 
-    expect(orch.getItem("H-1-1")!.state).toBe("merging");
+    // manual never auto-merges, stays in review-pending
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
     const mergeActions = actions.filter((a) => a.type === "merge");
-    expect(mergeActions).toHaveLength(1);
+    expect(mergeActions).toHaveLength(0);
   });
 
-  // ── 13. Merge strategy: ask ────────────────────────────────────
-
-  it("ask strategy never auto-merges", () => {
-    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+  it("manual strategy never auto-merges even with approval", () => {
+    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "pr-open");
     orch.getItem("H-1-1")!.prNumber = 42;
@@ -609,7 +608,7 @@ describe("Orchestrator", () => {
   // ── 14. ci-pending transitions ─────────────────────────────────
 
   it("ci-pending chains CI pass through merge evaluation", () => {
-    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-pending");
 
@@ -620,8 +619,8 @@ describe("Orchestrator", () => {
     expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
   });
 
-  it("ci-pending with asap strategy chains CI pass to merge", () => {
-    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+  it("ci-pending with auto strategy chains CI pass to merge", () => {
+    orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "ci-pending");
 
@@ -694,7 +693,7 @@ describe("Orchestrator", () => {
 
   it("uses sensible defaults", () => {
     expect(DEFAULT_CONFIG.wipLimit).toBe(4);
-    expect(DEFAULT_CONFIG.mergeStrategy).toBe("asap");
+    expect(DEFAULT_CONFIG.mergeStrategy).toBe("auto");
     expect(DEFAULT_CONFIG.maxCiRetries).toBe(2);
   });
 
@@ -743,7 +742,7 @@ describe("Orchestrator", () => {
   // ── 21. Multiple items complete end-to-end ─────────────────────
 
   it("handles full lifecycle across multiple items", () => {
-    orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "asap" });
+    orch = new Orchestrator({ reviewEnabled: false, wipLimit: 2, mergeStrategy: "auto" });
 
     orch.addItem(makeWorkItem("A-1-1"));
     orch.addItem(makeWorkItem("A-1-2"));
@@ -1883,8 +1882,8 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("implementing");
       });
 
-      it("chains implementing → pr-open → merging when CI passes (asap)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("chains implementing → pr-open → merging when CI passes (auto)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "implementing");
         const actions = orch.processTransitions(
@@ -1924,8 +1923,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
       });
 
-      it("→ merging when CI passes (asap strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ merging when CI passes (auto strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "pr-open");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -1936,8 +1935,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "merge")).toBe(true);
       });
 
-      it("→ review-pending when CI passes (approved strategy, no approval)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+      it("→ review-pending when CI passes (manual strategy, no approval)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "pr-open");
         orch.processTransitions(
@@ -1946,20 +1945,21 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
       });
 
-      it("→ merging when CI passes (approved strategy, with approval)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+      it("→ review-pending when CI passes (manual strategy, even with approval)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "pr-open");
         orch.getItem("X-1-1")!.prNumber = 10;
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
         );
-        expect(orch.getItem("X-1-1")!.state).toBe("merging");
-        expect(actions.some((a) => a.type === "merge")).toBe(true);
+        // manual never auto-merges
+        expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
+        expect(actions.some((a) => a.type === "merge")).toBe(false);
       });
 
-      it("→ review-pending when CI passes (ask strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+      it("→ review-pending when CI passes (manual strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "pr-open");
         orch.processTransitions(
@@ -1968,8 +1968,8 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
       });
 
-      it("→ review-pending when CI passes (asap strategy) with CHANGES_REQUESTED", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ review-pending when CI passes (auto strategy) with CHANGES_REQUESTED", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "pr-open");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2020,8 +2020,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
       });
 
-      it("→ merging when CI passes (asap strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ merging when CI passes (auto strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-pending");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2032,8 +2032,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "merge")).toBe(true);
       });
 
-      it("→ review-pending when CI passes (ask strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+      it("→ review-pending when CI passes (manual strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-pending");
         orch.processTransitions(
@@ -2077,8 +2077,8 @@ describe("Orchestrator", () => {
     // ── ci-passed ──────────────────────────────────────────────────
 
     describe("ci-passed →", () => {
-      it("→ merging (asap strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ merging (auto strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-passed");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2089,8 +2089,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "merge")).toBe(true);
       });
 
-      it("→ review-pending (approved strategy, no approval)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+      it("→ review-pending (manual strategy, no approval)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-passed");
         orch.processTransitions(
@@ -2099,20 +2099,21 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
       });
 
-      it("→ merging (approved strategy, with approval)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+      it("→ review-pending (manual strategy, even with approval)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-passed");
         orch.getItem("X-1-1")!.prNumber = 10;
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
         );
-        expect(orch.getItem("X-1-1")!.state).toBe("merging");
-        expect(actions.some((a) => a.type === "merge")).toBe(true);
+        // manual never auto-merges
+        expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
+        expect(actions.some((a) => a.type === "merge")).toBe(false);
       });
 
-      it("→ review-pending (ask strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+      it("→ review-pending (manual strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-passed");
         orch.processTransitions(
@@ -2141,8 +2142,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "clean")).toBe(true);
       });
 
-      it("re-evaluates merge on subsequent tick without ciStatus (asap)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("re-evaluates merge on subsequent tick without ciStatus (auto)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-passed");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2164,8 +2165,8 @@ describe("Orchestrator", () => {
 
       // ── CHANGES_REQUESTED guard (H-ORC-2) ──────────────────────────
 
-      it("→ review-pending when asap strategy and CHANGES_REQUESTED", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ review-pending when auto strategy and CHANGES_REQUESTED", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-passed");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2176,8 +2177,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "merge")).toBe(false);
       });
 
-      it("→ merging when asap strategy and no review decision", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ merging when auto strategy and no review decision", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-passed");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2188,8 +2189,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "merge")).toBe(true);
       });
 
-      it("→ merging when asap strategy and APPROVED", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ merging when auto strategy and APPROVED", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-passed");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2200,8 +2201,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "merge")).toBe(true);
       });
 
-      it("→ merging when asap strategy and REVIEW_REQUIRED (no explicit rejection)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ merging when auto strategy and REVIEW_REQUIRED (no explicit rejection)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-passed");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2217,7 +2218,7 @@ describe("Orchestrator", () => {
 
     describe("ci-failed →", () => {
       it("→ ci-passed when CI recovers (pass), chains to evaluateMerge", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-failed");
         orch.getItem("X-1-1")!.ciFailCount = 1;
@@ -2283,8 +2284,8 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.ciFailCount).toBe(2);
       });
 
-      it("→ merging when CI recovers with asap strategy", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ merging when CI recovers with auto strategy", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "ci-failed");
         orch.getItem("X-1-1")!.ciFailCount = 1;
@@ -2300,20 +2301,21 @@ describe("Orchestrator", () => {
     // ── review-pending ─────────────────────────────────────────────
 
     describe("review-pending →", () => {
-      it("→ merging when review approved and CI passes (approved strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+      it("stays review-pending when review approved (manual strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.getItem("X-1-1")!.prNumber = 10;
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
         );
-        expect(orch.getItem("X-1-1")!.state).toBe("merging");
-        expect(actions.some((a) => a.type === "merge")).toBe(true);
+        // manual never auto-merges, stays in review-pending
+        expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
+        expect(actions.some((a) => a.type === "merge")).toBe(false);
       });
 
-      it("→ merging when review approved (asap strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("→ merging when review approved (auto strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2335,7 +2337,7 @@ describe("Orchestrator", () => {
       });
 
       it("stays review-pending when review not approved", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.processTransitions(
@@ -2344,8 +2346,8 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
       });
 
-      it("stays review-pending with ask strategy even when approved", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "ask" });
+      it("stays review-pending with manual strategy even when approved", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.processTransitions(
@@ -2355,7 +2357,7 @@ describe("Orchestrator", () => {
       });
 
       it("stays review-pending when CI not passing", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.processTransitions(
@@ -2365,7 +2367,7 @@ describe("Orchestrator", () => {
       });
 
       it("stays review-pending with REVIEW_REQUIRED decision", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.processTransitions(
@@ -2374,8 +2376,8 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
       });
 
-      it("stays review-pending with CHANGES_REQUESTED and CI pass, emits no actions (approved strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+      it("stays review-pending with CHANGES_REQUESTED and CI pass, emits no actions (manual strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2386,8 +2388,8 @@ describe("Orchestrator", () => {
         expect(actions).toHaveLength(0);
       });
 
-      it("stays review-pending with CHANGES_REQUESTED and CI pass, emits no actions (asap strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("stays review-pending with CHANGES_REQUESTED and CI pass, emits no actions (auto strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2399,7 +2401,7 @@ describe("Orchestrator", () => {
       });
 
       it("stays review-pending with CHANGES_REQUESTED and CI fail (no CI regression handling)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2412,8 +2414,8 @@ describe("Orchestrator", () => {
         expect(actions).toHaveLength(0);
       });
 
-      it("stays review-pending with CHANGES_REQUESTED and CI fail (asap strategy)", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      it("stays review-pending with CHANGES_REQUESTED and CI fail (auto strategy)", () => {
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2426,7 +2428,7 @@ describe("Orchestrator", () => {
       });
 
       it("→ merged when PR externally merged during CHANGES_REQUESTED review", () => {
-        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+        orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.setState("X-1-1", "review-pending");
         orch.getItem("X-1-1")!.prNumber = 10;
@@ -2919,7 +2921,7 @@ describe("Orchestrator", () => {
 
   describe("Concurrent transitions in a single tick", () => {
     it("multiple items transition independently in one call", () => {
-      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.addItem(makeWorkItem("B-1-1"));
       orch.addItem(makeWorkItem("C-1-1"));
@@ -2967,7 +2969,7 @@ describe("Orchestrator", () => {
     });
 
     it("implementing → pr-open → ci-passed → merging chains in one tick", () => {
-      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.setState("A-1-1", "implementing");
 
@@ -3008,7 +3010,7 @@ describe("Orchestrator", () => {
     });
 
     it("mixed: merge + CI fail + launch in one tick", () => {
-      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 3, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 3, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.addItem(makeWorkItem("B-1-1"));
       orch.addItem(makeWorkItem("C-1-1"));
@@ -3040,8 +3042,8 @@ describe("Orchestrator", () => {
   // ── Multi-step chaining from implementing ────────────────────────
 
   describe("Multi-step chaining from implementing through merge evaluation", () => {
-    it("asap strategy: implementing → pr-open → ci-passed → merging in one processTransitions call", () => {
-      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+    it("auto strategy: implementing → pr-open → ci-passed → merging in one processTransitions call", () => {
+      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("C-1-1"));
       orch.setState("C-1-1", "implementing");
 
@@ -3064,8 +3066,8 @@ describe("Orchestrator", () => {
       expect(mergeAction!.prNumber).toBe(100);
     });
 
-    it("approved strategy: implementing → pr-open → ci-passed → review-pending in one processTransitions call", () => {
-      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+    it("manual strategy: implementing → pr-open → ci-passed → review-pending in one processTransitions call", () => {
+      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
       orch.addItem(makeWorkItem("C-2-1"));
       orch.setState("C-2-1", "implementing");
 
@@ -3087,7 +3089,7 @@ describe("Orchestrator", () => {
     });
 
     it("pending CI: implementing → pr-open → ci-pending (stops, does not chain further)", () => {
-      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("C-3-1"));
       orch.setState("C-3-1", "implementing");
 
@@ -3114,7 +3116,7 @@ describe("Orchestrator", () => {
 
   describe("Crash recovery / state reconstruction", () => {
     it("reconstructed orchestrator resumes from saved states", () => {
-      const orch2 = new Orchestrator({ reviewEnabled: false, mergeStrategy: "asap" });
+      const orch2 = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
 
       orch2.addItem(makeWorkItem("A-1-1"));
       orch2.setState("A-1-1", "implementing");
@@ -3194,7 +3196,7 @@ describe("Orchestrator", () => {
     });
 
     it("partial reconstruction: items at different lifecycle stages resume correctly", () => {
-      const orch2 = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "asap" });
+      const orch2 = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "auto" });
 
       // Batch 1 items at various stages
       orch2.addItem(makeWorkItem("A-1-1"));
@@ -3683,7 +3685,7 @@ describe("Orchestrator", () => {
 
   describe("priority-ordered merge queue", () => {
     it("merges multiple ci-passed items in priority order (highest first)", () => {
-      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "auto" });
 
       // Add items with different priorities
       orch.addItem(makeWorkItem("L-1-1", [], "low"));
@@ -3717,7 +3719,7 @@ describe("Orchestrator", () => {
     });
 
     it("merges equal-priority items by ID order (lexicographic)", () => {
-      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "auto" });
 
       // All medium priority
       orch.addItem(makeWorkItem("M-1-3", [], "medium"));
@@ -3748,7 +3750,7 @@ describe("Orchestrator", () => {
     });
 
     it("single ci-passed item skips queue logic and merges normally", () => {
-      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "auto" });
 
       orch.addItem(makeWorkItem("H-1-1", [], "high"));
       orch.setState("H-1-1", "ci-passed");
@@ -3767,7 +3769,7 @@ describe("Orchestrator", () => {
     });
 
     it("after merge execution, remaining ci-passed items get conflict checked next cycle", () => {
-      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "auto" });
 
       orch.addItem(makeWorkItem("C-1-1", [], "critical"));
       orch.addItem(makeWorkItem("M-1-1", [], "medium"));
@@ -3819,7 +3821,7 @@ describe("Orchestrator", () => {
     });
 
     it("non-merge actions are preserved alongside the prioritized merge", () => {
-      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 5, mergeStrategy: "auto" });
 
       // Two items in ci-passed, one in ci-pending that will fail
       orch.addItem(makeWorkItem("H-1-1", [], "high"));
@@ -3854,7 +3856,7 @@ describe("Orchestrator", () => {
     });
 
     it("priority order: critical > high > medium > low", () => {
-      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 10, mergeStrategy: "asap" });
+      orch = new Orchestrator({ reviewEnabled: false, wipLimit: 10, mergeStrategy: "auto" });
 
       const priorities: Priority[] = ["low", "medium", "high", "critical"];
       for (const p of priorities) {
@@ -3905,9 +3907,9 @@ describe("Orchestrator", () => {
     });
 
     it("calculates detectionLatencyMs correctly", () => {
-      // Use "approved" strategy so ci-passed doesn't immediately chain to merging
+      // Use "manual" strategy so ci-passed doesn't immediately chain to merging
       // without approval — item stays in review-pending with the eventTime carried through
-      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "approved" });
+      orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.setState("H-1-1", "ci-pending");
 
@@ -4034,7 +4036,7 @@ describe("Orchestrator", () => {
       );
 
       const item = orch.getItem("H-1-1")!;
-      // Should have gone implementing → pr-open → ci-passed → merging (asap strategy)
+      // Should have gone implementing → pr-open → ci-passed → merging (auto strategy)
       // eventTime is carried through the entire chain
       expect(item.state).toBe("merging");
       expect(item.eventTime).toBe(eventTime);
@@ -5147,7 +5149,7 @@ describe("Orchestrator", () => {
     // ── reviewEnabled=false backward compatibility ────────────────────
 
     it("ci-passed with reviewEnabled=false uses existing merge logic (backward compat)", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: false });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: false });
       orch.addItem(makeWorkItem("R-1-1"));
       orch.setState("R-1-1", "pr-open");
       orch.getItem("R-1-1")!.prNumber = 42;
@@ -5170,7 +5172,7 @@ describe("Orchestrator", () => {
     // ── ci-passed + reviewEnabled=true → reviewing ───────────────────
 
     it("ci-passed + reviewEnabled=true emits launch-review, transitions to reviewing", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-2-1"));
       orch.setState("R-2-1", "pr-open");
       orch.getItem("R-2-1")!.prNumber = 42;
@@ -5188,8 +5190,8 @@ describe("Orchestrator", () => {
       expect(actions.some((a) => a.type === "merge")).toBe(false);
     });
 
-    it("ci-passed + reviewEnabled=true works with approved merge strategy", () => {
-      orch = new Orchestrator({ mergeStrategy: "approved", reviewEnabled: true });
+    it("ci-passed + reviewEnabled=true works with manual merge strategy", () => {
+      orch = new Orchestrator({ mergeStrategy: "manual", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-2-2"));
       orch.setState("R-2-2", "pr-open");
       orch.getItem("R-2-2")!.prNumber = 43;
@@ -5207,8 +5209,8 @@ describe("Orchestrator", () => {
     const approveVerdict = { verdict: "approve" as const, summary: "No issues found.", blockerCount: 0, nitCount: 0, preExistingCount: 0 };
     const requestChangesVerdict = { verdict: "request-changes" as const, summary: "Found blockers.", blockerCount: 2, nitCount: 1, preExistingCount: 0 };
 
-    it("reviewing + approve verdict sets reviewCompleted, back to ci-passed, then merges (asap)", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+    it("reviewing + approve verdict sets reviewCompleted, back to ci-passed, then merges (auto)", () => {
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-3-1"));
       orch.setState("R-3-1", "reviewing");
       orch.getItem("R-3-1")!.prNumber = 42;
@@ -5226,7 +5228,7 @@ describe("Orchestrator", () => {
     });
 
     it("reviewing + approve verdict chains through reviewed merge strategy to merge", () => {
-      orch = new Orchestrator({ mergeStrategy: "reviewed", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-3-2"));
       orch.setState("R-3-2", "reviewing");
       orch.getItem("R-3-2")!.prNumber = 43;
@@ -5243,7 +5245,7 @@ describe("Orchestrator", () => {
     // ── reviewing + CHANGES_REQUESTED → review-pending + notify ──────
 
     it("reviewing + request-changes verdict transitions to review-pending + notify-review", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-4-1"));
       orch.setState("R-4-1", "reviewing");
       orch.getItem("R-4-1")!.prNumber = 42;
@@ -5264,7 +5266,7 @@ describe("Orchestrator", () => {
     // ── reviewing + PR merged externally → merged + clean + clean-review ─
 
     it("reviewing + PR merged externally transitions to merged + clean + clean-review", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-5-1"));
       orch.setState("R-5-1", "reviewing");
       orch.getItem("R-5-1")!.prNumber = 42;
@@ -5280,7 +5282,7 @@ describe("Orchestrator", () => {
     });
 
     it("reviewing + PR merged without reviewWorkspaceRef does not emit clean-review", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-5-2"));
       orch.setState("R-5-2", "reviewing");
       orch.getItem("R-5-2")!.prNumber = 43;
@@ -5298,7 +5300,7 @@ describe("Orchestrator", () => {
     // ── reviewing + CI regression → ci-failed + clean-review ─────────
 
     it("CI regression during reviewing transitions to ci-failed + clean-review", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-6-1"));
       orch.setState("R-6-1", "reviewing");
       orch.getItem("R-6-1")!.prNumber = 42;
@@ -5317,7 +5319,7 @@ describe("Orchestrator", () => {
     // ── reviewWipLimit ───────────────────────────────────────────────
 
     it("reviewing respects reviewWipLimit (no launch when slots full)", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true, reviewWipLimit: 1 });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true, reviewWipLimit: 1 });
       orch.addItem(makeWorkItem("R-7-1"));
       orch.addItem(makeWorkItem("R-7-2"));
       orch.setState("R-7-1", "reviewing"); // occupies 1 review slot
@@ -5338,7 +5340,7 @@ describe("Orchestrator", () => {
     });
 
     it("reviewing WIP slot frees up when review completes", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true, reviewWipLimit: 1 });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true, reviewWipLimit: 1 });
       orch.addItem(makeWorkItem("R-7-3"));
       orch.addItem(makeWorkItem("R-7-4"));
 
@@ -5372,7 +5374,7 @@ describe("Orchestrator", () => {
     // ── reviewing does NOT count toward normal WIP limit ─────────────
 
     it("reviewing does NOT count toward normal WIP limit", () => {
-      orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-8-1"));
       orch.addItem(makeWorkItem("R-8-2"));
       orch.addItem(makeWorkItem("R-8-3"));
@@ -5408,7 +5410,7 @@ describe("Orchestrator", () => {
     // ── reviewCompleted resets on CI regression ──────────────────────
 
     it("reviewCompleted resets to false on ci-failed transition", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-9-1"));
       orch.setState("R-9-1", "ci-passed");
       orch.getItem("R-9-1")!.prNumber = 42;
@@ -5424,7 +5426,7 @@ describe("Orchestrator", () => {
     });
 
     it("reviewCompleted resets to false on ci-pending transition", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-9-2"));
       orch.setState("R-9-2", "ci-failed");
       orch.getItem("R-9-2")!.ciFailCount = 1;
@@ -5440,7 +5442,7 @@ describe("Orchestrator", () => {
     });
 
     it("reviewCompleted reset enables fresh review after CI fix cycle", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-9-3"));
       orch.setState("R-9-3", "ci-passed");
       orch.getItem("R-9-3")!.prNumber = 42;
@@ -5462,7 +5464,7 @@ describe("Orchestrator", () => {
     // ── reviewed merge strategy end-to-end ───────────────────────────
 
     it("reviewed merge strategy: full cycle ci-passed → reviewing → ci-passed → merging", () => {
-      orch = new Orchestrator({ mergeStrategy: "reviewed", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-10-1"));
       orch.setState("R-10-1", "pr-open");
       orch.getItem("R-10-1")!.prNumber = 42;
@@ -5508,7 +5510,7 @@ describe("Orchestrator", () => {
     // ── reviewing stays reviewing when no outcome yet ────────────────
 
     it("reviewing stays reviewing when no review decision", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("R-12-1"));
       orch.setState("R-12-1", "reviewing");
       orch.getItem("R-12-1")!.prNumber = 42;
@@ -5680,8 +5682,8 @@ describe("Orchestrator", () => {
         expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
       });
 
-      it("reviewing → ci-passed → merging on approve verdict (asap)", () => {
-        orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      it("reviewing → ci-passed → merging on approve verdict (auto)", () => {
+        orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
         orch.addItem(makeWorkItem("RX-3"));
         orch.setState("RX-3", "reviewing");
         orch.getItem("RX-3")!.prNumber = 44;
@@ -5766,7 +5768,7 @@ describe("Orchestrator", () => {
     // ── Commit status actions ─────────────────────────────────────────
 
     it("entering reviewing emits set-commit-status pending", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("CS-1"));
       orch.setState("CS-1", "pr-open");
       orch.getItem("CS-1")!.prNumber = 42;
@@ -5783,7 +5785,7 @@ describe("Orchestrator", () => {
     });
 
     it("approve verdict emits set-commit-status success", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("CS-2"));
       orch.setState("CS-2", "reviewing");
       orch.getItem("CS-2")!.prNumber = 42;
@@ -5799,7 +5801,7 @@ describe("Orchestrator", () => {
     });
 
     it("request-changes verdict emits set-commit-status failure", () => {
-      orch = new Orchestrator({ mergeStrategy: "asap", reviewEnabled: true });
+      orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true });
       orch.addItem(makeWorkItem("CS-3"));
       orch.setState("CS-3", "reviewing");
       orch.getItem("CS-3")!.prNumber = 42;
