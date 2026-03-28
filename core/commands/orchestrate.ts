@@ -2105,8 +2105,8 @@ export async function cmdOrchestrate(
 
   const ctx: ExecutionContext = { projectRoot, worktreeDir, todosDir, aiTool };
   const actionDeps: OrchestratorDeps = {
-    launchSingleItem: (item, todosDir, worktreeDir, projectRoot, aiTool, baseBranch) =>
-      launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux, { baseBranch }),
+    launchSingleItem: (item, todosDir, worktreeDir, projectRoot, aiTool, baseBranch, forceWorkerLaunch) =>
+      launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux, { baseBranch, forceWorkerLaunch }),
     cleanStaleBranch: (todo, projRoot) => {
       let targetRepo: string;
       try {

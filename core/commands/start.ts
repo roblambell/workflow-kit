@@ -371,7 +371,7 @@ export function launchSingleItem(
   projectRoot: string,
   aiTool: string,
   mux: Multiplexer = getMux(),
-  options: { baseBranch?: string } = {},
+  options: { baseBranch?: string; forceWorkerLaunch?: boolean } = {},
 ): LaunchResult | null {
   let targetRepo: string;
   try {
@@ -470,7 +470,7 @@ export function launchSingleItem(
       // Check if there's an open PR for this branch — if so, a prior session
       // already did the work. Reuse the branch to preserve the PR and its commits.
       const openPrs = prList(targetRepo, branchName, "open");
-      if (openPrs.length > 0) {
+      if (openPrs.length > 0 && !options.forceWorkerLaunch) {
         const existingPr = openPrs[0]!;
         info(
           `Open PR #${existingPr.number} found for ${branchName}. Reusing existing branch — skipping worker launch, daemon will handle rebase/CI.`,
@@ -485,6 +485,12 @@ export function launchSingleItem(
         // Return with existingPrNumber signal — orchestrator transitions to
         // ci-pending instead of launching a full implementation worker.
         return { worktreePath, workspaceRef: "", existingPrNumber: existingPr.number };
+      } else if (openPrs.length > 0 && options.forceWorkerLaunch) {
+        // CI is failing — reuse existing branch but launch a worker to fix it (H-WR-1).
+        info(
+          `Open PR #${openPrs[0]!.number} found for ${branchName}. Launching worker to fix CI.`,
+        );
+        reuseExistingBranch = true;
       } else {
         try {
           deleteBranch(targetRepo, branchName);

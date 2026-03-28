@@ -1119,6 +1119,67 @@ describe("reconstructState", () => {
 
     require("fs").rmSync(tmpDir, { recursive: true, force: true });
   });
+
+  it("detects existing open PR with pending CI and sets ci-pending (not ready) (H-WR-1)", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeTodo("WR-1"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-wr1-${Date.now()}`);
+    const wtDir = join(tmpDir, ".worktrees");
+    const wtPath = join(wtDir, "todo-WR-1");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    // checkPr returns "pending" status — existing PR with CI pending
+    const pendingCheckPr = () => "WR-1\t271\tpending";
+
+    reconstructState(orch, tmpDir, wtDir, undefined, pendingCheckPr);
+
+    const item = orch.getItem("WR-1")!;
+    expect(item.state).toBe("ci-pending");
+    expect(item.prNumber).toBe(271);
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("detects existing open PR with failing CI and sets ci-failed (H-WR-1)", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeTodo("WR-2"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-wr2-${Date.now()}`);
+    const wtDir = join(tmpDir, ".worktrees");
+    const wtPath = join(wtDir, "todo-WR-2");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const failingCheckPr = () => "WR-2\t100\tfailing";
+
+    reconstructState(orch, tmpDir, wtDir, undefined, failingCheckPr);
+
+    const item = orch.getItem("WR-2")!;
+    expect(item.state).toBe("ci-failed");
+    expect(item.prNumber).toBe(100);
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("detects existing open PR with passing CI and sets ci-passed (H-WR-1)", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeTodo("WR-3"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-wr3-${Date.now()}`);
+    const wtDir = join(tmpDir, ".worktrees");
+    const wtPath = join(wtDir, "todo-WR-3");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const passingCheckPr = () => "WR-3\t200\tci-passed";
+
+    reconstructState(orch, tmpDir, wtDir, undefined, passingCheckPr);
+
+    const item = orch.getItem("WR-3")!;
+    expect(item.state).toBe("ci-passed");
+    expect(item.prNumber).toBe(200);
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
 });
 
 describe("reconstructState review fields", () => {
