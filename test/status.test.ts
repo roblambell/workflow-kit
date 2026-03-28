@@ -1394,7 +1394,7 @@ describe("formatStatusTable blocked-by rendering", () => {
     expect(output).toContain("H-PRX-5");
     expect(output).toContain("H-PRX-6");
     expect(output).toContain("H-PRX-7");
-    // No DEPS header — inline indicator only
+    // No DEPS header -- inline indicator only
     expect(output).not.toContain("DEPS");
     // No tree chars
     expect(output).not.toContain("└──");
@@ -1439,7 +1439,7 @@ describe("formatStatusTable blocked-by rendering", () => {
     expect(output).toContain("A-2");
     expect(output).toContain("B-1");
     expect(output).toContain("B-2");
-    // No DEPS header — inline blocker indicator only
+    // No DEPS header -- inline blocker indicator only
     expect(output).not.toContain("DEPS");
     // No tree chars
     expect(output).not.toContain("└──");
