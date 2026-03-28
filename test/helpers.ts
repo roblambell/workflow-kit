@@ -241,6 +241,41 @@ export function writeWorkItemFiles(repo: string, itemsContent: string): string {
 }
 
 /**
+ * Create a temp repo with a bare remote configured as `origin` and an
+ * initial commit pushed to origin/main. Returns the local repo path.
+ *
+ * Structure:
+ *   <tmpdir>/local  — working repo with `origin` pointing to the bare remote
+ *   <tmpdir>/bare   — bare remote
+ */
+export function setupTempRepoWithRemote(): string {
+  const parent = mkdtempSync(join(tmpdir(), "nw-test-remote-"));
+  tempDirs.push(parent);
+
+  const bare = join(parent, "bare");
+  const local = join(parent, "local");
+
+  // Create bare remote with explicit main branch
+  mkdirSync(bare, { recursive: true });
+  git(bare, "init", "--bare", "--quiet", "--initial-branch=main");
+
+  // Create local repo with explicit main branch
+  mkdirSync(local, { recursive: true });
+  git(local, "init", "--quiet", "--initial-branch=main");
+  git(local, "config", "user.email", "test@test.com");
+  git(local, "config", "user.name", "Test");
+  git(local, "remote", "add", "origin", bare);
+
+  // Initial commit and push to establish origin/main
+  writeFileSync(join(local, ".gitkeep"), "");
+  git(local, "add", ".gitkeep");
+  git(local, "commit", "-m", "Initial commit", "--quiet");
+  git(local, "push", "-u", "origin", "main", "--quiet");
+
+  return local;
+}
+
+/**
  * Clean up all temp repos created during the test.
  */
 export function cleanupTempRepos(): void {

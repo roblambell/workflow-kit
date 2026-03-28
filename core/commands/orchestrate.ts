@@ -38,7 +38,7 @@ import type { WorkItem } from "../types.ts";
 import { ID_IN_FILENAME, PRIORITY_NUM } from "../types.ts";
 import { prTitleMatchesWorkItem } from "../work-item-utils.ts";
 import { loadConfig } from "../config.ts";
-import { preflight, checkUncommittedWorkItems } from "../preflight.ts";
+import { preflight } from "../preflight.ts";
 import {
   collectRunMetrics,
   writeRunMetrics,
@@ -2234,7 +2234,8 @@ export async function cmdOrchestrate(
   let wipLimit = wipLimitOverride ?? computedWipLimit;
 
   // Parse work items (needed for both interactive and flag-based modes)
-  const workItems = parseWorkItems(workDir, worktreeDir);
+  // Pass projectRoot to filter to only items pushed to origin/main
+  const workItems = parseWorkItems(workDir, worktreeDir, projectRoot);
 
   // Interactive mode: no --items and stdin is a TTY
   if (shouldEnterInteractive(itemIds.length > 0)) {
@@ -2654,7 +2655,10 @@ export async function cmdOrchestrate(
     onPollComplete,
     syncDisplay: (o, snap) => syncWorkerDisplay(o, snap, mux),
     externalReviewDeps,
-    ...(watchMode ? { scanWorkItems: () => parseWorkItems(workDir, worktreeDir) } : {}),
+    ...(watchMode ? { scanWorkItems: () => {
+      try { fetchOrigin(projectRoot, "main"); } catch { /* non-fatal */ }
+      return parseWorkItems(workDir, worktreeDir, projectRoot);
+    } } : {}),
     ...(crewBroker ? { crewBroker } : {}),
   };
 

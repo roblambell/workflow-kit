@@ -38,7 +38,6 @@ import { cmdConflicts } from "./conflicts.ts";
 import { readWorkItem } from "../work-item-files.ts";
 import { applyGithubToken, prList } from "../gh.ts";
 import { prTitleMatchesWorkItem } from "../work-item-utils.ts";
-import { checkUncommittedWorkItems } from "../preflight.ts";
 import { run as defaultRun } from "../shell.ts";
 import type { WorkItem } from "../types.ts";
 
@@ -900,7 +899,7 @@ export async function cmdRunItems(
     die(muxEarly.diagnoseUnavailable());
   }
 
-  const items = parseWorkItems(workDir, worktreeDir);
+  const items = parseWorkItems(workDir, worktreeDir, projectRoot);
   const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
@@ -973,16 +972,7 @@ export async function cmdRunItems(
   }
   console.log();
 
-  // Pre-flight: check for uncommitted work item files
-  const itemCheck = checkUncommittedWorkItems(
-    projectRoot,
-    (cmd, a, opts) => defaultRun(cmd, a, opts),
-  );
-  if (itemCheck.status === "fail") {
-    warn(itemCheck.message);
-    warn(itemCheck.detail ?? "Commit work item files before launching workers.");
-    die("Workers will branch from committed main and miss uncommitted work item specs.");
-  }
+  info("Only items pushed to origin/main will be processed.");
 
   // Apply custom GitHub token so workers inherit it via environment
   applyGithubToken(projectRoot);
@@ -1077,23 +1067,14 @@ export async function cmdStart(
   const ids = splitIds(args);
 
   if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...]");
-  const items = parseWorkItems(workDir, worktreeDir);
+  const items = parseWorkItems(workDir, worktreeDir, projectRoot);
   const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
   }
   const allIds = new Set(items.map((it) => it.id));
 
-  // Pre-flight: check for uncommitted work item files
-  const itemCheck = checkUncommittedWorkItems(
-    projectRoot,
-    (cmd, args, opts) => defaultRun(cmd, args, opts),
-  );
-  if (itemCheck.status === "fail") {
-    warn(itemCheck.message);
-    warn(itemCheck.detail ?? "Commit work item files before launching workers.");
-    die("Workers will branch from committed main and miss uncommitted work item specs.");
-  }
+  info("Only items pushed to origin/main will be processed.");
 
   // Apply custom GitHub token so workers inherit it via environment
   applyGithubToken(projectRoot);

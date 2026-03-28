@@ -1,4 +1,8 @@
 import { run } from "./shell.ts";
+import type { RunResult } from "./types.ts";
+
+/** Shell runner signature — injectable for testing. */
+type ShellRunner = (cmd: string, args: string[]) => RunResult;
 
 function git(repoRoot: string, args: string[]): string {
   const result = run("git", ["-C", repoRoot, ...args]);
@@ -321,4 +325,64 @@ export function rebaseOnto(
   }
 
   return true;
+}
+
+/**
+ * Get the set of work item file basenames that exist on origin/main
+ * and have no local modifications (uncommitted, committed-but-not-pushed,
+ * or locally modified).
+ *
+ * Returns null when origin/main doesn't exist (graceful degradation for
+ * repos without a remote or on initial setup).
+ *
+ * Uses `git ls-tree` for the inclusion set and `git diff origin/main`
+ * for the exclusion set. If the diff command fails, returns the full
+ * remote set without exclusions (safe fallback).
+ */
+export function getCleanRemoteWorkItemFiles(
+  repoRoot: string,
+  shellRun: ShellRunner = (cmd, args) => run(cmd, args),
+): Set<string> | null {
+  // Inclusion set: files that exist on origin/main
+  const lsTree = shellRun("git", [
+    "-C", repoRoot,
+    "ls-tree", "--name-only", "origin/main", ".ninthwave/work/",
+  ]);
+
+  if (lsTree.exitCode !== 0) {
+    // origin/main doesn't exist — graceful degradation
+    return null;
+  }
+
+  const remoteFiles = new Set<string>();
+  for (const line of lsTree.stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // Extract basename from path like ".ninthwave/work/filename.md"
+    const lastSlash = trimmed.lastIndexOf("/");
+    remoteFiles.add(lastSlash >= 0 ? trimmed.slice(lastSlash + 1) : trimmed);
+  }
+
+  if (remoteFiles.size === 0) return new Set();
+
+  // Exclusion set: files that differ between origin/main and working tree
+  const diff = shellRun("git", [
+    "-C", repoRoot,
+    "diff", "origin/main", "--name-only", "--", ".ninthwave/work/",
+  ]);
+
+  if (diff.exitCode !== 0) {
+    // Diff failed — return remote set without exclusions (safe fallback)
+    return remoteFiles;
+  }
+
+  for (const line of diff.stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const lastSlash = trimmed.lastIndexOf("/");
+    const basename = lastSlash >= 0 ? trimmed.slice(lastSlash + 1) : trimmed;
+    remoteFiles.delete(basename);
+  }
+
+  return remoteFiles;
 }
