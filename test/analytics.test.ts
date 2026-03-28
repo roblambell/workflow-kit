@@ -1042,7 +1042,7 @@ describe("formatAnalytics with cost data", () => {
 
     expect(output).toContain("Cost");
     expect(output).toContain("$1.25");
-    expect(output).toContain("—");
+    expect(output).toContain("-");
   });
 
   it("hides Cost column when no run has cost data", () => {
@@ -1889,7 +1889,7 @@ describe("formatAnalytics Cost Summary section", () => {
     const output = formatAnalytics(summary, false).join("\n");
 
     expect(output).toContain("$1.00");
-    expect(output).toContain("—");
+    expect(output).toContain("-");
   });
 
   it("omits input/output breakdown when not available", () => {
