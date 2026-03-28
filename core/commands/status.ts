@@ -2,12 +2,13 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, basename } from "path";
-import { BOLD, DIM, RESET, ALT_SCREEN_ON, ALT_SCREEN_OFF } from "../output.ts";
+import { BOLD, DIM, RESET } from "../output.ts";
 import { run } from "../shell.ts";
 import { ID_PATTERN_GLOBAL, ID_IN_FILENAME } from "../types.ts";
 import {
   isDaemonRunning,
   readStateFile,
+  logFilePath,
   type DaemonState,
 } from "../daemon.ts";
 
@@ -18,6 +19,7 @@ import {
   type TreeNode,
   type ViewOptions,
   type FrameLayout,
+  type LogEntry,
   stateColor,
   stateIcon,
   stateLabel,
@@ -249,185 +251,69 @@ function getWorktreeAge(wtDir: string): number {
   }
 }
 
+// ─── Log file tailing ────────────────────────────────────────────────────────
+
+/** Maximum number of log lines to read from the log file tail. */
+const LOG_TAIL_LINES = 200;
+
+/**
+ * Parse a JSON-line log file (as written by orchestrate.ts in TUI mode) into
+ * PanelLogEntry entries. Reads the last LOG_TAIL_LINES lines from the file.
+ * Returns an empty array if the file is missing or unreadable.
+ */
+export function tailLogFile(projectRoot: string): LogEntry[] {
+  const path = logFilePath(projectRoot);
+  try {
+    if (!existsSync(path)) return [];
+    const content = readFileSync(path, "utf-8");
+    const lines = content.split("\n").filter(Boolean);
+    const tail = lines.slice(-LOG_TAIL_LINES);
+    const entries: LogEntry[] = [];
+    for (const line of tail) {
+      try {
+        const parsed = JSON.parse(line);
+        const levelTag = parsed.level && parsed.level !== "info" ? `[${parsed.level}] ` : "";
+        entries.push({
+          timestamp: parsed.ts ?? new Date().toISOString(),
+          itemId: parsed.itemId ?? parsed.id ?? "",
+          message: `${levelTag}${parsed.event ?? ""}${parsed.message ? ": " + parsed.message : ""}`,
+        });
+      } catch {
+        // skip unparseable lines
+      }
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 /**
- * Run `ninthwave status` in watch mode: refresh in-place every intervalMs.
- * Uses cursor-home + clear-trailing to avoid visible flicker.
- * Exits when the abort signal fires, `q` is pressed, or Ctrl-C.
+ * Run `ninthwave status` in watch mode using the shared panel TUI from orchestrate.ts.
  *
- * Full-screen mode (terminals >= 10 rows):
- *   Header and footer are pinned. Middle section scrolls with up/down arrows.
- *   Scroll indicators show when items overflow. Terminal resize is handled.
- *
- * Keyboard shortcuts (TTY only):
- *   m -- toggle metrics panel
- *   d -- toggle deps detail view
- *   ? -- toggle help footer
- *   ↑/↓ -- scroll item list
- *   q -- quit
- *
- * Each keypress triggers an immediate re-render (does not wait for interval).
- * Non-TTY mode uses default ViewOptions and skips keyboard setup.
+ * Delegates to `runTUI()` in read-only mode, giving status the same panel layout,
+ * keyboard shortcuts, and rendering as `nw watch`. When a daemon is running, log
+ * entries are tailed from the daemon's log file.
  */
 export async function cmdStatusWatch(
   worktreeDir: string,
   projectRoot: string,
   intervalMs: number = 2_000,
   signal?: AbortSignal,
-  flat: boolean = false,
+  _flat: boolean = false,
 ): Promise<void> {
-  // Mutable view state -- toggled by keyboard shortcuts
-  const viewOpts: ViewOptions = {
-    showBlockerDetail: true,
-  };
+  const daemonPid = isDaemonRunning(projectRoot);
+  const { runTUI } = await import("./orchestrate.ts");
 
-  const isTTY = process.stdin.isTTY === true;
-  let quitRequested = false;
-  let scrollOffset = 0;
-  /** Track last item count for scroll clamping on data changes */
-  let lastItemCount = 0;
-
-  // Cache last gathered data for keypress re-renders (avoids re-polling)
-  let lastStatusItems: ReturnType<typeof gatherStatusItems> | null = null;
-
-  // Resolver to wake the sleep early on keypress
-  let wakeResolver: (() => void) | null = null;
-
-  function wake() {
-    if (wakeResolver) {
-      wakeResolver();
-      wakeResolver = null;
-    }
-  }
-
-  /** Re-render the display using cached data (for keypress re-renders). */
-  function renderFrame() {
-    if (!lastStatusItems) return;
-    const termRows = getTerminalHeight();
-    const termCols = getTerminalWidth();
-
-    process.stdout.write("\x1B[H");
-
-    if (termRows >= MIN_FULLSCREEN_ROWS) {
-      const mergedOpts: ViewOptions = { ...viewOpts, sessionStartedAt: lastStatusItems.sessionStartedAt ?? viewOpts.sessionStartedAt };
-      const layout = buildStatusLayout(lastStatusItems.items, termCols, lastStatusItems.wipLimit, flat, mergedOpts);
-      lastItemCount = layout.itemLines.length;
-      scrollOffset = clampScrollOffset(scrollOffset, lastItemCount, Math.max(1, termRows - layout.headerLines.length - layout.footerLines.length));
-
-      const frameLines = renderFullScreenFrame(layout, termRows, termCols, scrollOffset);
-      const content = frameLines.join("\n");
-      process.stdout.write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-    } else {
-      const content = renderStatus(worktreeDir, projectRoot, flat, viewOpts);
-      process.stdout.write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-    }
-    process.stdout.write("\x1B[J");
-  }
-
-  function handleKey(key: string) {
-    switch (key) {
-      case "d":
-        viewOpts.showBlockerDetail = !viewOpts.showBlockerDetail;
-        break;
-      case "\x1b[A": // Up arrow
-        scrollOffset = Math.max(0, scrollOffset - 1);
-        break;
-      case "\x1b[B": // Down arrow
-        scrollOffset += 1;
-        break;
-      case "q":
-        quitRequested = true;
-        break;
-      default:
-        return; // Don't wake for unknown keys
-    }
-    // Re-render immediately on keypress
-    renderFrame();
-    wake();
-  }
-
-  // Resize handler: clamp scroll offset and trigger re-render
-  function handleResize() {
-    const termRows = getTerminalHeight();
-    const viewportHeight = Math.max(1, termRows - 10); // approximate
-    scrollOffset = clampScrollOffset(scrollOffset, lastItemCount, viewportHeight);
-    renderFrame();
-    wake();
-  }
-
-  // Enter alternate screen buffer so TUI renders don't pollute terminal scrollback
-  if (isTTY) {
-    process.stdout.write(ALT_SCREEN_ON);
-  }
-  const exitAltScreen = () => {
-    if (isTTY) process.stdout.write(ALT_SCREEN_OFF);
-  };
-  process.on("exit", exitAltScreen);
-
-  // Enter raw mode for TTY so individual keypresses are received
-  if (isTTY) {
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-    process.stdin.setEncoding("utf8");
-    process.stdin.on("data", handleKey);
-    process.stdout.on("resize", handleResize);
-  }
-
-  function cleanup() {
-    // Leave alternate screen buffer first, then restore terminal state
-    exitAltScreen();
-    process.removeListener("exit", exitAltScreen);
-
-    if (isTTY) {
-      process.stdin.removeListener("data", handleKey);
-      process.stdout.removeListener("resize", handleResize);
-      try {
-        process.stdin.setRawMode(false);
-      } catch {
-        // stdin may already be destroyed
-      }
-      process.stdin.pause();
-    }
-  }
-
-  try {
-    while (!signal?.aborted && !quitRequested) {
-      // Gather fresh data and render
-      lastStatusItems = gatherStatusItems(worktreeDir, projectRoot);
-
-      renderFrame();
-
-      // Wait for interval, abort signal, or keypress (whichever comes first)
-      await new Promise<void>((resolve) => {
-        if (signal?.aborted || quitRequested) {
-          resolve();
-          return;
-        }
-        const timer = setTimeout(resolve, intervalMs);
-
-        // Allow keypress handler to wake us early
-        wakeResolver = () => {
-          clearTimeout(timer);
-          resolve();
-        };
-
-        signal?.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            wakeResolver = null;
-            resolve();
-          },
-          { once: true },
-        );
-      });
-
-      // Data will be gathered at top of loop
-    }
-  } finally {
-    cleanup();
-  }
+  await runTUI({
+    getItems: () => gatherStatusItems(worktreeDir, projectRoot),
+    getLogEntries: daemonPid !== null ? () => tailLogFile(projectRoot) : undefined,
+    intervalMs,
+    signal,
+    panelMode: daemonPid !== null ? "split" : "status-only",
+  });
 }
 
 /**

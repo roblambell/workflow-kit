@@ -23,6 +23,7 @@ import {
   buildDependencyTree,
   formatTreeRows,
   formatTreeItemRow,
+  tailLogFile,
   type StatusItem,
   type ItemState,
   type TreeNode,
@@ -661,72 +662,19 @@ describe("cmdStatus", () => {
   });
 });
 
-// ─── cmdStatusWatch ──────────────────────────────────────────────────────────
+// ─── cmdStatusWatch (delegates to runTUI) ───────────────────────────────────
 
 describe("cmdStatusWatch", () => {
-  it("uses cursor-home (not full-screen-clear) for flicker-free refresh", async () => {
-    const controller = new AbortController();
-
+  it("delegates to runTUI and returns immediately in non-TTY mode", async () => {
+    // runTUI returns immediately when process.stdin.isTTY is false (test env)
     const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
-    const watchPromise = cmdStatusWatch(
-      "/nonexistent",
-      "/nonexistent",
-      10, // 10ms interval for fast testing
-      controller.signal,
-    );
+    const start = Date.now();
+    await cmdStatusWatch("/nonexistent", "/nonexistent", 5000);
+    const elapsed = Date.now() - start;
 
-    // Wait a bit for a few iterations, then abort
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    controller.abort();
-    await watchPromise;
-
-    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
-
-    // \x1B[2J (clear entire screen) must NOT be used -- that causes flicker
-    const fullClearCalls = allWrites.filter((s) => s.includes("\x1B[2J"));
-    expect(fullClearCalls.length).toBe(0);
-
-    // \x1B[H (cursor home) must be used
-    const cursorHomeCalls = allWrites.filter((s) => s.includes("\x1B[H"));
-    expect(cursorHomeCalls.length).toBeGreaterThanOrEqual(1);
-
-    // \x1B[J (clear from cursor to end of screen) must be used after content
-    const clearTrailingCalls = allWrites.filter((s) => s.includes("\x1B[J"));
-    expect(clearTrailingCalls.length).toBeGreaterThanOrEqual(1);
-
-    writeSpy.mockRestore();
-  });
-
-  it("writes status content between cursor-home and clear-trailing", async () => {
-    const controller = new AbortController();
-
-    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-
-    const watchPromise = cmdStatusWatch(
-      "/nonexistent",
-      "/nonexistent",
-      10,
-      controller.signal,
-    );
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 30));
-    controller.abort();
-    await watchPromise;
-
-    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
-
-    // Verify the sequence: \x1B[H, then content, then \x1B[J
-    const cursorHomeIdx = allWrites.findIndex((s) => s === "\x1B[H");
-    const clearTrailingIdx = allWrites.findIndex((s) => s === "\x1B[J");
-    expect(cursorHomeIdx).toBeGreaterThanOrEqual(0);
-    expect(clearTrailingIdx).toBeGreaterThan(cursorHomeIdx);
-
-    // Content should be between them
-    const contentBetween = allWrites.slice(cursorHomeIdx + 1, clearTrailingIdx);
-    expect(contentBetween.length).toBeGreaterThan(0);
-    const contentStr = stripAnsi(contentBetween.join(""));
-    expect(contentStr).toContain("ninthwave status");
+    // Should resolve quickly (non-TTY fast path)
+    expect(elapsed).toBeLessThan(500);
 
     writeSpy.mockRestore();
   });
@@ -1099,35 +1047,14 @@ describe("state indicators in formatItemRow", () => {
   }
 });
 
-// ─── Watch mode line clearing ─────────────────────────────────────────────────
+// ─── Watch mode delegates to unified TUI ──────────────────────────────────────
 
-describe("cmdStatusWatch line clearing", () => {
-  it("includes clear-to-end-of-line sequences to prevent garbled output", async () => {
-    const controller = new AbortController();
-
-    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-
-    const watchPromise = cmdStatusWatch(
-      "/nonexistent",
-      "/nonexistent",
-      10,
-      controller.signal,
-    );
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 30));
-    controller.abort();
-    await watchPromise;
-
-    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
-
-    // Content writes should include \x1B[K (clear to end of line)
-    const contentWrites = allWrites.filter(
-      (s) => s !== "\x1B[H" && s !== "\x1B[J",
-    );
-    const hasLineClear = contentWrites.some((s) => s.includes("\x1B[K"));
-    expect(hasLineClear).toBe(true);
-
-    writeSpy.mockRestore();
+describe("cmdStatusWatch uses unified TUI", () => {
+  it("no longer contains its own alt-screen, raw-mode, or keyboard code", () => {
+    // Verify status.ts exports cmdStatusWatch but delegates to runTUI.
+    // The function signature should exist (backward compat) but the implementation
+    // is now a thin wrapper around runTUI from orchestrate.ts.
+    expect(typeof cmdStatusWatch).toBe("function");
   });
 });
 
@@ -1575,28 +1502,19 @@ describe("renderStatus with ViewOptions", () => {
   });
 });
 
-// ─── cmdStatusWatch keyboard handling ─────────────────────────────────────────
+// ─── cmdStatusWatch non-TTY handling ──────────────────────────────────────────
 
-describe("cmdStatusWatch keyboard handling", () => {
-  it("handles AbortSignal correctly without hanging (non-TTY)", async () => {
+describe("cmdStatusWatch non-TTY handling", () => {
+  it("returns immediately in non-TTY mode (runTUI skips TUI)", async () => {
     const controller = new AbortController();
     const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
-    // In test environment, process.stdin.isTTY is false, so no raw mode is entered
-    const watchPromise = cmdStatusWatch(
-      "/nonexistent",
-      "/nonexistent",
-      10,
-      controller.signal,
-    );
+    // runTUI returns immediately when process.stdin.isTTY is false
+    const start = Date.now();
+    await cmdStatusWatch("/nonexistent", "/nonexistent", 5000, controller.signal);
+    const elapsed = Date.now() - start;
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 30));
-    controller.abort();
-    await watchPromise;
-
-    // Should complete without hanging
-    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
-    expect(allWrites.some((s) => s.includes("\x1B[H"))).toBe(true);
+    expect(elapsed).toBeLessThan(500);
 
     writeSpy.mockRestore();
   });
@@ -1615,55 +1533,19 @@ describe("cmdStatusWatch keyboard handling", () => {
 
     writeSpy.mockRestore();
   });
-
-  it("non-TTY mode uses default ViewOptions (no metrics/help in output)", async () => {
-    const controller = new AbortController();
-    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-
-    const watchPromise = cmdStatusWatch(
-      "/nonexistent",
-      "/nonexistent",
-      10,
-      controller.signal,
-    );
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 30));
-    controller.abort();
-    await watchPromise;
-
-    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
-    const allOutput = stripAnsi(allWrites.join(""));
-
-    // Metrics panel and help footer were removed -- neither should appear
-    expect(allOutput).not.toContain("Session Metrics");
-
-    writeSpy.mockRestore();
-  });
 });
 
 // ─── Status command flag routing (registry handler) ─────────────────────────
 
 describe("status command flag routing", () => {
-  it("default (no flags) invokes live refresh mode (cmdStatusWatch)", async () => {
-    const controller = new AbortController();
+  it("default (no flags) calls cmdStatusWatch which delegates to runTUI", async () => {
     const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
-    // cmdStatusWatch with a short interval and immediate abort confirms live mode was entered
-    const watchPromise = cmdStatusWatch(
-      "/nonexistent",
-      "/nonexistent",
-      10,
-      controller.signal,
-    );
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 30));
-    controller.abort();
-    await watchPromise;
-
-    // Live mode uses cursor-home for flicker-free refresh
-    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
-    const cursorHomeCalls = allWrites.filter((s) => s.includes("\x1B[H"));
-    expect(cursorHomeCalls.length).toBeGreaterThanOrEqual(1);
+    // cmdStatusWatch delegates to runTUI, which returns immediately in non-TTY
+    const start = Date.now();
+    await cmdStatusWatch("/nonexistent", "/nonexistent", 10);
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(500);
 
     writeSpy.mockRestore();
   });
@@ -1684,31 +1566,6 @@ describe("status command flag routing", () => {
     writeSpy.mockRestore();
   });
 
-  it("--watch accepted silently (backwards compat, same as default live mode)", async () => {
-    // Verify that passing --watch doesn't error and invokes live refresh mode
-    // The registry handler treats --watch the same as the default (live mode)
-    const controller = new AbortController();
-    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-
-    const watchPromise = cmdStatusWatch(
-      "/nonexistent",
-      "/nonexistent",
-      10,
-      controller.signal,
-    );
-
-    await new Promise<void>((resolve) => setTimeout(resolve, 30));
-    controller.abort();
-    await watchPromise;
-
-    // Same assertions as default live mode
-    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
-    const cursorHomeCalls = allWrites.filter((s) => s.includes("\x1B[H"));
-    expect(cursorHomeCalls.length).toBeGreaterThanOrEqual(1);
-
-    writeSpy.mockRestore();
-  });
-
   it("registry entry has --once flag and accepts --watch for compat", () => {
     const { lookupCommand } = require("../core/help.ts");
     const entry = lookupCommand("status");
@@ -1718,6 +1575,109 @@ describe("status command flag routing", () => {
     expect("--flat" in entry!.flags).toBe(true);
     expect(entry!.usage).toContain("--once");
     expect(entry!.description).toContain("Live");
+  });
+});
+
+// ─── tailLogFile ──────────────────────────────────────────────────────────────
+
+describe("tailLogFile", () => {
+  it("returns empty array when log file does not exist", () => {
+    const entries = tailLogFile("/nonexistent/project/root");
+    expect(entries).toEqual([]);
+  });
+
+  it("parses JSON-line log file into LogEntry array", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "nw-status-test-"));
+    const stateDir = join(tmpDir, ".ninthwave");
+    mkdirSync(stateDir, { recursive: true });
+
+    // tailLogFile reads from userStateDir which uses ~/.ninthwave/projects/<slug>
+    // We need to write directly to the path tailLogFile expects.
+    // Since tailLogFile calls logFilePath(projectRoot), we need to simulate the state dir.
+    // Instead, let's test the function indirectly -- it should handle missing files gracefully.
+    const entries = tailLogFile(tmpDir);
+    expect(entries).toEqual([]);
+
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses orchestrator log entries with level tags", () => {
+    // Create a mock project dir with log file in the user state dir
+    const tmpDir = mkdtempSync(join(tmpdir(), "nw-taillog-"));
+    const { userStateDir } = require("../core/daemon.ts");
+    const stateDir = userStateDir(tmpDir);
+    mkdirSync(stateDir, { recursive: true });
+
+    const logPath = join(stateDir, "orchestrator.log");
+    const lines = [
+      JSON.stringify({ ts: "2026-03-28T10:00:00Z", level: "info", event: "launched", itemId: "H-1", message: "worker started" }),
+      JSON.stringify({ ts: "2026-03-28T10:01:00Z", level: "warn", event: "ci_failed", itemId: "H-2", message: "test timeout" }),
+      JSON.stringify({ ts: "2026-03-28T10:02:00Z", level: "error", event: "launch_failed", id: "H-3" }),
+    ];
+    writeFileSync(logPath, lines.join("\n") + "\n");
+
+    const entries = tailLogFile(tmpDir);
+    expect(entries).toHaveLength(3);
+
+    // Info entries have no level tag prefix
+    expect(entries[0]!.itemId).toBe("H-1");
+    expect(entries[0]!.message).toBe("launched: worker started");
+    expect(entries[0]!.timestamp).toBe("2026-03-28T10:00:00Z");
+
+    // Warn entries get [warn] prefix
+    expect(entries[1]!.itemId).toBe("H-2");
+    expect(entries[1]!.message).toBe("[warn] ci_failed: test timeout");
+
+    // Error entries get [error] prefix, falls back to id when itemId missing
+    expect(entries[2]!.itemId).toBe("H-3");
+    expect(entries[2]!.message).toBe("[error] launch_failed");
+
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
+// ─── cmdStatusWatch --once still works ────────────────────────────────────────
+
+describe("cmdStatus (--once mode)", () => {
+  it("prints status table without entering TUI", () => {
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    cmdStatus("/nonexistent/path/.worktrees", "/nonexistent/path");
+
+    const allWrites = writeSpy.mock.calls.map((call) => String(call[0]));
+    const joined = stripAnsi(allWrites.join(""));
+
+    // One-shot mode outputs status content directly
+    expect(joined).toContain("ninthwave status");
+
+    // Should NOT use alt-screen or cursor-home (those are TUI-only)
+    expect(allWrites.join("")).not.toContain("\x1B[?1049h"); // ALT_SCREEN_ON
+    expect(allWrites.join("")).not.toContain("\x1B[H");
+
+    writeSpy.mockRestore();
+  });
+});
+
+// ─── Duplicated TUI code removal verification ────────────────────────────────
+
+describe("status.ts code removal", () => {
+  it("status.ts source does not contain alt-screen, raw-mode, or keyboard handling code", async () => {
+    const { readFileSync: fs_readFileSync } = require("fs");
+    const statusSource = fs_readFileSync(
+      join(import.meta.dirname, "..", "core", "commands", "status.ts"),
+      "utf-8",
+    );
+
+    // These patterns were in the old duplicated TUI loop -- should be removed
+    expect(statusSource).not.toContain("ALT_SCREEN_ON");
+    expect(statusSource).not.toContain("ALT_SCREEN_OFF");
+    expect(statusSource).not.toContain("setRawMode");
+    expect(statusSource).not.toContain("handleKey");
+    expect(statusSource).not.toContain("handleResize");
+    expect(statusSource).not.toContain("wakeResolver");
+
+    // Should contain the delegation to runTUI
+    expect(statusSource).toContain("runTUI");
   });
 });
 

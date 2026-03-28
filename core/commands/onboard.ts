@@ -469,11 +469,7 @@ export async function cmdNoArgs(
 
   if (todos.length === 0) {
     console.log();
-    console.log(`${BOLD}ninthwave${RESET} is set up, but there are no work items.`);
-    console.log();
-    console.log(`  Get started:`);
-    console.log(`    ${DIM}•${RESET} Use ${BOLD}/decompose${RESET} in your AI tool to break down a feature`);
-    console.log(`    ${DIM}•${RESET} Create work items manually in ${BOLD}.ninthwave/work/${RESET}`);
+    console.log(`No work items found. Run ${BOLD}/decompose${RESET} to get started.`);
     console.log();
     return;
   }

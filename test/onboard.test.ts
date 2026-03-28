@@ -509,9 +509,8 @@ describe("cmdNoArgs", () => {
     }
 
     const output = logs.join("\n");
-    expect(output).toContain("no work items");
+    expect(output).toContain("No work items found");
     expect(output).toContain("/decompose");
-    expect(output).toContain(".ninthwave/work/");
   });
 
   it("shows guidance when .ninthwave/ exists but work dir missing", async () => {
@@ -533,7 +532,7 @@ describe("cmdNoArgs", () => {
     }
 
     const output = logs.join("\n");
-    expect(output).toContain("no work items");
+    expect(output).toContain("No work items found");
   });
 
   it("routes to status view when daemon is running", async () => {
