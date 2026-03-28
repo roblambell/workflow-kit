@@ -1485,6 +1485,185 @@ describe("handleReviewing", () => {
   });
 });
 
+// ── handleReviewPending CI detection (H-RX-1) ──────────────────────────
+
+describe("handleReviewPending", () => {
+  /** Helper: set up an item in review-pending state (after request-changes). */
+  function setupReviewPending(orch: Orchestrator, id = "H-1-1") {
+    orch.addItem(makeWorkItem(id));
+    orch.getItem(id)!.reviewCompleted = false;
+    orch.setState(id, "review-pending");
+    orch.getItem(id)!.prNumber = 42;
+  }
+
+  it("transitions to ci-pending when CI becomes pending", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    setupReviewPending(orch);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pending", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-pending");
+    // No actions needed for pending — just a state transition
+    expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(false);
+  });
+
+  it("transitions to ci-failed and notifies on CI failure", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    setupReviewPending(orch);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-failed");
+    expect(orch.getItem("H-1-1")!.ciFailCount).toBe(1);
+    expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
+  });
+
+  it("sends daemon-rebase on CI failure due to merge conflicts", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    setupReviewPending(orch);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open", isMergeable: false }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-failed");
+    expect(actions.some((a) => a.type === "daemon-rebase")).toBe(true);
+    expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(false);
+  });
+
+  it("transitions to ci-passed and triggers evaluateMerge on CI pass", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    setupReviewPending(orch);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+    );
+
+    // ci-passed -> evaluateMerge -> reviewing (reviewCompleted is false)
+    expect(orch.getItem("H-1-1")!.state).toBe("reviewing");
+    expect(actions.some((a) => a.type === "launch-review")).toBe(true);
+  });
+
+  it("no-ops when ciStatus is undefined (stays in review-pending)", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    setupReviewPending(orch);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+    expect(actions).toEqual([]);
+  });
+
+  it("sends daemon-rebase on merge conflict without CI failure", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    setupReviewPending(orch);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "open", isMergeable: false }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+    expect(orch.getItem("H-1-1")!.rebaseRequested).toBe(true);
+    expect(actions.some((a) => a.type === "daemon-rebase")).toBe(true);
+  });
+
+  it("still handles external merge", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    setupReviewPending(orch);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "merged" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("merged");
+    expect(actions.some((a) => a.type === "clean")).toBe(true);
+  });
+
+  it("still evaluates merge when review approved and CI passes", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    setupReviewPending(orch);
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
+    );
+
+    // reviewCompleted=true + APPROVED + pass → should merge
+    expect(orch.getItem("H-1-1")!.state).toBe("merging");
+    expect(actions.some((a) => a.type === "merge")).toBe(true);
+  });
+});
+
+// ── Full multi-round review cycle (H-RX-1) ────────────────────────────
+
+describe("multi-round review cycle", () => {
+  it("request-changes → ci-pending → ci-passed → reviewing → approve → merge", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    // reviewCompleted starts false — the item entered reviewing via evaluateMerge
+    orch.getItem("H-1-1")!.reviewCompleted = false;
+    orch.setState("H-1-1", "reviewing");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    const requestChangesVerdict = {
+      verdict: "request-changes" as const,
+      summary: "Found blockers.",
+      blockerCount: 2,
+      nitCount: 0,
+      preExistingCount: 0,
+    };
+    const approveVerdict = {
+      verdict: "approve" as const,
+      summary: "No issues.",
+      blockerCount: 0,
+      nitCount: 0,
+      preExistingCount: 0,
+    };
+
+    // Step 1: Review worker requests changes → review-pending
+    orch.processTransitions(
+      snapshotWith([{
+        id: "H-1-1",
+        ciStatus: "pass",
+        prState: "open",
+        reviewVerdict: requestChangesVerdict,
+      }]),
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+
+    // Step 2: Worker pushes fixes, CI restarts → ci-pending
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pending", prState: "open" }]),
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-pending");
+
+    // Step 3: CI passes → ci-passed → evaluateMerge → reviewing (reviewCompleted was reset)
+    const actions3 = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("reviewing");
+    expect(actions3.some((a) => a.type === "launch-review")).toBe(true);
+
+    // Step 4: Review worker approves → ci-passed → merging
+    const actions4 = orch.processTransitions(
+      snapshotWith([{
+        id: "H-1-1",
+        ciStatus: "pass",
+        prState: "open",
+        reviewVerdict: approveVerdict,
+      }]),
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("merging");
+    expect(actions4.some((a) => a.type === "merge")).toBe(true);
+  });
+});
+
 // ── Stale branch cleanup for reused item IDs (H-ORC-4) ──────────────
 
 function makeStaleBranchDeps(overrides: Partial<StaleBranchCleanupDeps> = {}): StaleBranchCleanupDeps {

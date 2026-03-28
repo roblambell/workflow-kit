@@ -2611,7 +2611,7 @@ describe("Orchestrator", () => {
         expect(actions).toHaveLength(0);
       });
 
-      it("stays review-pending with CHANGES_REQUESTED and CI fail (no CI regression handling)", () => {
+      it("transitions to ci-failed with CHANGES_REQUESTED and CI fail (manual strategy)", () => {
         orch = new Orchestrator({ mergeStrategy: "manual" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
@@ -2620,13 +2620,12 @@ describe("Orchestrator", () => {
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", ciStatus: "fail", prState: "open", reviewDecision: "CHANGES_REQUESTED" }]),
         );
-        // review-pending does not detect CI regression — stays in review-pending
-        // and emits no actions. CI failure is only handled in pr-open/ci-pending/ci-passed/ci-failed states.
-        expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
-        expect(actions).toHaveLength(0);
+        // CI fail is always detected from review-pending (H-RX-1)
+        expect(orch.getItem("X-1-1")!.state).toBe("ci-failed");
+        expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
       });
 
-      it("stays review-pending with CHANGES_REQUESTED and CI fail (auto strategy)", () => {
+      it("transitions to ci-failed with CHANGES_REQUESTED and CI fail (auto strategy)", () => {
         orch = new Orchestrator({ mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
@@ -2635,9 +2634,9 @@ describe("Orchestrator", () => {
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", ciStatus: "fail", prState: "open", reviewDecision: "CHANGES_REQUESTED" }]),
         );
-        // Same behavior regardless of merge strategy — review-pending ignores CI regression
-        expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
-        expect(actions).toHaveLength(0);
+        // CI fail is always detected from review-pending regardless of strategy (H-RX-1)
+        expect(orch.getItem("X-1-1")!.state).toBe("ci-failed");
+        expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
       });
 
       it("→ merged when PR externally merged during CHANGES_REQUESTED review", () => {

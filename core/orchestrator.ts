@@ -1085,6 +1085,66 @@ export class Orchestrator {
     // If review approved and CI still passes, evaluate merge
     if (snap?.reviewDecision === "APPROVED" && snap?.ciStatus === "pass") {
       actions.push(...this.evaluateMerge(item, snap, snap?.eventTime));
+      return actions;
+    }
+
+    // CI status changes — worker pushed fixes after review feedback.
+    // CI fail is always actionable regardless of reviewCompleted.
+    // CI pending/pass transitions only apply when reviewCompleted is false
+    // (worker addressing AI review feedback). When reviewCompleted is true,
+    // the item waits for human review or manual merge — CI pass would loop
+    // through evaluateMerge back to review-pending.
+    const ciStatus = snap?.ciStatus;
+
+    if (ciStatus === "fail") {
+      this.transition(item, "ci-failed", snap?.eventTime);
+      item.ciFailCount++;
+
+      const isMergeConflict = snap?.isMergeable === false;
+      item.failureReason = isMergeConflict
+        ? "ci-failed: merge conflicts with main"
+        : "ci-failed: CI checks failed";
+
+      if (isMergeConflict) {
+        actions.push({
+          type: "daemon-rebase",
+          itemId: item.id,
+          message: "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
+        });
+      } else {
+        item.ciFailureNotified = true;
+        item.ciFailureNotifiedAt = item.lastCommitTime ?? null;
+        actions.push({
+          type: "notify-ci-failure",
+          itemId: item.id,
+          prNumber: item.prNumber,
+          message: "[ORCHESTRATOR] CI Fix Request: CI failed — please investigate and fix.",
+        });
+      }
+      return actions;
+    }
+
+    if (!item.reviewCompleted) {
+      if (ciStatus === "pending") {
+        this.transition(item, "ci-pending", snap?.eventTime);
+        return actions;
+      }
+
+      if (ciStatus === "pass") {
+        this.transition(item, "ci-passed", snap?.eventTime);
+        actions.push(...this.evaluateMerge(item, snap, snap?.eventTime));
+        return actions;
+      }
+    }
+
+    // Merge conflict without CI failure — send rebase request
+    if (snap?.isMergeable === false && !item.rebaseRequested) {
+      item.rebaseRequested = true;
+      actions.push({
+        type: "daemon-rebase",
+        itemId: item.id,
+        message: "[ORCHESTRATOR] Rebase Request: PR has merge conflicts with main. Please rebase onto latest main.",
+      });
     }
 
     return actions;
