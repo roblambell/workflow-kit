@@ -44,6 +44,7 @@ const PROCESSING_INDICATORS = [
   "Executing",
   "Fetching",
   "Installing",
+  "Herding",
   // Tool usage indicators
   "Agent(",
   "Tool(",

@@ -206,7 +206,8 @@ export function launchAiSession(
 
   switch (tool) {
     case "claude":
-      cmd = `claude --name '${wsName}' --permission-mode bypassPermissions --agent ${agentName} --append-system-prompt "$(cat '${promptFile}')"`;
+      cmd = `claude --name '${wsName}' --permission-mode bypassPermissions --agent ${agentName} --append-system-prompt "$(cat '${promptFile}')" -- Start`;
+      initialPrompt = ""; // embedded as positional arg — skip post-launch send
       break;
     case "opencode":
       cmd = `opencode --agent ${agentName} --title '${wsName}'`;
