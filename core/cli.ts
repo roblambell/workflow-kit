@@ -51,7 +51,10 @@ if (command === "--help" || command === "-h") {
 
 // No args: detect project state and route to the appropriate flow
 if (!command) {
-  ensureMuxOrAutoLaunch(process.argv.slice(2));
+  // Only auto-launch on TTY — non-TTY no-args prints help (handled by cmdNoArgs)
+  if (process.stdin.isTTY) {
+    ensureMuxOrAutoLaunch(process.argv.slice(2));
+  }
 
   // Try to detect project root without dying on failure
   const gitResult = run("git", [
