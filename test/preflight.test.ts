@@ -8,6 +8,7 @@ import {
   checkMultiplexer,
   checkGitConfig,
   checkUncommittedTodos,
+  checkCopilotTrust,
   preflight,
   type ShellRunner,
 } from "../core/preflight.ts";
@@ -172,6 +173,89 @@ describe("checkUncommittedTodos (preflight)", () => {
   });
 });
 
+// ── checkCopilotTrust ───────────────────────────────────────────────
+
+describe("checkCopilotTrust (preflight)", () => {
+  it("returns info when copilot is not installed", () => {
+    const runner = allFailRunner();
+    const result = checkCopilotTrust("/fake/project", runner);
+    expect(result.status).toBe("info");
+    expect(result.message).toContain("not installed");
+  });
+
+  it("returns pass when project root is in trusted_folders", () => {
+    const runner = mockRunner({
+      "which copilot": { stdout: "/usr/local/bin/copilot", stderr: "", exitCode: 0 },
+    });
+    const readFile = () =>
+      JSON.stringify({ trusted_folders: ["/fake/project"] });
+    const result = checkCopilotTrust("/fake/project", runner, readFile);
+    expect(result.status).toBe("pass");
+    expect(result.message).toContain("trusts project root");
+  });
+
+  it("returns warn when project root is NOT in trusted_folders", () => {
+    const runner = mockRunner({
+      "which copilot": { stdout: "/usr/local/bin/copilot", stderr: "", exitCode: 0 },
+    });
+    const readFile = () =>
+      JSON.stringify({ trusted_folders: ["/other/path"] });
+    const result = checkCopilotTrust("/fake/project", runner, readFile);
+    expect(result.status).toBe("warn");
+    expect(result.message).toContain("not in Copilot trusted_folders");
+    expect(result.detail).toContain("/fake/project");
+    expect(result.detail).toContain("~/.copilot/config.json");
+  });
+
+  it("returns warn when config.json does not exist", () => {
+    const runner = mockRunner({
+      "which copilot": { stdout: "/usr/local/bin/copilot", stderr: "", exitCode: 0 },
+    });
+    const readFile = () => {
+      throw new Error("ENOENT: no such file");
+    };
+    const result = checkCopilotTrust("/fake/project", runner, readFile);
+    expect(result.status).toBe("warn");
+    expect(result.message).toContain("Could not read");
+    expect(result.detail).toContain("Run copilot once");
+  });
+
+  it("parent-path matching works (trusting parent covers child)", () => {
+    const runner = mockRunner({
+      "which copilot": { stdout: "/usr/local/bin/copilot", stderr: "", exitCode: 0 },
+    });
+    const readFile = () =>
+      JSON.stringify({ trusted_folders: ["/Users/rob/code"] });
+    const result = checkCopilotTrust(
+      "/Users/rob/code/ninthwave",
+      runner,
+      readFile,
+    );
+    expect(result.status).toBe("pass");
+    expect(result.message).toContain("trusts project root");
+  });
+
+  it("handles config with no trusted_folders key", () => {
+    const runner = mockRunner({
+      "which copilot": { stdout: "/usr/local/bin/copilot", stderr: "", exitCode: 0 },
+    });
+    const readFile = () => JSON.stringify({});
+    const result = checkCopilotTrust("/fake/project", runner, readFile);
+    expect(result.status).toBe("warn");
+    expect(result.message).toContain("not in Copilot trusted_folders");
+  });
+
+  it("handles invalid JSON in config file", () => {
+    const runner = mockRunner({
+      "which copilot": { stdout: "/usr/local/bin/copilot", stderr: "", exitCode: 0 },
+    });
+    const readFile = () => "not valid json{{{";
+    const result = checkCopilotTrust("/fake/project", runner, readFile);
+    expect(result.status).toBe("warn");
+    expect(result.message).toContain("Could not read");
+  });
+});
+
 // ── preflight() integration ──────────────────────────────────────────
 
 describe("preflight", () => {
@@ -264,8 +348,8 @@ describe("preflight with projectRoot", () => {
     };
     const result = preflight(runner, "/fake/project");
     expect(result.passed).toBe(true);
-    // 4 env checks + 1 TODO check = 5
-    expect(result.checks).toHaveLength(5);
+    // 4 env checks + 1 TODO check + 1 copilot trust check = 6
+    expect(result.checks).toHaveLength(6);
     expect(result.checks[4]!.message).toBe("All TODO files committed");
   });
 
@@ -310,5 +394,6 @@ describe("doctor reuses preflight", () => {
     expect(doctorModule.checkMultiplexer).toBe(preflightModule.checkMultiplexer);
     expect(doctorModule.checkGitConfig).toBe(preflightModule.checkGitConfig);
     expect(doctorModule.checkUncommittedTodos).toBe(preflightModule.checkUncommittedTodos);
+    expect(doctorModule.checkCopilotTrust).toBe(preflightModule.checkCopilotTrust);
   });
 });

@@ -13,6 +13,7 @@ import {
   checkNinthwaveConfig,
   checkPreCommitHook,
   checkGithubIdentity,
+  checkCopilotTrust,
   runDoctor,
   formatDoctorOutput,
   type ShellRunner,
@@ -347,6 +348,42 @@ describe("checkGithubIdentity", () => {
     expect(result.status).toBe("pass");
     expect(result.message).toContain("config file");
     expect(result.message).toContain("config-user");
+  });
+});
+
+describe("checkCopilotTrust (doctor re-export)", () => {
+  it("re-exports checkCopilotTrust from preflight", () => {
+    // The function should be importable from doctor.ts
+    expect(typeof checkCopilotTrust).toBe("function");
+  });
+
+  it("appears in doctor results as Optional", () => {
+    const repo = setupTempRepo();
+    // Runner where copilot is installed but trust check will warn (no config)
+    const runner: ShellRunner = (cmd: string, args: string[]): RunResult => {
+      if (cmd === "git" && args[0] === "config" && args[1] === "user.name") {
+        return { stdout: "Test User", stderr: "", exitCode: 0 };
+      }
+      if (cmd === "git" && args[0] === "config" && args[1] === "user.email") {
+        return { stdout: "test@example.com", stderr: "", exitCode: 0 };
+      }
+      if (cmd === "which" && args[0] === "copilot") {
+        return { stdout: "/usr/local/bin/copilot", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "/usr/local/bin/mock", stderr: "", exitCode: 0 };
+    };
+
+    const doctor = runDoctor(repo, runner);
+    // Find the copilot trust result (distinct from the AI tool check)
+    const copilotResult = doctor.results.find(
+      (r) =>
+        r.result.message.includes("Copilot trusted_folders") ||
+        r.result.message.includes("~/.copilot/config.json"),
+    );
+    expect(copilotResult).toBeDefined();
+    expect(copilotResult!.category).toBe("Optional");
+    // It's a warn, not a fail — so exit code should still be 0
+    expect(doctor.exitCode).toBe(0);
   });
 });
 

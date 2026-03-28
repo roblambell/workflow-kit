@@ -4,6 +4,7 @@
 // Used by both `ninthwave orchestrate` (as a gate before forking) and
 // `ninthwave doctor` (to avoid duplication).
 
+import { readFileSync } from "fs";
 import type { RunResult } from "./types.ts";
 import { run as defaultRun } from "./shell.ts";
 
@@ -147,6 +148,47 @@ export function checkUncommittedTodos(
   };
 }
 
+/** Check: Copilot trusts the project root (advisory only). */
+export function checkCopilotTrust(
+  projectRoot: string,
+  runner: ShellRunner,
+  readFile: (path: string) => string = (p) => readFileSync(p, "utf-8"),
+): CheckResult {
+  // Only relevant if copilot is available
+  if (runner("which", ["copilot"]).exitCode !== 0) {
+    return { status: "info", message: "Copilot not installed (skip trust check)" };
+  }
+
+  // Read ~/.copilot/config.json
+  const home = process.env.HOME ?? "";
+  const configPath = `${home}/.copilot/config.json`;
+  try {
+    const config = JSON.parse(readFile(configPath));
+    const trusted: string[] = config.trusted_folders ?? [];
+    // Check if project root or a parent is trusted
+    const isTrusted = trusted.some(
+      (folder: string) =>
+        projectRoot.startsWith(folder) || folder.startsWith(projectRoot),
+    );
+    if (isTrusted) {
+      return { status: "pass", message: "Copilot trusts project root" };
+    }
+    return {
+      status: "warn",
+      message: "Project root not in Copilot trusted_folders",
+      detail: `Add "${projectRoot}" to ~/.copilot/config.json trusted_folders to prevent trust prompts in worktrees`,
+    };
+  } catch {
+    // No config file — copilot might not be configured yet
+    return {
+      status: "warn",
+      message: "Could not read ~/.copilot/config.json",
+      detail:
+        "Run copilot once to generate config, then add project root to trusted_folders",
+    };
+  }
+}
+
 // ── Pre-flight runner ────────────────────────────────────────────────
 
 /**
@@ -167,6 +209,7 @@ export function preflight(
     checkMultiplexer(runner),
     checkGitConfig(runner),
     ...(projectRoot ? [checkUncommittedTodos(projectRoot, runner)] : []),
+    ...(projectRoot ? [checkCopilotTrust(projectRoot, runner)] : []),
   ];
 
   const errors: string[] = [];

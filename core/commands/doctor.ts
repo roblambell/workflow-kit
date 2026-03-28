@@ -19,6 +19,7 @@ export {
   checkMultiplexer,
   checkGitConfig,
   checkUncommittedTodos,
+  checkCopilotTrust,
 } from "../preflight.ts";
 
 import {
@@ -29,6 +30,7 @@ import {
   checkMultiplexer,
   checkGitConfig,
   checkUncommittedTodos,
+  checkCopilotTrust,
 } from "../preflight.ts";
 
 /** Category of a check. */
@@ -169,6 +171,7 @@ export function buildChecks(
 
     // Optional
     { category: "Optional", run: () => checkGithubIdentity(projectRoot, runner) },
+    { category: "Optional", run: () => checkCopilotTrust(projectRoot, runner) },
   ];
 }
 
