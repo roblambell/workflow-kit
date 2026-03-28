@@ -26,6 +26,12 @@ export interface CrewStatusInfo {
   connected: boolean;
 }
 
+/** Running schedule worker info for TUI display. */
+export interface ScheduleWorkerInfo {
+  taskId: string;
+  startedAt: string;
+}
+
 export interface ViewOptions {
   showBlockerDetail?: boolean;
   sessionStartedAt?: string;
@@ -39,6 +45,8 @@ export interface ViewOptions {
   ctrlCPending?: boolean;
   /** When true, render the help overlay instead of the normal frame. */
   showHelp?: boolean;
+  /** Active schedule workers to display in the TUI. */
+  scheduleWorkers?: ScheduleWorkerInfo[];
 }
 
 /**
@@ -296,6 +304,19 @@ export function formatAge(ms: number): string {
     return `${minutes}m`;
   }
   return "<1m";
+}
+
+/**
+ * Format a schedule worker status line for the TUI.
+ * Returns a line like: "  [sched] daily-tests -- running (2m 14s)"
+ */
+export function formatScheduleWorkerLine(
+  worker: ScheduleWorkerInfo,
+  now: Date = new Date(),
+): string {
+  const elapsed = Math.max(0, now.getTime() - new Date(worker.startedAt).getTime());
+  const duration = formatAge(elapsed);
+  return `  ${CYAN}[sched]${RESET} ${worker.taskId} ${DIM}-- running (${duration})${RESET}`;
 }
 
 /** Right-pad a string to a given width. */
@@ -929,6 +950,15 @@ export function formatStatusTable(
     }
   }
 
+  // Schedule worker status lines
+  const schedWorkers = opts.scheduleWorkers ?? [];
+  if (schedWorkers.length > 0) {
+    lines.push("");
+    for (const sw of schedWorkers) {
+      lines.push(formatScheduleWorkerLine(sw));
+    }
+  }
+
   // Footer: unified progress line
   lines.push(sep);
   lines.push(formatUnifiedProgress(items, termWidth));
@@ -1309,6 +1339,15 @@ export function buildStatusLayout(
       for (const item of queuedItems) {
         itemLines.push(formatQueuedItemRow(item, titleWidth, undefined, stateColWidth, daemonStr(item)));
       }
+    }
+  }
+
+  // Schedule worker status lines (shown after work items, before footer)
+  const schedWorkers = opts.scheduleWorkers ?? [];
+  if (schedWorkers.length > 0) {
+    itemLines.push("");
+    for (const sw of schedWorkers) {
+      itemLines.push(formatScheduleWorkerLine(sw));
     }
   }
 

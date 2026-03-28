@@ -1,4 +1,4 @@
-// schedule command: list, show, validate, and trigger scheduled tasks.
+// schedule command: list, show, validate, trigger, and view history for scheduled tasks.
 
 import { existsSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
@@ -7,6 +7,12 @@ import { listScheduledTasks, parseScheduleFile } from "../schedule-files.ts";
 import { nextRunTime, parseScheduleExpression } from "../schedule-eval.ts";
 import { isDaemonRunning } from "../daemon.ts";
 import { userStateDir } from "../daemon.ts";
+import {
+  readHistoryForTask,
+  readRecentHistory,
+  type ScheduleHistoryEntry,
+  type ScheduleHistoryIO,
+} from "../schedule-history.ts";
 
 /**
  * Format a duration in milliseconds as a human-readable relative string.
@@ -261,6 +267,111 @@ function cmdScheduleRun(id: string, projectRoot: string): void {
   console.log(`Daemon (PID ${daemonPid}) will pick it up next cycle (~30s).`);
 }
 
+// ── History formatting helpers ──────────────────────────────────────
+
+/**
+ * Format a duration in milliseconds as a compact human-readable string.
+ * e.g., "2m 14s", "1h 5m", "45s"
+ */
+function formatDurationCompact(ms: number): string {
+  if (ms < 0) ms = 0;
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h`;
+  if (minutes > 0 && seconds > 0) return `${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${seconds}s`;
+}
+
+/**
+ * Format a result value with color.
+ */
+function formatResult(result: string): string {
+  switch (result) {
+    case "success":
+      return `${GREEN}success${RESET}`;
+    case "timeout":
+      return `${YELLOW}timeout${RESET}`;
+    case "error":
+      return `${RED}error${RESET}`;
+    default:
+      return result;
+  }
+}
+
+/**
+ * Format an ISO date string as a concise local datetime.
+ * e.g., "2026-03-28 09:00:15"
+ */
+function formatDatetime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const yyyy = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${yyyy}-${mo}-${dd} ${hh}:${mm}:${ss}`;
+}
+
+export function cmdScheduleHistory(id: string | undefined, projectRoot: string, historyIO?: ScheduleHistoryIO): void {
+  const entries: ScheduleHistoryEntry[] = id
+    ? readHistoryForTask(projectRoot, id, 20, historyIO)
+    : readRecentHistory(projectRoot, 20, historyIO);
+
+  if (entries.length === 0) {
+    if (id) {
+      console.log(`No execution history for ${BOLD}${id}${RESET}.`);
+    } else {
+      console.log("No execution history found.");
+    }
+    console.log(`${DIM}History is recorded when scheduled tasks complete via the daemon.${RESET}`);
+    return;
+  }
+
+  // Table header
+  const taskIdWidth = id ? 0 : 20;
+  if (id) {
+    console.log(`${BOLD}Execution history: ${id}${RESET}`);
+    console.log();
+    console.log(
+      `${BOLD}${pad("DATE", 22)} ${pad("DURATION", 12)} RESULT${RESET}`,
+    );
+    console.log("-".repeat(48));
+  } else {
+    console.log(`${BOLD}Recent execution history${RESET}`);
+    console.log();
+    console.log(
+      `${BOLD}${pad("TASK", taskIdWidth)} ${pad("DATE", 22)} ${pad("DURATION", 12)} RESULT${RESET}`,
+    );
+    console.log("-".repeat(62));
+  }
+
+  for (const entry of entries) {
+    const date = formatDatetime(entry.startedAt);
+    const duration = formatDurationCompact(entry.durationMs);
+    const result = formatResult(entry.result);
+
+    if (id) {
+      console.log(
+        `${pad(date, 22)} ${pad(duration, 12)} ${result}`,
+      );
+    } else {
+      console.log(
+        `${pad(entry.taskId, taskIdWidth)} ${pad(date, 22)} ${pad(duration, 12)} ${result}`,
+      );
+    }
+  }
+
+  console.log();
+  console.log(`${DIM}${entries.length} execution(s)${RESET}`);
+}
+
 // ── Main handler ────────────────────────────────────────────────────
 
 export function cmdSchedule(args: string[], projectRoot: string): void {
@@ -285,8 +396,13 @@ export function cmdSchedule(args: string[], projectRoot: string): void {
       cmdScheduleRun(id, projectRoot);
       break;
     }
+    case "history": {
+      const id = args[1]; // optional
+      cmdScheduleHistory(id, projectRoot);
+      break;
+    }
     default:
       // If it doesn't match a subcommand, treat it as an alias or error
-      die(`Unknown subcommand: ${subcommand}. Use list, show, validate, or run.`);
+      die(`Unknown subcommand: ${subcommand}. Use list, show, validate, run, or history.`);
   }
 }

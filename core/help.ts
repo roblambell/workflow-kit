@@ -305,8 +305,8 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
 
   {
     name: "schedule",
-    usage: "schedule [list|show <id>|validate|run <id>]",
-    description: "List, inspect, validate, or trigger scheduled tasks",
+    usage: "schedule [list|show <id>|validate|run <id>|history [<id>]]",
+    description: "List, inspect, validate, trigger, or view history of scheduled tasks",
     group: "diagnostic",
     needsRoot: true,
     needsWork: false,
@@ -318,6 +318,8 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
       "nw schedule show daily-tests",
       "nw schedule validate",
       "nw schedule run daily-tests",
+      "nw schedule history",
+      "nw schedule history daily-tests",
     ],
   },
 

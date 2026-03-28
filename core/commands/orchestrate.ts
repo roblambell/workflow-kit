@@ -86,7 +86,6 @@ import { MockBroker } from "../mock-broker.ts";
 import { AuthorCache } from "../git-author.ts";
 import type { ScheduledTask } from "../types.ts";
 import type { ScheduleState, ScheduleWorkerEntry } from "../schedule-state.ts";
-import type { ScheduleState } from "../schedule-state.ts";
 import {
   readScheduleState,
   writeScheduleState,
@@ -101,6 +100,10 @@ import {
   type MonitorScheduleDeps,
 } from "../schedule-runner.ts";
 import { listScheduledTasks as listScheduledTasksFromDir } from "../schedule-files.ts";
+import {
+  appendHistoryEntry,
+  type ScheduleHistoryIO,
+} from "../schedule-history.ts";
 
 // ── Structured logging ─────────────────────────────────────────────
 
@@ -1234,6 +1237,8 @@ export interface ScheduleLoopDeps {
   aiTool: string;
   /** Path to the schedule triggers directory. */
   triggerDir: string;
+  /** Append a history entry. Injected for testability. */
+  appendHistory?: (projectRoot: string, entry: import("../schedule-history.ts").ScheduleHistoryEntry, io?: ScheduleHistoryIO) => void;
 }
 
 export interface OrchestrateLoopConfig {
@@ -1672,12 +1677,22 @@ export function processScheduledTasks(
   const taskMap = new Map(tasks.map((t) => [t.id, t]));
 
   // 1. Monitor active workers
+  const writeHistory = deps.appendHistory ?? appendHistoryEntry;
+  // Build a lookup for active worker start times (needed for history entries)
+  const workerStartMap = new Map<string, string>();
+  for (const w of state.active) {
+    workerStartMap.set(w.taskId, w.startedAt);
+  }
+
   if (state.active.length > 0) {
     const results = monitorScheduleWorkers(state, tasks, now, deps.monitorDeps);
     const completedIds: string[] = [];
     const timedOutIds: string[] = [];
 
     for (const [taskId, result] of results) {
+      const startedAt = workerStartMap.get(taskId) ?? now.toISOString();
+      const durationMs = now.getTime() - new Date(startedAt).getTime();
+
       if (result.status === "completed") {
         completedIds.push(taskId);
         log({
@@ -1685,26 +1700,59 @@ export function processScheduledTasks(
           level: "info",
           event: "schedule-completed",
           taskId,
+          durationMs,
+          result: "success",
         });
+        // Write history entry
+        try {
+          writeHistory(projectRoot, {
+            taskId,
+            startedAt,
+            endedAt: now.toISOString(),
+            result: "success",
+            durationMs,
+          });
+        } catch { /* best-effort history write */ }
       } else if (result.status === "timeout") {
         timedOutIds.push(taskId);
         log({
           ts: now.toISOString(),
           level: "warn",
-          event: "schedule-error",
+          event: "schedule-completed",
           taskId,
-          reason: "timeout",
-          elapsedMs: result.elapsedMs,
+          durationMs: result.elapsedMs,
+          result: "timeout",
         });
+        // Write history entry
+        try {
+          writeHistory(projectRoot, {
+            taskId,
+            startedAt,
+            endedAt: now.toISOString(),
+            result: "timeout",
+            durationMs: result.elapsedMs,
+          });
+        } catch { /* best-effort history write */ }
       } else if (result.status === "crashed") {
         completedIds.push(taskId);
         log({
           ts: now.toISOString(),
           level: "warn",
-          event: "schedule-error",
+          event: "schedule-completed",
           taskId,
-          reason: "crashed",
+          durationMs,
+          result: "error",
         });
+        // Write history entry
+        try {
+          writeHistory(projectRoot, {
+            taskId,
+            startedAt,
+            endedAt: now.toISOString(),
+            result: "error",
+            durationMs,
+          });
+        } catch { /* best-effort history write */ }
       }
     }
 
@@ -1735,7 +1783,7 @@ export function processScheduledTasks(
         level: "info",
         event: "schedule-skipped",
         taskId,
-        reason: "already-active-or-queued",
+        reason: "already-running",
       });
       continue;
     }
@@ -1744,7 +1792,8 @@ export function processScheduledTasks(
       level: "info",
       event: "schedule-triggered",
       taskId,
-      source: "trigger-file",
+      triggerType: "manual",
+      scheduleTime: now.toISOString(),
     });
     // Add to front of queue for priority processing
     state.queued.unshift(taskId);
@@ -1760,7 +1809,8 @@ export function processScheduledTasks(
         level: "info",
         event: "schedule-triggered",
         taskId,
-        source: "cron",
+        triggerType: "cron",
+        scheduleTime: now.toISOString(),
       });
       state.queued.push(taskId);
     }
@@ -1796,8 +1846,8 @@ export function processScheduledTasks(
         level: "info",
         event: "schedule-triggered",
         taskId: task.id,
+        triggerType: "launch",
         workspaceRef: ref,
-        source: "launch",
       });
     } else {
       log({
@@ -1805,23 +1855,22 @@ export function processScheduledTasks(
         level: "warn",
         event: "schedule-error",
         taskId: task.id,
-        reason: "launch-failed",
+        error: "launch-failed",
       });
     }
   }
 
   // Log WIP-full queueing
   if (state.queued.length > 0 && freeSlots === 0) {
-    log({
-      ts: now.toISOString(),
-      level: "info",
-      event: "schedule-skipped",
-      reason: "wip-full",
-      queuedTasks: state.queued,
-      activeWorkItems: activeWorkItemCount,
-      activeScheduled: activeScheduleCount,
-      wipLimit: effectiveWip,
-    });
+    for (const queuedTaskId of state.queued) {
+      log({
+        ts: now.toISOString(),
+        level: "info",
+        event: "schedule-skipped",
+        taskId: queuedTaskId,
+        reason: "wip-full-queued",
+      });
+    }
   }
 
   // 5. Write updated state
@@ -2751,6 +2800,18 @@ export async function cmdOrchestrate(
     }
     // TUI mode: render live status table to stdout after each poll cycle
     if (tuiMode) {
+      // Populate schedule worker status for TUI display
+      if (scheduleLoopDeps) {
+        try {
+          const schedState = readScheduleState(projectRoot);
+          tuiState.viewOptions.scheduleWorkers = schedState.active.map((w) => ({
+            taskId: w.taskId,
+            startedAt: w.startedAt,
+          }));
+        } catch {
+          tuiState.viewOptions.scheduleWorkers = [];
+        }
+      }
       try {
         renderTuiFrame(items, wipLimit, undefined, tuiState.viewOptions, tuiState.scrollOffset, resolvedCrewName);
       } catch {
