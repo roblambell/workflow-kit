@@ -6,6 +6,7 @@ import {
   collectRunMetrics,
   writeRunMetrics,
   commitAnalyticsFiles,
+  commitFrictionFiles,
   parseCostSummary,
   percentile,
   computeDetectionLatency,
@@ -2028,5 +2029,116 @@ describe("formatAnalytics with detection latency", () => {
 
     expect(output).toContain("Detection latency");
     expect(output).not.toContain("slow detection");
+  });
+});
+
+// ── commitFrictionFiles ────────────────────────────────────────────────
+
+function mockFrictionDeps(overrides?: Partial<AnalyticsCommitDeps>): AnalyticsCommitDeps & {
+  hasChanges: ReturnType<typeof vi.fn>;
+  gitAdd: ReturnType<typeof vi.fn>;
+  getStagedFiles: ReturnType<typeof vi.fn>;
+  gitCommit: ReturnType<typeof vi.fn>;
+  gitReset: ReturnType<typeof vi.fn>;
+} {
+  return {
+    hasChanges: vi.fn(() => true),
+    gitAdd: vi.fn(),
+    getStagedFiles: vi.fn(() => [".ninthwave/friction/2026-03-28T10-00-00Z--M-FRC-1.md"]),
+    gitCommit: vi.fn(),
+    gitReset: vi.fn(),
+    ...overrides,
+  };
+}
+
+describe("commitFrictionFiles", () => {
+  it("commits when friction files have changes", () => {
+    const deps = mockFrictionDeps();
+
+    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
+
+    expect(result.committed).toBe(true);
+    expect(result.reason).toBe("committed");
+    expect(deps.hasChanges).toHaveBeenCalledWith("/project", ".ninthwave/friction");
+    expect(deps.gitAdd).toHaveBeenCalledWith("/project", [".ninthwave/friction"]);
+    expect(deps.gitCommit).toHaveBeenCalledWith(
+      "/project",
+      "chore: commit friction entries",
+    );
+  });
+
+  it("skips commit when no friction files changed", () => {
+    const deps = mockFrictionDeps({
+      hasChanges: vi.fn(() => false),
+    });
+
+    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
+
+    expect(result.committed).toBe(false);
+    expect(result.reason).toBe("no_changes");
+    expect(deps.gitAdd).not.toHaveBeenCalled();
+    expect(deps.gitCommit).not.toHaveBeenCalled();
+  });
+
+  it("skips commit when non-friction files are staged (dirty index)", () => {
+    const deps = mockFrictionDeps({
+      getStagedFiles: vi.fn(() => [
+        ".ninthwave/friction/2026-03-28T10-00-00Z--M-FRC-1.md",
+        "src/unrelated-file.ts",
+      ]),
+    });
+
+    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
+
+    expect(result.committed).toBe(false);
+    expect(result.reason).toBe("dirty_index");
+    expect(deps.gitAdd).toHaveBeenCalled();
+    expect(deps.gitCommit).not.toHaveBeenCalled();
+    expect(deps.gitReset).toHaveBeenCalledWith("/project", [".ninthwave/friction"]);
+  });
+
+  it("unstages friction files before returning dirty_index", () => {
+    const callOrder: string[] = [];
+    const deps = mockFrictionDeps({
+      getStagedFiles: vi.fn(() => {
+        callOrder.push("getStagedFiles");
+        return [
+          ".ninthwave/friction/2026-03-28T10-00-00Z--M-FRC-1.md",
+          "src/unrelated-file.ts",
+        ];
+      }),
+      gitAdd: vi.fn(() => { callOrder.push("gitAdd"); }),
+      gitReset: vi.fn(() => { callOrder.push("gitReset"); }),
+    });
+
+    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
+
+    expect(result.committed).toBe(false);
+    expect(result.reason).toBe("dirty_index");
+    expect(callOrder).toEqual(["gitAdd", "getStagedFiles", "gitReset"]);
+    expect(deps.gitReset).toHaveBeenCalledWith("/project", [".ninthwave/friction"]);
+  });
+
+  it("does not call gitReset on clean commit", () => {
+    const deps = mockFrictionDeps();
+
+    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
+
+    expect(result.committed).toBe(true);
+    expect(deps.gitReset).not.toHaveBeenCalled();
+  });
+
+  it("handles multiple friction files", () => {
+    const deps = mockFrictionDeps({
+      getStagedFiles: vi.fn(() => [
+        ".ninthwave/friction/2026-03-28T10-00-00Z--M-FRC-1.md",
+        ".ninthwave/friction/2026-03-28T11-00-00Z--M-FRC-2.md",
+      ]),
+    });
+
+    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
+
+    expect(result.committed).toBe(true);
+    expect(result.reason).toBe("committed");
   });
 });

@@ -360,3 +360,41 @@ export function commitAnalyticsFiles(
   deps.gitCommit(projectRoot, "chore: update orchestration analytics");
   return { committed: true, reason: "committed" };
 }
+
+/**
+ * Auto-commit friction entries after an orchestration run.
+ * Only stages files under the friction path — never commits unrelated changes.
+ *
+ * Safety: if non-friction files are already staged in the index, skips the
+ * commit and returns `dirty_index` to avoid accidentally including them.
+ *
+ * @param projectRoot - The git repo root
+ * @param frictionRelPath - Relative path to friction dir (e.g., ".ninthwave/friction")
+ * @param deps - Injectable git operations
+ */
+export function commitFrictionFiles(
+  projectRoot: string,
+  frictionRelPath: string,
+  deps: AnalyticsCommitDeps,
+): CommitAnalyticsResult {
+  // 1. Check if friction files have any changes
+  if (!deps.hasChanges(projectRoot, frictionRelPath)) {
+    return { committed: false, reason: "no_changes" };
+  }
+
+  // 2. Stage friction files only
+  deps.gitAdd(projectRoot, [frictionRelPath]);
+
+  // 3. Safety check: ensure only friction files are staged
+  const staged = deps.getStagedFiles(projectRoot);
+  const nonFriction = staged.filter((f) => !f.startsWith(frictionRelPath));
+  if (nonFriction.length > 0) {
+    // Unstage friction files we just added to avoid leaving them staged
+    deps.gitReset(projectRoot, [frictionRelPath]);
+    return { committed: false, reason: "dirty_index" };
+  }
+
+  // 4. Commit
+  deps.gitCommit(projectRoot, "chore: commit friction entries");
+  return { committed: true, reason: "committed" };
+}
