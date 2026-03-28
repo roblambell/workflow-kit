@@ -269,7 +269,7 @@ describe("cmdRetry", () => {
 
     const daemonMsg = deps.logs.find((l) => l.includes("Daemon is not running"));
     expect(daemonMsg).toBeDefined();
-    expect(daemonMsg).toContain("ninthwave orchestrate");
+    expect(daemonMsg).toContain("ninthwave watch");
   });
 
   it("notifies running daemon via SIGUSR1", () => {

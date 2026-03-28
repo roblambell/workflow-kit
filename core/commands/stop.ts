@@ -1,4 +1,4 @@
-// stop command: terminate the orchestrator daemon gracefully.
+// stop command: terminate the watch daemon gracefully.
 
 import {
   existsSync,
@@ -29,7 +29,7 @@ const defaultDeps: StopDeps = {
 };
 
 /**
- * Stop the orchestrator daemon.
+ * Stop the watch daemon.
  * Returns a status message for the caller.
  */
 export function cmdStop(
@@ -39,7 +39,7 @@ export function cmdStop(
   const pid = readPidFile(projectRoot, deps.io);
 
   if (pid === null) {
-    const msg = "No orchestrator daemon is running.";
+    const msg = "No watch daemon is running.";
     console.log(msg);
     return msg;
   }
@@ -48,14 +48,14 @@ export function cmdStop(
     // Stale PID file — clean up
     cleanPidFile(projectRoot, deps.io);
     cleanStateFile(projectRoot, deps.io);
-    const msg = `Orchestrator daemon is not running (stale PID file, PID ${pid}). Cleaned up.`;
+    const msg = `Watch daemon is not running (stale PID file, PID ${pid}). Cleaned up.`;
     console.log(msg);
     return msg;
   }
 
   // Send SIGTERM for graceful shutdown
   deps.kill(pid, "SIGTERM");
-  const msg = `Sent SIGTERM to orchestrator daemon (PID ${pid}). Shutting down gracefully.`;
+  const msg = `Sent SIGTERM to watch daemon (PID ${pid}). Shutting down gracefully.`;
   console.log(msg);
   return msg;
 }

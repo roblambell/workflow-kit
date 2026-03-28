@@ -80,7 +80,7 @@ describe("CLI flags", () => {
       expect(result.stdout).toContain("setup");
       expect(result.stdout).toContain("version");
       expect(result.stdout).toContain("list");
-      expect(result.stdout).toContain("orchestrate");
+      expect(result.stdout).toContain("watch");
     });
   });
 
@@ -105,11 +105,17 @@ describe("CLI flags", () => {
       expect(result.stdout).toContain("Launch parallel sessions");
     });
 
-    it("shows command-specific help for orchestrate --help", () => {
-      const result = runCli("orchestrate", "--help");
+    it("shows command-specific help for watch --help", () => {
+      const result = runCli("watch", "--help");
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("Usage: ninthwave orchestrate");
-      expect(result.stdout).toContain("Orchestrate parallel processing");
+      expect(result.stdout).toContain("Usage: ninthwave watch");
+      expect(result.stdout).toContain("Run the full pipeline");
+    });
+
+    it("rejects orchestrate as unknown command", () => {
+      const result = runCli("orchestrate");
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("Unknown command: orchestrate");
     });
   });
 });
