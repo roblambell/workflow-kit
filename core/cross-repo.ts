@@ -163,7 +163,7 @@ export function getWorktreeInfo(
   }
 
   // Fallback: hub repo worktree (backwards compat)
-  const hubPath = join(worktreeDir, `todo-${todoId}`);
+  const hubPath = join(worktreeDir, `ninthwave-${todoId}`);
   if (existsSync(hubPath)) {
     // Derive project root from worktree dir (worktreeDir = <projectRoot>/.worktrees)
     const projectRoot = dirname(worktreeDir);

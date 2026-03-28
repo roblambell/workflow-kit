@@ -103,11 +103,11 @@ What ninthwave will not become:
 
 4. **Not a code review tool.** ninthwave orchestrates review workers but the review logic lives in the agent prompt, not the orchestrator. The human reviewer is always in the loop.
 
-5. **Not a project management tool.** `.ninthwave/todos/` is a lightweight work queue, not Jira.
+5. **Not a project management tool.** `.ninthwave/work/` is a lightweight work queue, not Jira.
 
 6. **Not a monolithic agent.** Many small workers plus a deterministic orchestrator is the architecture. Decomposition and parallel execution is the point.
 
-7. **Not a monitoring system.** ninthwave doesn't collect metrics or evaluate production health. Work items come from `.ninthwave/todos/` files or the `create-todo` GitHub Action.
+7. **Not a monitoring system.** ninthwave doesn't collect metrics or evaluate production health. Work items come from `.ninthwave/work/` files or the `create-todo` GitHub Action.
 
 ## Feature-Completeness
 
@@ -134,4 +134,4 @@ ninthwave uses itself to develop itself. This is not a metaphor — the v0.1.0 r
 
 The cycle: decompose a feature into TODOs, process them via `ninthwave orchestrate` with auto-merge, review the friction log after each batch, decompose actionable friction into new TODOs, repeat until no actionable friction remains.
 
-The **L-VIS recurring item** in `.ninthwave/todos/` is the mechanism. When all other TODOs complete, L-VIS triggers: review this document against the current state, check the friction log, identify the next most impactful capability, decompose it into TODOs, add a new L-VIS-(N+1) depending on the terminal items. The cycle continues.
+The **L-VIS recurring item** in `.ninthwave/work/` is the mechanism. When all other TODOs complete, L-VIS triggers: review this document against the current state, check the friction log, identify the next most impactful capability, decompose it into TODOs, add a new L-VIS-(N+1) depending on the terminal items. The cycle continues.

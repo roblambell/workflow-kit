@@ -40,7 +40,7 @@ function makeTodo(
     dependencies: deps,
     bundleWith: [],
     status: "open",
-    filePath: `/project/.ninthwave/todos/1--${id}.md`,
+    filePath: `/project/.ninthwave/work/1--${id}.md`,
     repoAlias: "",
     rawText: `## ${id}\nTest todo`,
     filePaths: [],
@@ -63,7 +63,7 @@ function snapshotWith(
 const defaultCtx: ExecutionContext = {
   projectRoot: "/tmp/test-project",
   worktreeDir: "/tmp/test-project/.worktrees",
-  todosDir: "/tmp/test-project/.ninthwave/todos",
+  workDir: "/tmp/test-project/.ninthwave/work",
   aiTool: "claude",
 };
 
@@ -442,7 +442,7 @@ describe("Daemon lifecycle: stacking (dependent items)", () => {
     // DEP-2 should be launched stacked on DEP-1's branch
     expect(dep2State).toBe("launching");
     expect(dep2HasBaseBranch).toBe(true);
-    expect(orch.getItem("DEP-2")!.baseBranch).toBe("todo/DEP-1");
+    expect(orch.getItem("DEP-2")!.baseBranch).toBe("ninthwave/DEP-1");
 
     // Phase 4: DEP-1 merges
     const mergeAction = actions.find((a) => a.type === "merge")!;
@@ -519,11 +519,11 @@ describe("Daemon lifecycle: stacking (dependent items)", () => {
       ]),
     );
     expect(orch.getItem("DEPSTK-2")!.state).toBe("launching");
-    expect(orch.getItem("DEPSTK-2")!.baseBranch).toBe("todo/DEPSTK-1");
+    expect(orch.getItem("DEPSTK-2")!.baseBranch).toBe("ninthwave/DEPSTK-1");
 
     // Execute launch so DEPSTK-2 gets a workspaceRef
     const deps = mockDeps();
-    const launchAction = { type: "launch" as const, itemId: "DEPSTK-2", baseBranch: "todo/DEPSTK-1" };
+    const launchAction = { type: "launch" as const, itemId: "DEPSTK-2", baseBranch: "ninthwave/DEPSTK-1" };
     orch.executeAction(launchAction, defaultCtx, deps);
     expect(orch.getItem("DEPSTK-2")!.workspaceRef).toBe("workspace:1");
 
@@ -584,7 +584,7 @@ describe("Daemon lifecycle: stacking with stuck dependency notification", () => 
 
     // Set up STKN-2 as stacked on STKN-1
     orch.setState("STKN-2", "implementing");
-    orch.getItem("STKN-2")!.baseBranch = "todo/STKN-1";
+    orch.getItem("STKN-2")!.baseBranch = "ninthwave/STKN-1";
     orch.getItem("STKN-2")!.workspaceRef = "workspace:2";
 
     // Now trigger the transition where STKN-1 goes from ci-failed → stuck

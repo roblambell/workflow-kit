@@ -18,7 +18,7 @@ H-CP-18 Log SigV4 signi...
   ⚡ Idle                    ← worker state (from cmux)
   ● CI Pending               ← orchestrator state (redundant with TUI)
   CI running                  ← subtitle (from worker? or orchestrator?)
-  todo/H-CP-18 ~ ~/code/...  ← worktree path
+  ninthwave/H-CP-18 ~ ~/code/...  ← worktree path
 ```
 
 It's unclear what each field's source/contract is:

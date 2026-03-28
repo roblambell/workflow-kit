@@ -692,7 +692,7 @@ describe("setupGlobal", () => {
 
     // No project-level artifacts
     expect(existsSync(join(fakeHome, ".ninthwave"))).toBe(false);
-    expect(existsSync(join(fakeHome, ".ninthwave/todos"))).toBe(false);
+    expect(existsSync(join(fakeHome, ".ninthwave/work"))).toBe(false);
     expect(existsSync(join(fakeHome, ".claude/agents"))).toBe(false);
   });
 

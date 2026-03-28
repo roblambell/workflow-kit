@@ -725,7 +725,7 @@ describe("initProject", () => {
 
     // Scaffolding completed
     expect(existsSync(join(projectDir, ".ninthwave/domains.conf"))).toBe(true);
-    expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/work/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/friction/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".gitignore"))).toBe(true);
     expect(existsSync(join(userStateDir(projectDir), "version"))).toBe(true);
@@ -771,11 +771,11 @@ describe("initProject", () => {
     expect(detection.mux).toBeNull();
     // Setup still completed
     expect(existsSync(join(projectDir, ".ninthwave/config"))).toBe(true);
-    expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/work/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/friction/.gitkeep"))).toBe(true);
   });
 
-  it("creates .ninthwave/todos/ and .ninthwave/friction/ with .gitkeep files", () => {
+  it("creates .ninthwave/work/ and .ninthwave/friction/ with .gitkeep files", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -787,15 +787,15 @@ describe("initProject", () => {
     initProject(projectDir, bundleDir, deps);
 
     // Both directories exist
-    expect(existsSync(join(projectDir, ".ninthwave/todos"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/work"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/friction"))).toBe(true);
 
     // .gitkeep files exist in both
-    expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/work/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/friction/.gitkeep"))).toBe(true);
 
     // .gitkeep files are empty
-    expect(readFileSync(join(projectDir, ".ninthwave/todos/.gitkeep"), "utf-8")).toBe("");
+    expect(readFileSync(join(projectDir, ".ninthwave/work/.gitkeep"), "utf-8")).toBe("");
     expect(readFileSync(join(projectDir, ".ninthwave/friction/.gitkeep"), "utf-8")).toBe("");
   });
 
@@ -1596,7 +1596,7 @@ describe("initProject — prerequisite checking", () => {
 
     // Setup still completed
     expect(existsSync(join(projectDir, ".ninthwave/config"))).toBe(true);
-    expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/work/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/friction/.gitkeep"))).toBe(true);
     expect(detection).toBeDefined();
   });
@@ -1852,7 +1852,7 @@ describe("initProject — global mode", () => {
 
     // No project-level artifacts
     expect(existsSync(join(fakeHome, ".ninthwave"))).toBe(false);
-    expect(existsSync(join(fakeHome, ".ninthwave/todos"))).toBe(false);
+    expect(existsSync(join(fakeHome, ".ninthwave/work"))).toBe(false);
     expect(existsSync(join(fakeHome, ".claude/agents"))).toBe(false);
   });
 });
@@ -1976,7 +1976,7 @@ describe("initProject — preserves existing files", () => {
     expect(domainsContent).toContain("Domain mappings");
   });
 
-  it("creates .ninthwave/todos/ directory", () => {
+  it("creates .ninthwave/work/ directory", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -1987,8 +1987,37 @@ describe("initProject — preserves existing files", () => {
 
     initProject(projectDir, bundleDir, deps);
 
-    expect(existsSync(join(projectDir, ".ninthwave/todos"))).toBe(true);
-    expect(existsSync(join(projectDir, ".ninthwave/todos/.gitkeep"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/work"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/work/.gitkeep"))).toBe(true);
+  });
+
+  it("migrates .ninthwave/todos/ to .ninthwave/work/", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    // Create legacy .ninthwave/todos/ directory with a test file
+    const legacyDir = join(projectDir, ".ninthwave", "todos");
+    mkdirSync(legacyDir, { recursive: true });
+    writeFileSync(join(legacyDir, ".gitkeep"), "");
+    writeFileSync(join(legacyDir, "1-test--H-MIG-1.md"), "# Test migration (H-MIG-1)\n");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+
+    // Legacy directory should be removed
+    expect(existsSync(join(projectDir, ".ninthwave/todos"))).toBe(false);
+
+    // New directory should exist with migrated contents
+    expect(existsSync(join(projectDir, ".ninthwave/work"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/work/.gitkeep"))).toBe(true);
+    expect(existsSync(join(projectDir, ".ninthwave/work/1-test--H-MIG-1.md"))).toBe(true);
+    expect(readFileSync(join(projectDir, ".ninthwave/work/1-test--H-MIG-1.md"), "utf-8")).toBe(
+      "# Test migration (H-MIG-1)\n",
+    );
   });
 
   it("creates relative skill symlinks in .claude/skills/", () => {

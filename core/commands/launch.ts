@@ -288,7 +288,7 @@ const defaultStaleBranchDeps: StaleBranchCleanupDeps = {
 /**
  * Clean up stale branches when a TODO ID is reused with different work.
  *
- * When a TODO ID is reused (same ID, different title), the old `todo/*` branch
+ * When a TODO ID is reused (same ID, different title), the old `ninthwave/*` branch
  * may still exist with a merged PR. Workers launched on this branch detect the
  * existing merged PR and immediately exit, falsely marking the item as "done".
  *
@@ -304,7 +304,7 @@ export function cleanStaleBranchForReuse(
   targetRepo: string,
   deps: StaleBranchCleanupDeps = defaultStaleBranchDeps,
 ): boolean {
-  const branchName = `todo/${todoId}`;
+  const branchName = `ninthwave/${todoId}`;
 
   // Check for merged PRs on this branch
   const mergedPrs = deps.prList(targetRepo, branchName, "merged");
@@ -353,10 +353,10 @@ export function cleanStaleBranchForReuse(
 
 /**
  * Extract full TODO text for an item from its individual todo file.
- * Looks for a file matching `*--{targetId}.md` in todosDir.
+ * Looks for a file matching `*--{targetId}.md` in workDir.
  */
-export function extractTodoText(todosDir: string, targetId: string): string {
-  const item = readTodo(todosDir, targetId);
+export function extractTodoText(workDir: string, targetId: string): string {
+  const item = readTodo(workDir, targetId);
   if (!item) return "";
   return item.rawText;
 }
@@ -367,7 +367,7 @@ export function extractTodoText(todosDir: string, targetId: string): string {
  */
 export function launchSingleItem(
   item: TodoItem,
-  todosDir: string,
+  workDir: string,
   worktreeDir: string,
   projectRoot: string,
   aiTool: string,
@@ -381,7 +381,7 @@ export function launchSingleItem(
     warn(`Skipping ${item.id}: ${(err as Error).message}`);
     return null;
   }
-  const branchName = `todo/${item.id}`;
+  const branchName = `ninthwave/${item.id}`;
 
   // Stale branch cleanup: if the orchestrator didn't already clean it (e.g.,
   // called from `ninthwave start` directly), clean up stale branches now.
@@ -395,9 +395,9 @@ export function launchSingleItem(
   // Determine worktree path based on target repo
   let worktreePath: string;
   if (targetRepo === projectRoot) {
-    worktreePath = join(worktreeDir, `todo-${item.id}`);
+    worktreePath = join(worktreeDir, `ninthwave-${item.id}`);
   } else {
-    worktreePath = join(targetRepo, ".worktrees", `todo-${item.id}`);
+    worktreePath = join(targetRepo, ".worktrees", `ninthwave-${item.id}`);
   }
 
   // Create worktree
@@ -563,7 +563,7 @@ export function launchSingleItem(
   );
 
   // Build system prompt
-  const todoText = extractTodoText(todosDir, item.id);
+  const todoText = extractTodoText(workDir, item.id);
   const baseBranchLine = options.baseBranch ? `BASE_BRANCH: ${options.baseBranch}\n` : "";
   const seededAgentsLine = seededAgents.length > 0
     ? `\nNOTE: The following files were seeded into this worktree by ninthwave and should be included in your first commit: ${seededAgents.join(", ")}\n`
@@ -614,7 +614,7 @@ export interface ReviewLaunchResult {
  * - "off": No worktree needed. Review worker reads diff via `gh pr diff` and posts
  *   comments. Runs in a temp directory (read-only, lighter, faster).
  * - "direct" / "pr": Creates a worktree named `review-{id}` from the existing
- *   `todo/{id}` branch. The review worker needs the worktree to push fix commits.
+ *   `ninthwave/{id}` branch. The review worker needs the worktree to push fix commits.
  *
  * No partition allocation — review workers don't need isolated ports/DBs.
  */
@@ -635,8 +635,8 @@ export function launchReviewWorker(
     workDir = join(tmpdir(), `nw-review-${itemId}-${Date.now()}`);
     mkdirSync(workDir, { recursive: true });
   } else {
-    // direct or pr: create worktree from existing todo/{id} branch
-    const branchName = `todo/${itemId}`;
+    // direct or pr: create worktree from existing ninthwave/{id} branch
+    const branchName = `ninthwave/${itemId}`;
     const reviewBranch = `review/${itemId}`;
     worktreePath = join(repoRoot, ".worktrees", `review-${itemId}`);
     workDir = worktreePath;
@@ -744,7 +744,7 @@ export function launchRepairWorker(
   mux: Multiplexer = getMux(),
 ): RepairLaunchResult | null {
   // The repair worker runs in the existing worktree for this item
-  const worktreePath = join(repoRoot, ".worktrees", `todo-${itemId}`);
+  const worktreePath = join(repoRoot, ".worktrees", `ninthwave-${itemId}`);
   if (!existsSync(worktreePath)) {
     warn(`No worktree found for repair of ${itemId} at ${worktreePath}`);
     return null;
@@ -799,12 +799,12 @@ export const TODO_ID_CLI_PATTERN = /^[A-Z]+-[A-Z0-9]+-\d+[a-z]*$/;
  */
 export async function cmdRunItems(
   ids: string[],
-  todosDir: string,
+  workDir: string,
   worktreeDir: string,
   projectRoot: string,
   muxOverride?: Multiplexer,
 ): Promise<void> {
-  const items = parseTodos(todosDir, worktreeDir);
+  const items = parseTodos(workDir, worktreeDir);
   const itemMap = new Map<string, TodoItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
@@ -908,7 +908,7 @@ export async function cmdRunItems(
 
     for (const id of batchItems) {
       const item = itemMap.get(id)!;
-      const result = launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux);
+      const result = launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux);
       if (!result) {
         die(`Failed to launch ${id}. Aborting remaining items.`);
       }
@@ -928,7 +928,7 @@ export async function cmdRunItems(
 
 export async function cmdStart(
   args: string[],
-  todosDir: string,
+  workDir: string,
   worktreeDir: string,
   projectRoot: string,
   muxOverride?: Multiplexer,
@@ -936,7 +936,7 @@ export async function cmdStart(
   const ids = splitIds(args);
 
   if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...]");
-  const items = parseTodos(todosDir, worktreeDir);
+  const items = parseTodos(workDir, worktreeDir);
   const itemMap = new Map<string, TodoItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
@@ -1012,7 +1012,7 @@ export async function cmdStart(
       }
     }
     if (hasConflicts) {
-      cmdConflicts(ids, todosDir, worktreeDir);
+      cmdConflicts(ids, workDir, worktreeDir);
       console.log();
       warn("Conflicts detected between selected items. Proceeding anyway.");
       console.log();
@@ -1034,7 +1034,7 @@ export async function cmdStart(
 
   for (const id of ids) {
     const item = itemMap.get(id)!;
-    launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux);
+    launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux);
     launched.push(id);
   }
 

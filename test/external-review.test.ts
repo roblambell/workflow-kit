@@ -90,11 +90,11 @@ function makeExternalReviewDeps(
 // ── scanExternalPRs ──────────────────────────────────────────────────
 
 describe("scanExternalPRs", () => {
-  it("filters out todo/* branches", () => {
+  it("filters out ninthwave/* branches", () => {
     const deps = mockScanDeps([
-      { number: 1, head: { ref: "todo/H-1-1", sha: "aaa" }, user: { login: "bot" }, draft: false, author_association: "MEMBER", labels: [] },
+      { number: 1, head: { ref: "ninthwave/H-1-1", sha: "aaa" }, user: { login: "bot" }, draft: false, author_association: "MEMBER", labels: [] },
       { number: 2, head: { ref: "feature/login", sha: "bbb" }, user: { login: "alice" }, draft: false, author_association: "MEMBER", labels: [] },
-      { number: 3, head: { ref: "todo/M-2-1", sha: "ccc" }, user: { login: "bot" }, draft: false, author_association: "MEMBER", labels: [] },
+      { number: 3, head: { ref: "ninthwave/M-2-1", sha: "ccc" }, user: { login: "bot" }, draft: false, author_association: "MEMBER", labels: [] },
       { number: 4, head: { ref: "fix/bug-42", sha: "ddd" }, user: { login: "bob" }, draft: false, author_association: "COLLABORATOR", labels: [] },
     ]);
 
@@ -152,10 +152,10 @@ describe("scanExternalPRs", () => {
     expect(result).toEqual([]);
   });
 
-  it("filters out all PRs when all are todo/*", () => {
+  it("filters out all PRs when all are ninthwave/*", () => {
     const deps = mockScanDeps([
-      { number: 1, head: { ref: "todo/A-1-1", sha: "a" }, user: { login: "bot" }, draft: false, author_association: "MEMBER", labels: [] },
-      { number: 2, head: { ref: "todo/B-2-1", sha: "b" }, user: { login: "bot" }, draft: false, author_association: "MEMBER", labels: [] },
+      { number: 1, head: { ref: "ninthwave/A-1-1", sha: "a" }, user: { login: "bot" }, draft: false, author_association: "MEMBER", labels: [] },
+      { number: 2, head: { ref: "ninthwave/B-2-1", sha: "b" }, user: { login: "bot" }, draft: false, author_association: "MEMBER", labels: [] },
     ]);
 
     const result = scanExternalPRs("/tmp/repo", deps);

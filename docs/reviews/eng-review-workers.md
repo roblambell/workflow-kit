@@ -202,7 +202,7 @@ Lines 133-137: when no `targetId` is specified, `cmdCloseWorkspaces(mux)` is cal
 
 ### 6.1 Core Reconcile Flow
 
-`reconcile()` pulls latest main, queries GitHub for merged todo/* PRs, marks merged items done, cleans worktrees, closes stale workspaces, and commits/pushes.
+`reconcile()` pulls latest main, queries GitHub for merged ninthwave/* PRs, marks merged items done, cleans worktrees, closes stale workspaces, and commits/pushes.
 
 **Observation:** The DI pattern (`ReconcileDeps`) is excellent — every external dependency is injectable. The test suite uses this for comprehensive unit testing without shell calls.
 

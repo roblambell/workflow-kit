@@ -305,30 +305,30 @@ describe("git.ts error handling", () => {
       gitSetup(repo, "branch", "-M", "main");
 
       // Create branch A with a commit
-      gitSetup(repo, "checkout", "-b", "todo/A");
+      gitSetup(repo, "checkout", "-b", "ninthwave/A");
       writeFileSync(`${repo}/a.txt`, "feature A");
       gitSetup(repo, "add", ".");
       gitSetup(repo, "commit", "-m", "A: add feature", "--quiet");
       const tipA = gitSetup(repo, "rev-parse", "HEAD");
 
       // Create branch B stacked on A with its own commit
-      gitSetup(repo, "checkout", "-b", "todo/B");
+      gitSetup(repo, "checkout", "-b", "ninthwave/B");
       writeFileSync(`${repo}/b.txt`, "feature B");
       gitSetup(repo, "add", ".");
       gitSetup(repo, "commit", "-m", "B: add feature", "--quiet");
 
       // Simulate squash-merge of A into main
       gitSetup(repo, "checkout", "main");
-      gitSetup(repo, "merge", "--squash", "todo/A");
+      gitSetup(repo, "merge", "--squash", "ninthwave/A");
       gitSetup(repo, "commit", "-m", "squash: A", "--quiet");
 
       // Now rebase B onto main, skipping A's commits
-      const success = rebaseOnto(repo, "main", tipA, "todo/B");
+      const success = rebaseOnto(repo, "main", tipA, "ninthwave/B");
       expect(success).toBe(true);
 
       // Verify B is now on main and has only its own commit (not A's)
-      gitSetup(repo, "checkout", "todo/B");
-      const log = gitSetup(repo, "log", "--oneline", "main..todo/B");
+      gitSetup(repo, "checkout", "ninthwave/B");
+      const log = gitSetup(repo, "log", "--oneline", "main..ninthwave/B");
       const commits = log.split("\n").filter(Boolean);
       expect(commits).toHaveLength(1);
       expect(commits[0]).toContain("B: add feature");
@@ -446,7 +446,7 @@ describe("git.ts error handling", () => {
     // Standard git 2.x format (local bare remote)
     it("matches 'remote ref does not exist' (standard format)", () => {
       const stderr =
-        "error: unable to delete 'todo/H-RVW-4': remote ref does not exist\n" +
+        "error: unable to delete 'ninthwave/H-RVW-4': remote ref does not exist\n" +
         "error: failed to push some refs to '../repo-bare'";
       expect(REMOTE_REF_GONE_RE.test(stderr)).toBe(true);
     });
@@ -454,7 +454,7 @@ describe("git.ts error handling", () => {
     // GitHub SSH format
     it("matches GitHub SSH stderr format", () => {
       const stderr =
-        "error: unable to delete 'todo/H-RVW-4': remote ref does not exist\n" +
+        "error: unable to delete 'ninthwave/H-RVW-4': remote ref does not exist\n" +
         "error: failed to push some refs to 'git@github.com:org/repo.git'";
       expect(REMOTE_REF_GONE_RE.test(stderr)).toBe(true);
     });
@@ -462,7 +462,7 @@ describe("git.ts error handling", () => {
     // GitHub HTTPS format
     it("matches GitHub HTTPS stderr format", () => {
       const stderr =
-        "error: unable to delete 'todo/H-RVW-4': remote ref does not exist\n" +
+        "error: unable to delete 'ninthwave/H-RVW-4': remote ref does not exist\n" +
         "error: failed to push some refs to 'https://github.com/org/repo.git'";
       expect(REMOTE_REF_GONE_RE.test(stderr)).toBe(true);
     });
@@ -592,9 +592,9 @@ describe("git.ts error handling", () => {
       const repo = setupTempRepo();
       initWithCommit(repo);
       const wtPath = `${repo}/.claude/worktrees/agent-abc123`;
-      run("git", ["-C", repo, "worktree", "add", wtPath, "-b", "todo/H-NTF-1"]);
+      run("git", ["-C", repo, "worktree", "add", wtPath, "-b", "ninthwave/H-NTF-1"]);
 
-      const result = findWorktreeForBranchViaRun(repo, "todo/H-NTF-1");
+      const result = findWorktreeForBranchViaRun(repo, "ninthwave/H-NTF-1");
       expect(result).toBe(realpathSync(wtPath));
 
       // Cleanup

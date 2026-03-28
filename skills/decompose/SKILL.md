@@ -35,9 +35,9 @@ This skill is highly interactive. You MUST use your interactive question tool to
 
 ## Instructions
 
-This skill decomposes a feature spec into work items sized for individual human-reviewable PRs. Each item is written as an individual file in `.ninthwave/todos/`, ready for processing via `/work`.
+This skill decomposes a feature spec into work items sized for individual human-reviewable PRs. Each item is written as an individual file in `.ninthwave/work/`, ready for processing via `/work`.
 
-**Prerequisites:** `ninthwave` (or `nw`) must be in PATH. `.ninthwave/todos/` directory must exist.
+**Prerequisites:** `ninthwave` (or `nw`) must be in PATH. `.ninthwave/work/` directory must exist.
 
 ---
 
@@ -171,9 +171,9 @@ Show totals and ask for approval. Options: looks good, adjust, re-decompose.
 
 ### Phase 6: WRITE
 
-**Goal:** Write each TODO as an individual file in `.ninthwave/todos/`.
+**Goal:** Write each TODO as an individual file in `.ninthwave/work/`.
 
-1. Ensure the directory exists: `mkdir -p .ninthwave/todos`
+1. Ensure the directory exists: `mkdir -p .ninthwave/work`
 2. Read the format guide: `cat "$(cat .ninthwave/dir)/core/docs/todos-format.md"`
 3. Write each TODO as a separate file. The filename convention is:
 
@@ -211,7 +211,7 @@ Key files: `path/to/file.ts`, `path/to/other.ex`
    Note: The heading uses `# ` (not `### `). The `**Domain:**` field is required and must be explicit in each file.
 
 5. Verify every item has a `**Test plan:**` section (non-optional for decomposed items)
-6. Verify parseable: `ls .ninthwave/todos/` to confirm files were written, then `ninthwave list | grep <feature_code>`
+6. Verify parseable: `ls .ninthwave/work/` to confirm files were written, then `ninthwave list | grep <feature_code>`
 
 ---
 
@@ -229,4 +229,4 @@ Present summary and connect to `/work` for processing.
 - **PR size discipline:** Split TODOs > ~500 LOC, combine < ~50 LOC
 - **File conflict awareness:** Items in the same batch should not modify the same files
 - **No VERSION/CHANGELOG:** TODOs should not mention modifying these files
-- **Idempotent:** Check `.ninthwave/todos/` for existing files with the same ID before writing duplicates
+- **Idempotent:** Check `.ninthwave/work/` for existing files with the same ID before writing duplicates

@@ -14,7 +14,7 @@ import { deleteTodoFile } from "../todo-files.ts";
  */
 export function cmdMarkDone(
   args: string[],
-  todosDir: string,
+  workDir: string,
 ): void {
   const ids = splitIds(args);
   if (ids.length < 1) die("Usage: ninthwave mark-done <ID1> [ID2...]");
@@ -23,7 +23,7 @@ export function cmdMarkDone(
   const notFound: string[] = [];
 
   for (const id of ids) {
-    if (deleteTodoFile(todosDir, id)) {
+    if (deleteTodoFile(workDir, id)) {
       done.push(id);
     } else {
       notFound.push(id);
@@ -53,7 +53,7 @@ export function cmdMergedIds(
   if (!existsSync(worktreeDir)) return;
 
   function checkMerged(id: string, repoRoot: string): void {
-    const branch = `todo/${id}`;
+    const branch = `ninthwave/${id}`;
 
     let merged = false;
 
@@ -77,10 +77,10 @@ export function cmdMergedIds(
   // Hub-local worktrees
   try {
     for (const entry of readdirSync(worktreeDir)) {
-      if (!entry.startsWith("todo-")) continue;
+      if (!entry.startsWith("ninthwave-")) continue;
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
-      const id = entry.slice(5);
+      const id = entry.slice(10);
       checkMerged(id, projectRoot);
     }
   } catch {

@@ -87,16 +87,16 @@ interface TodoMetadata {
   dependencies: string[];
 }
 
-/** Try to read TODO metadata from .ninthwave/todos/ directory. Returns a map of ID → metadata. */
+/** Try to read TODO metadata from .ninthwave/work/ directory. Returns a map of ID → metadata. */
 function loadTodoMetadata(projectRoot: string): Map<string, TodoMetadata> {
   const metadata = new Map<string, TodoMetadata>();
-  const todosDir = join(projectRoot, ".ninthwave", "todos");
-  if (!existsSync(todosDir)) return metadata;
+  const workDir = join(projectRoot, ".ninthwave", "work");
+  if (!existsSync(workDir)) return metadata;
 
   try {
-    const entries = readdirSync(todosDir).filter((e) => e.endsWith(".md"));
+    const entries = readdirSync(workDir).filter((e) => e.endsWith(".md"));
     for (const entry of entries) {
-      const filePath = join(todosDir, entry);
+      const filePath = join(workDir, entry);
       try {
         const content = readFileSync(filePath, "utf-8");
         // Extract title from the first # heading
@@ -134,7 +134,7 @@ function determineItemState(
   id: string,
   repoRoot: string,
 ): { state: ItemState; prNumber: number | null } {
-  const branch = `todo/${id}`;
+  const branch = `ninthwave/${id}`;
 
   // Check remote branch exists
   const hasRemote =
@@ -454,10 +454,10 @@ function gatherStatusItems(
   try {
     const entries = readdirSync(worktreeDir);
     for (const entry of entries) {
-      if (!entry.startsWith("todo-")) continue;
+      if (!entry.startsWith("ninthwave-")) continue;
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
-      const id = entry.slice(5);
+      const id = entry.slice(10);
       const { state, prNumber } = determineItemState(id, projectRoot);
       const meta = todoMeta.get(id);
       items.push({
@@ -552,10 +552,10 @@ export function renderStatus(worktreeDir: string, projectRoot: string, flat: boo
   try {
     const entries = readdirSync(worktreeDir);
     for (const entry of entries) {
-      if (!entry.startsWith("todo-")) continue;
+      if (!entry.startsWith("ninthwave-")) continue;
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
-      const id = entry.slice(5); // strip "todo-"
+      const id = entry.slice(10); // strip "ninthwave-"
       const { state, prNumber } = determineItemState(id, projectRoot);
       const meta = todoMeta.get(id);
       items.push({

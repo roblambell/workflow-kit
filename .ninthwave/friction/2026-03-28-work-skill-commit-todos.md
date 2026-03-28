@@ -4,6 +4,6 @@
 **What happened:** /decompose wrote 9 TODO files but didn't commit or prompt to commit. /work then proceeded to reconcile and list without committing either. The TODO files existed locally but weren't committed or pushed.
 **Expected:** Two fixes needed:
 1. /decompose should commit+push TODO files at the end of Phase 6 (WRITE), or at minimum prompt the user to do so
-2. /work should detect uncommitted changes in .ninthwave/todos/ at the very start of Phase 1 (before reconcile) and commit+push them
+2. /work should detect uncommitted changes in .ninthwave/work/ at the very start of Phase 1 (before reconcile) and commit+push them
 **Impact:** Workers spawned in worktrees from remote won't see the TODO specs. The "Transition" step between Phase 1 and Phase 2 handles the /work case, but it should also run at the START of Phase 1. And /decompose has no commit step at all.
 **Fix:** Add commit+push to /decompose Phase 6 (after writing files). Add git status check to /work Phase 1 start (before reconcile).

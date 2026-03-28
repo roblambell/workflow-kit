@@ -118,7 +118,7 @@ describe("checkGitConfig (preflight)", () => {
 // ── checkUncommittedTodos ────────────────────────────────────────────
 
 describe("checkUncommittedTodos (preflight)", () => {
-  it("passes when no changes in .ninthwave/todos/", () => {
+  it("passes when no changes in .ninthwave/work/", () => {
     const runner: ShellRunner = (cmd, args) => {
       if (cmd === "git" && args.includes("--porcelain")) {
         return { stdout: "", stderr: "", exitCode: 0 };
@@ -134,7 +134,7 @@ describe("checkUncommittedTodos (preflight)", () => {
     const runner: ShellRunner = (cmd, args) => {
       if (cmd === "git" && args.includes("--porcelain")) {
         return {
-          stdout: "?? .ninthwave/todos/01--H-PFL-1.md\n?? .ninthwave/todos/02--H-PFL-2.md",
+          stdout: "?? .ninthwave/work/01--H-PFL-1.md\n?? .ninthwave/work/02--H-PFL-2.md",
           stderr: "",
           exitCode: 0,
         };
@@ -144,14 +144,14 @@ describe("checkUncommittedTodos (preflight)", () => {
     const result = checkUncommittedTodos("/fake/project", runner);
     expect(result.status).toBe("fail");
     expect(result.message).toContain("2 uncommitted TODO file(s)");
-    expect(result.detail).toContain("git add .ninthwave/todos/");
+    expect(result.detail).toContain("git add .ninthwave/work/");
   });
 
   it("fails when modified files exist", () => {
     const runner: ShellRunner = (cmd, args) => {
       if (cmd === "git" && args.includes("--porcelain")) {
         return {
-          stdout: " M .ninthwave/todos/01--H-PFL-1.md",
+          stdout: " M .ninthwave/work/01--H-PFL-1.md",
           stderr: "",
           exitCode: 0,
         };
@@ -357,7 +357,7 @@ describe("preflight with projectRoot", () => {
     const runner: ShellRunner = (cmd: string, args: string[]): RunResult => {
       if (cmd === "git" && args.includes("--porcelain")) {
         return {
-          stdout: "?? .ninthwave/todos/01--TEST-1.md",
+          stdout: "?? .ninthwave/work/01--TEST-1.md",
           stderr: "",
           exitCode: 0,
         };

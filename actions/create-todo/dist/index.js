@@ -144,10 +144,10 @@ async function run() {
   }
   let existingFiles = [];
   try {
-    const contents = await githubApi(`/repos/${owner}/${repo}/contents/.ninthwave/todos?ref=${branch}`, token);
+    const contents = await githubApi(`/repos/${owner}/${repo}/contents/.ninthwave/work?ref=${branch}`, token);
     existingFiles = contents.map((f) => f.name);
   } catch {
-    console.log(".ninthwave/todos/ not found, will create first CI todo");
+    console.log(".ninthwave/work/ not found, will create first CI todo");
   }
   const nextNum = getNextCiId(existingFiles);
   const todoId = generateTodoId(priority, nextNum);
@@ -161,7 +161,7 @@ async function run() {
     priority,
     repo: `${owner}/${repo}`
   });
-  const filePath = `.ninthwave/todos/${filename}`;
+  const filePath = `.ninthwave/work/${filename}`;
   const contentBase64 = Buffer.from(content).toString("base64");
   if (createPr) {
     const ref = await githubApi(`/repos/${owner}/${repo}/git/ref/heads/${branch}`, token);

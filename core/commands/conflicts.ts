@@ -7,12 +7,12 @@ import type { TodoItem } from "../types.ts";
 
 export function cmdConflicts(
   args: string[],
-  todosDir: string,
+  workDir: string,
   worktreeDir: string,
 ): void {
   const ids = splitIds(args);
   if (ids.length < 2) die("Usage: ninthwave conflicts <ID1> <ID2> [ID3...]");
-  const items = parseTodos(todosDir, worktreeDir);
+  const items = parseTodos(workDir, worktreeDir);
   const itemMap = new Map<string, TodoItem>();
   for (const item of items) {
     itemMap.set(item.id, item);

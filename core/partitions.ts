@@ -91,7 +91,7 @@ export function cleanupStalePartitions(
     }
 
     // Check hub worktree first (backwards compat)
-    if (existsSync(join(worktreeDir, `todo-${lockId}`))) {
+    if (existsSync(join(worktreeDir, `ninthwave-${lockId}`))) {
       continue;
     }
 

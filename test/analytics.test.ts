@@ -95,7 +95,7 @@ function mockAnalyticsIO(): AnalyticsIO & {
 const defaultCtx: ExecutionContext = {
   projectRoot: "/tmp/test-project",
   worktreeDir: "/tmp/test-project/.worktrees",
-  todosDir: "/tmp/test-project/.ninthwave/todos",
+  workDir: "/tmp/test-project/.ninthwave/work",
   aiTool: "claude",
 };
 

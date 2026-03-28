@@ -52,7 +52,7 @@ function emptySnapshot(readyIds: string[] = []): PollSnapshot {
 const defaultCtx: ExecutionContext = {
   projectRoot: "/tmp/test-project",
   worktreeDir: "/tmp/test-project/.worktrees",
-  todosDir: "/tmp/test-project/.ninthwave/todos",
+  workDir: "/tmp/test-project/.ninthwave/work",
   aiTool: "claude",
 };
 
@@ -75,11 +75,11 @@ function mockDeps(overrides?: Partial<OrchestratorDeps>): OrchestratorDeps {
 describe("bootstrap field parsing", () => {
   it("parses bootstrap: true from a todo file", () => {
     const repo = setupTempRepo();
-    const todosDir = join(repo, ".ninthwave", "todos");
-    mkdirSync(todosDir, { recursive: true });
+    const workDir = join(repo, ".ninthwave", "work");
+    mkdirSync(workDir, { recursive: true });
 
     writeFileSync(
-      join(todosDir, "1-test--H-BST-1.md"),
+      join(workDir, "1-test--H-BST-1.md"),
       `# Bootstrap new repo (H-BST-1)
 
 **Priority:** High
@@ -92,7 +92,7 @@ Create a new repo and scaffold it.
 `,
     );
 
-    const item = parseTodoFile(join(todosDir, "1-test--H-BST-1.md"));
+    const item = parseTodoFile(join(workDir, "1-test--H-BST-1.md"));
     expect(item).not.toBeNull();
     expect(item!.bootstrap).toBe(true);
     expect(item!.repoAlias).toBe("new-repo");
@@ -100,11 +100,11 @@ Create a new repo and scaffold it.
 
   it("parses bootstrap: false from a todo file", () => {
     const repo = setupTempRepo();
-    const todosDir = join(repo, ".ninthwave", "todos");
-    mkdirSync(todosDir, { recursive: true });
+    const workDir = join(repo, ".ninthwave", "work");
+    mkdirSync(workDir, { recursive: true });
 
     writeFileSync(
-      join(todosDir, "1-test--H-BST-2.md"),
+      join(workDir, "1-test--H-BST-2.md"),
       `# Normal todo (H-BST-2)
 
 **Priority:** High
@@ -117,18 +117,18 @@ Work in existing repo.
 `,
     );
 
-    const item = parseTodoFile(join(todosDir, "1-test--H-BST-2.md"));
+    const item = parseTodoFile(join(workDir, "1-test--H-BST-2.md"));
     expect(item).not.toBeNull();
     expect(item!.bootstrap).toBe(false);
   });
 
   it("defaults bootstrap to false when not specified", () => {
     const repo = setupTempRepo();
-    const todosDir = join(repo, ".ninthwave", "todos");
-    mkdirSync(todosDir, { recursive: true });
+    const workDir = join(repo, ".ninthwave", "work");
+    mkdirSync(workDir, { recursive: true });
 
     writeFileSync(
-      join(todosDir, "1-test--H-BST-3.md"),
+      join(workDir, "1-test--H-BST-3.md"),
       `# Normal todo (H-BST-3)
 
 **Priority:** High
@@ -139,18 +139,18 @@ A standard todo without bootstrap field.
 `,
     );
 
-    const item = parseTodoFile(join(todosDir, "1-test--H-BST-3.md"));
+    const item = parseTodoFile(join(workDir, "1-test--H-BST-3.md"));
     expect(item).not.toBeNull();
     expect(item!.bootstrap).toBe(false);
   });
 
   it("bootstrap field is case-insensitive", () => {
     const repo = setupTempRepo();
-    const todosDir = join(repo, ".ninthwave", "todos");
-    mkdirSync(todosDir, { recursive: true });
+    const workDir = join(repo, ".ninthwave", "work");
+    mkdirSync(workDir, { recursive: true });
 
     writeFileSync(
-      join(todosDir, "1-test--H-BST-4.md"),
+      join(workDir, "1-test--H-BST-4.md"),
       `# Bootstrap case test (H-BST-4)
 
 **Priority:** High
@@ -163,7 +163,7 @@ Case insensitive.
 `,
     );
 
-    const item = parseTodoFile(join(todosDir, "1-test--H-BST-4.md"));
+    const item = parseTodoFile(join(workDir, "1-test--H-BST-4.md"));
     expect(item).not.toBeNull();
     expect(item!.bootstrap).toBe(true);
   });

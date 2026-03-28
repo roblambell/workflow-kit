@@ -37,7 +37,7 @@ describe("COMMAND_REGISTRY", () => {
       expect(entry.description).toBeTruthy();
       expect(["workflow", "diagnostic", "advanced"]).toContain(entry.group);
       expect(typeof entry.needsRoot).toBe("boolean");
-      expect(typeof entry.needsTodos).toBe("boolean");
+      expect(typeof entry.needsWork).toBe("boolean");
       expect(typeof entry.handler).toBe("function");
       expect(typeof entry.flags).toBe("object");
       expect(entry.flags).not.toBeNull();
@@ -45,9 +45,9 @@ describe("COMMAND_REGISTRY", () => {
     }
   });
 
-  it("needsTodos implies needsRoot", () => {
+  it("needsWork implies needsRoot", () => {
     for (const entry of COMMAND_REGISTRY) {
-      if (entry.needsTodos) {
+      if (entry.needsWork) {
         expect(entry.needsRoot).toBe(true);
       }
     }

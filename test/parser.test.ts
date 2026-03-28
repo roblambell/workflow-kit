@@ -17,14 +17,14 @@ afterEach(() => {
 
 /** Helper: create a todos directory inside a temp repo and return its path. */
 function setupTodosDir(repo: string): string {
-  const todosDir = join(repo, ".ninthwave", "todos");
-  mkdirSync(todosDir, { recursive: true });
-  return todosDir;
+  const workDir = join(repo, ".ninthwave", "work");
+  mkdirSync(workDir, { recursive: true });
+  return workDir;
 }
 
 /** Helper: write a raw markdown todo file directly (for fine-grained control). */
-function writeRawTodoFile(todosDir: string, filename: string, content: string): void {
-  writeFileSync(join(todosDir, filename), content);
+function writeRawTodoFile(workDir: string, filename: string, content: string): void {
+  writeFileSync(join(workDir, filename), content);
 }
 
 /** Helper: create a TodoItem for writeTodoFile. */
@@ -46,9 +46,9 @@ function makeTodoItem(overrides: Partial<TodoItem> & { id: string; priority: Pri
 describe("parseTodos — valid items", () => {
   it("parses all 4 items from directory", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Source:** Manual request 2026-03-22
@@ -67,7 +67,7 @@ Acceptance: Test workflows use 4 vCPU runners. Deploy workflows remain on 2 vCPU
 Key files: \`.github/workflows/test-api.yml\`, \`.github/workflows/ci.yml\`
 `);
 
-    writeRawTodoFile(todosDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawTodoFile(workDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Source:** Eng review 2026-03-22
@@ -85,7 +85,7 @@ Acceptance: No more timeout errors in CI. Pool size configurable via env var.
 Key files: \`config/test.exs\`
 `);
 
-    writeRawTodoFile(todosDir, "0-user-onboarding--C-UO-1.md", `# Add welcome email (C-UO-1)
+    writeRawTodoFile(workDir, "0-user-onboarding--C-UO-1.md", `# Add welcome email (C-UO-1)
 
 **Priority:** Critical
 **Source:** Product review 2026-03-20
@@ -99,7 +99,7 @@ Acceptance: Email sent within 30s of onboarding completion. Email contains user 
 Key files: \`lib/onboarding/email.ex\`, \`lib/mailer.ex\`
 `);
 
-    writeRawTodoFile(todosDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+    writeRawTodoFile(workDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
 
 **Priority:** High
 **Source:** Product review 2026-03-20
@@ -114,15 +114,15 @@ Acceptance: Checklist shows on first login. Items check off as completed.
 Key files: \`lib/onboarding/checklist.ex\`, \`assets/js/checklist.tsx\`
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(4);
   });
 
   it("extracts correct IDs", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
@@ -131,7 +131,7 @@ Key files: \`lib/onboarding/checklist.ex\`, \`assets/js/checklist.tsx\`
 Acceptance: Runners upgraded.
 `);
 
-    writeRawTodoFile(todosDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawTodoFile(workDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** M-CI-1
@@ -140,7 +140,7 @@ Acceptance: Runners upgraded.
 Acceptance: Fixed.
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const ids = items.map((i) => i.id);
     expect(ids).toContain("M-CI-1");
     expect(ids).toContain("H-CI-2");
@@ -148,30 +148,30 @@ Acceptance: Fixed.
 
   it("extracts correct priorities", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
+    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "0-test--C-UO-1.md", `# Item (C-UO-1)
+    writeRawTodoFile(workDir, "0-test--C-UO-1.md", `# Item (C-UO-1)
 
 **Priority:** Critical
 **Depends on:** None
 **Domain:** test
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-CI-1")!.priority).toBe("medium");
@@ -181,23 +181,23 @@ Acceptance: Fixed.
 
   it("extracts correct titles", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** test
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-CI-1")!.title).toContain("Upgrade CI runners");
@@ -206,23 +206,23 @@ Acceptance: Fixed.
 
   it("extracts correct domains", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** cloud-infrastructure
 `);
 
-    writeRawTodoFile(todosDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+    writeRawTodoFile(workDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** user-onboarding
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-CI-1")!.domain).toBe("cloud-infrastructure");
@@ -231,37 +231,37 @@ Acceptance: Fixed.
 
   it("extracts dependencies", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** M-CI-1
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+    writeRawTodoFile(workDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
 
 **Priority:** High
 **Depends on:** C-UO-1, M-CI-1
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
+    writeRawTodoFile(workDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
 
 **Priority:** Critical
 **Depends on:** None
 **Domain:** test
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("H-CI-2")!.dependencies).toContain("M-CI-1");
@@ -271,9 +271,9 @@ Acceptance: Fixed.
 
   it("extracts bundle-with", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+    writeRawTodoFile(workDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
 
 **Priority:** High
 **Depends on:** None
@@ -281,29 +281,29 @@ Acceptance: Fixed.
 **Domain:** test
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items[0]!.bundleWith).toContain("H-CI-2");
   });
 
   it("all items have open status when no worktrees exist", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
+    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** test
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
 
     for (const item of items) {
       expect(item.status).toBe("open");
@@ -312,9 +312,9 @@ Acceptance: Fixed.
 
   it("extracts file paths from Key files line", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
@@ -325,7 +325,7 @@ Acceptance: Runners upgraded.
 Key files: \`.github/workflows/test-api.yml\`, \`.github/workflows/ci.yml\`
 `);
 
-    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
@@ -336,7 +336,7 @@ Acceptance: Fixed.
 Key files: \`config/test.exs\`
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     const mci1Paths = byId.get("M-CI-1")!.filePaths;
@@ -349,9 +349,9 @@ Key files: \`config/test.exs\`
 
   it("stores raw markdown text per item", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
@@ -360,33 +360,33 @@ Key files: \`config/test.exs\`
 Acceptance: Runners upgraded.
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items[0]!.rawText).toContain("Upgrade CI runners");
     expect(items[0]!.rawText).toContain("**Priority:** Medium");
   });
 
   it("sets filePath to the todo file path", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
-    expect(items[0]!.filePath).toBe(join(todosDir, "2-test--M-CI-1.md"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    expect(items[0]!.filePath).toBe(join(workDir, "2-test--M-CI-1.md"));
   });
 });
 
 describe("parseTodos — items with missing optional fields", () => {
   it("parses item with no dependencies line (defaults to empty array)", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-test--H-BK-1.md", `# Some item (H-BK-1)
+    writeRawTodoFile(workDir, "1-test--H-BK-1.md", `# Some item (H-BK-1)
 
 **Priority:** High
 **Domain:** test
@@ -394,17 +394,17 @@ describe("parseTodos — items with missing optional fields", () => {
 Description only.
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(1);
     expect(items[0]!.dependencies).toEqual([]);
   });
 
   it("skips files without priority (returns null from parseTodoFile)", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
     // No priority line — parseTodoFile returns null
-    writeRawTodoFile(todosDir, "2-test--M-BK-1.md", `# No priority item (M-BK-1)
+    writeRawTodoFile(workDir, "2-test--M-BK-1.md", `# No priority item (M-BK-1)
 
 **Depends on:** None
 **Domain:** test
@@ -412,7 +412,7 @@ Description only.
 This item has no Priority line.
 `);
 
-    writeRawTodoFile(todosDir, "2-test--M-BK-2.md", `# Valid item (M-BK-2)
+    writeRawTodoFile(workDir, "2-test--M-BK-2.md", `# Valid item (M-BK-2)
 
 **Priority:** Medium
 **Depends on:** None
@@ -421,7 +421,7 @@ This item has no Priority line.
 This is valid.
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     // Only the valid item is returned
     expect(items).toHaveLength(1);
     expect(items[0]!.id).toBe("M-BK-2");
@@ -429,24 +429,24 @@ This is valid.
 
   it("skips files without ID in heading", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
     // No ID in heading — parseTodoFile returns null
-    writeRawTodoFile(todosDir, "2-test--no-id.md", `# Item with no ID
+    writeRawTodoFile(workDir, "2-test--no-id.md", `# Item with no ID
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "2-test--M-BK-3.md", `# Valid item after bad one (M-BK-3)
+    writeRawTodoFile(workDir, "2-test--M-BK-3.md", `# Valid item after bad one (M-BK-3)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(1);
     expect(items[0]!.id).toBe("M-BK-3");
   });
@@ -455,18 +455,18 @@ This is valid.
 describe("parseTodos — empty directory", () => {
   it("empty todos directory produces no items", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(0);
   });
 
   it("non-existent directory produces no items", () => {
     const repo = setupTempRepo();
-    const todosDir = join(repo, ".ninthwave", "todos");
+    const workDir = join(repo, ".ninthwave", "work");
     // Don't create the directory
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(0);
   });
 });
@@ -474,30 +474,30 @@ describe("parseTodos — empty directory", () => {
 describe("parseTodos — multi-domain items", () => {
   it("parses items with different domains", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-section-alpha--H-AL-1.md", `# Alpha item one (H-AL-1)
+    writeRawTodoFile(workDir, "1-section-alpha--H-AL-1.md", `# Alpha item one (H-AL-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** section-alpha
 `);
 
-    writeRawTodoFile(todosDir, "2-section-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
+    writeRawTodoFile(workDir, "2-section-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
 
 **Priority:** Medium
 **Depends on:** H-AL-1
 **Domain:** section-alpha
 `);
 
-    writeRawTodoFile(todosDir, "1-section-beta--H-BE-1.md", `# Beta item one (H-BE-1)
+    writeRawTodoFile(workDir, "1-section-beta--H-BE-1.md", `# Beta item one (H-BE-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** section-beta
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(3);
 
     const byId = new Map(items.map((i) => [i.id, i]));
@@ -508,23 +508,23 @@ describe("parseTodos — multi-domain items", () => {
 
   it("extracts cross-domain dependencies", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-alpha--H-AL-1.md", `# Alpha item (H-AL-1)
+    writeRawTodoFile(workDir, "1-alpha--H-AL-1.md", `# Alpha item (H-AL-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** alpha
 `);
 
-    writeRawTodoFile(todosDir, "2-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
+    writeRawTodoFile(workDir, "2-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
 
 **Priority:** Medium
 **Depends on:** H-AL-1
 **Domain:** alpha
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-AL-2")!.dependencies).toContain("H-AL-1");
@@ -534,9 +534,9 @@ describe("parseTodos — multi-domain items", () => {
 describe("parseTodos — cross-repo items", () => {
   it("parses repo aliases", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-api-service--H-API-1.md", `# Add rate limiting (H-API-1)
+    writeRawTodoFile(workDir, "1-api-service--H-API-1.md", `# Add rate limiting (H-API-1)
 
 **Priority:** High
 **Depends on:** None
@@ -548,7 +548,7 @@ Acceptance: Rate limiting returns 429 after threshold.
 Key files: \`lib/gateway/rate_limiter.ex\`
 `);
 
-    writeRawTodoFile(todosDir, "2-api-service--M-API-2.md", `# Connection pool timeout (M-API-2)
+    writeRawTodoFile(workDir, "2-api-service--M-API-2.md", `# Connection pool timeout (M-API-2)
 
 **Priority:** Medium
 **Depends on:** H-API-1
@@ -556,7 +556,7 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-a
 `);
 
-    writeRawTodoFile(todosDir, "1-web-app--H-WA-1.md", `# Add onboarding flow (H-WA-1)
+    writeRawTodoFile(workDir, "1-web-app--H-WA-1.md", `# Add onboarding flow (H-WA-1)
 
 **Priority:** High
 **Depends on:** None
@@ -564,14 +564,14 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-b
 `);
 
-    writeRawTodoFile(todosDir, "2-documentation--M-DOC-1.md", `# Update ADR for rate limiting (M-DOC-1)
+    writeRawTodoFile(workDir, "2-documentation--M-DOC-1.md", `# Update ADR for rate limiting (M-DOC-1)
 
 **Priority:** Medium
 **Depends on:** H-API-1
 **Domain:** documentation
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("H-API-1")!.repoAlias).toBe("target-repo-a");
@@ -583,9 +583,9 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 
   it("parses all items from cross-repo directory", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-api--H-API-1.md", `# Rate limiting (H-API-1)
+    writeRawTodoFile(workDir, "1-api--H-API-1.md", `# Rate limiting (H-API-1)
 
 **Priority:** High
 **Depends on:** None
@@ -593,7 +593,7 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-a
 `);
 
-    writeRawTodoFile(todosDir, "2-api--M-API-2.md", `# Pool timeout (M-API-2)
+    writeRawTodoFile(workDir, "2-api--M-API-2.md", `# Pool timeout (M-API-2)
 
 **Priority:** Medium
 **Depends on:** H-API-1
@@ -601,7 +601,7 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-a
 `);
 
-    writeRawTodoFile(todosDir, "1-web--H-WA-1.md", `# Onboarding (H-WA-1)
+    writeRawTodoFile(workDir, "1-web--H-WA-1.md", `# Onboarding (H-WA-1)
 
 **Priority:** High
 **Depends on:** None
@@ -609,14 +609,14 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-b
 `);
 
-    writeRawTodoFile(todosDir, "2-docs--M-DOC-1.md", `# ADR (M-DOC-1)
+    writeRawTodoFile(workDir, "2-docs--M-DOC-1.md", `# ADR (M-DOC-1)
 
 **Priority:** Medium
 **Depends on:** H-API-1
 **Domain:** docs
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(4);
   });
 });
@@ -624,16 +624,16 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 describe("parseTodos — in-progress detection", () => {
   it("detects in-progress from worktree directories", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
+    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** M-CI-1
@@ -641,10 +641,10 @@ describe("parseTodos — in-progress detection", () => {
 `);
 
     // Create a worktree dir for M-CI-1
-    const wtDir = join(repo, ".worktrees", "todo-M-CI-1");
+    const wtDir = join(repo, ".worktrees", "ninthwave-M-CI-1");
     mkdirSync(wtDir, { recursive: true });
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("M-CI-1")!.status).toBe("in-progress");
@@ -653,16 +653,16 @@ describe("parseTodos — in-progress detection", () => {
 
   it("detects in-progress from cross-repo index", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
+    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
 
 **Priority:** High
 **Depends on:** M-CI-1
@@ -674,7 +674,7 @@ describe("parseTodos — in-progress detection", () => {
     mkdirSync(wtDir, { recursive: true });
 
     // Create a dummy target path that exists
-    const targetPath = join(repo, ".worktrees", "todo-H-CI-2");
+    const targetPath = join(repo, ".worktrees", "ninthwave-H-CI-2");
     mkdirSync(targetPath, { recursive: true });
 
     // Write cross-repo index pointing to the existing path
@@ -683,7 +683,7 @@ describe("parseTodos — in-progress detection", () => {
       `H-CI-2\ttarget-repo\t${targetPath}\n`,
     );
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("H-CI-2")!.status).toBe("in-progress");
@@ -693,59 +693,59 @@ describe("parseTodos — in-progress detection", () => {
 describe("parseTodos — circular deps", () => {
   it("parses all 3 circular dep items", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-circular--H-CC-1.md", `# Item A depends on B (H-CC-1)
+    writeRawTodoFile(workDir, "1-circular--H-CC-1.md", `# Item A depends on B (H-CC-1)
 
 **Priority:** High
 **Depends on:** H-CC-2
 **Domain:** circular
 `);
 
-    writeRawTodoFile(todosDir, "1-circular--H-CC-2.md", `# Item B depends on C (H-CC-2)
+    writeRawTodoFile(workDir, "1-circular--H-CC-2.md", `# Item B depends on C (H-CC-2)
 
 **Priority:** High
 **Depends on:** H-CC-3
 **Domain:** circular
 `);
 
-    writeRawTodoFile(todosDir, "1-circular--H-CC-3.md", `# Item C depends on A (H-CC-3)
+    writeRawTodoFile(workDir, "1-circular--H-CC-3.md", `# Item C depends on A (H-CC-3)
 
 **Priority:** High
 **Depends on:** H-CC-1
 **Domain:** circular
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(3);
   });
 
   it("captures circular dependency references", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-circular--H-CC-1.md", `# Item A (H-CC-1)
+    writeRawTodoFile(workDir, "1-circular--H-CC-1.md", `# Item A (H-CC-1)
 
 **Priority:** High
 **Depends on:** H-CC-2
 **Domain:** circular
 `);
 
-    writeRawTodoFile(todosDir, "1-circular--H-CC-2.md", `# Item B (H-CC-2)
+    writeRawTodoFile(workDir, "1-circular--H-CC-2.md", `# Item B (H-CC-2)
 
 **Priority:** High
 **Depends on:** H-CC-3
 **Domain:** circular
 `);
 
-    writeRawTodoFile(todosDir, "1-circular--H-CC-3.md", `# Item C (H-CC-3)
+    writeRawTodoFile(workDir, "1-circular--H-CC-3.md", `# Item C (H-CC-3)
 
 **Priority:** High
 **Depends on:** H-CC-1
 **Domain:** circular
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     expect(byId.get("H-CC-1")!.dependencies).toContain("H-CC-2");
@@ -944,9 +944,9 @@ describe("extractFilePaths", () => {
 describe("parseTodos — test plan extraction", () => {
   it("extracts test plan from items that have one", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
@@ -960,7 +960,7 @@ describe("parseTodos — test plan extraction", () => {
 Acceptance: Test workflows use 4 vCPU runners.
 `);
 
-    writeRawTodoFile(todosDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
+    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
@@ -973,7 +973,7 @@ Acceptance: Test workflows use 4 vCPU runners.
 Acceptance: Fixed.
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     const mci1Plan = byId.get("M-CI-1")!.testPlan;
@@ -986,9 +986,9 @@ Acceptance: Fixed.
 
   it("returns empty string for items without test plan", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
+    writeRawTodoFile(workDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
 
 **Priority:** Critical
 **Depends on:** None
@@ -997,7 +997,7 @@ Acceptance: Fixed.
 Acceptance: Email sent.
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items[0]!.testPlan).toBe("");
   });
 });
@@ -1141,30 +1141,30 @@ describe("expandWildcardDeps", () => {
 describe("parseTodos — wildcard dependencies", () => {
   it("expands wildcard deps during parsing", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-test-domain--H-TD-1.md", `# First item (H-TD-1)
-
-**Priority:** High
-**Depends on:** None
-**Domain:** test-domain
-`);
-
-    writeRawTodoFile(todosDir, "1-test-domain--H-TD-2.md", `# Second item (H-TD-2)
+    writeRawTodoFile(workDir, "1-test-domain--H-TD-1.md", `# First item (H-TD-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** test-domain
 `);
 
-    writeRawTodoFile(todosDir, "2-other-domain--M-OT-1.md", `# Depends on all TD items (M-OT-1)
+    writeRawTodoFile(workDir, "1-test-domain--H-TD-2.md", `# Second item (H-TD-2)
+
+**Priority:** High
+**Depends on:** None
+**Domain:** test-domain
+`);
+
+    writeRawTodoFile(workDir, "2-other-domain--M-OT-1.md", `# Depends on all TD items (M-OT-1)
 
 **Priority:** Medium
 **Depends on:** TD-*
 **Domain:** other-domain
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     const mot1 = byId.get("M-OT-1")!;
@@ -1174,37 +1174,37 @@ describe("parseTodos — wildcard dependencies", () => {
 
   it("mixes literal and wildcard deps", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
-    writeRawTodoFile(todosDir, "1-alpha--H-AL-1.md", `# A1 (H-AL-1)
+    writeRawTodoFile(workDir, "1-alpha--H-AL-1.md", `# A1 (H-AL-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** alpha
 `);
 
-    writeRawTodoFile(todosDir, "2-alpha--M-AL-2.md", `# A2 (M-AL-2)
+    writeRawTodoFile(workDir, "2-alpha--M-AL-2.md", `# A2 (M-AL-2)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** alpha
 `);
 
-    writeRawTodoFile(todosDir, "1-beta--H-BE-1.md", `# B1 (H-BE-1)
+    writeRawTodoFile(workDir, "1-beta--H-BE-1.md", `# B1 (H-BE-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** beta
 `);
 
-    writeRawTodoFile(todosDir, "2-gamma--M-GA-1.md", `# Depends on A1 and all Beta (M-GA-1)
+    writeRawTodoFile(workDir, "2-gamma--M-GA-1.md", `# Depends on A1 and all Beta (M-GA-1)
 
 **Priority:** Medium
 **Depends on:** H-AL-1, BE-*
 **Domain:** gamma
 `);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     const byId = new Map(items.map((i) => [i.id, i]));
 
     const mga1 = byId.get("M-GA-1")!;
@@ -1217,7 +1217,7 @@ describe("parseTodos — wildcard dependencies", () => {
 describe("parseTodos — writeTodoFile round-trip", () => {
   it("items written with writeTodoFile can be parsed back", () => {
     const repo = setupTempRepo();
-    const todosDir = setupTodosDir(repo);
+    const workDir = setupTodosDir(repo);
 
     const item = makeTodoItem({
       id: "H-RT-1",
@@ -1238,9 +1238,9 @@ Acceptance: Item round-trips correctly.
 `,
     });
 
-    writeTodoFile(todosDir, item);
+    writeTodoFile(workDir, item);
 
-    const items = parseTodos(todosDir, join(repo, ".worktrees"));
+    const items = parseTodos(workDir, join(repo, ".worktrees"));
     expect(items).toHaveLength(1);
     expect(items[0]!.id).toBe("H-RT-1");
     expect(items[0]!.priority).toBe("high");

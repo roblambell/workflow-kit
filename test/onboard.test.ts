@@ -532,7 +532,7 @@ describe("cmdNoArgs", () => {
 
   it("shows guidance when .ninthwave/ exists but no TODOs", async () => {
     const projectDir = setupTempRepo();
-    mkdirSync(join(projectDir, ".ninthwave", "todos"), { recursive: true });
+    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
     const logs: string[] = [];
     const origLog = console.log;
@@ -551,7 +551,7 @@ describe("cmdNoArgs", () => {
     const output = logs.join("\n");
     expect(output).toContain("no TODO items");
     expect(output).toContain("/decompose");
-    expect(output).toContain(".ninthwave/todos/");
+    expect(output).toContain(".ninthwave/work/");
   });
 
   it("shows guidance when .ninthwave/ exists but todos dir missing", async () => {
@@ -578,7 +578,7 @@ describe("cmdNoArgs", () => {
 
   it("routes to status view when daemon is running", async () => {
     const projectDir = setupTempRepo();
-    mkdirSync(join(projectDir, ".ninthwave", "todos"), { recursive: true });
+    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
     let statusWatchCalled = false;
     const logs: string[] = [];
@@ -604,7 +604,7 @@ describe("cmdNoArgs", () => {
 
   it("shows checkbox picker and runs selected items", async () => {
     const projectDir = setupTempRepo();
-    mkdirSync(join(projectDir, ".ninthwave", "todos"), { recursive: true });
+    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
     const todos = [
       fakeTodo("H-FOO-1", "First task"),
@@ -631,7 +631,7 @@ describe("cmdNoArgs", () => {
 
   it("shows checkbox picker and launches watch for 'watch' action", async () => {
     const projectDir = setupTempRepo();
-    mkdirSync(join(projectDir, ".ninthwave", "todos"), { recursive: true });
+    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
     const todos = [fakeTodo("H-FOO-1", "Task")];
     let watchCalled = false;
@@ -650,7 +650,7 @@ describe("cmdNoArgs", () => {
 
   it("exits gracefully when user quits at item selection", async () => {
     const projectDir = setupTempRepo();
-    mkdirSync(join(projectDir, ".ninthwave", "todos"), { recursive: true });
+    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
     let actionCalled = false;
     let runCalled = false;
@@ -671,7 +671,7 @@ describe("cmdNoArgs", () => {
 
   it("exits gracefully when user quits at action prompt", async () => {
     const projectDir = setupTempRepo();
-    mkdirSync(join(projectDir, ".ninthwave", "todos"), { recursive: true });
+    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
     let runCalled = false;
     let watchCalled = false;

@@ -67,14 +67,14 @@ export function setupTempRepoPair(): string {
 /**
  * Convert a fixture file into directory-based todo files.
  * Reads the fixture, splits it into individual items, and writes them
- * as separate .md files in repo/.ninthwave/todos/.
+ * as separate .md files in repo/.ninthwave/work/.
  * Returns the path to the todos directory.
  */
 export function useFixtureDir(repo: string, fixtureName: string): string {
   const src = join(TEST_DIR, "fixtures", fixtureName);
   const content = readFileSync(src, "utf-8");
-  const todosDir = join(repo, ".ninthwave", "todos");
-  mkdirSync(todosDir, { recursive: true });
+  const workDir = join(repo, ".ninthwave", "work");
+  mkdirSync(workDir, { recursive: true });
 
   // Parse the fixture to extract items with their section context
   const lines = content.split("\n");
@@ -102,7 +102,7 @@ export function useFixtureDir(repo: string, fixtureName: string): string {
     }
 
     const filename = `${priorityNum}-${domain}--${currentItemId}.md`;
-    writeFileSync(join(todosDir, filename), insertLines.join("\n") + "\n");
+    writeFileSync(join(workDir, filename), insertLines.join("\n") + "\n");
 
     currentItemLines = [];
     currentItemId = "";
@@ -158,20 +158,20 @@ export function useFixtureDir(repo: string, fixtureName: string): string {
     stdio: "pipe",
   });
 
-  return todosDir;
+  return workDir;
 }
 
 /**
  * Write inline todo content as individual directory-based todo files.
- * Parses todo content and writes to repo/.ninthwave/todos/.
+ * Parses todo content and writes to repo/.ninthwave/work/.
  * Returns the path to the todos directory.
  *
  * Usage:
- *   const todosDir = writeTodoFiles(repo, `## Section\n### Feat: Item (H-FOO-1)\n...`);
+ *   const workDir = writeTodoFiles(repo, `## Section\n### Feat: Item (H-FOO-1)\n...`);
  */
 export function writeTodoFiles(repo: string, todosContent: string): string {
-  const todosDir = join(repo, ".ninthwave", "todos");
-  mkdirSync(todosDir, { recursive: true });
+  const workDir = join(repo, ".ninthwave", "work");
+  mkdirSync(workDir, { recursive: true });
 
   const lines = todosContent.split("\n");
   let currentSection = "";
@@ -196,7 +196,7 @@ export function writeTodoFiles(repo: string, todosContent: string): string {
     }
 
     const filename = `${priorityNum}-${domain}--${currentItemId}.md`;
-    writeFileSync(join(todosDir, filename), insertLines.join("\n") + "\n");
+    writeFileSync(join(workDir, filename), insertLines.join("\n") + "\n");
 
     currentItemLines = [];
     currentItemId = "";
@@ -237,7 +237,7 @@ export function writeTodoFiles(repo: string, todosContent: string): string {
 
   flush();
 
-  return todosDir;
+  return workDir;
 }
 
 /**

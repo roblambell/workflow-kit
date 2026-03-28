@@ -1,5 +1,5 @@
 name: "ninthwave create-todo"
-description: "Creates a TODO file in .ninthwave/todos/ when a CI/CD workflow fails"
+description: "Creates a TODO file in .ninthwave/work/ when a CI/CD workflow fails"
 author: "ninthwave-sh"
 
 inputs:

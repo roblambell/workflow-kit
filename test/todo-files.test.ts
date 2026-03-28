@@ -261,8 +261,8 @@ Just a description.
 describe("writeTodoFile + parseTodoFile round-trip", () => {
   it("round-trips a full item", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
-    mkdirSync(todosDir);
+    const workDir = join(dir, "work");
+    mkdirSync(workDir);
 
     const original = makeTodoItem({
       rawText: `# Improve worker reliability (M-WRK-8)
@@ -287,10 +287,10 @@ Key files: \`core/worker.ts\`
       bundleWith: ["M-BND-2"],
     });
 
-    writeTodoFile(todosDir, original);
+    writeTodoFile(workDir, original);
 
     expect(original.filePath).toBe(
-      join(todosDir, "2-worker-reliability--M-WRK-8.md"),
+      join(workDir, "2-worker-reliability--M-WRK-8.md"),
     );
     expect(existsSync(original.filePath)).toBe(true);
 
@@ -306,8 +306,8 @@ Key files: \`core/worker.ts\`
 
   it("round-trips an item with no optional fields", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
-    mkdirSync(todosDir);
+    const workDir = join(dir, "work");
+    mkdirSync(workDir);
 
     const original = makeTodoItem({
       id: "L-SIM-1",
@@ -324,7 +324,7 @@ Just do the thing.
 `,
     });
 
-    writeTodoFile(todosDir, original);
+    writeTodoFile(workDir, original);
     const parsed = parseTodoFile(original.filePath);
     expect(parsed).not.toBeNull();
     expect(parsed!.id).toBe("L-SIM-1");
@@ -340,14 +340,14 @@ Just do the thing.
 describe("listTodos", () => {
   it("reads a directory of multiple todo files", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
+    const workDir = join(dir, "work");
     const worktreeDir = join(dir, "worktrees");
-    mkdirSync(todosDir);
+    mkdirSync(workDir);
     mkdirSync(worktreeDir);
 
     // Write two todo files
     writeFileSync(
-      join(todosDir, "1-bugs--H-BUG-1.md"),
+      join(workDir, "1-bugs--H-BUG-1.md"),
       `# Fix crash (H-BUG-1)
 
 **Priority:** High
@@ -360,7 +360,7 @@ Fix the crash.
     );
 
     writeFileSync(
-      join(todosDir, "2-features--M-FT-1.md"),
+      join(workDir, "2-features--M-FT-1.md"),
       `# Add feature (M-FT-1)
 
 **Priority:** Medium
@@ -372,7 +372,7 @@ Add the feature.
 `,
     );
 
-    const items = listTodos(todosDir, worktreeDir);
+    const items = listTodos(workDir, worktreeDir);
     expect(items).toHaveLength(2);
 
     const ids = items.map((i) => i.id).sort();
@@ -384,13 +384,13 @@ Add the feature.
 
   it("expands wildcard dependencies", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
+    const workDir = join(dir, "work");
     const worktreeDir = join(dir, "worktrees");
-    mkdirSync(todosDir);
+    mkdirSync(workDir);
     mkdirSync(worktreeDir);
 
     writeFileSync(
-      join(todosDir, "1-bugs--H-BUG-1.md"),
+      join(workDir, "1-bugs--H-BUG-1.md"),
       `# Fix A (H-BUG-1)
 
 **Priority:** High
@@ -401,7 +401,7 @@ Add the feature.
     );
 
     writeFileSync(
-      join(todosDir, "1-bugs--H-BUG-2.md"),
+      join(workDir, "1-bugs--H-BUG-2.md"),
       `# Fix B (H-BUG-2)
 
 **Priority:** High
@@ -412,7 +412,7 @@ Add the feature.
     );
 
     writeFileSync(
-      join(todosDir, "2-features--M-FT-1.md"),
+      join(workDir, "2-features--M-FT-1.md"),
       `# Feature (M-FT-1)
 
 **Priority:** Medium
@@ -422,7 +422,7 @@ Add the feature.
 `,
     );
 
-    const items = listTodos(todosDir, worktreeDir);
+    const items = listTodos(workDir, worktreeDir);
     const ft = items.find((i) => i.id === "M-FT-1")!;
     expect(ft.dependencies).toContain("H-BUG-1");
     expect(ft.dependencies).toContain("H-BUG-2");
@@ -430,14 +430,14 @@ Add the feature.
 
   it("detects in-progress status from worktree dirs", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
+    const workDir = join(dir, "work");
     const worktreeDir = join(dir, "worktrees");
-    mkdirSync(todosDir);
+    mkdirSync(workDir);
     mkdirSync(worktreeDir);
-    mkdirSync(join(worktreeDir, "todo-H-BUG-1"));
+    mkdirSync(join(worktreeDir, "ninthwave-H-BUG-1"));
 
     writeFileSync(
-      join(todosDir, "1-bugs--H-BUG-1.md"),
+      join(workDir, "1-bugs--H-BUG-1.md"),
       `# Fix crash (H-BUG-1)
 
 **Priority:** High
@@ -448,7 +448,7 @@ Add the feature.
     );
 
     writeFileSync(
-      join(todosDir, "2-features--M-FT-1.md"),
+      join(workDir, "2-features--M-FT-1.md"),
       `# Feature (M-FT-1)
 
 **Priority:** Medium
@@ -458,7 +458,7 @@ Add the feature.
 `,
     );
 
-    const items = listTodos(todosDir, worktreeDir);
+    const items = listTodos(workDir, worktreeDir);
     const bug = items.find((i) => i.id === "H-BUG-1")!;
     const ft = items.find((i) => i.id === "M-FT-1")!;
     expect(bug.status).toBe("in-progress");
@@ -471,14 +471,14 @@ Add the feature.
 
   it("skips malformed files", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
+    const workDir = join(dir, "work");
     const worktreeDir = join(dir, "worktrees");
-    mkdirSync(todosDir);
+    mkdirSync(workDir);
     mkdirSync(worktreeDir);
 
-    writeFileSync(join(todosDir, "bad.md"), "Not a valid todo file.");
+    writeFileSync(join(workDir, "bad.md"), "Not a valid todo file.");
     writeFileSync(
-      join(todosDir, "1-good--H-OK-1.md"),
+      join(workDir, "1-good--H-OK-1.md"),
       `# Good item (H-OK-1)
 
 **Priority:** High
@@ -488,7 +488,7 @@ Add the feature.
 `,
     );
 
-    const items = listTodos(todosDir, worktreeDir);
+    const items = listTodos(workDir, worktreeDir);
     expect(items).toHaveLength(1);
     expect(items[0]!.id).toBe("H-OK-1");
   });
@@ -499,11 +499,11 @@ Add the feature.
 describe("readTodo", () => {
   it("finds item by ID", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
-    mkdirSync(todosDir);
+    const workDir = join(dir, "work");
+    mkdirSync(workDir);
 
     writeFileSync(
-      join(todosDir, "2-test--M-TST-1.md"),
+      join(workDir, "2-test--M-TST-1.md"),
       `# Test item (M-TST-1)
 
 **Priority:** Medium
@@ -513,7 +513,7 @@ describe("readTodo", () => {
 `,
     );
 
-    const item = readTodo(todosDir, "M-TST-1");
+    const item = readTodo(workDir, "M-TST-1");
     expect(item).toBeDefined();
     expect(item!.id).toBe("M-TST-1");
     expect(item!.priority).toBe("medium");
@@ -521,10 +521,10 @@ describe("readTodo", () => {
 
   it("returns undefined for missing ID", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
-    mkdirSync(todosDir);
+    const workDir = join(dir, "work");
+    mkdirSync(workDir);
 
-    expect(readTodo(todosDir, "X-MISS-99")).toBeUndefined();
+    expect(readTodo(workDir, "X-MISS-99")).toBeUndefined();
   });
 
   it("returns undefined for nonexistent directory", () => {
@@ -537,24 +537,24 @@ describe("readTodo", () => {
 describe("deleteTodoFile", () => {
   it("removes file and returns true", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
-    mkdirSync(todosDir);
+    const workDir = join(dir, "work");
+    mkdirSync(workDir);
 
-    const fp = join(todosDir, "2-test--M-TST-1.md");
+    const fp = join(workDir, "2-test--M-TST-1.md");
     writeFileSync(fp, "# Item (M-TST-1)\n\n**Priority:** Medium\n**Domain:** test\n");
 
     expect(existsSync(fp)).toBe(true);
-    const result = deleteTodoFile(todosDir, "M-TST-1");
+    const result = deleteTodoFile(workDir, "M-TST-1");
     expect(result).toBe(true);
     expect(existsSync(fp)).toBe(false);
   });
 
   it("returns false for missing ID", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
-    mkdirSync(todosDir);
+    const workDir = join(dir, "work");
+    mkdirSync(workDir);
 
-    expect(deleteTodoFile(todosDir, "X-MISS-99")).toBe(false);
+    expect(deleteTodoFile(workDir, "X-MISS-99")).toBe(false);
   });
 
   it("returns false for nonexistent directory", () => {

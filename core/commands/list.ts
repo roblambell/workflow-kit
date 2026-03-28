@@ -6,7 +6,7 @@ import type { TodoItem } from "../types.ts";
 
 export function cmdList(
   args: string[],
-  todosDir: string,
+  workDir: string,
   worktreeDir: string,
 ): void {
   let filterPriority = "";
@@ -49,7 +49,7 @@ export function cmdList(
   }
 
   // Build items list
-  let items: TodoItem[] = parseTodos(todosDir, worktreeDir);
+  let items: TodoItem[] = parseTodos(workDir, worktreeDir);
 
   // Apply filters
   if (filterPriority) {
@@ -66,7 +66,7 @@ export function cmdList(
   // --ready alone (depth=0): only items whose deps are all done (depth 1 behavior).
   // --depth N: walk the dependency graph N levels from ready roots.
   if (showReady) {
-    const allItems = parseTodos(todosDir, worktreeDir);
+    const allItems = parseTodos(workDir, worktreeDir);
     const allIds = new Set(allItems.map((it) => it.id));
 
     // Effective depth: --ready alone = 1, --depth N = N

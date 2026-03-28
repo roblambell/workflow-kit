@@ -205,13 +205,13 @@ Follow-up after the suffixed items.
 describe("listTodos with suffixed IDs", () => {
   it("lists both suffixed and plain IDs correctly", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
+    const workDir = join(dir, "work");
     const worktreeDir = join(dir, "worktrees");
-    mkdirSync(todosDir);
+    mkdirSync(workDir);
     mkdirSync(worktreeDir);
 
     writeFileSync(
-      join(todosDir, "1-parsing--H-CP-7a.md"),
+      join(workDir, "1-parsing--H-CP-7a.md"),
       `# Fix A (H-CP-7a)
 
 **Priority:** High
@@ -222,7 +222,7 @@ describe("listTodos with suffixed IDs", () => {
     );
 
     writeFileSync(
-      join(todosDir, "1-parsing--H-CP-7b.md"),
+      join(workDir, "1-parsing--H-CP-7b.md"),
       `# Fix B (H-CP-7b)
 
 **Priority:** High
@@ -233,7 +233,7 @@ describe("listTodos with suffixed IDs", () => {
     );
 
     writeFileSync(
-      join(todosDir, "2-features--M-FT-1.md"),
+      join(workDir, "2-features--M-FT-1.md"),
       `# Feature (M-FT-1)
 
 **Priority:** Medium
@@ -243,7 +243,7 @@ describe("listTodos with suffixed IDs", () => {
 `,
     );
 
-    const items = listTodos(todosDir, worktreeDir);
+    const items = listTodos(workDir, worktreeDir);
     expect(items).toHaveLength(3);
 
     const ids = items.map((i) => i.id).sort();
@@ -259,11 +259,11 @@ describe("listTodos with suffixed IDs", () => {
 describe("readTodo with suffixed IDs", () => {
   it("finds item by suffixed ID", () => {
     const dir = makeTempDir();
-    const todosDir = join(dir, "todos");
-    mkdirSync(todosDir);
+    const workDir = join(dir, "work");
+    mkdirSync(workDir);
 
     writeFileSync(
-      join(todosDir, "1-parsing--H-CP-7a.md"),
+      join(workDir, "1-parsing--H-CP-7a.md"),
       `# Fix A (H-CP-7a)
 
 **Priority:** High
@@ -273,7 +273,7 @@ describe("readTodo with suffixed IDs", () => {
 `,
     );
 
-    const item = readTodo(todosDir, "H-CP-7a");
+    const item = readTodo(workDir, "H-CP-7a");
     expect(item).toBeDefined();
     expect(item!.id).toBe("H-CP-7a");
   });

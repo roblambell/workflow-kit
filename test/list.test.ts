@@ -33,10 +33,10 @@ describe("list", () => {
 
   it("lists all items with no filters", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "valid.md");
+    const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
-    const output = captureOutput(() => cmdList([], todosDir, worktreeDir));
+    const output = captureOutput(() => cmdList([], workDir, worktreeDir));
 
     expect(output).toContain("M-CI-1");
     expect(output).toContain("H-CI-2");
@@ -47,11 +47,11 @@ describe("list", () => {
 
   it("filters by priority", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "valid.md");
+    const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdList(["--priority", "high"], todosDir, worktreeDir),
+      cmdList(["--priority", "high"], workDir, worktreeDir),
     );
 
     expect(output).toContain("H-CI-2");
@@ -66,11 +66,11 @@ describe("list", () => {
 
   it("filters by domain", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "valid.md");
+    const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdList(["--domain", "cloud-infrastructure"], todosDir, worktreeDir),
+      cmdList(["--domain", "cloud-infrastructure"], workDir, worktreeDir),
     );
 
     expect(output).toContain("M-CI-1");
@@ -82,11 +82,11 @@ describe("list", () => {
 
   it("filters by feature code", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "valid.md");
+    const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdList(["--feature", "UO"], todosDir, worktreeDir),
+      cmdList(["--feature", "UO"], workDir, worktreeDir),
     );
 
     expect(output).toContain("C-UO-1");
@@ -101,11 +101,11 @@ describe("list", () => {
 
   it("filters by ready (deps all satisfied)", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "valid.md");
+    const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdList(["--ready"], todosDir, worktreeDir),
+      cmdList(["--ready"], workDir, worktreeDir),
     );
 
     // M-CI-1 has no deps -> ready
@@ -121,11 +121,11 @@ describe("list", () => {
 
   it("--depth 1 is equivalent to --ready", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "valid.md");
+    const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdList(["--depth", "1"], todosDir, worktreeDir),
+      cmdList(["--depth", "1"], workDir, worktreeDir),
     );
 
     expect(output).toContain("M-CI-1");
@@ -137,11 +137,11 @@ describe("list", () => {
 
   it("--depth 2 includes items one hop from ready roots", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "valid.md");
+    const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdList(["--depth", "2"], todosDir, worktreeDir),
+      cmdList(["--depth", "2"], workDir, worktreeDir),
     );
 
     // Depth 1: M-CI-1, C-UO-1 (no deps)
@@ -155,12 +155,12 @@ describe("list", () => {
 
   it("--depth implies --ready", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "valid.md");
+    const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     // --depth without --ready should still filter
     const output = captureOutput(() =>
-      cmdList(["--depth", "1"], todosDir, worktreeDir),
+      cmdList(["--depth", "1"], workDir, worktreeDir),
     );
 
     expect(output).toContain("2 items");
@@ -168,11 +168,11 @@ describe("list", () => {
 
   it("--depth with invalid value exits with error", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "valid.md");
+    const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".worktrees");
 
     const output = captureOutput(() =>
-      cmdList(["--depth", "0"], todosDir, worktreeDir),
+      cmdList(["--depth", "0"], workDir, worktreeDir),
     );
 
     expect(output).toContain("--depth requires a positive integer");
@@ -180,10 +180,10 @@ describe("list", () => {
 
   it("shows repo label for cross-repo items", () => {
     const repo = setupTempRepo();
-    const todosDir = useFixtureDir(repo, "cross_repo.md");
+    const workDir = useFixtureDir(repo, "cross_repo.md");
     const worktreeDir = join(repo, ".worktrees");
 
-    const output = captureOutput(() => cmdList([], todosDir, worktreeDir));
+    const output = captureOutput(() => cmdList([], workDir, worktreeDir));
 
     expect(output).toContain("target-repo-a");
     expect(output).toContain("H-API-1");

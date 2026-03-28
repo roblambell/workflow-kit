@@ -326,7 +326,7 @@ export function buildSnapshot(
     // Check worker alive and commit freshness for active items
     if (orchItem.state === "launching" || orchItem.state === "implementing" || orchItem.state === "ci-failed") {
       snap.workerAlive = isWorkerAlive(orchItem, mux);
-      const commitTime = getLastCommitTime(repoRoot, `todo/${orchItem.id}`);
+      const commitTime = getLastCommitTime(repoRoot, `ninthwave/${orchItem.id}`);
       snap.lastCommitTime = commitTime;
       orchItem.lastCommitTime = commitTime;
     }
@@ -410,7 +410,7 @@ export function syncWorkerDisplay(
     if (!activeStates.has(item.state)) continue;
 
     const display = statusDisplayForState(item.state, { rebaseRequested: item.rebaseRequested });
-    const statusKey = `todo-${item.id}`;
+    const statusKey = `ninthwave-${item.id}`;
 
     // Set status pill (best-effort)
     try {
@@ -660,7 +660,7 @@ export function reconstructState(
     // Check for worktree: cross-repo index first, then hub-local fallback
     const repoRoot = item.resolvedRepoRoot ?? projectRoot;
     const wtInfo = getWorktreeInfo(item.id, crossRepoIndex, worktreeDir);
-    const wtPath = wtInfo?.worktreePath ?? join(worktreeDir, `todo-${item.id}`);
+    const wtPath = wtInfo?.worktreePath ?? join(worktreeDir, `ninthwave-${item.id}`);
     if (!existsSync(wtPath)) continue;
 
     // Item has a worktree — check PR status in the correct repo
@@ -766,7 +766,7 @@ export interface CleanOrphanedDeps {
   /** List todo-* directory names in the worktree dir. */
   getWorktreeIds(worktreeDir: string): string[];
   /** List open todo IDs from todo files on disk. */
-  getOpenTodoIds(todosDir: string): string[];
+  getOpenTodoIds(workDir: string): string[];
   /** Clean a single worktree by ID. Returns true if cleaned. */
   cleanWorktree(id: string, worktreeDir: string, projectRoot: string): boolean;
   /** Close a multiplexer workspace by item ID (best-effort). */
@@ -780,18 +780,18 @@ function listWorktreeIds(worktreeDir: string): string[] {
   if (!existsSync(worktreeDir)) return [];
   try {
     return readdirSync(worktreeDir)
-      .filter((e) => e.startsWith("todo-"))
-      .map((e) => e.slice(5));
+      .filter((e) => e.startsWith("ninthwave-"))
+      .map((e) => e.slice(10));
   } catch {
     return [];
   }
 }
 
 /** List open todo IDs from todo files on disk. */
-function listOpenTodoIds(todosDir: string): string[] {
-  if (!existsSync(todosDir)) return [];
+function listOpenTodoIds(workDir: string): string[] {
+  if (!existsSync(workDir)) return [];
   try {
-    const entries = readdirSync(todosDir).filter((f) => f.endsWith(".md"));
+    const entries = readdirSync(workDir).filter((f) => f.endsWith(".md"));
     const ids: string[] = [];
     for (const entry of entries) {
       const match = entry.match(ID_IN_FILENAME);
@@ -811,7 +811,7 @@ function listOpenTodoIds(todosDir: string): string[] {
  * Returns the list of IDs that were cleaned.
  */
 export function cleanOrphanedWorktrees(
-  todosDir: string,
+  workDir: string,
   worktreeDir: string,
   projectRoot: string,
   deps: CleanOrphanedDeps,
@@ -819,7 +819,7 @@ export function cleanOrphanedWorktrees(
   const worktreeIds = deps.getWorktreeIds(worktreeDir);
   if (worktreeIds.length === 0) return [];
 
-  const openTodoIds = new Set(deps.getOpenTodoIds(todosDir));
+  const openTodoIds = new Set(deps.getOpenTodoIds(workDir));
   const cleanedIds: string[] = [];
 
   for (const wtId of worktreeIds) {
@@ -1175,7 +1175,7 @@ function handleActionExecution(
   // so list --ready reflects reality for the rest of the run.
   if (action.type === "merge" && result.success && deps.reconcile) {
     try {
-      deps.reconcile(ctx.todosDir, ctx.worktreeDir, ctx.projectRoot);
+      deps.reconcile(ctx.workDir, ctx.worktreeDir, ctx.projectRoot);
       log({
         ts: new Date().toISOString(),
         level: "info",
@@ -1207,7 +1207,7 @@ export interface OrchestrateLoopDeps {
   /** Get available free memory in bytes. Defaults to os.freemem(). Injectable for testing. */
   getFreeMem?: () => number;
   /** Reconcile todo files with GitHub state after merge actions. */
-  reconcile?: (todosDir: string, worktreeDir: string, projectRoot: string) => void;
+  reconcile?: (workDir: string, worktreeDir: string, projectRoot: string) => void;
   /** File I/O for analytics metrics (injectable for testing). When absent, analytics is skipped. */
   analyticsIO?: AnalyticsIO;
   /** Git operations for auto-committing analytics files. When absent, commit is skipped. */
@@ -1733,7 +1733,7 @@ export const cmdWatch = cmdOrchestrate;
 
 export async function cmdOrchestrate(
   args: string[],
-  todosDir: string,
+  workDir: string,
   worktreeDir: string,
   projectRoot: string,
 ): Promise<void> {
@@ -1915,7 +1915,7 @@ export async function cmdOrchestrate(
 
         if (shouldCommit) {
           try {
-            gitAdd(projectRoot, [".ninthwave/todos/"]);
+            gitAdd(projectRoot, [".ninthwave/work/"]);
             gitCommit(projectRoot, "chore: commit TODO files before orchestration");
             gitPush(projectRoot);
             info("TODO files committed and pushed.");
@@ -1983,7 +1983,7 @@ export async function cmdOrchestrate(
   let wipLimit = wipLimitOverride ?? computedWipLimit;
 
   // Parse TODO items (needed for both interactive and flag-based modes)
-  const allTodos = parseTodos(todosDir, worktreeDir);
+  const allTodos = parseTodos(workDir, worktreeDir);
 
   // Interactive mode: no --items and stdin is a TTY
   if (shouldEnterInteractive(itemIds.length > 0)) {
@@ -2084,7 +2084,7 @@ export async function cmdOrchestrate(
 
   // Clean orphaned worktrees before state reconstruction so stale worktrees
   // from previous runs don't confuse reconstructState or count toward WIP.
-  cleanOrphanedWorktrees(todosDir, worktreeDir, projectRoot, {
+  cleanOrphanedWorktrees(workDir, worktreeDir, projectRoot, {
     getWorktreeIds: listWorktreeIds,
     getOpenTodoIds: listOpenTodoIds,
     cleanWorktree: (id, wtDir, root) => cleanSingleWorktree(id, wtDir, root),
@@ -2108,10 +2108,10 @@ export async function cmdOrchestrate(
   // Detect AI tool
   const aiTool = detectAiTool();
 
-  const ctx: ExecutionContext = { projectRoot, worktreeDir, todosDir, aiTool };
+  const ctx: ExecutionContext = { projectRoot, worktreeDir, workDir, aiTool };
   const actionDeps: OrchestratorDeps = {
-    launchSingleItem: (item, todosDir, worktreeDir, projectRoot, aiTool, baseBranch, forceWorkerLaunch) =>
-      launchSingleItem(item, todosDir, worktreeDir, projectRoot, aiTool, mux, { baseBranch, forceWorkerLaunch }),
+    launchSingleItem: (item, workDir, worktreeDir, projectRoot, aiTool, baseBranch, forceWorkerLaunch) =>
+      launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux, { baseBranch, forceWorkerLaunch }),
     cleanStaleBranch: (todo, projRoot) => {
       let targetRepo: string;
       try {
@@ -2357,7 +2357,7 @@ export async function cmdOrchestrate(
     onPollComplete,
     syncDisplay: (o, snap) => syncWorkerDisplay(o, snap, mux),
     externalReviewDeps,
-    ...(watchMode ? { scanTodos: () => parseTodos(todosDir, worktreeDir) } : {}),
+    ...(watchMode ? { scanTodos: () => parseTodos(workDir, worktreeDir) } : {}),
     ...(crewBroker ? { crewBroker } : {}),
   };
 

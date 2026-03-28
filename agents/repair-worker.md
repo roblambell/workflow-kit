@@ -88,7 +88,7 @@ nw heartbeat --progress 0.6 --label "Verifying"
 
 ```bash
 nw heartbeat --progress 0.9 --label "Pushing"
-git push --force-with-lease origin todo/YOUR_REPAIR_ITEM_ID
+git push --force-with-lease origin ninthwave/YOUR_REPAIR_ITEM_ID
 nw heartbeat --progress 1.0 --label "Rebase complete"
 ```
 

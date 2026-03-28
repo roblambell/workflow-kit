@@ -688,10 +688,29 @@ function scaffold(
     );
   }
 
-  // --- .ninthwave/todos/ and .ninthwave/friction/ directories ---
-  const todosDir = join(projectDir, ".ninthwave", "todos");
-  mkdirSync(todosDir, { recursive: true });
-  writeFileSync(join(todosDir, ".gitkeep"), "");
+  // --- Migrate .ninthwave/todos/ → .ninthwave/work/ (if legacy directory exists) ---
+  const legacyTodosDir = join(projectDir, ".ninthwave", "todos");
+  const workDir = join(projectDir, ".ninthwave", "work");
+  if (existsSync(legacyTodosDir) && !existsSync(workDir)) {
+    const entries = readdirSync(legacyTodosDir);
+    mkdirSync(workDir, { recursive: true });
+    for (const entry of entries) {
+      const src = join(legacyTodosDir, entry);
+      const dst = join(workDir, entry);
+      writeFileSync(dst, readFileSync(src, "utf-8"));
+    }
+    // Remove legacy directory contents (keep parent .ninthwave/ intact)
+    for (const entry of entries) {
+      const src = join(legacyTodosDir, entry);
+      require("fs").unlinkSync(src);
+    }
+    require("fs").rmdirSync(legacyTodosDir);
+    console.log("  Migrated .ninthwave/todos/ → .ninthwave/work/");
+  }
+
+  // --- .ninthwave/work/ and .ninthwave/friction/ directories ---
+  mkdirSync(workDir, { recursive: true });
+  writeFileSync(join(workDir, ".gitkeep"), "");
 
   const frictionDir = join(projectDir, ".ninthwave", "friction");
   mkdirSync(frictionDir, { recursive: true });
@@ -819,7 +838,7 @@ export function initProject(
   // 5. Run scaffolding (with agent selection)
   scaffold(projectDir, bundleDir, opts?.agentSelection);
   console.log(`  .ninthwave/domains.conf`);
-  console.log(`  .ninthwave/todos/ ${DIM}(work items)${RESET}`);
+  console.log(`  .ninthwave/work/ ${DIM}(work items)${RESET}`);
   console.log(`  .ninthwave/friction/ ${DIM}(friction log)${RESET}`);
   console.log(`  .claude/skills/ ${DIM}(symlinks)${RESET}`);
   console.log(`  .gitignore`);
@@ -838,7 +857,7 @@ export function initProject(
   console.log();
   console.log("Next steps:");
   console.log("  1. git add -A && git commit -m 'chore: init ninthwave'");
-  console.log("  2. Add work items to .ninthwave/todos/");
+  console.log("  2. Add work items to .ninthwave/work/");
   console.log("  3. Run: ninthwave list");
   console.log();
   console.log(`${DIM}Tip: Use ${BOLD}nw${RESET}${DIM} as a short alias for ${BOLD}ninthwave${RESET}${DIM} in daily use.${RESET}`);

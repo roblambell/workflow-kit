@@ -22,9 +22,9 @@ describe("cross-repo", () => {
   describe("repo field parsing", () => {
     it("parses all 4 items from cross_repo fixture", () => {
       const repo = setupTempRepo();
-      const todosDir = useFixtureDir(repo, "cross_repo.md");
+      const workDir = useFixtureDir(repo, "cross_repo.md");
       const items = parseTodos(
-        todosDir,
+        workDir,
         join(repo, ".worktrees"),
       );
 
@@ -33,9 +33,9 @@ describe("cross-repo", () => {
 
     it("parses repo alias for cross-repo items", () => {
       const repo = setupTempRepo();
-      const todosDir = useFixtureDir(repo, "cross_repo.md");
+      const workDir = useFixtureDir(repo, "cross_repo.md");
       const items = parseTodos(
-        todosDir,
+        workDir,
         join(repo, ".worktrees"),
       );
 
@@ -48,9 +48,9 @@ describe("cross-repo", () => {
 
     it("hub-local items have empty repo alias", () => {
       const repo = setupTempRepo();
-      const todosDir = useFixtureDir(repo, "cross_repo.md");
+      const workDir = useFixtureDir(repo, "cross_repo.md");
       const items = parseTodos(
-        todosDir,
+        workDir,
         join(repo, ".worktrees"),
       );
 
@@ -60,9 +60,9 @@ describe("cross-repo", () => {
 
     it("valid.md (no Repo fields) still parses 4 items", () => {
       const repo = setupTempRepo();
-      const todosDir = useFixtureDir(repo, "valid.md");
+      const workDir = useFixtureDir(repo, "valid.md");
       const items = parseTodos(
-        todosDir,
+        workDir,
         join(repo, ".worktrees"),
       );
 
@@ -71,9 +71,9 @@ describe("cross-repo", () => {
 
     it("M-CI-1 still has correct priority in valid.md", () => {
       const repo = setupTempRepo();
-      const todosDir = useFixtureDir(repo, "valid.md");
+      const workDir = useFixtureDir(repo, "valid.md");
       const items = parseTodos(
-        todosDir,
+        workDir,
         join(repo, ".worktrees"),
       );
 
@@ -103,7 +103,7 @@ describe("cross-repo", () => {
       const indexFile = join(hub, ".worktrees", ".cross-repo-index");
       writeFileSync(
         indexFile,
-        `H-API-1\t${parent}/target-repo-a\t${parent}/target-repo-a/.worktrees/todo-H-API-1\nH-WA-1\t${parent}/target-repo-b\t${parent}/target-repo-b/.worktrees/todo-H-WA-1\n`,
+        `H-API-1\t${parent}/target-repo-a\t${parent}/target-repo-a/.worktrees/ninthwave-H-API-1\nH-WA-1\t${parent}/target-repo-b\t${parent}/target-repo-b/.worktrees/ninthwave-H-WA-1\n`,
       );
 
       expect(existsSync(indexFile)).toBe(true);
@@ -122,7 +122,7 @@ describe("cross-repo", () => {
       const indexFile = join(hub, ".worktrees", ".cross-repo-index");
       writeFileSync(
         indexFile,
-        `H-API-1\t${parent}/target-repo-a\t${parent}/target-repo-a/.worktrees/todo-H-API-1\nH-WA-1\t${parent}/target-repo-b\t${parent}/target-repo-b/.worktrees/todo-H-WA-1\n`,
+        `H-API-1\t${parent}/target-repo-a\t${parent}/target-repo-a/.worktrees/ninthwave-H-API-1\nH-WA-1\t${parent}/target-repo-b\t${parent}/target-repo-b/.worktrees/ninthwave-H-WA-1\n`,
       );
 
       // Simulate removal: filter out H-API-1
@@ -145,21 +145,21 @@ describe("cross-repo", () => {
       const repo = setupTempRepo();
       const indexFile = join(repo, ".worktrees", ".cross-repo-index");
 
-      writeCrossRepoIndex(indexFile, "T-1", "/repo-a", "/repo-a/.worktrees/todo-T-1");
-      writeCrossRepoIndex(indexFile, "T-1", "/repo-a", "/repo-a/.worktrees/todo-T-1-v2");
+      writeCrossRepoIndex(indexFile, "T-1", "/repo-a", "/repo-a/.worktrees/ninthwave-T-1");
+      writeCrossRepoIndex(indexFile, "T-1", "/repo-a", "/repo-a/.worktrees/ninthwave-T-1-v2");
 
       const content = readFileSync(indexFile, "utf-8");
       const lines = content.split("\n").filter((l) => l.trim());
       expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain("todo-T-1-v2");
+      expect(lines[0]).toContain("ninthwave-T-1-v2");
     });
 
     it("writing different IDs produces separate entries", () => {
       const repo = setupTempRepo();
       const indexFile = join(repo, ".worktrees", ".cross-repo-index");
 
-      writeCrossRepoIndex(indexFile, "T-1", "/repo-a", "/repo-a/.worktrees/todo-T-1");
-      writeCrossRepoIndex(indexFile, "T-2", "/repo-b", "/repo-b/.worktrees/todo-T-2");
+      writeCrossRepoIndex(indexFile, "T-1", "/repo-a", "/repo-a/.worktrees/ninthwave-T-1");
+      writeCrossRepoIndex(indexFile, "T-2", "/repo-b", "/repo-b/.worktrees/ninthwave-T-2");
 
       const content = readFileSync(indexFile, "utf-8");
       const lines = content.split("\n").filter((l) => l.trim());
@@ -174,8 +174,8 @@ describe("cross-repo", () => {
       mkdirSync(join(repo, ".worktrees"), { recursive: true });
 
       // Write two entries
-      writeCrossRepoIndex(indexFile, "T-1", "/repo-a", "/repo-a/.worktrees/todo-T-1");
-      writeCrossRepoIndex(indexFile, "T-2", "/repo-b", "/repo-b/.worktrees/todo-T-2");
+      writeCrossRepoIndex(indexFile, "T-1", "/repo-a", "/repo-a/.worktrees/ninthwave-T-1");
+      writeCrossRepoIndex(indexFile, "T-2", "/repo-b", "/repo-b/.worktrees/ninthwave-T-2");
 
       // getWorktreeInfo should find them
       const info1 = getWorktreeInfo("T-1", indexFile, join(repo, ".worktrees"));
@@ -258,9 +258,9 @@ describe("cross-repo", () => {
   describe("hub fallback", () => {
     it("items without Repo field default to empty alias", () => {
       const repo = setupTempRepo();
-      const todosDir = useFixtureDir(repo, "valid.md");
+      const workDir = useFixtureDir(repo, "valid.md");
       const items = parseTodos(
-        todosDir,
+        workDir,
         join(repo, ".worktrees"),
       );
 

@@ -82,7 +82,7 @@ function stubCtx(): ExecutionContext {
   return {
     projectRoot: PROJECT_ROOT,
     worktreeDir: join(PROJECT_ROOT, ".worktrees"),
-    todosDir: join(PROJECT_ROOT, ".ninthwave", "todos"),
+    workDir: join(PROJECT_ROOT, ".ninthwave", "work"),
     aiTool: "claude",
   };
 }
@@ -608,7 +608,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       orch.addItem(todo);
 
       // Create worktree directory so reconstructState processes this item
-      mkdirSync(join(wtDir, "todo-MRG-RR-1"), { recursive: true });
+      mkdirSync(join(wtDir, "ninthwave-MRG-RR-1"), { recursive: true });
 
       // checkPr returns a merged PR with a completely different title
       const checkPr = (_id: string, _root: string) =>
@@ -625,7 +625,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const todo = makeTodo("MRG-RR-2", "New implementation of feature Y");
       orch.addItem(todo);
 
-      mkdirSync(join(wtDir, "todo-MRG-RR-2"), { recursive: true });
+      mkdirSync(join(wtDir, "ninthwave-MRG-RR-2"), { recursive: true });
 
       // Title matches the TODO after normalization
       const checkPr = (_id: string, _root: string) =>
@@ -642,7 +642,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       orch.addItem(todo);
       orch.getItem("MRG-RR-3")!.prNumber = 77;
 
-      mkdirSync(join(wtDir, "todo-MRG-RR-3"), { recursive: true });
+      mkdirSync(join(wtDir, "ninthwave-MRG-RR-3"), { recursive: true });
 
       const checkPr = (_id: string, _root: string) =>
         "MRG-RR-3\t77\tmerged\t\t\trefactor: completely rewrite error paths";

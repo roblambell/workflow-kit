@@ -4,9 +4,6 @@
 # Machine-specific bundle location (created by setup)
 .ninthwave/dir
 
-# Legacy CLI shim (no longer created by setup)
-.ninthwave/work
-
 # Orchestrator runtime files (ephemeral, created/deleted during runs)
 .ninthwave/orchestrator.state.json
 .ninthwave/health-samples.jsonl

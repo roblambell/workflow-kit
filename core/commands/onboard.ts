@@ -101,12 +101,12 @@ export interface OnboardDeps {
 export interface NoArgsDeps extends OnboardDeps {
   isTTY?: boolean;
   existsSync?: typeof existsSync;
-  parseTodos?: (todosDir: string, worktreeDir: string) => TodoItem[];
+  parseTodos?: (workDir: string, worktreeDir: string) => TodoItem[];
   isDaemonRunning?: (projectRoot: string) => number | null;
   promptItems?: (todos: TodoItem[], prompt: PromptFn) => Promise<string[]>;
   promptAction?: (prompt: PromptFn) => Promise<"run" | "watch" | "quit">;
-  runSelected?: (ids: string[], todosDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
-  runWatch?: (args: string[], todosDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
+  runSelected?: (ids: string[], workDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
+  runWatch?: (args: string[], workDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
   runStatusWatch?: (worktreeDir: string, projectRoot: string) => Promise<void>;
   printHelp?: () => void;
 }
@@ -477,13 +477,13 @@ export async function cmdNoArgs(
     return;
   }
 
-  const todosDir = join(projectRoot, ".ninthwave", "todos");
+  const workDir = join(projectRoot, ".ninthwave", "work");
   const worktreeDir = join(projectRoot, ".worktrees");
 
   // State 3: .ninthwave/ exists but no TODO files
   let todos: TodoItem[] = [];
-  if (checkExists(todosDir)) {
-    todos = doParseT(todosDir, worktreeDir);
+  if (checkExists(workDir)) {
+    todos = doParseT(workDir, worktreeDir);
   }
 
   if (todos.length === 0) {
@@ -492,7 +492,7 @@ export async function cmdNoArgs(
     console.log();
     console.log(`  Get started:`);
     console.log(`    ${DIM}•${RESET} Use ${BOLD}/decompose${RESET} in your AI tool to break down a feature`);
-    console.log(`    ${DIM}•${RESET} Create TODO files manually in ${BOLD}.ninthwave/todos/${RESET}`);
+    console.log(`    ${DIM}•${RESET} Create TODO files manually in ${BOLD}.ninthwave/work/${RESET}`);
     console.log();
     return;
   }
@@ -521,18 +521,18 @@ export async function cmdNoArgs(
 
   if (action === "run") {
     if (deps.runSelected) {
-      await deps.runSelected(selectedIds, todosDir, worktreeDir, projectRoot);
+      await deps.runSelected(selectedIds, workDir, worktreeDir, projectRoot);
     } else {
       const { cmdRunItems } = await import("./launch.ts");
-      await cmdRunItems(selectedIds, todosDir, worktreeDir, projectRoot);
+      await cmdRunItems(selectedIds, workDir, worktreeDir, projectRoot);
     }
   } else {
     // "watch" — launch orchestrator for all items
     if (deps.runWatch) {
-      await deps.runWatch([], todosDir, worktreeDir, projectRoot);
+      await deps.runWatch([], workDir, worktreeDir, projectRoot);
     } else {
       const { cmdWatch } = await import("./orchestrate.ts");
-      await cmdWatch([], todosDir, worktreeDir, projectRoot);
+      await cmdWatch([], workDir, worktreeDir, projectRoot);
     }
   }
 }

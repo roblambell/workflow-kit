@@ -42,7 +42,7 @@ function createMockIO(): DaemonIO & { files: Map<string, string> } {
 
 function createDeps(
   io: DaemonIO & { files: Map<string, string> },
-  branch: string | null = "todo/H-FOO-1",
+  branch: string | null = "ninthwave/H-FOO-1",
 ): HeartbeatDeps {
   return {
     io,
@@ -54,18 +54,18 @@ function createDeps(
 
 describe("extractTodoId", () => {
   it("extracts ID from todo branch", () => {
-    expect(extractTodoId("todo/H-FOO-1")).toBe("H-FOO-1");
+    expect(extractTodoId("ninthwave/H-FOO-1")).toBe("H-FOO-1");
   });
 
   it("extracts complex IDs", () => {
-    expect(extractTodoId("todo/M-ORC-3")).toBe("M-ORC-3");
-    expect(extractTodoId("todo/L-VIS-12")).toBe("L-VIS-12");
+    expect(extractTodoId("ninthwave/M-ORC-3")).toBe("M-ORC-3");
+    expect(extractTodoId("ninthwave/L-VIS-12")).toBe("L-VIS-12");
   });
 
   it("returns null for non-todo branches", () => {
     expect(extractTodoId("main")).toBeNull();
     expect(extractTodoId("feature/something")).toBeNull();
-    expect(extractTodoId("todo-H-FOO-1")).toBeNull();
+    expect(extractTodoId("ninthwave-H-FOO-1")).toBeNull();
   });
 
   it("returns null for empty string", () => {
@@ -236,7 +236,7 @@ describe("cmdHeartbeat", () => {
 
   it("writes heartbeat file and returns success message", () => {
     const io = createMockIO();
-    const deps = createDeps(io, "todo/H-FOO-1");
+    const deps = createDeps(io, "ninthwave/H-FOO-1");
     const msg = cmdHeartbeat(
       ["--progress", "0.5", "--label", "test"],
       "/project",
@@ -287,7 +287,7 @@ describe("cmdHeartbeat", () => {
 
   it("parses --progress and --label flags correctly", () => {
     const io = createMockIO();
-    const deps = createDeps(io, "todo/M-ORC-3");
+    const deps = createDeps(io, "ninthwave/M-ORC-3");
     cmdHeartbeat(
       ["--progress", "0.3", "--label", "Writing tests"],
       "/project",
@@ -302,7 +302,7 @@ describe("cmdHeartbeat", () => {
 
   it("includes cost fields when --tokens-in, --tokens-out, --model provided", () => {
     const io = createMockIO();
-    const deps = createDeps(io, "todo/H-FOO-1");
+    const deps = createDeps(io, "ninthwave/H-FOO-1");
     cmdHeartbeat(
       ["--progress", "1.0", "--label", "PR created", "--tokens-in", "45000", "--tokens-out", "12000", "--model", "claude-sonnet-4-20250514"],
       "/project",
@@ -318,7 +318,7 @@ describe("cmdHeartbeat", () => {
 
   it("omits cost fields when not provided", () => {
     const io = createMockIO();
-    const deps = createDeps(io, "todo/H-FOO-1");
+    const deps = createDeps(io, "ninthwave/H-FOO-1");
     cmdHeartbeat(
       ["--progress", "0.5", "--label", "test"],
       "/project",

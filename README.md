@@ -58,7 +58,7 @@ Run `nw doctor` to verify your setup.
 
 ## How It Works
 
-Todo files in `.ninthwave/todos/` define work items with priorities, dependencies, and optional repo targets. `nw <ID>` creates a git worktree and AI coding session for each item. `nw watch` runs the full pipeline: a deterministic daemon that sequences batches, monitors CI, relays review feedback into worker sessions, auto-rebases branches, and merges approved PRs. Dependent items automatically target their dependency's branch, giving reviewers clean diffs.
+Todo files in `.ninthwave/work/` define work items with priorities, dependencies, and optional repo targets. `nw <ID>` creates a git worktree and AI coding session for each item. `nw watch` runs the full pipeline: a deterministic daemon that sequences batches, monitors CI, relays review feedback into worker sessions, auto-rebases branches, and merges approved PRs. Dependent items automatically target their dependency's branch, giving reviewers clean diffs.
 
 The orchestrator is deterministic: no LLM calls in the event loop. Workers are the intelligent agents.
 

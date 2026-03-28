@@ -8,14 +8,14 @@ import type { TodoItem } from "../types.ts";
 
 export function cmdDeps(
   args: string[],
-  todosDir: string,
+  workDir: string,
   worktreeDir: string,
 ): void {
   const ids = splitIds(args);
   const targetId = ids[0];
   if (!targetId) die("Usage: ninthwave deps <ID>");
 
-  const items = parseTodos(todosDir, worktreeDir);
+  const items = parseTodos(workDir, worktreeDir);
   const itemMap = new Map<string, TodoItem>();
   for (const item of items) {
     itemMap.set(item.id, item);

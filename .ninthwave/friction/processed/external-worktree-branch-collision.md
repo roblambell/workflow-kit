@@ -6,7 +6,7 @@
 
 ## Symptoms
 
-- H-NTF-1 and H-TUI-7 both failed with `launch-failed: git worktree failed (exit 255): fatal: a branch named 'todo/H-NTF-1' already exists`
+- H-NTF-1 and H-TUI-7 both failed with `launch-failed: git worktree failed (exit 255): fatal: a branch named 'ninthwave/H-NTF-1' already exists`
 - H-NTF-1 had already completed work and opened PR #271 in a prior session, but the orchestrator tried to launch fresh anyway
 - Three stale worktrees in `.claude/worktrees/` held the branches, preventing deletion
 

@@ -69,7 +69,7 @@ function mockActionDeps(overrides?: Partial<OrchestratorDeps>): OrchestratorDeps
 const defaultCtx: ExecutionContext = {
   projectRoot: "/tmp/test-project",
   worktreeDir: "/tmp/test-project/.worktrees",
-  todosDir: "/tmp/test-project/.ninthwave/todos",
+  workDir: "/tmp/test-project/.ninthwave/work",
   aiTool: "claude",
 };
 
@@ -246,7 +246,7 @@ describe("orchestrateLoop", () => {
     const actionDeps = mockActionDeps({
       launchSingleItem: vi.fn((item: TodoItem) => {
         launchedItems.push(item.id);
-        return { worktreePath: `/tmp/test/todo-${item.id}`, workspaceRef: `ws:${item.id}` };
+        return { worktreePath: `/tmp/test/ninthwave-${item.id}`, workspaceRef: `ws:${item.id}` };
       }),
     });
 
@@ -898,7 +898,7 @@ describe("reconstructState", () => {
     // Create a temp worktree dir to simulate existing worktree
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-test-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-H-DF-1");
+    const wtPath = join(wtDir, "ninthwave-H-DF-1");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     // Mock mux that reports a live workspace matching the item ID
@@ -933,7 +933,7 @@ describe("reconstructState", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-test2-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-H-DF-2");
+    const wtPath = join(wtDir, "ninthwave-H-DF-2");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     // Mock mux with no matching workspaces
@@ -965,7 +965,7 @@ describe("reconstructState", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-cifc-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-REC-1");
+    const wtPath = join(wtDir, "ninthwave-REC-1");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     const noopCheckPr = () => null;
@@ -1001,7 +1001,7 @@ describe("reconstructState", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-nostate-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-REC-2");
+    const wtPath = join(wtDir, "ninthwave-REC-2");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     const noopCheckPr = () => null;
@@ -1035,7 +1035,7 @@ describe("reconstructState", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-stuck-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-REC-4");
+    const wtPath = join(wtDir, "ninthwave-REC-4");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     // checkPr returns "failing" status so the item enters ci-failed state
@@ -1092,7 +1092,7 @@ describe("reconstructState", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-wr1-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-WR-1");
+    const wtPath = join(wtDir, "ninthwave-WR-1");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     // checkPr returns "pending" status — existing PR with CI pending
@@ -1113,7 +1113,7 @@ describe("reconstructState", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-wr2-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-WR-2");
+    const wtPath = join(wtDir, "ninthwave-WR-2");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     const failingCheckPr = () => "WR-2\t100\tfailing";
@@ -1133,7 +1133,7 @@ describe("reconstructState", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-wr3-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-WR-3");
+    const wtPath = join(wtDir, "ninthwave-WR-3");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     const passingCheckPr = () => "WR-3\t200\tci-passed";
@@ -1155,7 +1155,7 @@ describe("reconstructState review fields", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-rvw-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-RVW-1");
+    const wtPath = join(wtDir, "ninthwave-RVW-1");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     const noopCheckPr = () => null;
@@ -1194,7 +1194,7 @@ describe("reconstructState review fields", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-rvwt-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-RVW-2");
+    const wtPath = join(wtDir, "ninthwave-RVW-2");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     const noopCheckPr = () => null;
@@ -1234,7 +1234,7 @@ describe("reconstructState cross-repo", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-xr-reconstruct-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const targetWtPath = join("/tmp/target-repo", ".worktrees", "todo-XR-1-1");
+    const targetWtPath = join("/tmp/target-repo", ".worktrees", "ninthwave-XR-1-1");
     require("fs").mkdirSync(wtDir, { recursive: true });
 
     // Write cross-repo index pointing to target repo worktree
@@ -1259,7 +1259,7 @@ describe("reconstructState cross-repo", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-xr-reconstruct2-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    const wtPath = join(wtDir, "todo-XR-2-1");
+    const wtPath = join(wtDir, "ninthwave-XR-2-1");
     require("fs").mkdirSync(wtPath, { recursive: true });
 
     // Track which repo root is passed to checkPr
@@ -1506,7 +1506,7 @@ describe("buildSnapshot lastCommitTime", () => {
     const snapshot = buildSnapshot(orch, "/tmp/project", "/tmp/project/.worktrees", mux, getLastCommitTime, noOpCheckPr);
 
     // getLastCommitTime was called with the right branch name
-    expect(getLastCommitTime).toHaveBeenCalledWith("/tmp/project", "todo/HC-1-1");
+    expect(getLastCommitTime).toHaveBeenCalledWith("/tmp/project", "ninthwave/HC-1-1");
 
     // Snapshot includes lastCommitTime
     const snapItem = snapshot.items.find((i) => i.id === "HC-1-1");
@@ -1746,7 +1746,7 @@ describe("reconstructState merge detection", () => {
     // Create a temp worktree so reconstructState processes this item
     const tmpDir = join(require("os").tmpdir(), `nw-mrg-test-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    require("fs").mkdirSync(join(wtDir, "todo-MRG-2-1"), { recursive: true });
+    require("fs").mkdirSync(join(wtDir, "ninthwave-MRG-2-1"), { recursive: true });
 
     // checkPr returns merged with a mismatched title (old cycle's PR)
     const checkPr = () => "MRG-2-1\t50\tmerged\t\t\tfix: old implementation of feature X";
@@ -1769,7 +1769,7 @@ describe("reconstructState merge detection", () => {
 
     const tmpDir = join(require("os").tmpdir(), `nw-mrg-test2-${Date.now()}`);
     const wtDir = join(tmpDir, ".worktrees");
-    require("fs").mkdirSync(join(wtDir, "todo-MRG-3-1"), { recursive: true });
+    require("fs").mkdirSync(join(wtDir, "ninthwave-MRG-3-1"), { recursive: true });
 
     // checkPr returns merged with a different title but matching PR number
     const checkPr = () => "MRG-3-1\t77\tmerged\t\t\trefactor: completely rewrite error paths";

@@ -100,7 +100,7 @@ describe("cmdWatchReady", () => {
   it("classifies merged PRs as merged", () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-H-CI-2"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
 
     // No open PRs, but has merged PRs
     (gh.prList as Mock).mockImplementation(
@@ -119,7 +119,7 @@ describe("cmdWatchReady", () => {
   it("classifies items with no PR as no-pr", () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-M-CI-1"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-M-CI-1"), { recursive: true });
 
     (gh.prList as Mock).mockReturnValue([]);
 
@@ -131,7 +131,7 @@ describe("cmdWatchReady", () => {
   it("classifies failing CI as failing", () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-H-CI-2"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
 
     (gh.prList as Mock).mockImplementation(
       (_root: string, _branch: string, state: string) => {
@@ -154,7 +154,7 @@ describe("cmdWatchReady", () => {
   it("classifies passing CI with approval as ready", () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-H-CI-2"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
 
     (gh.prList as Mock).mockImplementation(
       (_root: string, _branch: string, state: string) => {
@@ -179,7 +179,7 @@ describe("cmdWatchReady", () => {
   it("classifies passing CI without approval as ci-passed", () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-H-CI-2"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
 
     (gh.prList as Mock).mockImplementation(
       (_root: string, _branch: string, state: string) => {
@@ -202,7 +202,7 @@ describe("cmdWatchReady", () => {
   it("classifies passing CI with non-mergeable as ci-passed", () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-H-CI-2"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
 
     (gh.prList as Mock).mockImplementation(
       (_root: string, _branch: string, state: string) => {
@@ -225,7 +225,7 @@ describe("cmdWatchReady", () => {
   it("classifies pending CI as pending", () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-M-CI-1"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-M-CI-1"), { recursive: true });
 
     (gh.prList as Mock).mockImplementation(
       (_root: string, _branch: string, state: string) => {
@@ -253,7 +253,7 @@ describe("cmdAutopilotWatch", () => {
   it("reports transitions immediately when state changes from previous", async () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-H-CI-2"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
 
     const stateFile = join(repo, ".watch-state");
 
@@ -689,8 +689,8 @@ describe("getWatchReadyState", () => {
   it("returns status lines for worktrees", () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-A-1-1"), { recursive: true });
-    mkdirSync(join(worktreeDir, "todo-B-2-1"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-A-1-1"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-B-2-1"), { recursive: true });
 
     (gh.prList as Mock).mockReturnValue([]);
 
@@ -703,7 +703,7 @@ describe("getWatchReadyState", () => {
   it("skips non-todo entries", () => {
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "todo-A-1-1"), { recursive: true });
+    mkdirSync(join(worktreeDir, "ninthwave-A-1-1"), { recursive: true });
     mkdirSync(join(worktreeDir, "other-dir"), { recursive: true });
 
     (gh.prList as Mock).mockReturnValue([]);

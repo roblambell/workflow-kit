@@ -127,12 +127,12 @@ export function checkGitConfig(runner: ShellRunner): CheckResult {
   };
 }
 
-/** Check: no uncommitted TODO files in .ninthwave/todos/. */
+/** Check: no uncommitted TODO files in .ninthwave/work/. */
 export function checkUncommittedTodos(
   projectRoot: string,
   runner: ShellRunner,
 ): CheckResult {
-  const status = runner("git", ["-C", projectRoot, "status", "--porcelain", ".ninthwave/todos/"]);
+  const status = runner("git", ["-C", projectRoot, "status", "--porcelain", ".ninthwave/work/"]);
   if (status.exitCode !== 0) {
     return { status: "warn", message: "Could not check TODO file status" };
   }
@@ -143,8 +143,8 @@ export function checkUncommittedTodos(
   const count = changes.split("\n").filter(Boolean).length;
   return {
     status: "fail",
-    message: `${count} uncommitted TODO file(s) in .ninthwave/todos/`,
-    detail: "Run: git add .ninthwave/todos/ && git commit -m 'chore: add TODO files' && git push",
+    message: `${count} uncommitted TODO file(s) in .ninthwave/work/`,
+    detail: "Run: git add .ninthwave/work/ && git commit -m 'chore: add TODO files' && git push",
   };
 }
 

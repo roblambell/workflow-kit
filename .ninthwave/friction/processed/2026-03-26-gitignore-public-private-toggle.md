@@ -9,7 +9,7 @@ Setting up ninthwave on strait (a public repo). `ninthwave init`/`setup` commits
 There's no way to tell ninthwave "this is a public repo, don't commit my todos." The setup flow always ends with `git add -A && git commit`. A solo dev on a public repo has different needs from a team on a private repo — the current one-size-fits-all approach doesn't account for this.
 
 ### 2. Should users be able to gitignore todos?
-If `.ninthwave/todos/` is gitignored, todos only exist locally. This raises questions:
+If `.ninthwave/work/` is gitignored, todos only exist locally. This raises questions:
 - Todo-worker agents run in worktrees. If a worker completes a todo and deletes the file on its worktree branch, does that deletion propagate correctly when the branch merges? If todos are gitignored, the delete would be a no-op (the file isn't tracked), so the todo file would persist on the main branch's working tree — but it's also not tracked, so it just lingers as an untracked file that never gets cleaned up.
 - Reconciliation (`ninthwave reconcile`) cross-references merged PRs against todo files. If todos aren't in git, the reconciliation logic can't see what was completed from a clean clone — it only works on the machine where the todos exist.
 - Multiple developers on a private repo might independently create conflicting todos if they're not shared via git.

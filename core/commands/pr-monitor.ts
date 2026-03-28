@@ -45,7 +45,7 @@ const defaultScanDeps: ScanExternalPRsDeps = {
 };
 
 /**
- * Scan for open PRs not managed by ninthwave (non-`todo/*` branches).
+ * Scan for open PRs not managed by ninthwave (non-`ninthwave/*` branches).
  * Uses the GitHub REST API to list open PRs with author_association.
  *
  * @param repoRoot - Path to the repository root
@@ -77,7 +77,7 @@ export function scanExternalPRs(
     const prs = JSON.parse(result.stdout) as GitHubPullRequest[];
 
     return prs
-      .filter((pr) => !pr.head.ref.startsWith("todo/"))
+      .filter((pr) => !pr.head.ref.startsWith("ninthwave/"))
       .map((pr) => ({
         prNumber: pr.number,
         headBranch: pr.head.ref,
@@ -114,10 +114,10 @@ export function cmdWatchReady(
   // Iterate hub-local worktrees
   try {
     for (const entry of readdirSync(worktreeDir)) {
-      if (!entry.startsWith("todo-")) continue;
+      if (!entry.startsWith("ninthwave-")) continue;
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
-      const id = entry.slice(5);
+      const id = entry.slice(10);
       const line = checkPrStatus(id, projectRoot);
       if (line) results.push(line);
     }
@@ -155,7 +155,7 @@ export const CI_FAILURE_STATES = new Set([
 ]);
 
 export function checkPrStatus(id: string, repoRoot: string): string {
-  const branch = `todo/${id}`;
+  const branch = `ninthwave/${id}`;
 
   if (!gh.isAvailable()) return "";
 
@@ -326,10 +326,10 @@ export function getWatchReadyState(
 
   try {
     for (const entry of readdirSync(worktreeDir)) {
-      if (!entry.startsWith("todo-")) continue;
+      if (!entry.startsWith("ninthwave-")) continue;
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
-      const id = entry.slice(5);
+      const id = entry.slice(10);
       const line = checkPrStatus(id, projectRoot);
       if (line) results.push(line);
     }

@@ -163,16 +163,16 @@ export function parseTodoFile(filePath: string): TodoItem | null {
  * Expands wildcard dependencies in a second pass.
  * Sets status to "in-progress" if a worktree `todo-{id}` exists.
  */
-export function listTodos(todosDir: string, worktreeDir: string): TodoItem[] {
-  if (!existsSync(todosDir)) return [];
+export function listTodos(workDir: string, worktreeDir: string): TodoItem[] {
+  if (!existsSync(workDir)) return [];
 
   // Derive in-progress IDs from worktree directories
   const inProgressIds = new Set<string>();
   if (existsSync(worktreeDir)) {
     try {
       for (const entry of readdirSync(worktreeDir)) {
-        if (entry.startsWith("todo-")) {
-          inProgressIds.add(entry.slice(5));
+        if (entry.startsWith("ninthwave-")) {
+          inProgressIds.add(entry.slice(10));
         }
       }
     } catch {
@@ -195,11 +195,11 @@ export function listTodos(todosDir: string, worktreeDir: string): TodoItem[] {
     }
   }
 
-  const entries = readdirSync(todosDir).filter((f) => f.endsWith(".md"));
+  const entries = readdirSync(workDir).filter((f) => f.endsWith(".md"));
   const items: TodoItem[] = [];
 
   for (const entry of entries) {
-    const fp = join(todosDir, entry);
+    const fp = join(workDir, entry);
     const item = parseTodoFile(fp);
     if (!item) continue;
 
@@ -238,27 +238,27 @@ export function listTodos(todosDir: string, worktreeDir: string): TodoItem[] {
  * Globs for `*--{id}.md` in the todos directory.
  */
 export function readTodo(
-  todosDir: string,
+  workDir: string,
   id: string,
 ): TodoItem | undefined {
-  if (!existsSync(todosDir)) return undefined;
+  if (!existsSync(workDir)) return undefined;
 
-  const entries = readdirSync(todosDir);
+  const entries = readdirSync(workDir);
   const suffix = `--${id}.md`;
   const match = entries.find((f) => f.endsWith(suffix));
 
   if (!match) return undefined;
 
-  return parseTodoFile(join(todosDir, match)) ?? undefined;
+  return parseTodoFile(join(workDir, match)) ?? undefined;
 }
 
 /**
  * Write a TodoItem to its canonical file in the todos directory.
  * Generates the markdown content and sets item.filePath.
  */
-export function writeTodoFile(todosDir: string, item: TodoItem): void {
+export function writeTodoFile(workDir: string, item: TodoItem): void {
   const filename = todoFilename(item);
-  const fp = join(todosDir, filename);
+  const fp = join(workDir, filename);
 
   const lines: string[] = [];
 
@@ -329,17 +329,17 @@ export function writeTodoFile(todosDir: string, item: TodoItem): void {
  * Globs for `*--{id}.md` in the todos directory.
  * Returns true if a file was deleted, false otherwise.
  */
-export function deleteTodoFile(todosDir: string, id: string): boolean {
-  if (!existsSync(todosDir)) return false;
+export function deleteTodoFile(workDir: string, id: string): boolean {
+  if (!existsSync(workDir)) return false;
 
-  const entries = readdirSync(todosDir);
+  const entries = readdirSync(workDir);
   const suffix = `--${id}.md`;
   const matches = entries.filter((f) => f.endsWith(suffix));
 
   if (matches.length === 0) return false;
 
   for (const match of matches) {
-    unlinkSync(join(todosDir, match));
+    unlinkSync(join(workDir, match));
   }
 
   return true;

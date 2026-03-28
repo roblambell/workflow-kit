@@ -52,7 +52,7 @@ function snapshotWith(
 const defaultCtx: ExecutionContext = {
   projectRoot: "/tmp/test-project",
   worktreeDir: "/tmp/test-project/.worktrees",
-  todosDir: "/tmp/test-project/.ninthwave/todos",
+  workDir: "/tmp/test-project/.ninthwave/work",
   aiTool: "claude",
 };
 
@@ -60,7 +60,7 @@ const defaultCtx: ExecutionContext = {
 function mockDeps(overrides?: Partial<OrchestratorDeps>): OrchestratorDeps {
   return {
     launchSingleItem: vi.fn(() => ({
-      worktreePath: "/tmp/test/todo-test",
+      worktreePath: "/tmp/test/ninthwave-test",
       workspaceRef: "workspace:1",
     })),
     cleanSingleWorktree: vi.fn(() => true),
@@ -827,7 +827,7 @@ describe("Orchestrator", () => {
       expect(result.success).toBe(true);
       expect(deps.launchSingleItem).toHaveBeenCalledWith(
         orch.getItem("H-1-1")!.todo,
-        defaultCtx.todosDir,
+        defaultCtx.workDir,
         defaultCtx.worktreeDir,
         defaultCtx.projectRoot,
         defaultCtx.aiTool,
@@ -1091,12 +1091,12 @@ describe("Orchestrator", () => {
 
       // Should daemon-rebase both in-flight sibling PRs
       expect(daemonRebase).toHaveBeenCalledWith(
-        `${defaultCtx.worktreeDir}/todo-H-1-2`,
-        "todo/H-1-2",
+        `${defaultCtx.worktreeDir}/ninthwave-H-1-2`,
+        "ninthwave/H-1-2",
       );
       expect(daemonRebase).toHaveBeenCalledWith(
-        `${defaultCtx.worktreeDir}/todo-H-1-3`,
-        "todo/H-1-3",
+        `${defaultCtx.worktreeDir}/ninthwave-H-1-3`,
+        "ninthwave/H-1-3",
       );
       expect(daemonRebase).toHaveBeenCalledTimes(2);
     });
@@ -1559,8 +1559,8 @@ describe("Orchestrator", () => {
       expect(result.success).toBe(true);
       // daemonRebase receives the worktree path, not projectRoot
       expect(daemonRebase).toHaveBeenCalledWith(
-        `${defaultCtx.worktreeDir}/todo-H-1-1`,
-        "todo/H-1-1",
+        `${defaultCtx.worktreeDir}/ninthwave-H-1-1`,
+        "ninthwave/H-1-1",
       );
       // Should transition to ci-pending after successful rebase
       expect(orch.getItem("H-1-1")!.state).toBe("ci-pending");
@@ -1652,8 +1652,8 @@ describe("Orchestrator", () => {
       );
 
       expect(daemonRebase).toHaveBeenCalledWith(
-        `${defaultCtx.worktreeDir}/todo-H-1-1`,
-        "todo/H-1-1",
+        `${defaultCtx.worktreeDir}/ninthwave-H-1-1`,
+        "ninthwave/H-1-1",
       );
     });
 
@@ -1680,8 +1680,8 @@ describe("Orchestrator", () => {
 
       // Should try daemon rebase (which threw)
       expect(daemonRebase).toHaveBeenCalledWith(
-        `${defaultCtx.worktreeDir}/todo-H-1-2`,
-        "todo/H-1-2",
+        `${defaultCtx.worktreeDir}/ninthwave-H-1-2`,
+        "ninthwave/H-1-2",
       );
       // Should fall back to conflict check and warn since worker is dead
       expect(checkPrMergeable).toHaveBeenCalledWith(defaultCtx.projectRoot, 43);
@@ -4056,7 +4056,7 @@ describe("Orchestrator", () => {
         const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
         expect(result.canStack).toBe(true);
         if (result.canStack) {
-          expect(result.baseBranch).toBe("todo/A-1-1");
+          expect(result.baseBranch).toBe("ninthwave/A-1-1");
         }
       });
 
@@ -4068,7 +4068,7 @@ describe("Orchestrator", () => {
         const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
         expect(result.canStack).toBe(true);
         if (result.canStack) {
-          expect(result.baseBranch).toBe("todo/A-1-1");
+          expect(result.baseBranch).toBe("ninthwave/A-1-1");
         }
       });
 
@@ -4080,7 +4080,7 @@ describe("Orchestrator", () => {
         const result = orch.canStackLaunch(orch.getItem("A-1-2")!);
         expect(result.canStack).toBe(true);
         if (result.canStack) {
-          expect(result.baseBranch).toBe("todo/A-1-1");
+          expect(result.baseBranch).toBe("ninthwave/A-1-1");
         }
       });
 
@@ -4124,7 +4124,7 @@ describe("Orchestrator", () => {
         const result = orch.canStackLaunch(orch.getItem("A-1-3")!);
         expect(result.canStack).toBe(true);
         if (result.canStack) {
-          expect(result.baseBranch).toBe("todo/A-1-2");
+          expect(result.baseBranch).toBe("ninthwave/A-1-2");
         }
       });
 
@@ -4193,7 +4193,7 @@ describe("Orchestrator", () => {
 
         const item = orch.getItem("A-1-2")!;
         expect(item.state).toBe("launching");
-        expect(item.baseBranch).toBe("todo/A-1-1");
+        expect(item.baseBranch).toBe("ninthwave/A-1-1");
         expect(actions.some((a) => a.type === "launch" && a.itemId === "A-1-2")).toBe(true);
       });
 
@@ -4220,7 +4220,7 @@ describe("Orchestrator", () => {
         expect(orch.getItem("A-1-2")!.state).toBe("launching");
         expect(orch.getItem("A-1-2")!.baseBranch).toBeUndefined();
         expect(orch.getItem("A-1-3")!.state).toBe("launching");
-        expect(orch.getItem("A-1-3")!.baseBranch).toBe("todo/A-1-1");
+        expect(orch.getItem("A-1-3")!.baseBranch).toBe("ninthwave/A-1-1");
         expect(actions.filter((a) => a.type === "launch")).toHaveLength(2);
       });
 
@@ -4251,7 +4251,7 @@ describe("Orchestrator", () => {
 
         const launchAction = actions.find((a) => a.type === "launch" && a.itemId === "A-1-2");
         expect(launchAction).toBeDefined();
-        expect(launchAction!.baseBranch).toBe("todo/A-1-1");
+        expect(launchAction!.baseBranch).toBe("ninthwave/A-1-1");
       });
 
       it("launch action omits baseBranch for non-stacked items", () => {
@@ -4273,18 +4273,18 @@ describe("Orchestrator", () => {
         orch.setState("A-1-1", "launching");
 
         orch.executeAction(
-          { type: "launch", itemId: "A-1-1", baseBranch: "todo/A-1-0" },
+          { type: "launch", itemId: "A-1-1", baseBranch: "ninthwave/A-1-0" },
           defaultCtx,
           deps,
         );
 
         expect(deps.launchSingleItem).toHaveBeenCalledWith(
           orch.getItem("A-1-1")!.todo,
-          defaultCtx.todosDir,
+          defaultCtx.workDir,
           defaultCtx.worktreeDir,
           defaultCtx.projectRoot,
           defaultCtx.aiTool,
-          "todo/A-1-0",
+          "ninthwave/A-1-0",
           false, // forceWorkerLaunch
         );
       });
@@ -4302,7 +4302,7 @@ describe("Orchestrator", () => {
 
         expect(deps.launchSingleItem).toHaveBeenCalledWith(
           orch.getItem("A-1-1")!.todo,
-          defaultCtx.todosDir,
+          defaultCtx.workDir,
           defaultCtx.worktreeDir,
           defaultCtx.projectRoot,
           defaultCtx.aiTool,
@@ -4341,7 +4341,7 @@ describe("Orchestrator", () => {
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 43;
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         orch.executeAction(
           { type: "merge", itemId: "A-1-1", prNumber: 42 },
@@ -4351,14 +4351,14 @@ describe("Orchestrator", () => {
 
         // rebaseOnto called with correct args
         expect(rebaseOnto).toHaveBeenCalledWith(
-          `${defaultCtx.worktreeDir}/todo-A-1-2`,
+          `${defaultCtx.worktreeDir}/ninthwave-A-1-2`,
           "main",
-          "todo/A-1-1",
-          "todo/A-1-2",
+          "ninthwave/A-1-1",
+          "ninthwave/A-1-2",
         );
         // Force-pushed after successful rebase
         expect(forcePush).toHaveBeenCalledWith(
-          `${defaultCtx.worktreeDir}/todo-A-1-2`,
+          `${defaultCtx.worktreeDir}/ninthwave-A-1-2`,
         );
         // baseBranch cleared — no longer stacked
         expect(orch.getItem("A-1-2")!.baseBranch).toBeUndefined();
@@ -4376,7 +4376,7 @@ describe("Orchestrator", () => {
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 43;
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         orch.executeAction(
           { type: "merge", itemId: "A-1-1", prNumber: 42 },
@@ -4431,8 +4431,8 @@ describe("Orchestrator", () => {
         );
         // And gets daemon-rebase treatment as a sibling
         expect(daemonRebase).toHaveBeenCalledWith(
-          `${defaultCtx.worktreeDir}/todo-A-1-2`,
-          "todo/A-1-2",
+          `${defaultCtx.worktreeDir}/ninthwave-A-1-2`,
+          "ninthwave/A-1-2",
         );
       });
 
@@ -4448,7 +4448,7 @@ describe("Orchestrator", () => {
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 43;
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         orch.executeAction(
           { type: "merge", itemId: "A-1-1", prNumber: 42 },
@@ -4474,7 +4474,7 @@ describe("Orchestrator", () => {
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 43;
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         orch.executeAction(
           { type: "merge", itemId: "A-1-1", prNumber: 42 },
@@ -4497,7 +4497,7 @@ describe("Orchestrator", () => {
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 43;
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         orch.executeAction(
           { type: "merge", itemId: "A-1-1", prNumber: 42 },
@@ -4529,7 +4529,7 @@ describe("Orchestrator", () => {
         orch.getItem("A-1-1")!.ciFailCount = 10; // exceeds maxCiRetries
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         // A-1-1 is ci-failed and over retry limit → will go stuck
         const actions = orch.processTransitions(
@@ -4581,7 +4581,7 @@ describe("Orchestrator", () => {
         orch.getItem("A-1-1")!.ciFailCount = 1;
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         // A-1-1 recovers: ci-failed → ci-pending (CI restarted)
         const actions = orch.processTransitions(
@@ -4636,7 +4636,7 @@ describe("Orchestrator", () => {
         orch.getItem("A-1-1")!.prNumber = 10;
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 11;
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         const chain = orch.buildStackChain("A-1-2");
 
@@ -4654,10 +4654,10 @@ describe("Orchestrator", () => {
         orch.getItem("A-1-1")!.prNumber = 10;
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 11;
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
         orch.setState("A-1-3", "ci-pending");
         orch.getItem("A-1-3")!.prNumber = 12;
-        orch.getItem("A-1-3")!.baseBranch = "todo/A-1-2";
+        orch.getItem("A-1-3")!.baseBranch = "ninthwave/A-1-2";
 
         const chain = orch.buildStackChain("A-1-3");
 
@@ -4675,7 +4675,7 @@ describe("Orchestrator", () => {
         orch.getItem("A-1-1")!.prNumber = 10;
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 11;
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         const fromTop = orch.buildStackChain("A-1-2");
         const fromBottom = orch.buildStackChain("A-1-1");
@@ -4690,7 +4690,7 @@ describe("Orchestrator", () => {
         orch.getItem("A-1-1")!.prNumber = 10;
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 11;
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         const chain = orch.buildStackChain("A-1-2");
 
@@ -4706,7 +4706,7 @@ describe("Orchestrator", () => {
         orch.getItem("A-1-1")!.prNumber = 10;
         orch.setState("A-1-2", "implementing");
         // A-1-2 has no prNumber yet
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         const chain = orch.buildStackChain("A-1-1");
 
@@ -4741,7 +4741,7 @@ describe("Orchestrator", () => {
         orch.getItem("A-1-1")!.prNumber = 10;
         orch.setState("A-1-2", "implementing");
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         const actions = orch.processTransitions(
           snapshotWith([
@@ -4786,7 +4786,7 @@ describe("Orchestrator", () => {
         orch.getItem("A-1-1")!.prNumber = 10;
         orch.setState("A-1-2", "pr-open");
         orch.getItem("A-1-2")!.prNumber = 11;
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         const result = orch.executeAction(
           { type: "sync-stack-comments", itemId: "A-1-2" },
@@ -4808,7 +4808,7 @@ describe("Orchestrator", () => {
         orch.addItem(makeTodo("A-1-1"));
         orch.setState("A-1-1", "pr-open");
         orch.getItem("A-1-1")!.prNumber = 10;
-        orch.getItem("A-1-1")!.baseBranch = "todo/X-1-1";
+        orch.getItem("A-1-1")!.baseBranch = "ninthwave/X-1-1";
 
         const result = orch.executeAction(
           { type: "sync-stack-comments", itemId: "A-1-1" },
@@ -4855,10 +4855,10 @@ describe("Orchestrator", () => {
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 11;
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
         orch.setState("A-1-3", "ci-pending");
         orch.getItem("A-1-3")!.prNumber = 12;
-        orch.getItem("A-1-3")!.baseBranch = "todo/A-1-2";
+        orch.getItem("A-1-3")!.baseBranch = "ninthwave/A-1-2";
 
         orch.executeAction(
           { type: "merge", itemId: "A-1-1", prNumber: 10 },
@@ -4909,7 +4909,7 @@ describe("Orchestrator", () => {
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 11;
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         orch.executeAction(
           { type: "merge", itemId: "A-1-1", prNumber: 10 },
@@ -4935,7 +4935,7 @@ describe("Orchestrator", () => {
         orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 11;
         orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
-        orch.getItem("A-1-2")!.baseBranch = "todo/A-1-1";
+        orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
         orch.executeAction(
           { type: "merge", itemId: "A-1-1", prNumber: 10 },
@@ -5030,8 +5030,8 @@ describe("Orchestrator", () => {
       );
 
       expect(daemonRebase).toHaveBeenCalledWith(
-        "/path/to/target-repo/.worktrees/todo-X-1-4",
-        "todo/X-1-4",
+        "/path/to/target-repo/.worktrees/ninthwave-X-1-4",
+        "ninthwave/X-1-4",
       );
     });
 
@@ -5082,8 +5082,8 @@ describe("Orchestrator", () => {
 
       // Sibling rebase should use target-repo's worktree path
       expect(daemonRebase).toHaveBeenCalledWith(
-        "/path/to/target-repo/.worktrees/todo-X-1-7",
-        "todo/X-1-7",
+        "/path/to/target-repo/.worktrees/ninthwave-X-1-7",
+        "ninthwave/X-1-7",
       );
     });
 

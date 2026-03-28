@@ -93,7 +93,7 @@ describe("cleanupStalePartitions", () => {
 
   it("keeps partitions for items with a hub worktree", () => {
     allocatePartition(PARTITION_DIR, "H-KEEP-1");
-    mkdirSync(join(WORKTREE_DIR, "todo-H-KEEP-1"), { recursive: true });
+    mkdirSync(join(WORKTREE_DIR, "ninthwave-H-KEEP-1"), { recursive: true });
 
     cleanupStalePartitions(PARTITION_DIR, WORKTREE_DIR, () => null);
 
@@ -102,7 +102,7 @@ describe("cleanupStalePartitions", () => {
 
   it("keeps partitions for items with a cross-repo worktree", () => {
     allocatePartition(PARTITION_DIR, "X-CR-1");
-    const crossRepoPath = join(TEST_DIR, "other-repo", ".worktrees", "todo-X-CR-1");
+    const crossRepoPath = join(TEST_DIR, "other-repo", ".worktrees", "ninthwave-X-CR-1");
     mkdirSync(crossRepoPath, { recursive: true });
 
     const getInfo = (todoId: string): WorktreeInfo | null => {

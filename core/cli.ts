@@ -74,14 +74,14 @@ const allAreIds = allPositional.length > 0 && allPositional.every(
 
 if (allAreIds) {
   const projectRoot = getProjectRoot();
-  const todosDir = join(projectRoot, ".ninthwave", "todos");
+  const workDir = join(projectRoot, ".ninthwave", "work");
   const worktreeDir = join(projectRoot, ".worktrees");
 
-  if (!existsSync(todosDir)) {
-    die(`Todos directory not found at ${todosDir}`);
+  if (!existsSync(workDir)) {
+    die(`Todos directory not found at ${workDir}`);
   }
 
-  await cmdRunItems(allPositional, todosDir, worktreeDir, projectRoot);
+  await cmdRunItems(allPositional, workDir, worktreeDir, projectRoot);
   process.exit(0);
 }
 
@@ -108,18 +108,18 @@ if (args.includes("--help") || args.includes("-h")) {
 
 if (!entry.needsRoot) {
   // Commands that don't need a project root (init, setup, version)
-  await entry.handler({ args, projectRoot: "", todosDir: "", worktreeDir: "", partitionDir: "" });
+  await entry.handler({ args, projectRoot: "", workDir: "", worktreeDir: "", partitionDir: "" });
   process.exit(0);
 }
 
 // Commands that need a project root
 const projectRoot = getProjectRoot();
-const todosDir = join(projectRoot, ".ninthwave", "todos");
+const workDir = join(projectRoot, ".ninthwave", "work");
 const worktreeDir = join(projectRoot, ".worktrees");
 const partitionDir = join(worktreeDir, ".partitions");
 
-if (entry.needsTodos && !existsSync(todosDir)) {
-  die(`Todos directory not found at ${todosDir}`);
+if (entry.needsWork && !existsSync(workDir)) {
+  die(`Todos directory not found at ${workDir}`);
 }
 
-await entry.handler({ args, projectRoot, todosDir, worktreeDir, partitionDir });
+await entry.handler({ args, projectRoot, workDir, worktreeDir, partitionDir });

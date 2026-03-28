@@ -82,10 +82,10 @@ When `enableStacking=true`, an item whose only in-flight dependency is in a "sta
 
 ```
 User runs /decompose
-  └─→ skill explores codebase, writes .ninthwave/todos/*.md (one file per TODO)
+  └─→ skill explores codebase, writes .ninthwave/work/*.md (one file per TODO)
 
 User runs /work
-  └─→ skill reads .ninthwave/todos/, presents item selection
+  └─→ skill reads .ninthwave/work/, presents item selection
       └─→ calls nw <IDs>
             ├─ git worktree create .worktrees/todo-<ID>
             ├─ allocate partition (port/DB isolation) via core/partitions.ts
@@ -113,7 +113,7 @@ nw watch (event loop, ~10s poll)
 
 Post-merge
   ├─ worktree and workspace cleaned up
-  ├─ TODO file removed from .ninthwave/todos/
+  ├─ TODO file removed from .ninthwave/work/
   ├─ stacked dependents retargeted to main
   └─ version bump deferred until all items done
 ```
@@ -198,7 +198,7 @@ The workspace ref is stored in `OrchestratorItem.workspaceRef` for later messagi
 
 The orchestrator tracks two signals per worker:
 
-- **Commit freshness** (`lastCommitTime`): timestamp of the most recent commit on `todo/<ID>`. A worker with recent commits is considered active regardless of screen state.
+- **Commit freshness** (`lastCommitTime`): timestamp of the most recent commit on `ninthwave/<ID>`. A worker with recent commits is considered active regardless of screen state.
 - **Screen health** (`ScreenHealthStatus`): classified by `computeScreenHealth()` in [`core/worker-health.ts`](core/worker-health.ts). Categories: `healthy`, `stalled-empty`, `stalled-permission`, `stalled-error`, `stalled-unchanged`.
 
 Timeout thresholds (configurable via `OrchestratorConfig`): 30 minutes for a worker with no commits since launch (`launchTimeoutMs`), 60 minutes for a worker with stale commits (`activityTimeoutMs`).

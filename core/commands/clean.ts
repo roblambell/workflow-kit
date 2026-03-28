@@ -171,7 +171,7 @@ export function cmdClean(
   function cleanItem(id: string, repoRoot: string, wtDir: string): boolean {
     if (targetId && id !== targetId) return false;
 
-    const branch = `todo/${id}`;
+    const branch = `ninthwave/${id}`;
     const merged = isMerged(repoRoot, branch);
 
     if (merged || targetId) {
@@ -207,10 +207,10 @@ export function cmdClean(
   // Clean hub-local worktrees
   try {
     for (const entry of readdirSync(worktreeDir)) {
-      if (!entry.startsWith("todo-")) continue;
+      if (!entry.startsWith("ninthwave-")) continue;
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
-      const id = entry.slice(5); // strip "todo-"
+      const id = entry.slice(10); // strip "ninthwave-"
       if (cleanItem(id, projectRoot, wtDir)) {
         cleaned++;
       }
@@ -255,7 +255,7 @@ export function cleanSingleWorktree(
   worktreeDir: string,
   projectRoot: string,
 ): boolean {
-  const branch = `todo/${id}`;
+  const branch = `ninthwave/${id}`;
   const partitionDir = join(worktreeDir, ".partitions");
   const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
 
@@ -268,7 +268,7 @@ export function cleanSingleWorktree(
     targetRepo = wtInfo.repoRoot;
     worktreePath = wtInfo.worktreePath;
   } else {
-    worktreePath = join(worktreeDir, `todo-${id}`);
+    worktreePath = join(worktreeDir, `ninthwave-${id}`);
     targetRepo = projectRoot;
   }
 

@@ -49,7 +49,7 @@ This skill interactively selects TODO items, then delegates all orchestration to
 
 **Goal:** Help the user choose which TODO items to work on and how to process them.
 
-> **Rule: Never trust `list --ready` without reconciling first.** Todo files in `.ninthwave/todos/` may be stale if PRs were merged outside the orchestrator (manually, by another session, or by GitHub auto-merge). Always reconcile before listing.
+> **Rule: Never trust `list --ready` without reconciling first.** Todo files in `.ninthwave/work/` may be stale if PRs were merged outside the orchestrator (manually, by another session, or by GitHub auto-merge). Always reconcile before listing.
 
 1. Run `ninthwave reconcile` to sync todo state with GitHub (removes files for merged PRs, cleans stale worktrees).
 2. Run `ninthwave list --depth 99` to get all reachable items across the full dependency chain. Also run `ninthwave list --ready` to identify which items can start immediately (depth 1).
@@ -140,7 +140,7 @@ This skill interactively selects TODO items, then delegates all orchestration to
 > **Why?** Workers spawn in worktrees cloned from the remote. If TODO files are created, modified, or removed during Phase 1 but not pushed, workers won't see those changes — they'll operate on stale state from the last push.
 
 ```bash
-git add .ninthwave/todos/
+git add .ninthwave/work/
 # Only commit if there are staged changes
 if ! git diff --cached --quiet; then
   git commit -m "chore: sync TODO files before orchestration"
@@ -148,7 +148,7 @@ if ! git diff --cached --quiet; then
 fi
 ```
 
-Skip this step if nothing changed in `.ninthwave/todos/` during Phase 1.
+Skip this step if nothing changed in `.ninthwave/work/` during Phase 1.
 
 ---
 
@@ -213,7 +213,7 @@ Phase 3 runs automatically after Phase 2 completes. It checks whether more work 
 
 #### Step 1: Reconcile and check for remaining ready items
 
-Run `ninthwave reconcile` to sync todo state with GitHub — files for merged items are removed from `.ninthwave/todos/`, stale worktrees are cleaned, and changes are committed/pushed. Never trust `list --ready` without reconciling first.
+Run `ninthwave reconcile` to sync todo state with GitHub — files for merged items are removed from `.ninthwave/work/`, stale worktrees are cleaned, and changes are committed/pushed. Never trust `list --ready` without reconciling first.
 
 Then run `ninthwave list --ready` to see if any items were unblocked by the batch that just completed.
 
@@ -227,7 +227,7 @@ Then run `ninthwave list --ready` to see if any items were unblocked by the batc
 If in dogfooding mode:
 
 1. Read friction files from `.ninthwave/friction/` directory (excluding the `processed/` subdirectory). Each file is an individual friction observation.
-2. Identify any **new actionable entries** — friction items that don't already have corresponding TODOs in `.ninthwave/todos/`.
+2. Identify any **new actionable entries** — friction items that don't already have corresponding TODOs in `.ninthwave/work/`.
 3. If actionable entries exist, present them to the user:
 
    AskUserQuestion — "Friction log has N new actionable entries. Decompose into TODOs?"
@@ -250,7 +250,7 @@ If in dogfooding mode:
 5. **Commit friction artifacts:** Commit any new or moved friction files and decomposed TODOs so they are not lost between loop iterations. Only commit if there are staged changes — skip if nothing new.
 
    ```bash
-   git add .ninthwave/friction/ .ninthwave/todos/
+   git add .ninthwave/friction/ .ninthwave/work/
    # Only commit if there are staged changes
    if ! git diff --cached --quiet; then
      git commit -m "chore: commit friction entries and decomposed TODOs"
@@ -263,7 +263,7 @@ If **not** in dogfooding mode, skip this step entirely.
 
 #### Step 3: Vision exploration (when all code items are done)
 
-Check if an L-VIS-* item exists in `.ninthwave/todos/` and is ready (all deps met). This step runs when all non-vision items have been processed — either no ready items remain, or only vision items are left.
+Check if an L-VIS-* item exists in `.ninthwave/work/` and is ready (all deps met). This step runs when all non-vision items have been processed — either no ready items remain, or only vision items are left.
 
 - If **no vision item is ready**, skip to Step 4.
 - If a vision item is ready:
@@ -340,7 +340,7 @@ Workers prefix their comments with `**[Worker: TODO-ID]**`.
 ## Important Rules
 
 - **CLI dependency:** `ninthwave` (or `nw`) must be in PATH
-- **Branch safety:** All implementation on `todo/*` branches, never directly on main
+- **Branch safety:** All implementation on `ninthwave/*` branches, never directly on main
 - **Conflict handling:** Always check before launching
 - **No silent failures:** Report errors and ask how to proceed
 - **Crash recovery:** Re-running the orchestrate command resumes from where it left off

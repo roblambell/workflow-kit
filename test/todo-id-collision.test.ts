@@ -64,19 +64,19 @@ function makeTodo(id: string, title: string, deps: string[] = []): TodoItem {
 }
 
 function setupTodosDir(files: Record<string, string>): {
-  todosDir: string;
+  workDir: string;
   worktreeDir: string;
   projectRoot: string;
 } {
   const dir = makeTmpDir();
-  const todosDir = join(dir, ".ninthwave", "todos");
+  const workDir = join(dir, ".ninthwave", "work");
   const worktreeDir = join(dir, ".worktrees");
-  mkdirSync(todosDir, { recursive: true });
+  mkdirSync(workDir, { recursive: true });
   mkdirSync(worktreeDir, { recursive: true });
   for (const [name, content] of Object.entries(files)) {
-    writeFileSync(join(todosDir, name), content);
+    writeFileSync(join(workDir, name), content);
   }
-  return { todosDir, worktreeDir, projectRoot: dir };
+  return { workDir, worktreeDir, projectRoot: dir };
 }
 
 function captureOutput(fn: () => void): string {
@@ -98,10 +98,10 @@ function makeDeps(overrides: Partial<ReconcileDeps> = {}): ReconcileDeps {
   return {
     pullRebase: () => ({ ok: true, conflict: false }),
     getMergedTodoIds: () => [],
-    getOpenTodoIds: (todosDir: string) => {
-      if (!existsSync(todosDir)) return [];
+    getOpenTodoIds: (workDir: string) => {
+      if (!existsSync(workDir)) return [];
       try {
-        const entries = readdirSync(todosDir).filter((f) => f.endsWith(".md"));
+        const entries = readdirSync(workDir).filter((f) => f.endsWith(".md"));
         const ids: string[] = [];
         for (const entry of entries) {
           const match = entry.match(/--([A-Z]-[A-Za-z0-9]+-[0-9]+)\.md$/);
@@ -203,7 +203,7 @@ describe("prTitleMatchesTodo", () => {
 describe("reconcile: TODO ID collision safety", () => {
   it("does not delete TODO file when merged PR title doesn't match", () => {
     // Setup: TODO FOO-1 with title "new work" and a merged PR titled "old work"
-    const { todosDir, worktreeDir, projectRoot } = setupTodosDir({
+    const { workDir, worktreeDir, projectRoot } = setupTodosDir({
       "2-test--H-FOO-1.md": `# New work (H-FOO-1)\n\n**Priority:** High\n**Domain:** test\n`,
     });
     let markedIds: string[] = [];
@@ -215,14 +215,14 @@ describe("reconcile: TODO ID collision safety", () => {
       },
     });
 
-    const output = captureOutput(() => reconcile(todosDir, worktreeDir, projectRoot, deps));
+    const output = captureOutput(() => reconcile(workDir, worktreeDir, projectRoot, deps));
     expect(markedIds).toEqual([]);
     expect(output).toContain("collision");
     expect(output).toContain("H-FOO-1");
   });
 
   it("deletes TODO file when merged PR title matches", () => {
-    const { todosDir, worktreeDir, projectRoot } = setupTodosDir({
+    const { workDir, worktreeDir, projectRoot } = setupTodosDir({
       "2-test--H-FOO-1.md": `# Old work (H-FOO-1)\n\n**Priority:** High\n**Domain:** test\n`,
     });
     let markedIds: string[] = [];
@@ -234,12 +234,12 @@ describe("reconcile: TODO ID collision safety", () => {
       },
     });
 
-    reconcile(todosDir, worktreeDir, projectRoot, deps);
+    reconcile(workDir, worktreeDir, projectRoot, deps);
     expect(markedIds).toEqual(["H-FOO-1"]);
   });
 
   it("handles mixed: some titles match, some don't", () => {
-    const { todosDir, worktreeDir, projectRoot } = setupTodosDir({
+    const { workDir, worktreeDir, projectRoot } = setupTodosDir({
       "2-test--H-FOO-1.md": `# New work (H-FOO-1)\n\n**Priority:** High\n**Domain:** test\n`,
       "2-test--H-BAR-1.md": `# Fix a bug (H-BAR-1)\n\n**Priority:** High\n**Domain:** test\n`,
     });
@@ -255,12 +255,12 @@ describe("reconcile: TODO ID collision safety", () => {
       },
     });
 
-    captureOutput(() => reconcile(todosDir, worktreeDir, projectRoot, deps));
+    captureOutput(() => reconcile(workDir, worktreeDir, projectRoot, deps));
     expect(markedIds).toEqual(["H-BAR-1"]);
   });
 
   it("still marks done when merged PR has no title (fallback to legacy behavior)", () => {
-    const { todosDir, worktreeDir, projectRoot } = setupTodosDir({
+    const { workDir, worktreeDir, projectRoot } = setupTodosDir({
       "2-test--H-FOO-1.md": `# Some work (H-FOO-1)\n\n**Priority:** High\n**Domain:** test\n`,
     });
     let markedIds: string[] = [];
@@ -272,13 +272,13 @@ describe("reconcile: TODO ID collision safety", () => {
       },
     });
 
-    reconcile(todosDir, worktreeDir, projectRoot, deps);
+    reconcile(workDir, worktreeDir, projectRoot, deps);
     // Empty PR title → skip title check → mark done (legacy behavior)
     expect(markedIds).toEqual(["H-FOO-1"]);
   });
 
   it("does not clean worktrees for collision-skipped items", () => {
-    const { todosDir, worktreeDir, projectRoot } = setupTodosDir({
+    const { workDir, worktreeDir, projectRoot } = setupTodosDir({
       "2-test--H-FOO-1.md": `# New work (H-FOO-1)\n\n**Priority:** High\n**Domain:** test\n`,
     });
     const cleanedIds: string[] = [];
@@ -292,7 +292,7 @@ describe("reconcile: TODO ID collision safety", () => {
       },
     });
 
-    captureOutput(() => reconcile(todosDir, worktreeDir, projectRoot, deps));
+    captureOutput(() => reconcile(workDir, worktreeDir, projectRoot, deps));
     // Should NOT clean the worktree for H-FOO-1 since title didn't match
     expect(cleanedIds).not.toContain("H-FOO-1");
   });
@@ -307,7 +307,7 @@ describe("reconstructState: TODO ID collision safety", () => {
 
     const tmpDir = makeTmpDir();
     const wtDir = join(tmpDir, ".worktrees");
-    mkdirSync(join(wtDir, "todo-H-FOO-1"), { recursive: true });
+    mkdirSync(join(wtDir, "ninthwave-H-FOO-1"), { recursive: true });
 
     // Mock checkPr: returns "merged" with a title that doesn't match
     // Format: ID\tPR_NUMBER\tSTATUS\tMERGEABLE\tEVENT_TIME\tPR_TITLE
@@ -331,7 +331,7 @@ describe("reconstructState: TODO ID collision safety", () => {
 
     const tmpDir = makeTmpDir();
     const wtDir = join(tmpDir, ".worktrees");
-    mkdirSync(join(wtDir, "todo-H-FOO-1"), { recursive: true });
+    mkdirSync(join(wtDir, "ninthwave-H-FOO-1"), { recursive: true });
 
     const mockCheckPr = (id: string) => {
       if (id === "H-FOO-1") {
@@ -353,7 +353,7 @@ describe("reconstructState: TODO ID collision safety", () => {
 
     const tmpDir = makeTmpDir();
     const wtDir = join(tmpDir, ".worktrees");
-    mkdirSync(join(wtDir, "todo-H-FOO-1"), { recursive: true });
+    mkdirSync(join(wtDir, "ninthwave-H-FOO-1"), { recursive: true });
 
     // Simulate old-format checkPr that doesn't include title (3 fields only)
     const mockCheckPr = (id: string) => {

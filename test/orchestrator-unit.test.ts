@@ -480,7 +480,7 @@ describe("handleImplementing", () => {
     const orch = new Orchestrator({ reviewEnabled: false });
     orch.addItem(makeTodo("H-1-1"));
     orch.setState("H-1-1", "implementing");
-    orch.getItem("H-1-1")!.baseBranch = "todo/H-1-0";
+    orch.getItem("H-1-1")!.baseBranch = "ninthwave/H-1-0";
 
     const actions = orch.processTransitions(
       snapshotWith([{ id: "H-1-1", prNumber: 42, prState: "open", ciStatus: "pending" }]),
@@ -896,10 +896,10 @@ describe("stacked branch launches", () => {
 
     // H-1-2 should be promoted from queued → ready → launching via stacking
     expect(orch.getItem("H-1-2")!.state).toBe("launching");
-    expect(orch.getItem("H-1-2")!.baseBranch).toBe("todo/H-1-1");
+    expect(orch.getItem("H-1-2")!.baseBranch).toBe("ninthwave/H-1-1");
     const launchAction = actions.find((a) => a.type === "launch" && a.itemId === "H-1-2");
     expect(launchAction).toBeDefined();
-    expect(launchAction!.baseBranch).toBe("todo/H-1-1");
+    expect(launchAction!.baseBranch).toBe("ninthwave/H-1-1");
   });
 
   it("does not stack when dep is in implementing (non-stackable)", () => {
@@ -947,7 +947,7 @@ describe("stuck dep notification for stacked items", () => {
 
     // H-1-2 is stacked and alive
     orch.setState("H-1-2", "implementing");
-    orch.getItem("H-1-2")!.baseBranch = "todo/H-1-1";
+    orch.getItem("H-1-2")!.baseBranch = "ninthwave/H-1-1";
     orch.getItem("H-1-2")!.workspaceRef = "workspace:2";
 
     const actions = orch.processTransitions(
@@ -975,7 +975,7 @@ describe("stuck dep notification for stacked items", () => {
 
     // H-1-2 is stacked and in ready state (no worker yet)
     orch.setState("H-1-2", "ready");
-    orch.getItem("H-1-2")!.baseBranch = "todo/H-1-1";
+    orch.getItem("H-1-2")!.baseBranch = "ninthwave/H-1-1";
 
     const actions = orch.processTransitions(
       snapshotWith([
@@ -1003,7 +1003,7 @@ describe("stuck dep notification for stacked items", () => {
 
     // H-1-2 is stacked and in launching state (no worker yet)
     orch.setState("H-1-2", "launching");
-    orch.getItem("H-1-2")!.baseBranch = "todo/H-1-1";
+    orch.getItem("H-1-2")!.baseBranch = "ninthwave/H-1-1";
 
     const actions = orch.processTransitions(
       snapshotWith([
@@ -1027,7 +1027,7 @@ describe("stuck dep notification for stacked items", () => {
 
     // H-1-2 is stacked and implementing with active worker
     orch.setState("H-1-2", "implementing");
-    orch.getItem("H-1-2")!.baseBranch = "todo/H-1-1";
+    orch.getItem("H-1-2")!.baseBranch = "ninthwave/H-1-1";
     orch.getItem("H-1-2")!.workspaceRef = "workspace:2";
 
     const actions = orch.processTransitions(
@@ -1040,7 +1040,7 @@ describe("stuck dep notification for stacked items", () => {
     expect(orch.getItem("H-1-1")!.state).toBe("stuck");
     // Implementing dependent should NOT revert to queued
     expect(orch.getItem("H-1-2")!.state).toBe("implementing");
-    expect(orch.getItem("H-1-2")!.baseBranch).toBe("todo/H-1-1");
+    expect(orch.getItem("H-1-2")!.baseBranch).toBe("ninthwave/H-1-1");
     // Should get a pause message
     const rebaseAction = actions.find((a) => a.type === "rebase" && a.itemId === "H-1-2");
     expect(rebaseAction).toBeDefined();
@@ -1212,8 +1212,8 @@ describe("cleanStaleBranchForReuse", () => {
     const cleaned = cleanStaleBranchForReuse("H-1-1", "New different work", "/tmp/repo", deps);
 
     expect(cleaned).toBe(true);
-    expect(deletedLocal).toEqual(["todo/H-1-1"]);
-    expect(deletedRemote).toEqual(["todo/H-1-1"]);
+    expect(deletedLocal).toEqual(["ninthwave/H-1-1"]);
+    expect(deletedRemote).toEqual(["ninthwave/H-1-1"]);
   });
 
   it("does not delete when merged PR title matches current TODO title", () => {
@@ -1333,7 +1333,7 @@ describe("executeLaunch stale branch cleanup", () => {
   const ctx: ExecutionContext = {
     projectRoot: "/tmp/proj",
     worktreeDir: "/tmp/proj/.worktrees",
-    todosDir: "/tmp/proj/.ninthwave/todos",
+    workDir: "/tmp/proj/.ninthwave/work",
     aiTool: "claude",
   };
 
@@ -1433,7 +1433,7 @@ describe("executeMerge conflict-aware rebase", () => {
   const ctx: ExecutionContext = {
     projectRoot: "/tmp/proj",
     worktreeDir: "/tmp/proj/.worktrees",
-    todosDir: "/tmp/proj/.ninthwave/todos",
+    workDir: "/tmp/proj/.ninthwave/work",
     aiTool: "claude",
   };
 
@@ -2011,7 +2011,7 @@ describe("executeClean heartbeat cleanup", () => {
     const ctx: ExecutionContext = {
       projectRoot: "/tmp/proj-heartbeat-test",
       worktreeDir: "/tmp/proj-heartbeat-test/.worktrees",
-      todosDir: "/tmp/proj-heartbeat-test/.ninthwave/todos",
+      workDir: "/tmp/proj-heartbeat-test/.ninthwave/work",
       aiTool: "test",
     };
 
@@ -2087,7 +2087,7 @@ describe("syncWorkerDisplay", () => {
     expect(mux.statusCalls).toHaveLength(1);
     expect(mux.statusCalls[0]).toEqual({
       ref: "workspace:1",
-      key: "todo-H-1-1",
+      key: "ninthwave-H-1-1",
       text: "Implementing",
       icon: "hammer.fill",
       color: "#b45309",
@@ -2280,7 +2280,7 @@ describe("repair worker state transitions", () => {
   const ctx: ExecutionContext = {
     projectRoot: "/tmp/proj",
     worktreeDir: "/tmp/proj/.worktrees",
-    todosDir: "/tmp/proj/.ninthwave/todos",
+    workDir: "/tmp/proj/.ninthwave/work",
     aiTool: "claude",
   };
 
@@ -2442,7 +2442,7 @@ describe("repair rebase circuit breaker and worker message priority", () => {
   const ctx: ExecutionContext = {
     projectRoot: "/tmp/proj",
     worktreeDir: "/tmp/proj/.worktrees",
-    todosDir: "/tmp/proj/.ninthwave/todos",
+    workDir: "/tmp/proj/.ninthwave/work",
     aiTool: "claude",
   };
 
@@ -2650,7 +2650,7 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
   const ctx: ExecutionContext = {
     projectRoot: "/tmp/proj",
     worktreeDir: "/tmp/proj/.worktrees",
-    todosDir: "/tmp/proj/.ninthwave/todos",
+    workDir: "/tmp/proj/.ninthwave/work",
     aiTool: "claude",
   };
 

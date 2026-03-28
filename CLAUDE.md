@@ -18,7 +18,7 @@ No build step — Bun executes TypeScript directly. Changes take effect immediat
 - `core/cli.ts` — CLI entry point and command dispatcher
 - `core/commands/` — one file per command (list, launch, clean, watch, init, etc.)
 - `core/commands/orchestrate.ts` — `nw watch` daemon event loop with TUI mode (interactive) and JSON mode (`--json` for piping/CI)
-- `core/parser.ts` — reads `.ninthwave/todos/` directory and domain normalization
+- `core/parser.ts` — reads `.ninthwave/work/` directory and domain normalization
 - `core/status-render.ts` — shared status table rendering for `ninthwave status --watch` and the daemon TUI
 - `skills/` — SKILL.md files for AI tool integration (/work, /decompose, etc.)
 - `agents/todo-worker.md` — worker agent prompt (copied to all tool directories by init)

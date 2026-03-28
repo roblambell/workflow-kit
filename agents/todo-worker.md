@@ -13,7 +13,7 @@ You are a focused implementation agent. You receive a single TODO item and your 
 Look for `YOUR_TODO_ID`, `YOUR_PARTITION`, and `HUB_ROOT` in the appended system prompt. These tell you:
 - **YOUR_TODO_ID**: The TODO identifier (e.g., `C-2-1`, `H-3-4`)
 - **YOUR_PARTITION**: The test partition number for database and port isolation
-- **HUB_ROOT**: Absolute path to the hub repo where `.ninthwave/` lives (including `.ninthwave/todos/`). For hub-local items, this equals `PROJECT_ROOT`. For cross-repo items, `PROJECT_ROOT` is the target repo while `HUB_ROOT` points back to the orchestrator's repo.
+- **HUB_ROOT**: Absolute path to the hub repo where `.ninthwave/` lives (including `.ninthwave/work/`). For hub-local items, this equals `PROJECT_ROOT`. For cross-repo items, `PROJECT_ROOT` is the target repo while `HUB_ROOT` points back to the orchestrator's repo.
 
 Read the full TODO details from the appended system prompt, including: title, description, **acceptance criteria**, priority, source, domain, and affected files.
 
@@ -128,7 +128,7 @@ gh pr create --label "domain:YOUR_DOMAIN" --title "chore: close YOUR_TODO_ID —
 ## Summary
 Closes YOUR_TODO_ID: <title>
 
-**No code change needed.** This PR only removes the TODO file from `.ninthwave/todos/`.
+**No code change needed.** This PR only removes the TODO file from `.ninthwave/work/`.
 
 ### Rationale
 <Explain why no code change is needed. Be specific:>
@@ -218,11 +218,11 @@ nw heartbeat --progress 0.85 --label "Checked diff"
 
 Before creating the PR, delete your todo file so that merging the PR automatically marks the item as done.
 
-1. Delete the file: `rm ${HUB_ROOT}/.ninthwave/todos/*--YOUR_TODO_ID.md`
-2. Verify it's gone: `ls ${HUB_ROOT}/.ninthwave/todos/*--YOUR_TODO_ID.md` should return "No such file"
-3. Commit: `git add ${HUB_ROOT}/.ninthwave/todos/ && git commit -m "chore: remove YOUR_TODO_ID"`
+1. Delete the file: `rm ${HUB_ROOT}/.ninthwave/work/*--YOUR_TODO_ID.md`
+2. Verify it's gone: `ls ${HUB_ROOT}/.ninthwave/work/*--YOUR_TODO_ID.md` should return "No such file"
+3. Commit: `git add ${HUB_ROOT}/.ninthwave/work/ && git commit -m "chore: remove YOUR_TODO_ID"`
 
-> **Why?** Each TODO is a separate file in `.ninthwave/todos/`. Deleting your file cannot conflict with other workers' changes — they each touch only their own file.
+> **Why?** Each TODO is a separate file in `.ninthwave/work/`. Deleting your file cannot conflict with other workers' changes — they each touch only their own file.
 
 **Cross-repo items** (when `PROJECT_ROOT` differs from `HUB_ROOT`):
 
@@ -233,7 +233,7 @@ Skip this step entirely. The TODO file lives in the hub repo, not the target rep
 ### Push and create the PR
 
 ```bash
-git push -u origin todo/YOUR_TODO_ID
+git push -u origin ninthwave/YOUR_TODO_ID
 ```
 
 ### Stacked PRs (BASE_BRANCH)
@@ -365,7 +365,7 @@ When you receive a message, it will be one of these categories:
 #### CI Fix Request
 
 1. Report progress: `nw heartbeat --progress 0.9 --label "Fixing CI"`
-2. Pull latest (the daemon may have rebased your branch): `git fetch origin && git reset --hard origin/todo/YOUR_TODO_ID`
+2. Pull latest (the daemon may have rebased your branch): `git fetch origin && git reset --hard origin/ninthwave/YOUR_TODO_ID`
 3. Investigate and fix the failure, run tests locally
 4. Commit and push: `nw heartbeat --progress 1.0 --label "PR created"`
 
@@ -374,7 +374,7 @@ When you receive a message, it will be one of these categories:
 > **Note:** Feedback is pre-filtered by the toolchain to only include comments from trusted collaborators (`OWNER`, `MEMBER`, `COLLABORATOR`). PR conversations are locked at creation time, and the `pr-activity`/`pr-watch` commands ignore comments from non-collaborators. You can safely act on any feedback the orchestrator daemon relays.
 
 1. Report progress: `nw heartbeat --progress 0.85 --label "Addressing feedback"`
-2. Pull latest: `git fetch origin && git reset --hard origin/todo/YOUR_TODO_ID`
+2. Pull latest: `git fetch origin && git reset --hard origin/ninthwave/YOUR_TODO_ID`
 3. Address the feedback
 4. Run tests
 5. Commit and push
@@ -406,7 +406,7 @@ Ignore comments prefixed with `[Orchestrator]` -- these are audit trail entries 
 ## Constraints (CRITICAL)
 
 - **Do NOT modify** `VERSION` or `CHANGELOG.md`
-- **TODO files**: Only delete your own file from `.ninthwave/todos/` (step 8). Do not modify other TODO files.
+- **TODO files**: Only delete your own file from `.ninthwave/work/` (step 8). Do not modify other TODO files.
 - **Do NOT expand scope** beyond the TODO. Note related issues in the PR body but don't fix them.
 - **Do NOT run shipping/deploy workflows**. Version bumping is deferred to post-merge.
 - **Keep changes scoped** to files mentioned in the TODO.

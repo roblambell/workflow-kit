@@ -70,8 +70,8 @@ function setupVersionRepo(): string {
   git(["-C", dir, "config", "user.email", "test@test.com"]);
   git(["-C", dir, "config", "user.name", "Test"]);
 
-  mkdirSync(join(dir, ".ninthwave/todos"), { recursive: true });
-  writeFileSync(join(dir, ".ninthwave/todos/.gitkeep"), "");
+  mkdirSync(join(dir, ".ninthwave/work"), { recursive: true });
+  writeFileSync(join(dir, ".ninthwave/work/.gitkeep"), "");
   writeFileSync(join(dir, "VERSION"), "1.2.3.0\n");
   writeFileSync(
     join(dir, "CHANGELOG.md"),

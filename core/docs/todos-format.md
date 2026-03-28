@@ -1,12 +1,12 @@
 # Todo File Format Guide
 
-Canonical reference for the file-per-todo format. Each TODO is a separate markdown file in `.ninthwave/todos/`. Used by `/decompose` (feature decomposition) and ad-hoc TODO creation. Parsed by the ninthwave CLI (`core/todo-files.ts`).
+Canonical reference for the file-per-todo format. Each TODO is a separate markdown file in `.ninthwave/work/`. Used by `/decompose` (feature decomposition) and ad-hoc TODO creation. Parsed by the ninthwave CLI (`core/todo-files.ts`).
 
 **ASCII only:** TODO content must use only ASCII characters. Use `--` instead of em dashes (`—`), `-` instead of en dashes (`–`), straight quotes instead of smart quotes, and `...` instead of ellipsis (`…`). Non-ASCII breaks shell quoting when prompts are sent to workers via multiplexers.
 
 ## Directory Layout
 
-TODOs live in `.ninthwave/todos/` at the project root. Each file is one TODO item:
+TODOs live in `.ninthwave/work/` at the project root. Each file is one TODO item:
 
 ```
 .ninthwave/
@@ -125,7 +125,7 @@ enabled. Tests pass for all paths.
 
 ### Repo Field
 
-`**Repo:** <alias>` -- Optional. Short alias for the target repository where work should be done. If omitted, work targets the hub repo (the repo containing `.ninthwave/todos/`).
+`**Repo:** <alias>` -- Optional. Short alias for the target repository where work should be done. If omitted, work targets the hub repo (the repo containing `.ninthwave/work/`).
 
 The alias is resolved via convention (sibling directory `../<alias>`) or explicit mapping in `.ninthwave/repos.conf`.
 
@@ -161,7 +161,7 @@ Each TODO should target one human-reviewable PR:
 
 ## Parsing Rules
 
-`core/todo-files.ts` reads individual files from `.ninthwave/todos/` and parses each one:
+`core/todo-files.ts` reads individual files from `.ninthwave/work/` and parses each one:
 
 - **ID**: from parenthetical in `# ` header, pattern `([A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*)`
 - **Priority**: from `**Priority:**` line, converted to lowercase
@@ -182,7 +182,7 @@ Things that break parsing:
 
 ## Complete Example
 
-File: `.ninthwave/todos/2-cloud-infrastructure--M-CI-1.md`
+File: `.ninthwave/work/2-cloud-infrastructure--M-CI-1.md`
 
 ```markdown
 # Feat: Upgrade test CI runners from 2 to 4 vCPUs (M-CI-1)

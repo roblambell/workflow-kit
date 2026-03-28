@@ -67,7 +67,7 @@ export interface OrchestratorItem {
   detectionLatencyMs?: number;
   /** Last screen output captured when worker died (for diagnostics). */
   lastScreenOutput?: string;
-  /** Base branch for stacked launches (e.g., "todo/H-1-1"). When set, the worker creates its branch from this instead of main. */
+  /** Base branch for stacked launches (e.g., "ninthwave/H-1-1"). When set, the worker creates its branch from this instead of main. */
   baseBranch?: string;
   /** Absolute path to the repo where the PR lives. For hub-local items, equals projectRoot. For cross-repo items, points to the target repo. */
   resolvedRepoRoot?: string;
@@ -194,7 +194,7 @@ export interface Action {
   prNumber?: number;
   /** For notify actions, the message to send. */
   message?: string;
-  /** For launch actions, the base branch to stack on (e.g., "todo/H-1-1"). */
+  /** For launch actions, the base branch to stack on (e.g., "ninthwave/H-1-1"). */
   baseBranch?: string;
   /** For set-commit-status actions, the status state. */
   statusState?: "pending" | "success" | "failure";
@@ -208,7 +208,7 @@ export interface Action {
 export interface ExecutionContext {
   projectRoot: string;
   worktreeDir: string;
-  todosDir: string;
+  workDir: string;
   aiTool: string;
 }
 
@@ -216,7 +216,7 @@ export interface ExecutionContext {
 export interface OrchestratorDeps {
   launchSingleItem: (
     item: TodoItem,
-    todosDir: string,
+    workDir: string,
     worktreeDir: string,
     projectRoot: string,
     aiTool: string,
@@ -694,7 +694,7 @@ export class Orchestrator {
     if (this.config.enableStacking && item.state === "stuck" && prevState !== "stuck") {
       const PRE_WIP_STATES = new Set(["ready", "bootstrapping", "launching"]);
       for (const other of this.getAllItems()) {
-        if (other.baseBranch !== `todo/${item.id}`) continue;
+        if (other.baseBranch !== `ninthwave/${item.id}`) continue;
         if (PRE_WIP_STATES.has(other.state)) {
           // Pre-WIP: roll back to queued and clear baseBranch to prevent launch on stale base
           this.transition(other, "queued");
@@ -713,12 +713,12 @@ export class Orchestrator {
     // Dep recovery: notify stacked dependents when this item recovers from ci-failed to ci-pending
     if (this.config.enableStacking && prevState === "ci-failed" && item.state === "ci-pending") {
       for (const other of this.getAllItems()) {
-        if (other.baseBranch !== `todo/${item.id}`) continue;
+        if (other.baseBranch !== `ninthwave/${item.id}`) continue;
         if (!other.workspaceRef) continue;
         actions.push({
           type: "rebase",
           itemId: other.id,
-          message: `[ORCHESTRATOR] Resume: dependency ${item.id} CI is back to pending. Please rebase onto todo/${item.id} and continue.`,
+          message: `[ORCHESTRATOR] Resume: dependency ${item.id} CI is back to pending. Please rebase onto ninthwave/${item.id} and continue.`,
         });
       }
     }
@@ -1373,7 +1373,7 @@ export class Orchestrator {
     try {
       const result = deps.launchSingleItem(
         item.todo,
-        ctx.todosDir,
+        ctx.workDir,
         ctx.worktreeDir,
         ctx.projectRoot,
         ctx.aiTool,
@@ -1440,8 +1440,8 @@ export class Orchestrator {
           const indexPath = join(ctx.worktreeDir, ".cross-repo-index");
           const wtInfo = getWorktreeInfo(item.id, indexPath, ctx.worktreeDir);
           const wtRepoRoot = wtInfo?.repoRoot ?? item.resolvedRepoRoot ?? ctx.projectRoot;
-          const worktreePath = wtInfo?.worktreePath ?? join(wtRepoRoot, ".worktrees", `todo-${item.id}`);
-          const branch = `todo/${item.id}`;
+          const worktreePath = wtInfo?.worktreePath ?? join(wtRepoRoot, ".worktrees", `ninthwave-${item.id}`);
+          const branch = `ninthwave/${item.id}`;
           try {
             const rebaseSuccess = deps.daemonRebase(worktreePath, branch);
             if (rebaseSuccess) {
@@ -1510,7 +1510,7 @@ export class Orchestrator {
     // their unique commits onto main, avoiding duplicate commits from squash merge.
     const restackedIds = new Set<string>();
     const successfulRestacks = new Set<string>();
-    const depBranch = `todo/${item.id}`;
+    const depBranch = `ninthwave/${item.id}`;
 
     // Cache cross-repo index for worktree lookups in sibling loops
     const crossRepoIndex = join(ctx.worktreeDir, ".cross-repo-index");
@@ -1526,8 +1526,8 @@ export class Orchestrator {
 
       const otherWtInfo = getWorktreeInfo(other.id, crossRepoIndex, ctx.worktreeDir, cachedEntries);
       const otherRepoRoot = otherWtInfo?.repoRoot ?? other.resolvedRepoRoot ?? ctx.projectRoot;
-      const otherWorktreePath = otherWtInfo?.worktreePath ?? join(otherRepoRoot, ".worktrees", `todo-${other.id}`);
-      const otherBranch = `todo/${other.id}`;
+      const otherWorktreePath = otherWtInfo?.worktreePath ?? join(otherRepoRoot, ".worktrees", `ninthwave-${other.id}`);
+      const otherBranch = `ninthwave/${other.id}`;
 
       if (!deps.rebaseOnto || !deps.forcePush) {
         // rebaseOnto or forcePush not available — send worker manual rebase instructions
@@ -1596,9 +1596,9 @@ export class Orchestrator {
       const otherRepoRoot2 = other.resolvedRepoRoot ?? ctx.projectRoot;
       if (otherRepoRoot2 !== repoRoot) continue;
 
-      const otherBranch = `todo/${other.id}`;
+      const otherBranch = `ninthwave/${other.id}`;
       const otherWtInfo2 = getWorktreeInfo(other.id, crossRepoIndex, ctx.worktreeDir, cachedEntries);
-      const otherWorktreePath = otherWtInfo2?.worktreePath ?? join(otherRepoRoot2, ".worktrees", `todo-${other.id}`);
+      const otherWorktreePath = otherWtInfo2?.worktreePath ?? join(otherRepoRoot2, ".worktrees", `ninthwave-${other.id}`);
 
       // Try daemon-rebase first for all siblings
       let daemonSuccess = false;
@@ -1828,14 +1828,14 @@ export class Orchestrator {
     ctx: ExecutionContext,
     deps: OrchestratorDeps,
   ): ActionResult {
-    const branch = `todo/${item.id}`;
+    const branch = `ninthwave/${item.id}`;
 
     // Try daemon-side rebase if the dep is available
     if (deps.daemonRebase) {
       const indexPath = join(ctx.worktreeDir, ".cross-repo-index");
       const wtInfo = getWorktreeInfo(item.id, indexPath, ctx.worktreeDir);
       const repoRoot = wtInfo?.repoRoot ?? item.resolvedRepoRoot ?? ctx.projectRoot;
-      const worktreePath = wtInfo?.worktreePath ?? join(repoRoot, ".worktrees", `todo-${item.id}`);
+      const worktreePath = wtInfo?.worktreePath ?? join(repoRoot, ".worktrees", `ninthwave-${item.id}`);
       try {
         const success = deps.daemonRebase(worktreePath, branch);
         if (success) {
@@ -2126,7 +2126,7 @@ export class Orchestrator {
       return { canStack: false };
     }
 
-    return { canStack: true, baseBranch: `todo/${stackableDep.id}` };
+    return { canStack: true, baseBranch: `ninthwave/${stackableDep.id}` };
   }
 
   /**
@@ -2145,7 +2145,7 @@ export class Orchestrator {
     upVisited.add(root.id);
 
     while (root.baseBranch) {
-      const depId = root.baseBranch.replace(/^todo\//, "");
+      const depId = root.baseBranch.replace(/^ninthwave\//, "");
       const dep = this.items.get(depId);
       if (!dep || upVisited.has(dep.id)) break;
       upVisited.add(dep.id);
@@ -2158,7 +2158,7 @@ export class Orchestrator {
     let current = root;
 
     for (;;) {
-      const parentBranch = `todo/${current.id}`;
+      const parentBranch = `ninthwave/${current.id}`;
       const child = this.getAllItems().find(
         (i) => i.baseBranch === parentBranch && !downVisited.has(i.id),
       );

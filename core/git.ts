@@ -298,7 +298,7 @@ export function daemonRebase(repoRoot: string, branch: string): boolean {
  * This avoids duplicate commits when `oldBase` was squash-merged into `newBase`.
  *
  * Example: branch B stacked on branch A, A gets squash-merged to main.
- *   rebaseOnto(worktreePath, "main", "todo/A", "todo/B")
+ *   rebaseOnto(worktreePath, "main", "ninthwave/A", "ninthwave/B")
  * replays only B's unique commits onto main, skipping A's commits entirely.
  *
  * Returns true on success, false on conflict (with clean abort).

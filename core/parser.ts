@@ -16,14 +16,14 @@ export {
 } from "./todo-utils.ts";
 
 /**
- * Parse todo items from a directory of todo files (.ninthwave/todos/).
+ * Parse todo items from a directory of todo files (.ninthwave/work/).
  *
  * Delegates to listTodos() from todo-files.ts which reads each .md file,
  * parses metadata, expands wildcard dependencies, and detects in-progress status.
  */
 export function parseTodos(
-  todosDir: string,
+  workDir: string,
   worktreeDir: string,
 ): TodoItem[] {
-  return listTodos(todosDir, worktreeDir);
+  return listTodos(workDir, worktreeDir);
 }
