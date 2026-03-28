@@ -18,7 +18,7 @@ The orchestrator daemon is deterministic TypeScript — no LLM calls in the core
 
 ### 4. Scope discipline
 
-Each iteration narrows before it widens. Ship the narrowest working wedge, validate it, then extend. TODOs are scoped to ~200–400 LOC. PRs change one thing. Features decompose into human-reviewable units.
+Each iteration narrows before it widens. Ship the narrowest working wedge, validate it, then extend. Work items are scoped to ~200–400 LOC. PRs change one thing. Features decompose into human-reviewable units.
 
 ### 5. Transparency
 

@@ -132,6 +132,6 @@ After feature-completeness, ninthwave enters maintenance: bug fixes, compatibili
 
 ninthwave uses itself to develop itself. This is not a metaphor — the v0.1.0 release was built this way.
 
-The cycle: decompose a feature into TODOs, process them via `ninthwave orchestrate` with auto-merge, review the friction log after each batch, decompose actionable friction into new TODOs, repeat until no actionable friction remains.
+The cycle: decompose a feature into work items, process them via `ninthwave orchestrate` with auto-merge, review the friction log after each batch, decompose actionable friction into new work items, repeat until no actionable friction remains.
 
-The **L-VIS recurring item** in `.ninthwave/work/` is the mechanism. When all other TODOs complete, L-VIS triggers: review this document against the current state, check the friction log, identify the next most impactful capability, decompose it into TODOs, add a new L-VIS-(N+1) depending on the terminal items. The cycle continues.
+The **L-VIS recurring item** in `.ninthwave/work/` is the mechanism. When all other work items complete, L-VIS triggers: review this document against the current state, check the friction log, identify the next most impactful capability, decompose it into work items, add a new L-VIS-(N+1) depending on the terminal items. The cycle continues.

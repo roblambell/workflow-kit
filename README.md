@@ -14,11 +14,11 @@
 <p align="center">
   <img src="docs/assets/hero.png" alt="ninthwave running in cmux: orchestrator with parallel worker sessions" width="800" />
 </p>
-<p align="center"><em><code>todos/*.md</code> &rarr; sequenced AI agents &rarr; human-sized PRs</em></p>
+<p align="center"><em><code>.ninthwave/work/*.md</code> &rarr; sequenced AI agents &rarr; human-sized PRs</em></p>
 
 ---
 
-**ninthwave orchestrates parallel AI coding sessions from todo files.** Each work item gets its own git worktree and a full native instance of Claude Code, OpenCode, or Copilot CLI — focused on one task. Workers open PRs, handle review feedback and CI failures, and idle with full context until needed. The orchestrator sequences dependencies as stacked PRs, runs automated code review, auto-rebases, auto-merges, and cleans up. Two skills — `/decompose` and `/work` — take you from spec to shipped code.
+**ninthwave orchestrates parallel AI coding sessions from work item files.** Each work item gets its own git worktree and a full native instance of Claude Code, OpenCode, or Copilot CLI — focused on one task. Workers open PRs, handle review feedback and CI failures, and idle with full context until needed. The orchestrator sequences dependencies as stacked PRs, runs automated code review, auto-rebases, auto-merges, and cleans up. Two skills — `/decompose` and `/work` — take you from spec to shipped code.
 
 - **Parallel sessions.** Each work item gets its own git worktree and AI coding session.
 - **Stacked PRs.** Dependent items target their dependency's branch. Reviewers see clean diffs. GitHub retargets on merge.
@@ -58,7 +58,7 @@ Run `nw doctor` to verify your setup.
 
 ## How It Works
 
-Todo files in `.ninthwave/work/` define work items with priorities, dependencies, and optional repo targets. `nw <ID>` creates a git worktree and AI coding session for each item. `nw watch` runs the full pipeline: a deterministic daemon that sequences batches, monitors CI, relays review feedback into worker sessions, auto-rebases branches, and merges approved PRs. Dependent items automatically target their dependency's branch, giving reviewers clean diffs.
+Work item files in `.ninthwave/work/` define work items with priorities, dependencies, and optional repo targets. `nw <ID>` creates a git worktree and AI coding session for each item. `nw watch` runs the full pipeline: a deterministic daemon that sequences batches, monitors CI, relays review feedback into worker sessions, auto-rebases branches, and merges approved PRs. Dependent items automatically target their dependency's branch, giving reviewers clean diffs.
 
 The orchestrator is deterministic: no LLM calls in the event loop. Workers are the intelligent agents.
 
