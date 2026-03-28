@@ -1,8 +1,8 @@
 // list command: display TODO items with optional filters.
 
-import { parseTodos } from "../parser.ts";
+import { parseWorkItems } from "../parser.ts";
 import { die, BOLD, RED, YELLOW, CYAN, DIM, RESET } from "../output.ts";
-import type { TodoItem } from "../types.ts";
+import type { WorkItem } from "../types.ts";
 
 export function cmdList(
   args: string[],
@@ -49,7 +49,7 @@ export function cmdList(
   }
 
   // Build items list
-  let items: TodoItem[] = parseTodos(workDir, worktreeDir);
+  let items: WorkItem[] = parseWorkItems(workDir, worktreeDir);
 
   // Apply filters
   if (filterPriority) {
@@ -66,7 +66,7 @@ export function cmdList(
   // --ready alone (depth=0): only items whose deps are all done (depth 1 behavior).
   // --depth N: walk the dependency graph N levels from ready roots.
   if (showReady) {
-    const allItems = parseTodos(workDir, worktreeDir);
+    const allItems = parseWorkItems(workDir, worktreeDir);
     const allIds = new Set(allItems.map((it) => it.id));
 
     // Effective depth: --ready alone = 1, --depth N = N

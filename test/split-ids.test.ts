@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { splitIds } from "../core/todo-utils.ts";
+import { splitIds } from "../core/work-item-utils.ts";
 
 describe("splitIds", () => {
   it("passes through space-separated IDs unchanged", () => {

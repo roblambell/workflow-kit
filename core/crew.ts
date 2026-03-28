@@ -15,7 +15,7 @@ import { userStateDir } from "./daemon.ts";
 export interface SyncMessage {
   type: "sync";
   daemonId: string;
-  activeTodoIds: string[];
+  activeItemIds: string[];
 }
 
 export interface SyncAckMessage {
@@ -110,7 +110,7 @@ export interface CrewBroker {
   connect(): Promise<void>;
 
   /** Send sync message with current active TODO IDs. */
-  sync(activeTodoIds: string[]): void;
+  sync(activeItemIds: string[]): void;
 
   /** Claim the next available TODO. Returns todoId or null (5s timeout). */
   claim(): Promise<string | null>;
@@ -263,11 +263,11 @@ export class WebSocketCrewBroker implements CrewBroker {
     });
   }
 
-  sync(activeTodoIds: string[]): void {
+  sync(activeItemIds: string[]): void {
     this.send({
       type: "sync",
       daemonId: this.daemonId,
-      activeTodoIds,
+      activeItemIds,
     });
   }
 

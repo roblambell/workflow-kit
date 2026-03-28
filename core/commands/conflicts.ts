@@ -1,9 +1,9 @@
 // conflicts command: file-level conflict analysis between TODO items.
 
-import { parseTodos } from "../parser.ts";
+import { parseWorkItems } from "../parser.ts";
 import { die, BOLD, RED, YELLOW, GREEN, RESET } from "../output.ts";
-import { splitIds } from "../todo-utils.ts";
-import type { TodoItem } from "../types.ts";
+import { splitIds } from "../work-item-utils.ts";
+import type { WorkItem } from "../types.ts";
 
 export function cmdConflicts(
   args: string[],
@@ -12,8 +12,8 @@ export function cmdConflicts(
 ): void {
   const ids = splitIds(args);
   if (ids.length < 2) die("Usage: ninthwave conflicts <ID1> <ID2> [ID3...]");
-  const items = parseTodos(workDir, worktreeDir);
-  const itemMap = new Map<string, TodoItem>();
+  const items = parseWorkItems(workDir, worktreeDir);
+  const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
   }

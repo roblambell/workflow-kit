@@ -8,7 +8,7 @@ import {
   unlinkSync,
 } from "fs";
 import { join } from "path";
-import type { TodoItem, Priority } from "./types.ts";
+import type { WorkItem, Priority } from "./types.ts";
 import {
   PRIORITY_NUM,
   ID_IN_PARENS,
@@ -16,7 +16,7 @@ import {
   ID_PATTERN_SOURCE,
   WILDCARD_DEP_PATTERN,
 } from "./types.ts";
-import { extractTestPlan, extractFilePaths, expandWildcardDeps, extractBody } from "./todo-utils.ts";
+import { extractTestPlan, extractFilePaths, expandWildcardDeps, extractBody } from "./work-item-utils.ts";
 
 /** Map a priority to its sort-order number. */
 export function priorityNum(p: Priority): number {
@@ -28,17 +28,17 @@ export function priorityNum(p: Priority): number {
  * Format: "{priority_num}-{domain_slug}--{ID}.md"
  * Example: "2-worker-reliability--M-WRK-8.md"
  */
-export function todoFilename(
-  item: Pick<TodoItem, "id" | "priority" | "domain">,
+export function workItemFilename(
+  item: Pick<WorkItem, "id" | "priority" | "domain">,
 ): string {
   return `${PRIORITY_NUM[item.priority]}-${item.domain}--${item.id}.md`;
 }
 
 /**
- * Parse a single todo file into a TodoItem.
+ * Parse a single todo file into a WorkItem.
  * Returns null if the file is malformed (missing ID or priority).
  */
-export function parseTodoFile(filePath: string): TodoItem | null {
+export function parseWorkItemFile(filePath: string): WorkItem | null {
   if (!existsSync(filePath)) return null;
 
   const content = readFileSync(filePath, "utf-8");
@@ -137,7 +137,7 @@ export function parseTodoFile(filePath: string): TodoItem | null {
 
   const rawText = content;
 
-  const item: TodoItem = {
+  const item: WorkItem = {
     id,
     priority: priority as Priority,
     title,
@@ -159,11 +159,11 @@ export function parseTodoFile(filePath: string): TodoItem | null {
 }
 
 /**
- * List all todo files in a directory, parse them, and return TodoItem[].
+ * List all todo files in a directory, parse them, and return WorkItem[].
  * Expands wildcard dependencies in a second pass.
  * Sets status to "in-progress" if a worktree `todo-{id}` exists.
  */
-export function listTodos(workDir: string, worktreeDir: string): TodoItem[] {
+export function listWorkItems(workDir: string, worktreeDir: string): WorkItem[] {
   if (!existsSync(workDir)) return [];
 
   // Derive in-progress IDs from worktree directories
@@ -196,11 +196,11 @@ export function listTodos(workDir: string, worktreeDir: string): TodoItem[] {
   }
 
   const entries = readdirSync(workDir).filter((f) => f.endsWith(".md"));
-  const items: TodoItem[] = [];
+  const items: WorkItem[] = [];
 
   for (const entry of entries) {
     const fp = join(workDir, entry);
-    const item = parseTodoFile(fp);
+    const item = parseWorkItemFile(fp);
     if (!item) continue;
 
     if (inProgressIds.has(item.id)) {
@@ -237,10 +237,10 @@ export function listTodos(workDir: string, worktreeDir: string): TodoItem[] {
  * Read a single todo by ID.
  * Globs for `*--{id}.md` in the todos directory.
  */
-export function readTodo(
+export function readWorkItem(
   workDir: string,
   id: string,
-): TodoItem | undefined {
+): WorkItem | undefined {
   if (!existsSync(workDir)) return undefined;
 
   const entries = readdirSync(workDir);
@@ -249,15 +249,15 @@ export function readTodo(
 
   if (!match) return undefined;
 
-  return parseTodoFile(join(workDir, match)) ?? undefined;
+  return parseWorkItemFile(join(workDir, match)) ?? undefined;
 }
 
 /**
- * Write a TodoItem to its canonical file in the todos directory.
+ * Write a WorkItem to its canonical file in the todos directory.
  * Generates the markdown content and sets item.filePath.
  */
-export function writeTodoFile(workDir: string, item: TodoItem): void {
-  const filename = todoFilename(item);
+export function writeWorkItemFile(workDir: string, item: WorkItem): void {
+  const filename = workItemFilename(item);
   const fp = join(workDir, filename);
 
   const lines: string[] = [];
@@ -329,7 +329,7 @@ export function writeTodoFile(workDir: string, item: TodoItem): void {
  * Globs for `*--{id}.md` in the todos directory.
  * Returns true if a file was deleted, false otherwise.
  */
-export function deleteTodoFile(workDir: string, id: string): boolean {
+export function deleteWorkItemFile(workDir: string, id: string): boolean {
   if (!existsSync(workDir)) return false;
 
   const entries = readdirSync(workDir);

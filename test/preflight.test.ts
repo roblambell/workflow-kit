@@ -7,7 +7,7 @@ import {
   checkAiTool,
   checkMultiplexer,
   checkGitConfig,
-  checkUncommittedTodos,
+  checkUncommittedWorkItems,
   checkCopilotTrust,
   preflight,
   type ShellRunner,
@@ -115,9 +115,9 @@ describe("checkGitConfig (preflight)", () => {
   });
 });
 
-// ── checkUncommittedTodos ────────────────────────────────────────────
+// ── checkUncommittedWorkItems ────────────────────────────────────────────
 
-describe("checkUncommittedTodos (preflight)", () => {
+describe("checkUncommittedWorkItems (preflight)", () => {
   it("passes when no changes in .ninthwave/work/", () => {
     const runner: ShellRunner = (cmd, args) => {
       if (cmd === "git" && args.includes("--porcelain")) {
@@ -125,7 +125,7 @@ describe("checkUncommittedTodos (preflight)", () => {
       }
       return { stdout: "", stderr: "", exitCode: 1 };
     };
-    const result = checkUncommittedTodos("/fake/project", runner);
+    const result = checkUncommittedWorkItems("/fake/project", runner);
     expect(result.status).toBe("pass");
     expect(result.message).toBe("All TODO files committed");
   });
@@ -141,7 +141,7 @@ describe("checkUncommittedTodos (preflight)", () => {
       }
       return { stdout: "", stderr: "", exitCode: 1 };
     };
-    const result = checkUncommittedTodos("/fake/project", runner);
+    const result = checkUncommittedWorkItems("/fake/project", runner);
     expect(result.status).toBe("fail");
     expect(result.message).toContain("2 uncommitted TODO file(s)");
     expect(result.detail).toContain("git add .ninthwave/work/");
@@ -158,7 +158,7 @@ describe("checkUncommittedTodos (preflight)", () => {
       }
       return { stdout: "", stderr: "", exitCode: 1 };
     };
-    const result = checkUncommittedTodos("/fake/project", runner);
+    const result = checkUncommittedWorkItems("/fake/project", runner);
     expect(result.status).toBe("fail");
     expect(result.message).toContain("1 uncommitted TODO file(s)");
   });
@@ -167,7 +167,7 @@ describe("checkUncommittedTodos (preflight)", () => {
     const runner: ShellRunner = () => {
       return { stdout: "", stderr: "fatal: not a git repo", exitCode: 128 };
     };
-    const result = checkUncommittedTodos("/fake/project", runner);
+    const result = checkUncommittedWorkItems("/fake/project", runner);
     expect(result.status).toBe("warn");
     expect(result.message).toBe("Could not check TODO file status");
   });
@@ -393,7 +393,7 @@ describe("doctor reuses preflight", () => {
     expect(doctorModule.checkAiTool).toBe(preflightModule.checkAiTool);
     expect(doctorModule.checkMultiplexer).toBe(preflightModule.checkMultiplexer);
     expect(doctorModule.checkGitConfig).toBe(preflightModule.checkGitConfig);
-    expect(doctorModule.checkUncommittedTodos).toBe(preflightModule.checkUncommittedTodos);
+    expect(doctorModule.checkUncommittedWorkItems).toBe(preflightModule.checkUncommittedWorkItems);
     expect(doctorModule.checkCopilotTrust).toBe(preflightModule.checkCopilotTrust);
   });
 });

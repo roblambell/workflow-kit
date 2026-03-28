@@ -9,8 +9,8 @@ import { join } from "path";
 import { tmpdir } from "os";
 import {
   normalizeTitleForComparison,
-  prTitleMatchesTodo,
-} from "../core/todo-utils.ts";
+  prTitleMatchesWorkItem,
+} from "../core/work-item-utils.ts";
 import { reconcile, type ReconcileDeps } from "../core/commands/reconcile.ts";
 import {
   Orchestrator,
@@ -18,7 +18,7 @@ import {
   type ItemSnapshot,
 } from "../core/orchestrator.ts";
 import { reconstructState, buildSnapshot } from "../core/commands/orchestrate.ts";
-import type { TodoItem } from "../core/types.ts";
+import type { WorkItem } from "../core/types.ts";
 
 // ── Test helpers ──────────────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ afterEach(() => {
   tmpDirs = [];
 });
 
-function makeTodo(id: string, title: string, deps: string[] = []): TodoItem {
+function makeTodo(id: string, title: string, deps: string[] = []): WorkItem {
   return {
     id,
     priority: "high",
@@ -158,14 +158,14 @@ describe("normalizeTitleForComparison", () => {
   });
 });
 
-describe("prTitleMatchesTodo", () => {
+describe("prTitleMatchesWorkItem", () => {
   it("matches identical titles", () => {
-    expect(prTitleMatchesTodo("extract Multiplexer interface", "extract Multiplexer interface")).toBe(true);
+    expect(prTitleMatchesWorkItem("extract Multiplexer interface", "extract Multiplexer interface")).toBe(true);
   });
 
   it("matches after stripping commit prefix and ID", () => {
     expect(
-      prTitleMatchesTodo(
+      prTitleMatchesWorkItem(
         "refactor: extract Multiplexer interface (TODO H-MUX-1)",
         "extract Multiplexer interface",
       ),
@@ -174,27 +174,27 @@ describe("prTitleMatchesTodo", () => {
 
   it("rejects different titles", () => {
     expect(
-      prTitleMatchesTodo("extract Multiplexer interface", "fail fast when mux unavailable"),
+      prTitleMatchesWorkItem("extract Multiplexer interface", "fail fast when mux unavailable"),
     ).toBe(false);
   });
 
   it("rejects substring matches (not exact)", () => {
     // PR title is a substring of TODO title — should be treated as mismatch
     expect(
-      prTitleMatchesTodo("old work", "old work extended"),
+      prTitleMatchesWorkItem("old work", "old work extended"),
     ).toBe(false);
   });
 
   it("rejects when TODO title is a substring of PR title", () => {
     expect(
-      prTitleMatchesTodo("old work extended", "old work"),
+      prTitleMatchesWorkItem("old work extended", "old work"),
     ).toBe(false);
   });
 
   it("returns false for empty titles", () => {
-    expect(prTitleMatchesTodo("", "some title")).toBe(false);
-    expect(prTitleMatchesTodo("some title", "")).toBe(false);
-    expect(prTitleMatchesTodo("", "")).toBe(false);
+    expect(prTitleMatchesWorkItem("", "some title")).toBe(false);
+    expect(prTitleMatchesWorkItem("some title", "")).toBe(false);
+    expect(prTitleMatchesWorkItem("", "")).toBe(false);
   });
 });
 

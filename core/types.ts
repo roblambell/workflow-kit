@@ -3,7 +3,7 @@
 export type Priority = "critical" | "high" | "medium" | "low";
 export type Status = "open" | "in-progress";
 
-export interface TodoItem {
+export interface WorkItem {
   id: string; // e.g., "H-BF5-1"
   priority: Priority;
   title: string;
@@ -44,7 +44,7 @@ export interface ProjectConfig {
 }
 
 export interface WorktreeInfo {
-  todoId: string;
+  itemId: string;
   repoRoot: string;
   worktreePath: string;
 }

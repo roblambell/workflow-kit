@@ -128,8 +128,8 @@ export function cmdWatchReady(
   // Iterate cross-repo worktrees (PRs live in target repos)
   const hubCheckedIds = new Set(results.map((r) => r.split("\t")[0]));
   for (const entry of listCrossRepoEntries(crossRepoIndex)) {
-    if (hubCheckedIds.has(entry.todoId)) continue;
-    const statusLine = checkPrStatus(entry.todoId, entry.repoRoot);
+    if (hubCheckedIds.has(entry.itemId)) continue;
+    const statusLine = checkPrStatus(entry.itemId, entry.repoRoot);
     if (statusLine) results.push(statusLine);
   }
 
@@ -340,8 +340,8 @@ export function getWatchReadyState(
   // Also check cross-repo worktrees
   const hubCheckedIds = new Set(results.map((r) => r.split("\t")[0]));
   for (const entry of listCrossRepoEntries(crossRepoIndex)) {
-    if (hubCheckedIds.has(entry.todoId)) continue;
-    const statusLine = checkPrStatus(entry.todoId, entry.repoRoot);
+    if (hubCheckedIds.has(entry.itemId)) continue;
+    const statusLine = checkPrStatus(entry.itemId, entry.repoRoot);
     if (statusLine) results.push(statusLine);
   }
 

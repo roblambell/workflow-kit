@@ -22,7 +22,7 @@ import {
   type OrchestratorItem,
   type OrchestratorItemState,
 } from "../orchestrator.ts";
-import { parseTodos } from "../parser.ts";
+import { parseWorkItems } from "../parser.ts";
 import { resolveRepo, getWorktreeInfo, bootstrapRepo } from "../cross-repo.ts";
 import { checkPrStatus, scanExternalPRs } from "./pr-monitor.ts";
 import { launchSingleItem, launchReviewWorker, launchRepairWorker, launchVerifierWorker, detectAiTool, cleanStaleBranchForReuse } from "./launch.ts";
@@ -34,11 +34,11 @@ import { reconcile } from "./reconcile.ts";
 import { die, warn, info } from "../output.ts";
 import { confirmPrompt } from "../prompt.ts";
 import { shouldEnterInteractive, runInteractiveFlow } from "../interactive.ts";
-import type { TodoItem } from "../types.ts";
+import type { WorkItem } from "../types.ts";
 import { ID_IN_FILENAME } from "../types.ts";
-import { prTitleMatchesTodo } from "../todo-utils.ts";
+import { prTitleMatchesWorkItem } from "../work-item-utils.ts";
 import { loadConfig } from "../config.ts";
-import { preflight, checkUncommittedTodos } from "../preflight.ts";
+import { preflight, checkUncommittedWorkItems } from "../preflight.ts";
 import {
   collectRunMetrics,
   writeRunMetrics,
@@ -123,13 +123,13 @@ export function orchestratorItemsToStatusItems(
 ): StatusItem[] {
   return items.map((item) => ({
     id: item.id,
-    title: item.todo.title,
+    title: item.workItem.title,
     state: mapDaemonItemState(item.state),
     prNumber: item.prNumber ?? null,
     ageMs: Date.now() - new Date(item.lastTransition).getTime(),
     repoLabel: item.resolvedRepoRoot ? basename(item.resolvedRepoRoot) : "",
     failureReason: item.failureReason,
-    dependencies: item.todo.dependencies ?? [],
+    dependencies: item.workItem.dependencies ?? [],
     startedAt: item.startedAt,
     endedAt: item.endedAt,
     exitCode: item.exitCode,
@@ -227,7 +227,7 @@ export function buildSnapshot(
   for (const orchItem of orch.getAllItems()) {
     // Compute readyIds for queued items
     if (orchItem.state === "queued") {
-      const allDepsMet = orchItem.todo.dependencies.every((depId) => {
+      const allDepsMet = orchItem.workItem.dependencies.every((depId) => {
         const depItem = orch.getItem(depId);
         // Dep is met if: not tracked, or in done/merged state
         return !depItem || depItem.state === "done" || depItem.state === "merged";
@@ -279,9 +279,9 @@ export function buildSnapshot(
           // assigned a PR number to this item (during this session), trust it.
           // Otherwise, compare the merged PR's title against the TODO title.
           const mergedPrTitle = parts[5] ?? "";
-          const todoTitle = orchItem.todo.title;
+          const todoTitle = orchItem.workItem.title;
           const alreadyTracked = orchItem.prNumber != null && snap.prNumber === orchItem.prNumber;
-          if (alreadyTracked || !mergedPrTitle || prTitleMatchesTodo(mergedPrTitle, todoTitle)) {
+          if (alreadyTracked || !mergedPrTitle || prTitleMatchesWorkItem(mergedPrTitle, todoTitle)) {
             snap.prState = "merged";
           }
           // else: title mismatch — stale merged PR from a previous cycle, ignore it
@@ -737,8 +737,8 @@ export function reconstructState(
           orch.setState(item.id, "merged");
         } else {
           const mergedPrTitle = parts[5] ?? "";
-          const todoTitle = orch.getItem(item.id)?.todo.title ?? "";
-          if (mergedPrTitle && todoTitle && !prTitleMatchesTodo(mergedPrTitle, todoTitle)) {
+          const todoTitle = orch.getItem(item.id)?.workItem.title ?? "";
+          if (mergedPrTitle && todoTitle && !prTitleMatchesWorkItem(mergedPrTitle, todoTitle)) {
             orch.setState(item.id, "implementing");
             recoverWorkspaceRef(orch, item.id, workspaceList);
           } else {
@@ -1260,7 +1260,7 @@ export interface OrchestrateLoopDeps {
   /** Dependencies for external PR review processing. When present and reviewExternal is enabled, external PRs are scanned and reviewed. */
   externalReviewDeps?: ExternalReviewDeps;
   /** Scan for TODO files. Required for watch mode — re-scans the todos directory to discover new items. */
-  scanTodos?: () => TodoItem[];
+  scanWorkItems?: () => WorkItem[];
   /** Crew coordination broker. When present, crew mode is active — claim before launch, complete after merge. */
   crewBroker?: CrewBroker;
 }
@@ -1396,7 +1396,7 @@ export async function orchestrateLoop(
       handleRunComplete(allItems, orch, ctx, deps, config, log, runStartTime, costData);
 
       // Watch mode: instead of exiting, poll for new TODO files
-      if (config.watch && deps.scanTodos) {
+      if (config.watch && deps.scanWorkItems) {
         const watchInterval = config.watchIntervalMs ?? 30_000;
         log({
           ts: new Date().toISOString(),
@@ -1424,7 +1424,7 @@ export async function orchestrateLoop(
           }
 
           // Re-scan for TODO files
-          const freshTodos = deps.scanTodos();
+          const freshTodos = deps.scanWorkItems();
           const existingIds = new Set(orch.getAllItems().map((i) => i.id));
           const newTodos = freshTodos.filter((t) => !existingIds.has(t.id));
 
@@ -2036,7 +2036,7 @@ export async function cmdOrchestrate(
   let wipLimit = wipLimitOverride ?? computedWipLimit;
 
   // Parse TODO items (needed for both interactive and flag-based modes)
-  const allTodos = parseTodos(workDir, worktreeDir);
+  const allTodos = parseWorkItems(workDir, worktreeDir);
 
   // Interactive mode: no --items and stdin is a TTY
   if (shouldEnterInteractive(itemIds.length > 0)) {
@@ -2068,7 +2068,7 @@ export async function cmdOrchestrate(
   // Apply custom GitHub token so daemon and workers use the configured identity
   applyGithubToken(projectRoot);
 
-  const todoMap = new Map<string, TodoItem>();
+  const todoMap = new Map<string, WorkItem>();
   for (const todo of allTodos) {
     todoMap.set(todo.id, todo);
   }
@@ -2096,7 +2096,7 @@ export async function cmdOrchestrate(
 
   // Populate resolvedRepoRoot for cross-repo items
   for (const item of orch.getAllItems()) {
-    const alias = item.todo.repoAlias;
+    const alias = item.workItem.repoAlias;
     if (alias && alias !== "self" && alias !== "hub") {
       try {
         item.resolvedRepoRoot = resolveRepo(alias, projectRoot);
@@ -2104,7 +2104,7 @@ export async function cmdOrchestrate(
         // Resolution failed — if item has bootstrap: true, the orchestrator will
         // bootstrap the repo before launch (via the bootstrap action). Log the
         // deferred resolution. Non-bootstrap items stay hub-local as fallback.
-        if (item.todo.bootstrap) {
+        if (item.workItem.bootstrap) {
           log({
             ts: new Date().toISOString(),
             level: "info",
@@ -2430,7 +2430,7 @@ export async function cmdOrchestrate(
     onPollComplete,
     syncDisplay: (o, snap) => syncWorkerDisplay(o, snap, mux),
     externalReviewDeps,
-    ...(watchMode ? { scanTodos: () => parseTodos(workDir, worktreeDir) } : {}),
+    ...(watchMode ? { scanWorkItems: () => parseWorkItems(workDir, worktreeDir) } : {}),
     ...(crewBroker ? { crewBroker } : {}),
   };
 

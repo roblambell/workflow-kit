@@ -1,6 +1,6 @@
 // batch-order command: topological sort of TODO items into dependency batches.
 
-import { parseTodos } from "../parser.ts";
+import { parseWorkItems } from "../parser.ts";
 import {
   die,
   warn,
@@ -11,8 +11,8 @@ import {
   DIM,
   RESET,
 } from "../output.ts";
-import { splitIds } from "../todo-utils.ts";
-import type { TodoItem } from "../types.ts";
+import { splitIds } from "../work-item-utils.ts";
+import type { WorkItem } from "../types.ts";
 
 /** Result of computing batch assignments. */
 export interface BatchResult {
@@ -59,10 +59,10 @@ export class CircularDependencyError extends Error {
  * @throws CircularDependencyError if a cycle prevents full resolution.
  */
 export function computeBatches(
-  items: TodoItem[],
+  items: WorkItem[],
   selectedIds: string[],
 ): BatchResult {
-  const itemMap = new Map<string, TodoItem>();
+  const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
   }
@@ -131,10 +131,10 @@ export function cmdBatchOrder(
   const ids = splitIds(args);
   if (ids.length < 1)
     die("Usage: ninthwave batch-order <ID1> [ID2...]");
-  const items = parseTodos(workDir, worktreeDir);
+  const items = parseWorkItems(workDir, worktreeDir);
 
   // Build lookup for display metadata
-  const itemMap = new Map<string, TodoItem>();
+  const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
   }

@@ -28,7 +28,7 @@ import {
   reconstructState,
 } from "../core/commands/orchestrate.ts";
 import type { Multiplexer } from "../core/mux.ts";
-import type { TodoItem, Priority } from "../core/types.ts";
+import type { WorkItem, Priority } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ function makeTodo(
   title = `TODO ${id}`,
   deps: string[] = [],
   priority: Priority = "high",
-): TodoItem {
+): WorkItem {
   return {
     id,
     priority,

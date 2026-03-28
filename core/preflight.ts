@@ -128,7 +128,7 @@ export function checkGitConfig(runner: ShellRunner): CheckResult {
 }
 
 /** Check: no uncommitted TODO files in .ninthwave/work/. */
-export function checkUncommittedTodos(
+export function checkUncommittedWorkItems(
   projectRoot: string,
   runner: ShellRunner,
 ): CheckResult {
@@ -208,7 +208,7 @@ export function preflight(
     checkAiTool(runner),
     checkMultiplexer(runner),
     checkGitConfig(runner),
-    ...(projectRoot ? [checkUncommittedTodos(projectRoot, runner)] : []),
+    ...(projectRoot ? [checkUncommittedWorkItems(projectRoot, runner)] : []),
     ...(projectRoot ? [checkCopilotTrust(projectRoot, runner)] : []),
   ];
 

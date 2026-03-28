@@ -16,11 +16,11 @@ import {
   type ActionResult,
   type OrchestratorDeps,
 } from "../core/orchestrator.ts";
-import type { TodoItem, Priority } from "../core/types.ts";
+import type { WorkItem, Priority } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeTodo(id: string, deps: string[] = [], priority: Priority = "high"): TodoItem {
+function makeTodo(id: string, deps: string[] = [], priority: Priority = "high"): WorkItem {
   return {
     id,
     priority,
@@ -826,7 +826,7 @@ describe("Orchestrator", () => {
 
       expect(result.success).toBe(true);
       expect(deps.launchSingleItem).toHaveBeenCalledWith(
-        orch.getItem("H-1-1")!.todo,
+        orch.getItem("H-1-1")!.workItem,
         defaultCtx.workDir,
         defaultCtx.worktreeDir,
         defaultCtx.projectRoot,
@@ -4279,7 +4279,7 @@ describe("Orchestrator", () => {
         );
 
         expect(deps.launchSingleItem).toHaveBeenCalledWith(
-          orch.getItem("A-1-1")!.todo,
+          orch.getItem("A-1-1")!.workItem,
           defaultCtx.workDir,
           defaultCtx.worktreeDir,
           defaultCtx.projectRoot,
@@ -4301,7 +4301,7 @@ describe("Orchestrator", () => {
         );
 
         expect(deps.launchSingleItem).toHaveBeenCalledWith(
-          orch.getItem("A-1-1")!.todo,
+          orch.getItem("A-1-1")!.workItem,
           defaultCtx.workDir,
           defaultCtx.worktreeDir,
           defaultCtx.projectRoot,

@@ -29,7 +29,7 @@ vi.mock("../core/git.ts", () => ({
 
 
 import { detectAiTool, cmdStart, cmdRunItems, launchSingleItem, launchAiSession, launchReviewWorker, sanitizeTitle, extractTodoText, cleanStaleBranchForReuse, TODO_ID_CLI_PATTERN } from "../core/commands/launch.ts";
-import { parseTodos } from "../core/parser.ts";
+import { parseWorkItems } from "../core/parser.ts";
 import { fetchOrigin, ffMerge, createWorktree, branchExists, deleteBranch, findWorktreeForBranch, removeWorktree } from "../core/git.ts";
 
 /** Create a mock Multiplexer for dependency injection (avoids vi.mock leaking). */
@@ -305,7 +305,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     const result = await captureOutput(() => {
@@ -326,7 +326,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     const result = await captureOutput(() => {
@@ -342,7 +342,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     const result = await captureOutput(() => {
@@ -358,7 +358,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     // worktreeDir doesn't exist yet — launchSingleItem should create it
@@ -375,7 +375,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     (fetchOrigin as Mock).mockImplementationOnce(() => {
@@ -399,7 +399,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     (ffMerge as Mock).mockImplementationOnce(() => {
@@ -423,7 +423,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     (fetchOrigin as Mock).mockImplementationOnce(() => {
@@ -451,7 +451,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     await captureOutput(() => {
@@ -466,7 +466,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     await captureOutput(() => {
@@ -490,7 +490,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     const output = await captureOutput(() => {
@@ -514,7 +514,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     // Use opencode so the full system prompt is sent via sendMessage (not --append-system-prompt)
@@ -536,7 +536,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     // Use opencode so the full system prompt is sent via sendMessage
@@ -556,7 +556,7 @@ describe("launchSingleItem", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     await captureOutput(() => {
@@ -599,7 +599,7 @@ describe("launchSingleItem external worktree handling", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     // Branch exists and is checked out in an external worktree
@@ -633,7 +633,7 @@ describe("launchSingleItem external worktree handling", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     (branchExists as Mock).mockReturnValue(true);
@@ -672,7 +672,7 @@ describe("launchSingleItem external worktree handling", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     (branchExists as Mock).mockReturnValue(true);
@@ -703,7 +703,7 @@ describe("launchSingleItem external worktree handling", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
     const expectedWorktreePath = join(worktreeDir, "ninthwave-M-CI-1");
 
@@ -1094,7 +1094,7 @@ describe("launchSingleItem agentName default", () => {
     const repo = setupTempRepo();
     const workDir = setupTodosDir(repo);
     const worktreeDir = join(repo, ".worktrees");
-    const items = parseTodos(workDir, worktreeDir);
+    const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
     await captureOutput(() => {

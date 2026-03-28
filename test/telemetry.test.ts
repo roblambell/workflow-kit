@@ -25,11 +25,11 @@ import {
   serializeOrchestratorState,
   type DaemonState,
 } from "../core/daemon.ts";
-import type { TodoItem } from "../core/types.ts";
+import type { WorkItem } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeTodo(id: string, deps: string[] = []): TodoItem {
+function makeTodo(id: string, deps: string[] = []): WorkItem {
   return {
     id,
     priority: "high",
@@ -426,7 +426,7 @@ describe("serializeOrchestratorState includes telemetry", () => {
   it("includes startedAt, endedAt, exitCode, stderrTail in serialized state", () => {
     const items: OrchestratorItem[] = [{
       id: "T-1-1",
-      todo: makeTodo("T-1-1"),
+      workItem: makeTodo("T-1-1"),
       state: "stuck",
       ciFailCount: 2,
       retryCount: 1,
@@ -447,7 +447,7 @@ describe("serializeOrchestratorState includes telemetry", () => {
   it("omits telemetry fields when not present (sparse serialization)", () => {
     const items: OrchestratorItem[] = [{
       id: "T-1-1",
-      todo: makeTodo("T-1-1"),
+      workItem: makeTodo("T-1-1"),
       state: "implementing",
       ciFailCount: 0,
       retryCount: 0,
@@ -469,7 +469,7 @@ describe("collectRunMetrics includes telemetry fields", () => {
     const items: OrchestratorItem[] = [
       {
         id: "T-1-1",
-        todo: makeTodo("T-1-1"),
+        workItem: makeTodo("T-1-1"),
         state: "done",
         ciFailCount: 0,
         retryCount: 0,
@@ -480,7 +480,7 @@ describe("collectRunMetrics includes telemetry fields", () => {
       },
       {
         id: "T-1-2",
-        todo: makeTodo("T-1-2"),
+        workItem: makeTodo("T-1-2"),
         state: "stuck",
         ciFailCount: 2,
         retryCount: 1,
@@ -523,7 +523,7 @@ describe("collectRunMetrics includes telemetry fields", () => {
   it("omits telemetry fields when not present on orchestrator items", () => {
     const items: OrchestratorItem[] = [{
       id: "T-1-1",
-      todo: makeTodo("T-1-1"),
+      workItem: makeTodo("T-1-1"),
       state: "done",
       ciFailCount: 0,
       retryCount: 0,

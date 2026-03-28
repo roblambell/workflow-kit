@@ -23,11 +23,11 @@ export interface BrokerOptions {
 
 export interface CrewState {
   code: string;
-  todos: Map<string, TodoEntry>;
+  items: Map<string, WorkEntry>;
   daemons: Map<string, DaemonState>;
 }
 
-export interface TodoEntry {
+export interface WorkEntry {
   path: string;
   priority: number; // lower = higher priority
   syncedAt: number;
@@ -42,7 +42,7 @@ export interface DaemonState {
   ws: WebSocket | null;
   lastHeartbeat: number;
   disconnectedAt: number | null;
-  claimedTodos: Set<string>;
+  claimedItems: Set<string>;
   /** True after grace period expired and TODOs were released. Prevents double-release. */
   released: boolean;
 }
@@ -72,7 +72,7 @@ export interface CrewStatusUpdate {
 // Aligned with crew.ts ClientMessage / ServerMessage protocol.
 
 type InboundMessage =
-  | { type: "sync"; daemonId: string; activeTodoIds: string[] }
+  | { type: "sync"; daemonId: string; activeItemIds: string[] }
   | { type: "claim"; requestId: string; daemonId: string }
   | { type: "complete"; todoId: string; daemonId: string }
   | { type: "heartbeat"; daemonId: string; ts: string };
@@ -225,7 +225,7 @@ export class MockBroker {
     const code = this.generateCode();
     this.crews.set(code, {
       code,
-      todos: new Map(),
+      items: new Map(),
       daemons: new Map(),
     });
     return code;
@@ -264,8 +264,8 @@ export class MockBroker {
         const released: string[] = [];
         const reclaimed: string[] = [];
 
-        for (const todoPath of existing.claimedTodos) {
-          const todo = crew.todos.get(todoPath);
+        for (const todoPath of existing.claimedItems) {
+          const todo = crew.items.get(todoPath);
           if (!todo) {
             released.push(todoPath);
             continue;
@@ -281,7 +281,7 @@ export class MockBroker {
 
         // Remove reclaimed and released from this daemon's claimed set
         for (const p of [...released, ...reclaimed]) {
-          existing.claimedTodos.delete(p);
+          existing.claimedItems.delete(p);
         }
 
         this.logEvent(crewCode, daemonId, "reconnect", "", {});
@@ -300,7 +300,7 @@ export class MockBroker {
         ws,
         lastHeartbeat: Date.now(),
         disconnectedAt: null,
-        claimedTodos: new Set(),
+        claimedItems: new Set(),
         released: false,
       });
     }
@@ -329,7 +329,7 @@ export class MockBroker {
 
     switch (msg.type) {
       case "sync":
-        this.handleSync(crew, daemonId, msg.activeTodoIds, ws);
+        this.handleSync(crew, daemonId, msg.activeItemIds, ws);
         break;
       case "claim":
         this.handleClaimRequest(crew, daemonId, msg.requestId, ws);
@@ -344,10 +344,10 @@ export class MockBroker {
     }
   }
 
-  private handleSync(crew: CrewState, daemonId: string, activeTodoIds: string[], ws: WebSocket): void {
-    for (const todoId of activeTodoIds) {
-      if (!crew.todos.has(todoId)) {
-        crew.todos.set(todoId, {
+  private handleSync(crew: CrewState, daemonId: string, activeItemIds: string[], ws: WebSocket): void {
+    for (const todoId of activeItemIds) {
+      if (!crew.items.has(todoId)) {
+        crew.items.set(todoId, {
           path: todoId,
           priority: 1, // Default priority; orchestrator handles real priority
           syncedAt: Date.now(),
@@ -359,7 +359,7 @@ export class MockBroker {
       }
     }
     // Respond with sync_ack containing all known todo IDs
-    const allTodoIds = Array.from(crew.todos.keys());
+    const allTodoIds = Array.from(crew.items.keys());
     this.send(ws, { type: "sync_ack", crewCode: crew.code, todoIds: allTodoIds });
     // Broadcast crew status after sync
     this.broadcastCrewUpdate(crew);
@@ -370,7 +370,7 @@ export class MockBroker {
     if (!daemon) return;
 
     // Find the best available TODO for this daemon using creator affinity scheduling
-    const available = Array.from(crew.todos.values()).filter(
+    const available = Array.from(crew.items.values()).filter(
       (t) => t.claimedBy === null && t.completedBy === null,
     );
 
@@ -390,7 +390,7 @@ export class MockBroker {
 
     const todo = available[0]!;
     todo.claimedBy = daemonId;
-    daemon.claimedTodos.add(todo.path);
+    daemon.claimedItems.add(todo.path);
 
     const affinity: "creator" | "pool" = todo.creatorDaemonId === daemonId ? "creator" : "pool";
     this.logEvent(crew.code, daemonId, "claim", todo.path, { affinity });
@@ -400,7 +400,7 @@ export class MockBroker {
   }
 
   private handleComplete(crew: CrewState, daemonId: string, todoId: string, ws: WebSocket): void {
-    const todo = crew.todos.get(todoId);
+    const todo = crew.items.get(todoId);
     if (!todo || todo.claimedBy !== daemonId) {
       this.send(ws, { type: "error", message: `Cannot complete: ${todoId}` });
       return;
@@ -408,7 +408,7 @@ export class MockBroker {
 
     const daemon = crew.daemons.get(daemonId);
     if (daemon) {
-      daemon.claimedTodos.delete(todoId);
+      daemon.claimedItems.delete(todoId);
     }
 
     todo.completedBy = daemonId;
@@ -448,14 +448,14 @@ export class MockBroker {
   }
 
   private releaseDaemonTodos(crew: CrewState, daemon: DaemonState): void {
-    for (const todoPath of daemon.claimedTodos) {
-      const todo = crew.todos.get(todoPath);
+    for (const todoPath of daemon.claimedItems) {
+      const todo = crew.items.get(todoPath);
       if (todo && todo.claimedBy === daemon.id) {
         todo.claimedBy = null;
         this.logEvent(crew.code, daemon.id, "abandon", todoPath, {});
       }
     }
-    // Don't clear claimedTodos here — the reconnect handler needs it
+    // Don't clear claimedItems here — the reconnect handler needs it
     // to build the reconnect_state message. It will clean up the set.
   }
 
@@ -463,7 +463,7 @@ export class MockBroker {
 
   /** Broadcast crew status update to all connected daemons in the crew. */
   private broadcastCrewUpdate(crew: CrewState): void {
-    const todos = Array.from(crew.todos.values());
+    const todos = Array.from(crew.items.values());
     const availableCount = todos.filter((t) => t.claimedBy === null && t.completedBy === null).length;
     const claimedCount = todos.filter((t) => t.claimedBy !== null).length;
     const completedCount = todos.filter((t) => t.completedBy !== null).length;

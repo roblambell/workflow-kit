@@ -7,7 +7,7 @@ import {
 } from "./helpers.ts";
 import { join, dirname, basename } from "path";
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from "fs";
-import { parseTodos } from "../core/parser.ts";
+import { parseWorkItems } from "../core/parser.ts";
 import {
   resolveRepo,
   writeCrossRepoIndex,
@@ -23,7 +23,7 @@ describe("cross-repo", () => {
     it("parses all 4 items from cross_repo fixture", () => {
       const repo = setupTempRepo();
       const workDir = useFixtureDir(repo, "cross_repo.md");
-      const items = parseTodos(
+      const items = parseWorkItems(
         workDir,
         join(repo, ".worktrees"),
       );
@@ -34,7 +34,7 @@ describe("cross-repo", () => {
     it("parses repo alias for cross-repo items", () => {
       const repo = setupTempRepo();
       const workDir = useFixtureDir(repo, "cross_repo.md");
-      const items = parseTodos(
+      const items = parseWorkItems(
         workDir,
         join(repo, ".worktrees"),
       );
@@ -49,7 +49,7 @@ describe("cross-repo", () => {
     it("hub-local items have empty repo alias", () => {
       const repo = setupTempRepo();
       const workDir = useFixtureDir(repo, "cross_repo.md");
-      const items = parseTodos(
+      const items = parseWorkItems(
         workDir,
         join(repo, ".worktrees"),
       );
@@ -61,7 +61,7 @@ describe("cross-repo", () => {
     it("valid.md (no Repo fields) still parses 4 items", () => {
       const repo = setupTempRepo();
       const workDir = useFixtureDir(repo, "valid.md");
-      const items = parseTodos(
+      const items = parseWorkItems(
         workDir,
         join(repo, ".worktrees"),
       );
@@ -72,7 +72,7 @@ describe("cross-repo", () => {
     it("M-CI-1 still has correct priority in valid.md", () => {
       const repo = setupTempRepo();
       const workDir = useFixtureDir(repo, "valid.md");
-      const items = parseTodos(
+      const items = parseWorkItems(
         workDir,
         join(repo, ".worktrees"),
       );
@@ -180,7 +180,7 @@ describe("cross-repo", () => {
       // getWorktreeInfo should find them
       const info1 = getWorktreeInfo("T-1", indexFile, join(repo, ".worktrees"));
       expect(info1).not.toBeNull();
-      expect(info1!.todoId).toBe("T-1");
+      expect(info1!.itemId).toBe("T-1");
       expect(info1!.repoRoot).toBe("/repo-a");
 
       // Remove one
@@ -259,7 +259,7 @@ describe("cross-repo", () => {
     it("items without Repo field default to empty alias", () => {
       const repo = setupTempRepo();
       const workDir = useFixtureDir(repo, "valid.md");
-      const items = parseTodos(
+      const items = parseWorkItems(
         workDir,
         join(repo, ".worktrees"),
       );

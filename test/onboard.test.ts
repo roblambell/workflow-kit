@@ -23,7 +23,7 @@ import {
   type OnboardDeps,
   type NoArgsDeps,
 } from "../core/commands/onboard.ts";
-import type { TodoItem } from "../core/types.ts";
+import type { WorkItem } from "../core/types.ts";
 
 afterEach(() => {
   cleanupTempRepos();
@@ -470,8 +470,8 @@ describe("promptAction", () => {
 // ── cmdNoArgs ──────────────────────────────────────────────────────
 
 describe("cmdNoArgs", () => {
-  /** Helper to build a fake TodoItem */
-  function fakeTodo(id: string, title: string): TodoItem {
+  /** Helper to build a fake WorkItem */
+  function fakeTodo(id: string, title: string): WorkItem {
     return {
       id,
       title,
@@ -541,7 +541,7 @@ describe("cmdNoArgs", () => {
     try {
       await cmdNoArgs(projectDir, {
         isTTY: true,
-        parseTodos: () => [],
+        parseWorkItems: () => [],
         isDaemonRunning: () => null,
       });
     } finally {
@@ -588,7 +588,7 @@ describe("cmdNoArgs", () => {
     try {
       await cmdNoArgs(projectDir, {
         isTTY: true,
-        parseTodos: () => [fakeTodo("H-1", "Test item")],
+        parseWorkItems: () => [fakeTodo("H-1", "Test item")],
         isDaemonRunning: () => 12345,
         runStatusWatch: async () => { statusWatchCalled = true; },
       });
@@ -615,7 +615,7 @@ describe("cmdNoArgs", () => {
 
     await cmdNoArgs(projectDir, {
       isTTY: true,
-      parseTodos: () => todos,
+      parseWorkItems: () => todos,
       isDaemonRunning: () => null,
       promptItems: async () => ["H-FOO-1"],
       promptAction: async () => "run",
@@ -638,7 +638,7 @@ describe("cmdNoArgs", () => {
 
     await cmdNoArgs(projectDir, {
       isTTY: true,
-      parseTodos: () => todos,
+      parseWorkItems: () => todos,
       isDaemonRunning: () => null,
       promptItems: async () => ["H-FOO-1"],
       promptAction: async () => "watch",
@@ -657,7 +657,7 @@ describe("cmdNoArgs", () => {
 
     await cmdNoArgs(projectDir, {
       isTTY: true,
-      parseTodos: () => [fakeTodo("H-1", "Task")],
+      parseWorkItems: () => [fakeTodo("H-1", "Task")],
       isDaemonRunning: () => null,
       promptItems: async () => [], // User quit
       promptAction: async () => { actionCalled = true; return "run"; },
@@ -678,7 +678,7 @@ describe("cmdNoArgs", () => {
 
     await cmdNoArgs(projectDir, {
       isTTY: true,
-      parseTodos: () => [fakeTodo("H-1", "Task")],
+      parseWorkItems: () => [fakeTodo("H-1", "Task")],
       isDaemonRunning: () => null,
       promptItems: async () => ["H-1"],
       promptAction: async () => "quit",

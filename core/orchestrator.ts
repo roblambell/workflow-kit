@@ -4,7 +4,7 @@
 
 import { join } from "path";
 import { existsSync, unlinkSync } from "fs";
-import type { TodoItem, Priority, WorktreeInfo } from "./types.ts";
+import type { WorkItem, Priority, WorktreeInfo } from "./types.ts";
 import { getWorktreeInfo, listCrossRepoEntries } from "./cross-repo.ts";
 import { heartbeatFilePath, writeHeartbeat } from "./daemon.ts";
 
@@ -46,7 +46,7 @@ export type MergeStrategy = "asap" | "approved" | "ask" | "reviewed";
 
 export interface OrchestratorItem {
   id: string;
-  todo: TodoItem;
+  workItem: WorkItem;
   state: OrchestratorItemState;
   prNumber?: number;
   partition?: number;
@@ -232,7 +232,7 @@ export interface ExecutionContext {
 /** External dependencies injected into executeAction. */
 export interface OrchestratorDeps {
   launchSingleItem: (
-    item: TodoItem,
+    item: WorkItem,
     workDir: string,
     worktreeDir: string,
     projectRoot: string,
@@ -283,7 +283,7 @@ export interface OrchestratorDeps {
    * and deletes both local and remote branches so the worker starts fresh.
    * Non-fatal — launch proceeds even if cleanup fails.
    */
-  cleanStaleBranch?: (todo: TodoItem, projectRoot: string) => void;
+  cleanStaleBranch?: (todo: WorkItem, projectRoot: string) => void;
   /**
    * Bootstrap a target repo (clone from remote or create new).
    * Called before launch when a cross-repo TODO has bootstrap: true and the repo doesn't exist locally.
@@ -508,10 +508,10 @@ export class Orchestrator {
   }
 
   /** Add a TODO item to orchestration. Starts in 'queued' state. */
-  addItem(todo: TodoItem, partition?: number): void {
+  addItem(todo: WorkItem, partition?: number): void {
     this.items.set(todo.id, {
       id: todo.id,
-      todo,
+      workItem: todo,
       state: "queued",
       partition,
       lastTransition: new Date().toISOString(),
@@ -1472,7 +1472,7 @@ export class Orchestrator {
       return { success: false, error: `Bootstrap not available for ${item.id}` };
     }
 
-    const alias = item.todo.repoAlias;
+    const alias = item.workItem.repoAlias;
     const result = deps.bootstrapRepo(alias, ctx.projectRoot);
 
     if (result.status === "failed") {
@@ -1507,7 +1507,7 @@ export class Orchestrator {
     // merged PRs that cause workers to falsely exit as "done".
     if (deps.cleanStaleBranch) {
       try {
-        deps.cleanStaleBranch(item.todo, ctx.projectRoot);
+        deps.cleanStaleBranch(item.workItem, ctx.projectRoot);
       } catch (e) {
         // Non-fatal — log and attempt launch anyway
         const msg = e instanceof Error ? e.message : String(e);
@@ -1529,7 +1529,7 @@ export class Orchestrator {
 
     try {
       const result = deps.launchSingleItem(
-        item.todo,
+        item.workItem,
         ctx.workDir,
         ctx.worktreeDir,
         ctx.projectRoot,
@@ -1687,7 +1687,7 @@ export class Orchestrator {
 
     for (const other of this.getAllItems()) {
       if (other.id === item.id) continue;
-      if (!other.todo.dependencies.includes(item.id)) continue;
+      if (!other.workItem.dependencies.includes(item.id)) continue;
       if (!WIP_STATES.has(other.state)) continue;
       if (!other.baseBranch) continue; // not stacked — handled below
 
@@ -1739,7 +1739,7 @@ export class Orchestrator {
     // Stacked items were handled above via rebaseOnto — skip them.
     for (const other of this.getAllItems()) {
       if (other.id === item.id) continue;
-      if (!other.todo.dependencies.includes(item.id)) continue;
+      if (!other.workItem.dependencies.includes(item.id)) continue;
       if (!WIP_STATES.has(other.state)) continue;
       if (restackedIds.has(other.id)) continue;
       if (other.workspaceRef) {
@@ -2287,8 +2287,8 @@ export class Orchestrator {
       .map((a) => ({ action: a, item: this.items.get(a.itemId)! }))
       .filter((entry) => entry.item != null)
       .sort((a, b) => {
-        const aRank = PRIORITY_RANK[a.item.todo.priority as Priority] ?? 999;
-        const bRank = PRIORITY_RANK[b.item.todo.priority as Priority] ?? 999;
+        const aRank = PRIORITY_RANK[a.item.workItem.priority as Priority] ?? 999;
+        const bRank = PRIORITY_RANK[b.item.workItem.priority as Priority] ?? 999;
         if (aRank !== bRank) return aRank - bRank;
         return a.item.id.localeCompare(b.item.id);
       });
@@ -2313,7 +2313,7 @@ export class Orchestrator {
   canStackLaunch(item: OrchestratorItem): { canStack: true; baseBranch: string } | { canStack: false } {
     if (!this.config.enableStacking) return { canStack: false };
 
-    const deps = item.todo.dependencies;
+    const deps = item.workItem.dependencies;
     if (deps.length === 0) return { canStack: false };
 
     let stackableDep: OrchestratorItem | undefined;
@@ -2389,7 +2389,7 @@ export class Orchestrator {
     const POST_MERGE_STATES = new Set(["done", "merged", "verifying", "verify-failed", "repairing-main"]);
     return chain
       .filter((i) => i.prNumber != null && !POST_MERGE_STATES.has(i.state))
-      .map((i) => ({ id: i.id, prNumber: i.prNumber!, title: i.todo.title }));
+      .map((i) => ({ id: i.id, prNumber: i.prNumber!, title: i.workItem.title }));
   }
 
   /** Launch ready items up to WIP limit. Returns launch actions. */
@@ -2424,8 +2424,8 @@ export class Orchestrator {
    * True when the TODO has bootstrap: true, has a cross-repo alias, and the repo isn't resolved yet.
    */
   private needsBootstrap(item: OrchestratorItem): boolean {
-    if (!item.todo.bootstrap) return false;
-    const alias = item.todo.repoAlias;
+    if (!item.workItem.bootstrap) return false;
+    const alias = item.workItem.repoAlias;
     if (!alias || alias === "self" || alias === "hub") return false;
     // If already resolved, no bootstrap needed
     if (item.resolvedRepoRoot) return false;

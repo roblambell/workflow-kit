@@ -5,15 +5,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { join } from "path";
 import { tmpdir } from "os";
 import {
-  todoFilename,
-  parseTodoFile,
-  writeTodoFile,
-  listTodos,
-  readTodo,
-  deleteTodoFile,
+  workItemFilename,
+  parseWorkItemFile,
+  writeWorkItemFile,
+  listWorkItems,
+  readWorkItem,
+  deleteWorkItemFile,
   priorityNum,
-} from "../core/todo-files.ts";
-import type { TodoItem, Priority } from "../core/types.ts";
+} from "../core/work-item-files.ts";
+import type { WorkItem, Priority } from "../core/types.ts";
 
 // Track temp dirs for cleanup
 const tempDirs: string[] = [];
@@ -33,7 +33,7 @@ afterEach(() => {
   tempDirs.length = 0;
 });
 
-function makeTodoItem(overrides: Partial<TodoItem> = {}): TodoItem {
+function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
   return {
     id: "M-WRK-8",
     priority: "medium",
@@ -75,11 +75,11 @@ Key files: \`core/worker.ts\`, \`core/retry.ts\`
   return fp;
 }
 
-// --- todoFilename ---
+// --- workItemFilename ---
 
-describe("todoFilename", () => {
+describe("workItemFilename", () => {
   it("produces correct format", () => {
-    const name = todoFilename({
+    const name = workItemFilename({
       id: "M-WRK-8",
       priority: "medium",
       domain: "worker-reliability",
@@ -88,16 +88,16 @@ describe("todoFilename", () => {
   });
 
   it("uses correct priority numbers", () => {
-    expect(todoFilename({ id: "C-X-1", priority: "critical", domain: "d" })).toBe(
+    expect(workItemFilename({ id: "C-X-1", priority: "critical", domain: "d" })).toBe(
       "0-d--C-X-1.md",
     );
-    expect(todoFilename({ id: "H-X-1", priority: "high", domain: "d" })).toBe(
+    expect(workItemFilename({ id: "H-X-1", priority: "high", domain: "d" })).toBe(
       "1-d--H-X-1.md",
     );
-    expect(todoFilename({ id: "M-X-1", priority: "medium", domain: "d" })).toBe(
+    expect(workItemFilename({ id: "M-X-1", priority: "medium", domain: "d" })).toBe(
       "2-d--M-X-1.md",
     );
-    expect(todoFilename({ id: "L-X-1", priority: "low", domain: "d" })).toBe(
+    expect(workItemFilename({ id: "L-X-1", priority: "low", domain: "d" })).toBe(
       "3-d--L-X-1.md",
     );
   });
@@ -114,14 +114,14 @@ describe("priorityNum", () => {
   });
 });
 
-// --- parseTodoFile ---
+// --- parseWorkItemFile ---
 
-describe("parseTodoFile", () => {
+describe("parseWorkItemFile", () => {
   it("extracts all fields from a well-formed file", () => {
     const dir = makeTempDir();
     const fp = writeWellFormedFile(dir, "2-worker-reliability--M-WRK-8.md");
 
-    const item = parseTodoFile(fp);
+    const item = parseWorkItemFile(fp);
     expect(item).not.toBeNull();
     expect(item!.id).toBe("M-WRK-8");
     expect(item!.priority).toBe("medium");
@@ -149,7 +149,7 @@ describe("parseTodoFile", () => {
     const fp = join(dir, "1-bugs--H-BUG-3.md");
     writeFileSync(fp, content);
 
-    const item = parseTodoFile(fp);
+    const item = parseWorkItemFile(fp);
     expect(item).not.toBeNull();
     expect(item!.dependencies).toEqual(["M-WRK-8", "H-BUG-1"]);
   });
@@ -167,7 +167,7 @@ describe("parseTodoFile", () => {
     const fp = join(dir, "2-features--M-FT-1.md");
     writeFileSync(fp, content);
 
-    const item = parseTodoFile(fp);
+    const item = parseWorkItemFile(fp);
     expect(item).not.toBeNull();
     expect(item!.bundleWith).toEqual(["M-FT-2", "M-FT-3"]);
   });
@@ -185,7 +185,7 @@ describe("parseTodoFile", () => {
     const fp = join(dir, "1-cross-repo--H-CR-1.md");
     writeFileSync(fp, content);
 
-    const item = parseTodoFile(fp);
+    const item = parseWorkItemFile(fp);
     expect(item).not.toBeNull();
     expect(item!.repoAlias).toBe("target-repo-a");
   });
@@ -204,7 +204,7 @@ Just a description.
     const fp = join(dir, "3-minimal--L-MIN-1.md");
     writeFileSync(fp, content);
 
-    const item = parseTodoFile(fp);
+    const item = parseWorkItemFile(fp);
     expect(item).not.toBeNull();
     expect(item!.id).toBe("L-MIN-1");
     expect(item!.priority).toBe("low");
@@ -223,7 +223,7 @@ Just a description.
     const fp = join(dir, "broken.md");
     writeFileSync(fp, content);
 
-    expect(parseTodoFile(fp)).toBeNull();
+    expect(parseWorkItemFile(fp)).toBeNull();
   });
 
   it("returns null for file with no priority", () => {
@@ -235,11 +235,11 @@ Just a description.
     const fp = join(dir, "broken2.md");
     writeFileSync(fp, content);
 
-    expect(parseTodoFile(fp)).toBeNull();
+    expect(parseWorkItemFile(fp)).toBeNull();
   });
 
   it("returns null for nonexistent file", () => {
-    expect(parseTodoFile("/tmp/does-not-exist-nw-test.md")).toBeNull();
+    expect(parseWorkItemFile("/tmp/does-not-exist-nw-test.md")).toBeNull();
   });
 
   it("returns null for invalid priority value", () => {
@@ -252,19 +252,19 @@ Just a description.
     const fp = join(dir, "broken3.md");
     writeFileSync(fp, content);
 
-    expect(parseTodoFile(fp)).toBeNull();
+    expect(parseWorkItemFile(fp)).toBeNull();
   });
 });
 
-// --- writeTodoFile + parseTodoFile round-trip ---
+// --- writeWorkItemFile + parseWorkItemFile round-trip ---
 
-describe("writeTodoFile + parseTodoFile round-trip", () => {
+describe("writeWorkItemFile + parseWorkItemFile round-trip", () => {
   it("round-trips a full item", () => {
     const dir = makeTempDir();
     const workDir = join(dir, "work");
     mkdirSync(workDir);
 
-    const original = makeTodoItem({
+    const original = makeWorkItem({
       rawText: `# Improve worker reliability (M-WRK-8)
 
 **Priority:** Medium
@@ -287,14 +287,14 @@ Key files: \`core/worker.ts\`
       bundleWith: ["M-BND-2"],
     });
 
-    writeTodoFile(workDir, original);
+    writeWorkItemFile(workDir, original);
 
     expect(original.filePath).toBe(
       join(workDir, "2-worker-reliability--M-WRK-8.md"),
     );
     expect(existsSync(original.filePath)).toBe(true);
 
-    const parsed = parseTodoFile(original.filePath);
+    const parsed = parseWorkItemFile(original.filePath);
     expect(parsed).not.toBeNull();
     expect(parsed!.id).toBe("M-WRK-8");
     expect(parsed!.priority).toBe("medium");
@@ -309,7 +309,7 @@ Key files: \`core/worker.ts\`
     const workDir = join(dir, "work");
     mkdirSync(workDir);
 
-    const original = makeTodoItem({
+    const original = makeWorkItem({
       id: "L-SIM-1",
       priority: "low",
       domain: "simple",
@@ -324,8 +324,8 @@ Just do the thing.
 `,
     });
 
-    writeTodoFile(workDir, original);
-    const parsed = parseTodoFile(original.filePath);
+    writeWorkItemFile(workDir, original);
+    const parsed = parseWorkItemFile(original.filePath);
     expect(parsed).not.toBeNull();
     expect(parsed!.id).toBe("L-SIM-1");
     expect(parsed!.priority).toBe("low");
@@ -335,9 +335,9 @@ Just do the thing.
   });
 });
 
-// --- listTodos ---
+// --- listWorkItems ---
 
-describe("listTodos", () => {
+describe("listWorkItems", () => {
   it("reads a directory of multiple todo files", () => {
     const dir = makeTempDir();
     const workDir = join(dir, "work");
@@ -372,7 +372,7 @@ Add the feature.
 `,
     );
 
-    const items = listTodos(workDir, worktreeDir);
+    const items = listWorkItems(workDir, worktreeDir);
     expect(items).toHaveLength(2);
 
     const ids = items.map((i) => i.id).sort();
@@ -422,7 +422,7 @@ Add the feature.
 `,
     );
 
-    const items = listTodos(workDir, worktreeDir);
+    const items = listWorkItems(workDir, worktreeDir);
     const ft = items.find((i) => i.id === "M-FT-1")!;
     expect(ft.dependencies).toContain("H-BUG-1");
     expect(ft.dependencies).toContain("H-BUG-2");
@@ -458,7 +458,7 @@ Add the feature.
 `,
     );
 
-    const items = listTodos(workDir, worktreeDir);
+    const items = listWorkItems(workDir, worktreeDir);
     const bug = items.find((i) => i.id === "H-BUG-1")!;
     const ft = items.find((i) => i.id === "M-FT-1")!;
     expect(bug.status).toBe("in-progress");
@@ -466,7 +466,7 @@ Add the feature.
   });
 
   it("returns empty array for nonexistent directory", () => {
-    expect(listTodos("/tmp/nw-does-not-exist", "/tmp/nw-wt")).toEqual([]);
+    expect(listWorkItems("/tmp/nw-does-not-exist", "/tmp/nw-wt")).toEqual([]);
   });
 
   it("skips malformed files", () => {
@@ -488,15 +488,15 @@ Add the feature.
 `,
     );
 
-    const items = listTodos(workDir, worktreeDir);
+    const items = listWorkItems(workDir, worktreeDir);
     expect(items).toHaveLength(1);
     expect(items[0]!.id).toBe("H-OK-1");
   });
 });
 
-// --- readTodo ---
+// --- readWorkItem ---
 
-describe("readTodo", () => {
+describe("readWorkItem", () => {
   it("finds item by ID", () => {
     const dir = makeTempDir();
     const workDir = join(dir, "work");
@@ -513,7 +513,7 @@ describe("readTodo", () => {
 `,
     );
 
-    const item = readTodo(workDir, "M-TST-1");
+    const item = readWorkItem(workDir, "M-TST-1");
     expect(item).toBeDefined();
     expect(item!.id).toBe("M-TST-1");
     expect(item!.priority).toBe("medium");
@@ -524,17 +524,17 @@ describe("readTodo", () => {
     const workDir = join(dir, "work");
     mkdirSync(workDir);
 
-    expect(readTodo(workDir, "X-MISS-99")).toBeUndefined();
+    expect(readWorkItem(workDir, "X-MISS-99")).toBeUndefined();
   });
 
   it("returns undefined for nonexistent directory", () => {
-    expect(readTodo("/tmp/nw-does-not-exist", "X-X-1")).toBeUndefined();
+    expect(readWorkItem("/tmp/nw-does-not-exist", "X-X-1")).toBeUndefined();
   });
 });
 
-// --- deleteTodoFile ---
+// --- deleteWorkItemFile ---
 
-describe("deleteTodoFile", () => {
+describe("deleteWorkItemFile", () => {
   it("removes file and returns true", () => {
     const dir = makeTempDir();
     const workDir = join(dir, "work");
@@ -544,7 +544,7 @@ describe("deleteTodoFile", () => {
     writeFileSync(fp, "# Item (M-TST-1)\n\n**Priority:** Medium\n**Domain:** test\n");
 
     expect(existsSync(fp)).toBe(true);
-    const result = deleteTodoFile(workDir, "M-TST-1");
+    const result = deleteWorkItemFile(workDir, "M-TST-1");
     expect(result).toBe(true);
     expect(existsSync(fp)).toBe(false);
   });
@@ -554,10 +554,10 @@ describe("deleteTodoFile", () => {
     const workDir = join(dir, "work");
     mkdirSync(workDir);
 
-    expect(deleteTodoFile(workDir, "X-MISS-99")).toBe(false);
+    expect(deleteWorkItemFile(workDir, "X-MISS-99")).toBe(false);
   });
 
   it("returns false for nonexistent directory", () => {
-    expect(deleteTodoFile("/tmp/nw-does-not-exist", "X-X-1")).toBe(false);
+    expect(deleteWorkItemFile("/tmp/nw-does-not-exist", "X-X-1")).toBe(false);
   });
 });
