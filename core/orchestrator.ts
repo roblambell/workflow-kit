@@ -40,7 +40,7 @@ export type OrchestratorItemState =
   | "done"
   | "stuck";
 
-export type MergeStrategy = "auto" | "manual";
+export type MergeStrategy = "auto" | "manual" | "bypass";
 
 // ── Interfaces ───────────────────────────────────────────────────────
 
@@ -117,8 +117,10 @@ export interface OrchestratorItem {
 export interface OrchestratorConfig {
   /** Max concurrent items in launching/implementing/pr-open/ci-pending/ci-passed/ci-failed/review-pending states. */
   wipLimit: number;
-  /** When to auto-merge: auto (CI pass, respects review gate + CHANGES_REQUESTED), manual (never auto-merge). */
+  /** When to auto-merge: auto (CI pass, respects review gate + CHANGES_REQUESTED), manual (never auto-merge), bypass (admin override, skips branch protection human review). */
   mergeStrategy: MergeStrategy;
+  /** Whether the bypass merge strategy is available. Must be enabled via --dangerously-bypass CLI flag. */
+  bypassEnabled: boolean;
   /** Max CI failures before marking stuck. */
   maxCiRetries: number;
   /** Max worker crash retries before marking permanently stuck. */
@@ -224,6 +226,8 @@ export interface Action {
   statusDescription?: string;
   /** For post-review actions, the verdict data to format and post as a PR comment. */
   verdict?: import("./daemon.ts").ReviewVerdict;
+  /** For merge actions, whether to use admin override (gh pr merge --admin). */
+  admin?: boolean;
 }
 
 // ── Execution context and dependencies ──────────────────────────────
@@ -252,7 +256,7 @@ export interface OrchestratorDeps {
     worktreeDir: string,
     projectRoot: string,
   ) => boolean;
-  prMerge: (repoRoot: string, prNumber: number) => boolean;
+  prMerge: (repoRoot: string, prNumber: number, options?: { admin?: boolean }) => boolean;
   prComment: (repoRoot: string, prNumber: number, body: string) => boolean;
   sendMessage: (workspaceRef: string, message: string) => boolean;
   closeWorkspace: (workspaceRef: string) => boolean;
@@ -373,6 +377,7 @@ export interface ActionResult {
 export const DEFAULT_CONFIG: OrchestratorConfig = {
   wipLimit: 4,
   mergeStrategy: "auto",
+  bypassEnabled: false,
   maxCiRetries: 2,
   maxRetries: 1,
   launchTimeoutMs: 30 * 60 * 1000,   // 30 minutes
@@ -511,6 +516,19 @@ export class Orchestrator {
   /** Get the effective WIP limit (memory-adjusted when set, otherwise configured). */
   get effectiveWipLimit(): number {
     return this._effectiveWipLimit ?? this.config.wipLimit;
+  }
+
+  /**
+   * Change the merge strategy at runtime.
+   * "bypass" is only allowed when config.bypassEnabled is true (set via --dangerously-bypass).
+   * Forward-only: existing items keep their current state; only subsequent evaluateMerge calls
+   * are affected by the new strategy.
+   */
+  setMergeStrategy(strategy: MergeStrategy): void {
+    if (strategy === "bypass" && !this.config.bypassEnabled) {
+      throw new Error('Cannot set merge strategy to "bypass" without --dangerously-bypass flag');
+    }
+    (this.config as { mergeStrategy: MergeStrategy }).mergeStrategy = strategy;
   }
 
   /** Add a TODO item to orchestration. Starts in 'queued' state. */
@@ -1399,6 +1417,25 @@ export class Orchestrator {
           this.transition(item, "review-pending", eventTime);
         }
         break;
+
+      case "bypass":
+        // Admin override merge — skips branch protection human review requirement.
+        // CI and AI review still run (we only get here after ci-passed + review gate).
+        // Guard: never bypass when a reviewer has explicitly requested changes
+        if (snap?.reviewDecision === "CHANGES_REQUESTED") {
+          if (item.state !== "review-pending") {
+            this.transition(item, "review-pending", eventTime);
+          }
+          break;
+        }
+        this.transition(item, "merging", eventTime);
+        actions.push({
+          type: "merge",
+          itemId: item.id,
+          prNumber: item.prNumber,
+          admin: true,
+        });
+        break;
     }
 
     return actions;
@@ -1591,7 +1628,7 @@ export class Orchestrator {
     }
 
     const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
-    const merged = deps.prMerge(repoRoot, prNum);
+    const merged = deps.prMerge(repoRoot, prNum, { admin: action.admin });
     if (!merged) {
       // Check if the failure is due to merge conflicts (another PR merged to main while CI ran).
       // If conflicting, rebase and re-enter CI instead of blindly retrying the same failing merge.

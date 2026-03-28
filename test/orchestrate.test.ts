@@ -3057,6 +3057,18 @@ describe("parseWatchArgs", () => {
     expect(daemonNoWatch.daemonMode).toBe(true);
     expect(daemonNoWatch.watchMode).toBe(false);
   });
+
+  it("--dangerously-bypass sets bypassEnabled and merge strategy to bypass", () => {
+    const result = parseWatchArgs(["--items", "A-1", "--dangerously-bypass"]);
+    expect(result.bypassEnabled).toBe(true);
+    expect(result.mergeStrategy).toBe("bypass");
+  });
+
+  it("defaults bypassEnabled to false when --dangerously-bypass not passed", () => {
+    const result = parseWatchArgs(["--items", "A-1"]);
+    expect(result.bypassEnabled).toBe(false);
+    expect(result.mergeStrategy).toBe("auto");
+  });
 });
 
 // ── validateItemIds ────────────────────────────────────────────────────

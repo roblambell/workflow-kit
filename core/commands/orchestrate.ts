@@ -1828,6 +1828,7 @@ export interface ParsedWatchArgs {
   crewPort: number;
   crewUrl?: string;
   crewName?: string;
+  bypassEnabled: boolean;
 }
 
 export function parseWatchArgs(args: string[]): ParsedWatchArgs {
@@ -1855,6 +1856,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   let crewPort = 0;
   let crewUrl: string | undefined;
   let crewName: string | undefined;
+  let bypassEnabled = false;
 
   let i = 0;
   while (i < args.length) {
@@ -1973,6 +1975,11 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         crewName = args[i + 1];
         i += 2;
         break;
+      case "--dangerously-bypass":
+        bypassEnabled = true;
+        mergeStrategy = "bypass";
+        i += 1;
+        break;
       default:
         throw new Error(`Unknown option: ${args[i]}`);
     }
@@ -1989,6 +1996,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
     reviewEnabled, reviewWipLimit, reviewAutoFix, reviewExternal,
     verifyMain, watchMode, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewCode, crewCreate, crewPort, crewUrl, crewName,
+    bypassEnabled,
   };
 }
 
@@ -2020,6 +2028,7 @@ export async function cmdOrchestrate(
     reviewEnabled, reviewWipLimit, reviewAutoFix, reviewExternal,
     verifyMain, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewCreate, crewPort, crewName,
+    bypassEnabled,
   } = parsed;
   let watchMode = parsed.watchMode;
   let crewCode = parsed.crewCode;
@@ -2174,6 +2183,7 @@ export async function cmdOrchestrate(
   const orch = new Orchestrator({
     wipLimit,
     mergeStrategy,
+    bypassEnabled,
     reviewEnabled,
     verifyMain,
     ...(reviewWipLimit !== undefined ? { reviewWipLimit } : {}),
@@ -2265,7 +2275,7 @@ export async function cmdOrchestrate(
       cleanStaleBranchForReuse(item.id, item.title, targetRepo);
     },
     cleanSingleWorktree,
-    prMerge: (repoRoot, prNumber) => prMerge(repoRoot, prNumber),
+    prMerge: (repoRoot, prNumber, options) => prMerge(repoRoot, prNumber, options),
     prComment: (repoRoot, prNumber, body) => prComment(repoRoot, prNumber, body),
     upsertOrchestratorComment: (repoRoot, prNumber, itemId, eventLine) =>
       upsertOrchestratorComment(repoRoot, prNumber, itemId, eventLine),

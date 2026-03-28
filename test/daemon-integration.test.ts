@@ -223,7 +223,7 @@ describe("Daemon lifecycle: single-item flow", () => {
     const mergeAction = actions.find((a) => a.type === "merge")!;
     orch.executeAction(mergeAction, defaultCtx, deps);
     expect(orch.getItem("LIFE-1")!.state).toBe("merged");
-    expect(deps.prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 42);
+    expect(deps.prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 42, { admin: undefined });
 
     // Phase 6: merged → done on next poll
     actions = orch.processTransitions(
@@ -639,7 +639,7 @@ describe("Daemon lifecycle: cleanup after merge", () => {
     // because executeMerge already handled the state transition.
     // The clean action comes from the state machine detecting prState: "merged"
     // in the snapshot. Let's verify the merge action execution called the deps.
-    expect(deps.prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 60);
+    expect(deps.prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 60, { admin: undefined });
     expect(deps.fetchOrigin).toHaveBeenCalled();
     expect(deps.ffMerge).toHaveBeenCalled();
   });

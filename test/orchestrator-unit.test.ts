@@ -323,6 +323,36 @@ describe("evaluateMerge", () => {
     expect(actions.some((a) => a.type === "merge")).toBe(true);
   });
 
+  it("bypass strategy: merges with admin override after CI passes", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "bypass", bypassEnabled: true });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "ci-passed");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("merging");
+    const mergeAction = actions.find((a) => a.type === "merge" && a.prNumber === 42);
+    expect(mergeAction).toBeDefined();
+    expect(mergeAction!.admin).toBe(true);
+  });
+
+  it("bypass strategy: blocks merge when CHANGES_REQUESTED", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "bypass", bypassEnabled: true });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "ci-passed");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewDecision: "CHANGES_REQUESTED" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+    expect(actions.some((a) => a.type === "merge")).toBe(false);
+  });
+
   it("review gate: respects reviewWipLimit", () => {
     const orch = new Orchestrator({ mergeStrategy: "auto", reviewEnabled: true, reviewWipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
@@ -342,6 +372,69 @@ describe("evaluateMerge", () => {
     // H-1-2 should stay in ci-passed because review WIP is full
     expect(orch.getItem("H-1-2")!.state).toBe("ci-passed");
     expect(actions.filter((a) => a.type === "launch-review")).toHaveLength(0);
+  });
+});
+
+// ── setMergeStrategy ────────────────────────────────────────────────
+
+describe("setMergeStrategy", () => {
+  it("changes strategy for subsequent evaluateMerge calls", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "ci-passed");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    // Manual → review-pending
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+
+    // Switch to auto → should now merge
+    orch.setMergeStrategy("auto");
+    orch.setState("H-1-1", "ci-passed");
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("merging");
+    expect(actions.some((a) => a.type === "merge")).toBe(true);
+  });
+
+  it("rejects bypass when bypassEnabled is false", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto", bypassEnabled: false });
+    expect(() => orch.setMergeStrategy("bypass")).toThrow(
+      'Cannot set merge strategy to "bypass" without --dangerously-bypass flag',
+    );
+  });
+
+  it("allows bypass when bypassEnabled is true", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto", bypassEnabled: true });
+    orch.setMergeStrategy("bypass");
+    expect(orch.config.mergeStrategy).toBe("bypass");
+  });
+
+  it("is forward-only: existing items keep their state", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.addItem(makeWorkItem("H-1-2"));
+    orch.setState("H-1-1", "ci-passed");
+    orch.getItem("H-1-1")!.prNumber = 10;
+    orch.setState("H-1-2", "review-pending");
+    orch.getItem("H-1-2")!.prNumber = 20;
+
+    // Switch to auto — H-1-1 (ci-passed) will be affected, H-1-2 (review-pending) stays
+    orch.setMergeStrategy("auto");
+    const actions = orch.processTransitions(
+      snapshotWith([
+        { id: "H-1-1", ciStatus: "pass", prState: "open" },
+        { id: "H-1-2", ciStatus: "pass", prState: "open" },
+      ]),
+    );
+
+    // H-1-1 should merge (ci-passed + auto)
+    expect(orch.getItem("H-1-1")!.state).toBe("merging");
+    // H-1-2 was already in review-pending — stays there (not re-evaluated for merge in that state)
+    expect(orch.getItem("H-1-2")!.state).toBe("review-pending");
   });
 });
 
@@ -1665,6 +1758,67 @@ describe("executeMerge conflict-aware rebase", () => {
 
     expect(item.state).toBe("ci-passed");
     expect(item.mergeFailCount).toBe(1);
+  });
+});
+
+describe("executeMerge admin override", () => {
+  function makeMinimalDeps(overrides: Partial<OrchestratorDeps> = {}): OrchestratorDeps {
+    return {
+      launchSingleItem: () => ({ worktreePath: "/tmp/wt", workspaceRef: "workspace:1" }),
+      cleanSingleWorktree: () => true,
+      prMerge: () => true,
+      prComment: () => true,
+      sendMessage: () => true,
+      closeWorkspace: () => true,
+      fetchOrigin: () => {},
+      ffMerge: () => {},
+      ...overrides,
+    };
+  }
+
+  const ctx: ExecutionContext = {
+    projectRoot: "/tmp/proj",
+    worktreeDir: "/tmp/proj/.worktrees",
+    workDir: "/tmp/proj/.ninthwave/work",
+    aiTool: "claude",
+  };
+
+  it("passes admin flag to prMerge when action has admin: true", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "bypass", bypassEnabled: true });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "merging");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    let receivedOptions: { admin?: boolean } | undefined;
+    const deps = makeMinimalDeps({
+      prMerge: (_repoRoot, _prNumber, options) => {
+        receivedOptions = options;
+        return true;
+      },
+    });
+
+    orch.executeAction({ type: "merge", itemId: "H-1-1", prNumber: 42, admin: true }, ctx, deps);
+
+    expect(receivedOptions).toEqual({ admin: true });
+  });
+
+  it("does not pass admin flag when action has no admin field", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "merging");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    let receivedOptions: { admin?: boolean } | undefined;
+    const deps = makeMinimalDeps({
+      prMerge: (_repoRoot, _prNumber, options) => {
+        receivedOptions = options;
+        return true;
+      },
+    });
+
+    orch.executeAction({ type: "merge", itemId: "H-1-1", prNumber: 42 }, ctx, deps);
+
+    expect(receivedOptions).toEqual({ admin: undefined });
   });
 });
 

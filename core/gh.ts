@@ -111,15 +111,20 @@ export function getRepoOwner(repoRoot: string): string {
 export function prMerge(
   repoRoot: string,
   prNumber: number,
-  method: "squash" | "merge" | "rebase" = "squash",
+  options: { method?: "squash" | "merge" | "rebase"; admin?: boolean } = {},
 ): boolean {
-  const result = ghInRepo(repoRoot, [
+  const { method = "squash", admin = false } = options;
+  const args = [
     "pr",
     "merge",
     String(prNumber),
     `--${method}`,
     "--delete-branch",
-  ]);
+  ];
+  if (admin) {
+    args.push("--admin");
+  }
+  const result = ghInRepo(repoRoot, args);
   return result.exitCode === 0;
 }
 

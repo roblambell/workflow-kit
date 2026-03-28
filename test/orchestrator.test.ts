@@ -924,7 +924,7 @@ describe("Orchestrator", () => {
       );
 
       expect(result.success).toBe(true);
-      expect(deps.prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 42);
+      expect(deps.prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 42, { admin: undefined });
       expect(deps.prComment).toHaveBeenCalledWith(
         defaultCtx.projectRoot,
         42,
@@ -4971,7 +4971,7 @@ describe("Orchestrator", () => {
       );
 
       // prMerge should be called with target repo, not hub
-      expect(deps.prMerge).toHaveBeenCalledWith("/path/to/target-repo", 42);
+      expect(deps.prMerge).toHaveBeenCalledWith("/path/to/target-repo", 42, { admin: undefined });
       // prComment should also use target repo
       expect(deps.prComment).toHaveBeenCalledWith(
         "/path/to/target-repo",
@@ -4995,7 +4995,7 @@ describe("Orchestrator", () => {
         deps,
       );
 
-      expect(deps.prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 43);
+      expect(deps.prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 43, { admin: undefined });
     });
 
     it("executeClean uses target repo worktree dir for cross-repo items", () => {

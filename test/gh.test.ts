@@ -55,7 +55,7 @@ describe("prMerge", () => {
   it("supports merge method", () => {
     runSpy.mockReturnValue({ stdout: "", stderr: "", exitCode: 0 });
 
-    prMerge("/repo", 10, "merge");
+    prMerge("/repo", 10, { method: "merge" });
 
     expect(runSpy).toHaveBeenCalledWith(
       "gh",
@@ -67,11 +67,35 @@ describe("prMerge", () => {
   it("supports rebase method", () => {
     runSpy.mockReturnValue({ stdout: "", stderr: "", exitCode: 0 });
 
-    prMerge("/repo", 10, "rebase");
+    prMerge("/repo", 10, { method: "rebase" });
 
     expect(runSpy).toHaveBeenCalledWith(
       "gh",
       ["pr", "merge", "10", "--rebase", "--delete-branch"],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("passes --admin flag when admin option is true", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "", exitCode: 0 });
+
+    prMerge("/repo", 10, { admin: true });
+
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      ["pr", "merge", "10", "--squash", "--delete-branch", "--admin"],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("does not pass --admin flag when admin option is false", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "", exitCode: 0 });
+
+    prMerge("/repo", 10, { admin: false });
+
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      ["pr", "merge", "10", "--squash", "--delete-branch"],
       { cwd: "/repo" },
     );
   });
