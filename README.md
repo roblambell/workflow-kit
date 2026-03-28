@@ -40,23 +40,25 @@ brew install ninthwave-sh/tap/ninthwave
 ## Quick Start
 
 ```bash
-nw setup                    # initialize project
+nw init                     # initialize project
 nw list                     # see work items
-nw start <ID1> <ID2>       # launch parallel sessions
-nw orchestrate --daemon     # monitor CI, merge approved PRs
-nw status --watch           # live dashboard
+nw H-RR-1 H-RR-2           # launch items by ID
+nw watch                    # full pipeline: launch, monitor CI, merge
+nw status                   # live dashboard
 nw clean                    # remove merged worktrees
 ```
 
+Run `nw` with no arguments for an interactive guide that lets you pick items and choose how to run them.
+
 Each session is a full native instance of your AI coding tool in its own git worktree. Switch into any session via cmux to steer it mid-flight.
 
-One developer runs `nw setup`. The team gets everything via `git pull`.
+One developer runs `nw init`. The team gets everything via `git pull`.
 
 Run `nw doctor` to verify your setup.
 
 ## How It Works
 
-Todo files in `.ninthwave/todos/` define work items with priorities, dependencies, and optional repo targets. `nw start` creates a git worktree and AI coding session for each item. `nw orchestrate` runs a deterministic daemon that sequences batches, monitors CI, relays review feedback into worker sessions, auto-rebases branches, and merges approved PRs. Dependent items automatically target their dependency's branch, giving reviewers clean diffs.
+Todo files in `.ninthwave/todos/` define work items with priorities, dependencies, and optional repo targets. `nw <ID>` creates a git worktree and AI coding session for each item. `nw watch` runs the full pipeline: a deterministic daemon that sequences batches, monitors CI, relays review feedback into worker sessions, auto-rebases branches, and merges approved PRs. Dependent items automatically target their dependency's branch, giving reviewers clean diffs.
 
 The orchestrator is deterministic: no LLM calls in the event loop. Workers are the intelligent agents.
 
@@ -64,17 +66,18 @@ The orchestrator is deterministic: no LLM calls in the event loop. Workers are t
 
 | Command | |
 |---------|---|
-| `setup` | Initialize project |
-| `doctor` | Check prerequisites |
-| `list` | List and filter work items |
-| `start <IDs>` | Launch parallel AI sessions |
-| `orchestrate` | Run orchestration daemon |
-| `status --watch` | Live session dashboard |
-| `stop` | Stop orchestrator |
-| `retry <IDs>` | Re-queue stuck items |
-| `clean` | Remove merged worktrees |
+| `nw` | Interactive guide — pick items, choose how to run |
+| `nw <ID> [ID2...]` | Launch items by ID |
+| `nw init` | Initialize project |
+| `nw watch` | Full pipeline: launch, monitor CI, merge |
+| `nw status` | Live session dashboard |
+| `nw doctor` | Check prerequisites |
+| `nw list` | List and filter work items |
+| `nw stop` | Stop orchestrator |
+| `nw retry <IDs>` | Re-queue stuck items |
+| `nw clean` | Remove merged worktrees |
 
-Run `nw --help` for the full command reference.
+Run `nw --help` for the full command reference, or `nw <command> --help` for details on any command.
 
 ## Skills
 
@@ -92,7 +95,7 @@ Workers can use `/review`, `/design-review`, `/qa`, and `/plan-eng-review` durin
 
 ```bash
 brew upgrade ninthwave
-nw setup   # re-sync project-level files
+nw init   # re-sync project-level files
 ```
 
 Project config (`.ninthwave/`) is preserved.
