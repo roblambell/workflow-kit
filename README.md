@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero.png" alt="ninthwave: parallel AI coding sessions orchestrated from work items" width="800" />
+  <a href="https://ninthwave.sh"><img src="docs/assets/hero.gif" alt="ninthwave: orchestrator status, Claude Code worker, and test runner in parallel cmux sessions" width="800" /></a>
 </p>
 
 Ninthwave orchestrates parallel AI coding sessions from markdown work items.
