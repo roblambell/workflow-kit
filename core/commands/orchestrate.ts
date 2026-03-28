@@ -62,6 +62,8 @@ import {
   userStateDir,
   migrateRuntimeState,
   rotateLogs,
+  readLayoutPreference,
+  writeLayoutPreference,
   type DaemonIO,
   type DaemonState,
   type ExternalReviewItem,
@@ -1300,6 +1302,171 @@ function handleRunComplete(
   }
 }
 
+// ── Exit summary ────────────────────────────────────────────────────
+
+/**
+ * Format the compact end-of-run summary that prints to stdout after TUI exit.
+ * Persists in terminal scrollback since it's written after exitAltScreen().
+ *
+ * Format: "ninthwave: N merged, M stuck, K queued (Xm Ys) / Cost: $X.XX (N PRs) | Lead time: p50 Xm, p95 Ym"
+ */
+export function formatExitSummary(
+  allItems: OrchestratorItem[],
+  runStartTime: string,
+  costData?: Map<string, CostSummary>,
+): string {
+  const merged = allItems.filter((i) => i.state === "done").length;
+  const stuck = allItems.filter((i) => i.state === "stuck").length;
+  const queued = allItems.filter((i) => i.state === "queued" || i.state === "ready").length;
+
+  // Duration
+  const elapsed = Math.max(0, Date.now() - new Date(runStartTime).getTime());
+  const minutes = Math.floor(elapsed / 60_000);
+  const seconds = Math.floor((elapsed % 60_000) / 1000);
+  const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+  let line = `ninthwave: ${merged} merged, ${stuck} stuck, ${queued} queued (${durationStr})`;
+
+  // Cost
+  if (costData && costData.size > 0) {
+    const costItems = [...costData.values()].filter((c) => c.costUsd != null);
+    if (costItems.length > 0) {
+      const totalCost = costItems.reduce((sum, c) => sum + c.costUsd!, 0);
+      const prCount = merged;
+      line += ` / Cost: $${totalCost.toFixed(2)}`;
+      if (prCount > 0) line += ` (${prCount} PRs)`;
+    }
+  }
+
+  // Lead time (time from start to done for each completed item)
+  const leadTimes = allItems
+    .filter((i) => i.state === "done" && i.startedAt && i.endedAt)
+    .map((i) => new Date(i.endedAt!).getTime() - new Date(i.startedAt!).getTime())
+    .filter((ms) => ms > 0)
+    .sort((a, b) => a - b);
+
+  if (leadTimes.length > 0) {
+    const p50Idx = Math.max(0, Math.ceil(0.5 * leadTimes.length) - 1);
+    const p95Idx = Math.max(0, Math.ceil(0.95 * leadTimes.length) - 1);
+    const p50m = Math.round(leadTimes[p50Idx]! / 60_000);
+    const p95m = Math.round(leadTimes[p95Idx]! / 60_000);
+    line += ` | Lead time: p50 ${p50m}m, p95 ${p95m}m`;
+  }
+
+  return line;
+}
+
+// ── Completion prompt ───────────────────────────────────────────────
+
+/**
+ * Action chosen at the post-completion prompt.
+ * - "run-more": re-enter interactive selection flow
+ * - "clean": clean up worktrees for done items
+ * - "quit": exit the TUI
+ */
+export type CompletionAction = "run-more" | "clean" | "quit";
+
+/**
+ * Format the completion banner shown when all items reach terminal state.
+ * Returns the banner text as an array of lines.
+ */
+export function formatCompletionBanner(
+  allItems: OrchestratorItem[],
+  runStartTime: string,
+  costData?: Map<string, CostSummary>,
+): string[] {
+  const merged = allItems.filter((i) => i.state === "done").length;
+  const stuck = allItems.filter((i) => i.state === "stuck").length;
+  const total = allItems.length;
+
+  const elapsed = Math.max(0, Date.now() - new Date(runStartTime).getTime());
+  const minutes = Math.floor(elapsed / 60_000);
+  const seconds = Math.floor((elapsed % 60_000) / 1000);
+  const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+  const lines: string[] = [];
+  lines.push("");
+  lines.push(`  All ${total} items complete. ${merged} merged, ${stuck} stuck. (${durationStr})`);
+
+  // Inline analytics
+  if (costData && costData.size > 0) {
+    const costItems = [...costData.values()].filter((c) => c.costUsd != null);
+    if (costItems.length > 0) {
+      const totalCost = costItems.reduce((sum, c) => sum + c.costUsd!, 0);
+      lines.push(`  Cost: $${totalCost.toFixed(2)} across ${costItems.length} workers`);
+    }
+  }
+
+  const leadTimes = allItems
+    .filter((i) => i.state === "done" && i.startedAt && i.endedAt)
+    .map((i) => new Date(i.endedAt!).getTime() - new Date(i.startedAt!).getTime())
+    .filter((ms) => ms > 0)
+    .sort((a, b) => a - b);
+  if (leadTimes.length > 0) {
+    const p50Idx = Math.max(0, Math.ceil(0.5 * leadTimes.length) - 1);
+    const p95Idx = Math.max(0, Math.ceil(0.95 * leadTimes.length) - 1);
+    const p50m = Math.round(leadTimes[p50Idx]! / 60_000);
+    const p95m = Math.round(leadTimes[p95Idx]! / 60_000);
+    lines.push(`  Lead time: p50 ${p50m}m, p95 ${p95m}m`);
+  }
+
+  lines.push("");
+  lines.push("  [r] Run more  [c] Clean up  [q] Quit");
+  lines.push("");
+  return lines;
+}
+
+/**
+ * Wait for a completion prompt keypress (r, c, q, or Ctrl-C).
+ * Returns the chosen action. Resolves when a valid key is pressed.
+ *
+ * @param stdin - Readable stream (must already be in raw mode)
+ * @param signal - Optional abort signal (e.g., from Ctrl-C handler)
+ */
+export function waitForCompletionKey(
+  stdin: NodeJS.ReadStream,
+  signal?: AbortSignal,
+): Promise<CompletionAction> {
+  return new Promise<CompletionAction>((resolve) => {
+    if (signal?.aborted) {
+      resolve("quit");
+      return;
+    }
+
+    const onAbort = () => {
+      cleanup();
+      resolve("quit");
+    };
+
+    const onData = (key: string) => {
+      switch (key) {
+        case "r":
+          cleanup();
+          resolve("run-more");
+          break;
+        case "c":
+          cleanup();
+          resolve("clean");
+          break;
+        case "q":
+        case "\x03": // Ctrl-C
+          cleanup();
+          resolve("quit");
+          break;
+        // Ignore other keys
+      }
+    };
+
+    function cleanup() {
+      stdin.removeListener("data", onData);
+      signal?.removeEventListener("abort", onAbort);
+    }
+
+    stdin.on("data", onData);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
  * Execute a single orchestrator action with logging, cost capture, and reconcile.
  * Extracted from orchestrateLoop for readability.
@@ -1452,6 +1619,12 @@ export interface OrchestrateLoopDeps {
   crewBroker?: CrewBroker;
   /** Schedule dependencies. When present, scheduled task processing is active. */
   scheduleDeps?: ScheduleLoopDeps;
+  /**
+   * Show the post-completion prompt and wait for user choice.
+   * Returns the chosen action (run-more, clean, quit).
+   * Only called when tuiMode is true and watch mode is false.
+   */
+  completionPrompt?: (allItems: OrchestratorItem[], runStartTime: string, costData: Map<string, CostSummary>) => Promise<CompletionAction>;
 }
 
 /** Dependencies for scheduled task processing within the orchestrate loop. */
@@ -1495,6 +1668,14 @@ export interface OrchestrateLoopConfig {
   watch?: boolean;
   /** Polling interval (milliseconds) for watch mode. Default: 30000 (30 seconds). */
   watchIntervalMs?: number;
+  /** When true, TUI is active -- enables the post-completion prompt. */
+  tuiMode?: boolean;
+}
+
+/** Result from the orchestrate loop indicating why it exited. */
+export interface OrchestrateLoopResult {
+  /** The completion action chosen by the user, if any. Only set when tuiMode is true. */
+  completionAction?: CompletionAction;
 }
 
 /**
@@ -1507,7 +1688,7 @@ export async function orchestrateLoop(
   deps: OrchestrateLoopDeps,
   config: OrchestrateLoopConfig = {},
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<OrchestrateLoopResult> {
   const { log } = deps;
 
   // Wire onTransition callback for structured transition logging.
@@ -1640,12 +1821,12 @@ export async function orchestrateLoop(
           }
           if (signal?.aborted) {
             log({ ts: new Date().toISOString(), level: "info", event: "shutdown", reason: "watch_aborted" });
-            return;
+            return {};
           }
           await deps.sleep(watchInterval);
           if (signal?.aborted) {
             log({ ts: new Date().toISOString(), level: "info", event: "shutdown", reason: "watch_aborted" });
-            return;
+            return {};
           }
 
           // Re-scan for work item files
@@ -1673,6 +1854,40 @@ export async function orchestrateLoop(
         }
         // maxIterations exceeded in watch loop -- fall through to break
         break;
+      }
+
+      // TUI mode (non-watch): show completion prompt
+      if (config.tuiMode && deps.completionPrompt) {
+        const action = await deps.completionPrompt(allItems, runStartTime, costData);
+        log({
+          ts: new Date().toISOString(),
+          level: "info",
+          event: "completion_prompt",
+          action,
+        });
+
+        if (action === "run-more") {
+          return { completionAction: "run-more" };
+        }
+        if (action === "clean") {
+          // Clean worktrees for done items
+          for (const item of allItems) {
+            if (item.state !== "done") continue;
+            try {
+              if (item.workspaceRef) deps.actionDeps.closeWorkspace(item.workspaceRef);
+              deps.actionDeps.cleanSingleWorktree(item.id, ctx.worktreeDir, ctx.projectRoot);
+            } catch { /* best-effort */ }
+          }
+          log({
+            ts: new Date().toISOString(),
+            level: "info",
+            event: "completion_cleanup",
+            cleanedIds: allItems.filter((i) => i.state === "done").map((i) => i.id),
+          });
+          return { completionAction: "clean" };
+        }
+        // action === "quit"
+        return { completionAction: "quit" };
       }
 
       break;
@@ -1880,6 +2095,8 @@ export async function orchestrateLoop(
 
     await deps.sleep(interval);
   }
+
+  return {};
 }
 
 // ── Scheduled task processing ────────────────────────────────────────
@@ -2136,6 +2353,8 @@ export interface TuiState {
   logLevelFilter: LogLevelFilter;
   /** Called when the user cycles the merge strategy via Shift+Tab. */
   onStrategyChange?: (strategy: MergeStrategy) => void;
+  /** Called when the user cycles panel mode via Tab (for preference persistence). */
+  onPanelModeChange?: (mode: PanelMode) => void;
   /** Called after any key that should trigger an immediate re-render. */
   onUpdate?: () => void;
 }
@@ -2251,6 +2470,7 @@ export function setupKeyboardShortcuts(
         const currentIdx = modes.indexOf(tuiState.panelMode);
         const nextIdx = (currentIdx + 1) % modes.length;
         tuiState.panelMode = modes[nextIdx]!;
+        tuiState.onPanelModeChange?.(tuiState.panelMode);
         break;
       }
       case "j": // Scroll log panel down
@@ -3033,6 +3253,9 @@ export async function cmdOrchestrate(
   writeStateFile(projectRoot, initialState);
 
   // TUI state: scroll offset and view option toggles (shared with keyboard handler)
+  // Read persisted layout preference (defaults to "split" if missing/corrupt)
+  const savedPanelMode = tuiMode ? readLayoutPreference(projectRoot) : "split";
+
   let lastTuiItems: OrchestratorItem[] = orch.getAllItems();
   const tuiState: TuiState = {
     scrollOffset: 0,
@@ -3046,12 +3269,15 @@ export async function cmdOrchestrate(
     ctrlCPending: false,
     ctrlCTimestamp: 0,
     showHelp: false,
-    panelMode: "split",
+    panelMode: savedPanelMode,
     logBuffer,
     logScrollOffset: 0,
     logLevelFilter: "all",
     onStrategyChange: (strategy) => {
       orch.setMergeStrategy(strategy);
+    },
+    onPanelModeChange: (mode) => {
+      writeLayoutPreference(projectRoot, mode);
     },
     // Immediate re-render on keypress (doesn't wait for poll cycle)
     onUpdate: () => {
@@ -3194,6 +3420,33 @@ export async function cmdOrchestrate(
     } } : {}),
     ...(crewBroker ? { crewBroker } : {}),
     ...(scheduleLoopDeps ? { scheduleDeps: scheduleLoopDeps } : {}),
+    // Completion prompt for TUI mode: render banner + wait for keypress
+    ...(tuiMode ? {
+      completionPrompt: async (allItems, runStartTime, costData) => {
+        // Remove the orchestrate keyboard handler so keys are routed to the prompt
+        cleanupKeyboard();
+        // Render the completion banner on screen
+        const bannerLines = formatCompletionBanner(allItems, runStartTime, costData);
+        const write = (s: string) => process.stdout.write(s);
+        write("\x1B[H"); // cursor home
+        // Re-render the current TUI frame first (to show final state)
+        renderTuiPanelFrame(allItems, wipLimit, tuiState, write, resolvedCrewName);
+        // Overlay the banner at the bottom
+        const termRows = getTerminalHeight();
+        const startRow = Math.max(1, termRows - bannerLines.length);
+        write(`\x1B[${startRow};1H`);
+        for (const line of bannerLines) {
+          write(line + "\x1B[K\n");
+        }
+        // Wait for completion key
+        const action = await waitForCompletionKey(process.stdin, abortController.signal);
+        // Restore the keyboard handler if we're continuing (run-more)
+        if (action === "run-more") {
+          cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
+        }
+        return action;
+      },
+    } : {}),
   };
 
   // Resolve repo URL for PR URL construction in completion event
@@ -3212,6 +3465,7 @@ export async function cmdOrchestrate(
     ...(reviewExternalEnabled ? { reviewExternal: true } : {}),
     ...(watchMode ? { watch: true } : {}),
     ...(watchIntervalSecs !== undefined ? { watchIntervalMs: watchIntervalSecs * 1000 } : {}),
+    ...(tuiMode ? { tuiMode: true } : {}),
   };
 
   // Set up keyboard shortcuts in TUI mode (q, Ctrl-C, m, d, ?, ↑/↓)
@@ -3236,13 +3490,60 @@ export async function cmdOrchestrate(
   }
 
   try {
-    await orchestrateLoop(
-      orch,
-      ctx,
-      loopDeps,
-      loopConfig,
-      abortController.signal,
-    );
+    // Run-more loop: re-enter interactive flow when the user picks [r] at the completion prompt
+    let keepRunning = true;
+    while (keepRunning) {
+      const result = await orchestrateLoop(
+        orch,
+        ctx,
+        loopDeps,
+        loopConfig,
+        abortController.signal,
+      );
+
+      if (result.completionAction === "run-more" && tuiMode) {
+        // Temporarily leave alt screen for interactive selection
+        process.stdout.write(ALT_SCREEN_OFF);
+        cleanupKeyboard();
+
+        // Re-parse work items and re-enter interactive selection
+        const freshItems = parseWorkItems(workDir, worktreeDir, projectRoot);
+        const interactiveResult = await runInteractiveFlow(freshItems, wipLimit);
+        if (!interactiveResult) {
+          // User cancelled selection -- exit
+          process.stdout.write(ALT_SCREEN_ON);
+          cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
+          break;
+        }
+
+        // Add newly selected items to the orchestrator
+        const freshMap = new Map<string, WorkItem>();
+        for (const item of freshItems) freshMap.set(item.id, item);
+        for (const id of interactiveResult.itemIds) {
+          const wi = freshMap.get(id);
+          if (wi && !orch.getItem(id)) {
+            orch.addItem(wi);
+          }
+        }
+        wipLimit = interactiveResult.wipLimit;
+        mergeStrategy = interactiveResult.mergeStrategy;
+        orch.setMergeStrategy(mergeStrategy);
+
+        // Re-enter alt screen and restore keyboard
+        process.stdout.write(ALT_SCREEN_ON);
+        cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
+
+        log({
+          ts: new Date().toISOString(),
+          level: "info",
+          event: "run_more_restart",
+          newItems: interactiveResult.itemIds,
+        });
+        continue; // Restart the orchestrate loop
+      }
+
+      keepRunning = false;
+    }
   } finally {
     // Close workspaces for terminal items only (done, stuck, merged).
     // In-flight workers (implementing, ci-pending, etc.) may still be actively
@@ -3273,6 +3574,15 @@ export async function cmdOrchestrate(
     // Leave alternate screen buffer before restoring terminal state
     exitAltScreen();
     process.removeListener("exit", exitAltScreen);
+
+    // Print exit summary to stdout (persists in terminal scrollback)
+    if (tuiMode) {
+      const allItems = orch.getAllItems();
+      if (allItems.length > 0) {
+        const summary = formatExitSummary(allItems, daemonStartedAt);
+        console.log(summary);
+      }
+    }
 
     // Restore terminal state (disable raw mode)
     cleanupKeyboard();

@@ -103,6 +103,48 @@ export function logFilePath(projectRoot: string): string {
   return join(userStateDir(projectRoot), "orchestrator.log");
 }
 
+export function preferencesFilePath(projectRoot: string): string {
+  return join(userStateDir(projectRoot), "preferences.json");
+}
+
+// ── Layout preference persistence ───────────────────────────────────
+
+export type LayoutPreference = "split" | "logs-only" | "status-only";
+
+/**
+ * Read the persisted layout preference for a project.
+ * Returns "split" (the default) when the file is missing or contains invalid JSON.
+ */
+export function readLayoutPreference(projectRoot: string): LayoutPreference {
+  const filePath = preferencesFilePath(projectRoot);
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    const mode = parsed?.panelMode;
+    if (mode === "split" || mode === "logs-only" || mode === "status-only") {
+      return mode;
+    }
+  } catch {
+    // Missing file or corrupt JSON -- fall through to default
+  }
+  return "split";
+}
+
+/**
+ * Write the layout preference for a project.
+ * Creates the state directory if needed.
+ */
+export function writeLayoutPreference(projectRoot: string, mode: LayoutPreference): void {
+  const filePath = preferencesFilePath(projectRoot);
+  const dir = userStateDir(projectRoot);
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(filePath, JSON.stringify({ panelMode: mode }) + "\n");
+  } catch {
+    // Non-fatal -- preference write failure shouldn't crash the TUI
+  }
+}
+
 // ── Injectable I/O ───────────────────────────────────────────────────
 
 export interface DaemonIO {

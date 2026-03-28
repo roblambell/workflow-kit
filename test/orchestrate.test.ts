@@ -18,6 +18,9 @@ import {
   validateItemIds,
   pushLogBuffer,
   filterLogsByLevel,
+  formatExitSummary,
+  formatCompletionBanner,
+  waitForCompletionKey,
   LOG_BUFFER_MAX,
   type LogEntry,
   type LogLevelFilter,
@@ -25,6 +28,7 @@ import {
   type CleanOrphanedDeps,
   type ParsedWatchArgs,
   type TuiState,
+  type CompletionAction,
 } from "../core/commands/orchestrate.ts";
 import type { LogEntry as PanelLogEntry } from "../core/status-render.ts";
 import { MIN_SPLIT_ROWS } from "../core/status-render.ts";
@@ -38,7 +42,7 @@ import {
 } from "../core/orchestrator.ts";
 import type { WorkItem } from "../core/types.ts";
 import type { Multiplexer } from "../core/mux.ts";
-import { pidFilePath, logFilePath, type DaemonState } from "../core/daemon.ts";
+import { pidFilePath, logFilePath, readLayoutPreference, writeLayoutPreference, preferencesFilePath, userStateDir, type DaemonState } from "../core/daemon.ts";
 import type { CrewBroker } from "../core/crew.ts";
 import { shouldEnterInteractive } from "../core/interactive.ts";
 
@@ -3896,6 +3900,469 @@ describe("log level filter cycling (l key)", () => {
 });
 
 // ── Integration: log closure populates both file and buffer ──────────
+
+// ── Post-completion prompt ──────────────────────────────────────────
+
+describe("formatExitSummary", () => {
+  it("formats compact summary with counts and duration", () => {
+    const startTime = new Date(Date.now() - 125_000).toISOString(); // 2m 5s ago
+    const items: OrchestratorItem[] = [
+      { ...makeOrchestratorItem("E-1"), state: "done" as any },
+      { ...makeOrchestratorItem("E-2"), state: "stuck" as any },
+      { ...makeOrchestratorItem("E-3"), state: "queued" as any },
+    ];
+    const result = formatExitSummary(items, startTime);
+    expect(result).toContain("ninthwave:");
+    expect(result).toContain("1 merged");
+    expect(result).toContain("1 stuck");
+    expect(result).toContain("1 queued");
+    expect(result).toMatch(/2m \d+s/);
+  });
+
+  it("includes cost when costData is provided", () => {
+    const startTime = new Date(Date.now() - 60_000).toISOString();
+    const items: OrchestratorItem[] = [
+      { ...makeOrchestratorItem("E-1"), state: "done" as any },
+    ];
+    const costData = new Map([["E-1", { tokensUsed: 50000, costUsd: 1.23 }]]);
+    const result = formatExitSummary(items, startTime, costData);
+    expect(result).toContain("Cost: $1.23");
+    expect(result).toContain("1 PRs");
+  });
+
+  it("includes lead time percentiles when timing data exists", () => {
+    const now = Date.now();
+    const items: OrchestratorItem[] = [
+      {
+        ...makeOrchestratorItem("E-1"),
+        state: "done" as any,
+        startedAt: new Date(now - 300_000).toISOString(),
+        endedAt: new Date(now - 60_000).toISOString(),
+      },
+    ];
+    const result = formatExitSummary(items, new Date(now - 360_000).toISOString());
+    expect(result).toContain("Lead time: p50");
+  });
+
+  it("handles 0 items gracefully", () => {
+    const result = formatExitSummary([], new Date().toISOString());
+    expect(result).toContain("0 merged, 0 stuck, 0 queued");
+  });
+});
+
+describe("formatCompletionBanner", () => {
+  it("shows item counts, duration, and prompt keys", () => {
+    const items: OrchestratorItem[] = [
+      { ...makeOrchestratorItem("B-1"), state: "done" as any },
+      { ...makeOrchestratorItem("B-2"), state: "done" as any },
+      { ...makeOrchestratorItem("B-3"), state: "stuck" as any },
+    ];
+    const lines = formatCompletionBanner(items, new Date(Date.now() - 60_000).toISOString());
+    const text = lines.join("\n");
+    expect(text).toContain("All 3 items complete");
+    expect(text).toContain("2 merged, 1 stuck");
+    expect(text).toContain("[r] Run more");
+    expect(text).toContain("[c] Clean up");
+    expect(text).toContain("[q] Quit");
+  });
+
+  it("includes cost when costData is provided", () => {
+    const items: OrchestratorItem[] = [
+      { ...makeOrchestratorItem("B-1"), state: "done" as any },
+    ];
+    const costData = new Map([["B-1", { tokensUsed: 10000, costUsd: 0.50 }]]);
+    const lines = formatCompletionBanner(items, new Date().toISOString(), costData);
+    const text = lines.join("\n");
+    expect(text).toContain("Cost: $0.50");
+  });
+});
+
+describe("waitForCompletionKey", () => {
+  it("resolves with quit when signal is already aborted", async () => {
+    const ac = new AbortController();
+    ac.abort();
+    // Use a minimal mock stdin
+    const mockStdin = { on: vi.fn(), removeListener: vi.fn() } as unknown as NodeJS.ReadStream;
+    const result = await waitForCompletionKey(mockStdin, ac.signal);
+    expect(result).toBe("quit");
+  });
+
+  it("resolves with run-more on r key", async () => {
+    const mockStdin = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    } as unknown as NodeJS.ReadStream;
+    const promise = waitForCompletionKey(mockStdin);
+    // Simulate pressing 'r'
+    const onData = (mockStdin.on as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call: unknown[]) => call[0] === "data",
+    )![1] as (key: string) => void;
+    onData("r");
+    const result = await promise;
+    expect(result).toBe("run-more");
+  });
+
+  it("resolves with clean on c key", async () => {
+    const mockStdin = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    } as unknown as NodeJS.ReadStream;
+    const promise = waitForCompletionKey(mockStdin);
+    const onData = (mockStdin.on as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call: unknown[]) => call[0] === "data",
+    )![1] as (key: string) => void;
+    onData("c");
+    expect(await promise).toBe("clean");
+  });
+
+  it("resolves with quit on q key", async () => {
+    const mockStdin = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    } as unknown as NodeJS.ReadStream;
+    const promise = waitForCompletionKey(mockStdin);
+    const onData = (mockStdin.on as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call: unknown[]) => call[0] === "data",
+    )![1] as (key: string) => void;
+    onData("q");
+    expect(await promise).toBe("quit");
+  });
+
+  it("resolves with quit on Ctrl-C", async () => {
+    const mockStdin = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    } as unknown as NodeJS.ReadStream;
+    const promise = waitForCompletionKey(mockStdin);
+    const onData = (mockStdin.on as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call: unknown[]) => call[0] === "data",
+    )![1] as (key: string) => void;
+    onData("\x03"); // Ctrl-C
+    expect(await promise).toBe("quit");
+  });
+
+  it("ignores non-prompt keys", async () => {
+    const mockStdin = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    } as unknown as NodeJS.ReadStream;
+    const promise = waitForCompletionKey(mockStdin);
+    const onData = (mockStdin.on as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call: unknown[]) => call[0] === "data",
+    )![1] as (key: string) => void;
+    // Press invalid keys first
+    onData("x");
+    onData("z");
+    // Then press a valid key
+    onData("q");
+    expect(await promise).toBe("quit");
+  });
+});
+
+describe("post-completion prompt (orchestrateLoop)", () => {
+  it("shows prompt when all items are terminal and tuiMode is true (not watch)", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("P-1-1"));
+    orch.getItem("P-1-1")!.reviewCompleted = true;
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    let promptCalled = false;
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        cycle++;
+        switch (cycle) {
+          case 1: return { items: [], readyIds: ["P-1-1"] };
+          case 2: return { items: [{ id: "P-1-1", workerAlive: true }], readyIds: [] };
+          case 3: return { items: [{ id: "P-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }], readyIds: [] };
+          default: return { items: [], readyIds: [] };
+        }
+      },
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+      completionPrompt: async () => {
+        promptCalled = true;
+        return "quit";
+      },
+    };
+
+    const result = await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 200, tuiMode: true });
+    expect(promptCalled).toBe(true);
+    expect(result.completionAction).toBe("quit");
+    expect(logs.some((l) => l.event === "completion_prompt")).toBe(true);
+  });
+
+  it("does NOT show prompt in watch mode even with tuiMode", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("P-2-1"));
+    orch.getItem("P-2-1")!.reviewCompleted = true;
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    let promptCalled = false;
+    let scanCalls = 0;
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        cycle++;
+        switch (cycle) {
+          case 1: return { items: [], readyIds: ["P-2-1"] };
+          case 2: return { items: [{ id: "P-2-1", workerAlive: true }], readyIds: [] };
+          case 3: return { items: [{ id: "P-2-1", prNumber: 1, prState: "open", ciStatus: "pass" }], readyIds: [] };
+          default: return { items: [], readyIds: [] };
+        }
+      },
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps(),
+      completionPrompt: async () => {
+        promptCalled = true;
+        return "quit";
+      },
+      scanWorkItems: () => {
+        scanCalls++;
+        return [makeWorkItem("P-2-1")]; // No new items
+      },
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 200, tuiMode: true, watch: true });
+    // Watch mode takes precedence -- prompt should NOT be called
+    expect(promptCalled).toBe(false);
+    expect(logs.some((l) => l.event === "watch_mode_waiting")).toBe(true);
+  });
+
+  it("returns run-more when user picks r", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("P-3-1"));
+    orch.getItem("P-3-1")!.reviewCompleted = true;
+
+    let cycle = 0;
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        cycle++;
+        switch (cycle) {
+          case 1: return { items: [], readyIds: ["P-3-1"] };
+          case 2: return { items: [{ id: "P-3-1", workerAlive: true }], readyIds: [] };
+          case 3: return { items: [{ id: "P-3-1", prNumber: 1, prState: "open", ciStatus: "pass" }], readyIds: [] };
+          default: return { items: [], readyIds: [] };
+        }
+      },
+      sleep: () => Promise.resolve(),
+      log: () => {},
+      actionDeps: mockActionDeps(),
+      completionPrompt: async () => "run-more",
+    };
+
+    const result = await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 200, tuiMode: true });
+    expect(result.completionAction).toBe("run-more");
+  });
+
+  it("cleans done items when user picks c", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("P-4-1"));
+    orch.getItem("P-4-1")!.reviewCompleted = true;
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    const cleanCalls: string[] = [];
+    const closeCalls: string[] = [];
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        cycle++;
+        switch (cycle) {
+          case 1: return { items: [], readyIds: ["P-4-1"] };
+          case 2: return { items: [{ id: "P-4-1", workerAlive: true }], readyIds: [] };
+          case 3: return { items: [{ id: "P-4-1", prNumber: 1, prState: "open", ciStatus: "pass" }], readyIds: [] };
+          default: return { items: [], readyIds: [] };
+        }
+      },
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps({
+        cleanSingleWorktree: vi.fn((id) => { cleanCalls.push(id); return true; }),
+        closeWorkspace: vi.fn((ref) => { closeCalls.push(ref); return true; }),
+      }),
+      completionPrompt: async () => "clean",
+    };
+
+    const result = await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 200, tuiMode: true });
+    expect(result.completionAction).toBe("clean");
+    expect(logs.some((l) => l.event === "completion_cleanup")).toBe(true);
+    expect(cleanCalls).toContain("P-4-1");
+  });
+
+  it("all stuck items trigger completion prompt (no done items)", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto", maxRetries: 0 });
+    orch.addItem(makeWorkItem("P-5-1"));
+    // Directly set state to stuck to bypass the full lifecycle
+    const item = orch.getItem("P-5-1")!;
+    item.state = "stuck";
+    item.lastTransition = new Date().toISOString();
+
+    let promptCalled = false;
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        return { items: [], readyIds: [] };
+      },
+      sleep: () => Promise.resolve(),
+      log: () => {},
+      actionDeps: mockActionDeps(),
+      completionPrompt: async () => {
+        promptCalled = true;
+        return "quit";
+      },
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 200, tuiMode: true });
+    expect(promptCalled).toBe(true);
+  });
+
+  it("mix of done and stuck triggers completion prompt", async () => {
+    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("P-6-1"));
+    orch.addItem(makeWorkItem("P-6-2"));
+    // Set one item to done and another to stuck directly
+    const item1 = orch.getItem("P-6-1")!;
+    item1.state = "done";
+    item1.lastTransition = new Date().toISOString();
+    const item2 = orch.getItem("P-6-2")!;
+    item2.state = "stuck";
+    item2.lastTransition = new Date().toISOString();
+
+    let promptCalled = false;
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        return { items: [], readyIds: [] };
+      },
+      sleep: () => Promise.resolve(),
+      log: () => {},
+      actionDeps: mockActionDeps(),
+      completionPrompt: async () => {
+        promptCalled = true;
+        return "quit";
+      },
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 200, tuiMode: true });
+    expect(promptCalled).toBe(true);
+  });
+});
+
+// ── Persistent layout preferences ─────────────────────────────────────
+
+describe("persistent layout preferences", () => {
+  const tmpDir = join("/tmp", `nw-prefs-test-${process.pid}`);
+
+  it("readLayoutPreference returns split when file is missing", () => {
+    const result = readLayoutPreference("/nonexistent/project/root");
+    expect(result).toBe("split");
+  });
+
+  it("writeLayoutPreference + readLayoutPreference roundtrip", () => {
+    writeLayoutPreference(tmpDir, "logs-only");
+    const result = readLayoutPreference(tmpDir);
+    expect(result).toBe("logs-only");
+  });
+
+  it("readLayoutPreference returns split for corrupt JSON", () => {
+    const { mkdirSync, writeFileSync } = require("fs");
+    const dir = userStateDir(tmpDir + "-corrupt");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(preferencesFilePath(tmpDir + "-corrupt"), "not json!!!");
+    const result = readLayoutPreference(tmpDir + "-corrupt");
+    expect(result).toBe("split");
+  });
+
+  it("readLayoutPreference returns split for invalid mode value", () => {
+    const { mkdirSync, writeFileSync } = require("fs");
+    const dir = userStateDir(tmpDir + "-invalid");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(preferencesFilePath(tmpDir + "-invalid"), JSON.stringify({ panelMode: "banana" }));
+    const result = readLayoutPreference(tmpDir + "-invalid");
+    expect(result).toBe("split");
+  });
+
+  it("Tab key triggers onPanelModeChange callback", () => {
+    // Create a TuiState with the onPanelModeChange callback
+    const modeChanges: string[] = [];
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { showBlockerDetail: true },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 0,
+      logLevelFilter: "all",
+      onPanelModeChange: (mode) => { modeChanges.push(mode); },
+    };
+
+    const ac = new AbortController();
+    // Create a mock stdin
+    const listeners = new Map<string, Function>();
+    const mockStdin = {
+      isTTY: true,
+      setRawMode: vi.fn(),
+      resume: vi.fn(),
+      pause: vi.fn(),
+      setEncoding: vi.fn(),
+      on: vi.fn((event: string, fn: Function) => { listeners.set(event, fn); }),
+      removeListener: vi.fn(),
+    } as unknown as NodeJS.ReadStream;
+
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, mockStdin, tuiState);
+
+    // Simulate Tab key press
+    const dataHandler = listeners.get("data") as (key: string) => void;
+    expect(dataHandler).toBeDefined();
+    dataHandler("\t"); // Tab
+
+    expect(modeChanges.length).toBe(1);
+    // Default split -> logs-only (or depends on terminal height mock)
+    expect(["split", "logs-only", "status-only"]).toContain(modeChanges[0]);
+
+    cleanup();
+  });
+});
+
+// ── Helper for OrchestratorItem creation ─────────────────────────────
+
+function makeOrchestratorItem(id: string): OrchestratorItem {
+  return {
+    id,
+    workItem: makeWorkItem(id),
+    state: "queued",
+    lastTransition: new Date().toISOString(),
+    ciFailCount: 0,
+    retryCount: 0,
+    reviewCompleted: false,
+    reviewCount: 0,
+    failureReason: undefined,
+    prNumber: undefined,
+    workspaceRef: undefined,
+    resolvedRepoRoot: undefined,
+    startedAt: undefined,
+    endedAt: undefined,
+    exitCode: undefined,
+    stderrTail: undefined,
+    reviewWorkspaceRef: undefined,
+    reviewVerdictPath: undefined,
+    repairWorkspaceRef: undefined,
+    baseBranch: undefined,
+    detectionLatencyMs: undefined,
+    mergeCommitSha: undefined,
+    verifierWorktreePath: undefined,
+    verifierWorkspaceRef: undefined,
+  } as OrchestratorItem;
+}
 
 describe("log closure ring buffer integration", () => {
   it("mock log closure pushes entries to logBuffer and file", () => {
