@@ -79,6 +79,7 @@ import {
   clampScrollOffset,
   buildPanelLayout,
   renderPanelFrame,
+  formatItemDetail,
   MIN_FULLSCREEN_ROWS,
   MIN_SPLIT_ROWS,
   type StatusItem,
@@ -288,6 +289,21 @@ export function renderTuiPanelFrame(
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else {
     const filteredLogs = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
+
+    // Generate detail lines if an item is selected for detail view
+    let detailLines: string[] | undefined;
+    if (tuiState.detailItemId) {
+      const detailStatusItem = statusItems.find((i) => i.id === tuiState.detailItemId);
+      if (detailStatusItem) {
+        detailLines = formatItemDetail(detailStatusItem, {
+          repoUrl: tuiState.viewOptions.repoUrl,
+        });
+      } else {
+        // Item no longer exists -- clear detail view
+        tuiState.detailItemId = null;
+      }
+    }
+
     const panelLayout = buildPanelLayout(
       tuiState.panelMode,
       statusItems,
@@ -299,6 +315,8 @@ export function renderTuiPanelFrame(
         viewOptions: tuiState.viewOptions,
         logScrollOffset: tuiState.logScrollOffset,
         statusScrollOffset: tuiState.scrollOffset,
+        detailLines,
+        selectedIndex: tuiState.selectedIndex,
       },
     );
     const frameLines = renderPanelFrame(panelLayout, termRows, termWidth, tuiState.scrollOffset);
@@ -357,6 +375,18 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     logBuffer,
     logScrollOffset: 0,
     logLevelFilter: "all",
+    selectedIndex: 0,
+    detailItemId: null,
+    savedLogScrollOffset: 0,
+    getSelectedItemId: (index: number) => {
+      const data = getItems();
+      const nonQueued = data.items.filter((i) => i.state !== "queued");
+      return nonQueued[index]?.id;
+    },
+    getItemCount: () => {
+      const data = getItems();
+      return data.items.filter((i) => i.state !== "queued").length;
+    },
     onUpdate: () => {
       try { render(); } catch { /* non-fatal */ }
     },
@@ -390,6 +420,20 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
       write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
     } else {
       const filteredLogs = filterLogsByLevel(logBuffer, tuiState.logLevelFilter);
+
+      // Generate detail lines if an item is selected for detail view
+      let detailLines: string[] | undefined;
+      if (tuiState.detailItemId) {
+        const detailItem = data.items.find((i) => i.id === tuiState.detailItemId);
+        if (detailItem) {
+          detailLines = formatItemDetail(detailItem, {
+            repoUrl: tuiState.viewOptions.repoUrl,
+          });
+        } else {
+          tuiState.detailItemId = null;
+        }
+      }
+
       const panelLayout = buildPanelLayout(
         tuiState.panelMode,
         data.items,
@@ -401,6 +445,8 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
           viewOptions: tuiState.viewOptions,
           logScrollOffset: tuiState.logScrollOffset,
           statusScrollOffset: tuiState.scrollOffset,
+          detailLines,
+          selectedIndex: tuiState.selectedIndex,
         },
       );
       const frameLines = renderPanelFrame(panelLayout, termRows, termWidth, tuiState.scrollOffset);
@@ -2351,12 +2397,22 @@ export interface TuiState {
   logScrollOffset: number;
   /** Current log level filter. */
   logLevelFilter: LogLevelFilter;
+  /** Selected item index in the visible item list (0-based). Defaults to 0. */
+  selectedIndex?: number;
+  /** Item ID currently shown in the detail panel (null = log panel visible). */
+  detailItemId?: string | null;
+  /** Saved log scroll offset, restored when returning from detail view. */
+  savedLogScrollOffset?: number;
   /** Called when the user cycles the merge strategy via Shift+Tab. */
   onStrategyChange?: (strategy: MergeStrategy) => void;
   /** Called when the user cycles panel mode via Tab (for preference persistence). */
   onPanelModeChange?: (mode: PanelMode) => void;
   /** Called after any key that should trigger an immediate re-render. */
   onUpdate?: () => void;
+  /** Resolve item ID at the given index in the visible item list. */
+  getSelectedItemId?: (index: number) => string | undefined;
+  /** Get total number of items for clamping selectedIndex. */
+  getItemCount?: () => number;
 }
 
 /**
@@ -2443,12 +2499,16 @@ export function setupKeyboardShortcuts(
         tuiState.showHelp = !tuiState.showHelp;
         tuiState.viewOptions.showHelp = tuiState.showHelp;
         break;
-      case "\x1b": // Raw Escape (length 1) -- dismiss help overlay
+      case "\x1b": // Raw Escape (length 1) -- dismiss help overlay or detail panel
         // Only treat single-byte \x1b as Escape. Arrow keys send \x1b[A etc.
         // which are longer sequences and won't match this case.
         if (tuiState.showHelp) {
           tuiState.showHelp = false;
           tuiState.viewOptions.showHelp = false;
+        } else if (tuiState.detailItemId) {
+          // Return from detail view to log panel, restore scroll offset
+          tuiState.detailItemId = null;
+          tuiState.logScrollOffset = tuiState.savedLogScrollOffset ?? 0;
         } else {
           handled = false;
         }
@@ -2456,12 +2516,33 @@ export function setupKeyboardShortcuts(
       case "d":
         tuiState.viewOptions.showBlockerDetail = !tuiState.viewOptions.showBlockerDetail;
         break;
+      case "\r": // Enter -- open detail panel for selected item
+      case "i": { // i -- open detail panel for selected item
+        const selIdx = tuiState.selectedIndex ?? 0;
+        if (selIdx >= 0 && !tuiState.detailItemId) {
+          const itemId = tuiState.getSelectedItemId?.(selIdx);
+          if (itemId) {
+            tuiState.savedLogScrollOffset = tuiState.logScrollOffset;
+            tuiState.detailItemId = itemId;
+          }
+        }
+        break;
+      }
       case "\x1b[A": // Up arrow
+        if ((tuiState.selectedIndex ?? 0) > 0) {
+          tuiState.selectedIndex = (tuiState.selectedIndex ?? 0) - 1;
+        }
         tuiState.scrollOffset = Math.max(0, tuiState.scrollOffset - 1);
         break;
-      case "\x1b[B": // Down arrow
+      case "\x1b[B": { // Down arrow
+        const maxIdx = (tuiState.getItemCount?.() ?? 0) - 1;
+        const curIdx = tuiState.selectedIndex ?? 0;
+        if (curIdx < maxIdx) {
+          tuiState.selectedIndex = curIdx + 1;
+        }
         tuiState.scrollOffset += 1;
         break;
+      }
       case "\t": { // Tab -- cycle panel mode (split -> logs-only -> status-only -> split)
         const termRows = getTerminalHeight();
         const modes: PanelMode[] = termRows < MIN_SPLIT_ROWS
@@ -3273,6 +3354,18 @@ export async function cmdOrchestrate(
     logBuffer,
     logScrollOffset: 0,
     logLevelFilter: "all",
+    selectedIndex: 0,
+    detailItemId: null,
+    savedLogScrollOffset: 0,
+    getSelectedItemId: (index: number) => {
+      const items = orchestratorItemsToStatusItems(lastTuiItems, resolvedCrewName);
+      const nonQueued = items.filter((i) => i.state !== "queued");
+      return nonQueued[index]?.id;
+    },
+    getItemCount: () => {
+      const items = orchestratorItemsToStatusItems(lastTuiItems, resolvedCrewName);
+      return items.filter((i) => i.state !== "queued").length;
+    },
     onStrategyChange: (strategy) => {
       orch.setMergeStrategy(strategy);
     },

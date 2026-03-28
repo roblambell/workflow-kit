@@ -2873,3 +2873,156 @@ describe("formatItemDetail", () => {
     expect(text).not.toContain("Cost:");
   });
 });
+
+// ── Item detail panel integration with buildPanelLayout ─────────────────────
+
+describe("buildPanelLayout with detailLines", () => {
+  it("replaces log panel with detail lines in split mode", () => {
+    const items = [
+      makeStatusItem({ id: "H-1", state: "implementing" }),
+      makeStatusItem({ id: "H-2", state: "ci-pending" }),
+    ];
+    const logEntries: LogEntry[] = [
+      { timestamp: "2026-03-28T10:00:00Z", itemId: "H-1", message: "Starting" },
+    ];
+    const detailLines = [
+      "  H-1  Panel layout",
+      "",
+      "  State: Implementing",
+      "  PR:    --",
+    ];
+    const layout = buildPanelLayout("split", items, logEntries, 80, 50, {
+      detailLines,
+    });
+    expect(layout.mode).toBe("split");
+    expect(layout.logPanel).not.toBeNull();
+    // Detail lines should appear in the log panel slot
+    expect(layout.logPanel!.lines.some((l) => stripAnsi(l).includes("H-1"))).toBe(true);
+    // Log entries should NOT appear (replaced by detail)
+    const allText = layout.logPanel!.lines.map(stripAnsi).join("\n");
+    expect(allText).not.toContain("Starting");
+  });
+
+  it("shows separator with 'Detail' label when detailLines provided", () => {
+    const items = [makeStatusItem({ id: "H-1", state: "implementing" })];
+    const layout = buildPanelLayout("split", items, [], 80, 50, {
+      detailLines: ["  Detail content"],
+    });
+    const allFooter = layout.footerLines.map(stripAnsi).join("\n");
+    expect(allFooter).toContain("Detail");
+    expect(allFooter).toContain("esc: back");
+  });
+
+  it("shows log separator when no detailLines", () => {
+    const items = [makeStatusItem({ id: "H-1", state: "implementing" })];
+    const logEntries: LogEntry[] = [
+      { timestamp: "2026-03-28T10:00:00Z", itemId: "H-1", message: "Log msg" },
+    ];
+    const layout = buildPanelLayout("split", items, logEntries, 80, 50);
+    const allFooter = layout.footerLines.map(stripAnsi).join("\n");
+    expect(allFooter).toContain("Logs");
+    expect(allFooter).not.toContain("Detail");
+  });
+
+  it("does not show detail in logs-only mode", () => {
+    const items = [makeStatusItem({ id: "H-1", state: "implementing" })];
+    const logEntries: LogEntry[] = [
+      { timestamp: "2026-03-28T10:00:00Z", itemId: "H-1", message: "Log msg" },
+    ];
+    const layout = buildPanelLayout("logs-only", items, logEntries, 80, 50, {
+      detailLines: ["  Should not appear"],
+    });
+    expect(layout.mode).toBe("logs-only");
+    // Log panel should show logs, not detail
+    const panelText = layout.logPanel!.lines.map(stripAnsi).join("\n");
+    expect(panelText).toContain("Log msg");
+  });
+
+  it("truncates detail lines to fit available rows", () => {
+    const items = [makeStatusItem({ id: "H-1", state: "implementing" })];
+    // Generate many detail lines
+    const detailLines = Array.from({ length: 50 }, (_, i) => `  Line ${i}`);
+    const layout = buildPanelLayout("split", items, [], 80, 40, {
+      detailLines,
+    });
+    // Log panel lines should be fewer than total detail lines
+    expect(layout.logPanel!.lines.length).toBeLessThan(50);
+  });
+});
+
+describe("formatItemDetail for each item state", () => {
+  it("renders implementing state", () => {
+    const item = makeStatusItem({ id: "H-I-1", state: "implementing", prNumber: 10 });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Implementing");
+    expect(text).toContain("#10");
+  });
+
+  it("renders ci-failed state", () => {
+    const item = makeStatusItem({
+      id: "H-CF-1",
+      state: "ci-failed",
+      failureReason: "test timeout",
+    });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("CI Failed");
+    expect(text).toContain("test timeout");
+  });
+
+  it("renders merged state", () => {
+    const item = makeStatusItem({ id: "H-M-1", state: "merged", prNumber: 50 });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Merged");
+    expect(text).toContain("Passed");
+  });
+
+  it("renders queued state", () => {
+    const item = makeStatusItem({ id: "H-Q-1", state: "queued", prNumber: null });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Queued");
+    expect(text).toContain("--"); // No PR
+  });
+
+  it("renders ci-pending state", () => {
+    const item = makeStatusItem({ id: "H-CP-1", state: "ci-pending", prNumber: 77 });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("CI Pending");
+    expect(text).toContain("Pending");
+  });
+
+  it("renders missing optional fields as --", () => {
+    const item = makeStatusItem({
+      id: "H-MF-1",
+      state: "implementing",
+      prNumber: null,
+    });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("--"); // No PR
+    expect(text).not.toContain("Cost:");
+    expect(text).not.toContain("Progress:");
+  });
+
+  it("renders PR as clickable OSC 8 link when repoUrl provided", () => {
+    const item = makeStatusItem({ id: "H-LNK-1", state: "review", prNumber: 99 });
+    const lines = formatItemDetail(item, {
+      repoUrl: "https://github.com/org/repo",
+    });
+    const raw = lines.join("");
+    expect(raw).toContain("\x1b]8;;https://github.com/org/repo/pull/99\x07");
+    expect(raw).toContain("#99");
+  });
+
+  it("renders without PR link when no repoUrl and no PR", () => {
+    const item = makeStatusItem({ id: "H-NL-1", state: "implementing", prNumber: null });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("--");
+    expect(text).not.toContain("\x1b]8;;");
+  });
+});

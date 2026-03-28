@@ -1529,6 +1529,10 @@ export function buildPanelLayout(
     viewOptions?: ViewOptions;
     logScrollOffset?: number;
     statusScrollOffset?: number;
+    /** Pre-formatted detail lines to replace the log panel (item detail view). */
+    detailLines?: string[];
+    /** Selected item index for highlight (0-based, -1 for none). */
+    selectedIndex?: number;
   },
 ): PanelLayout {
   const logScrollOffset = opts?.logScrollOffset ?? 0;
@@ -1592,9 +1596,13 @@ export function buildPanelLayout(
     };
   }
 
-  // Split mode: status top (60%), logs bottom (40%)
+  // Split mode: status top (60%), logs/detail bottom (40%)
+  const detailLines = opts?.detailLines;
+  const isDetailMode = detailLines != null && detailLines.length > 0;
   const footerLines = buildPanelFooter(items, logEntries.length, termWidth, opts?.viewOptions);
-  const separatorLine = buildPanelSeparator(logEntries.length, termWidth);
+  const separatorLine = isDetailMode
+    ? buildDetailSeparator(termWidth)
+    : buildPanelSeparator(logEntries.length, termWidth);
 
   // Available rows = total - footer - separator (1 line)
   const availableRows = Math.max(2, termRows - footerLines.length - 1);
@@ -1615,6 +1623,21 @@ export function buildPanelLayout(
     itemLines: statusLayout.itemLines,
     footerLines: [], // managed by panel footer
   };
+
+  if (isDetailMode) {
+    // Detail view replaces the log panel
+    const visibleDetail = detailLines.slice(0, logRows);
+    return {
+      mode: "split",
+      statusPanel,
+      logPanel: {
+        lines: visibleDetail,
+        totalEntries: detailLines.length,
+        scrollOffset: 0,
+      },
+      footerLines: [separatorLine, ...footerLines],
+    };
+  }
 
   // Build log panel
   const clampedLogOffset = clampScrollOffset(logScrollOffset, logEntries.length, logRows);
@@ -1644,6 +1667,20 @@ function buildPanelSeparator(logCount: number, termWidth: number): string {
   const hints = ` tab: switch  ${DIM}↑↓: scroll${RESET} `;
   const hintsPlain = ` tab: switch  ↑↓: scroll `;
   const usedWidth = label.length + hintsPlain.length + 4; // 4 for dash segments
+  const remainingDashes = Math.max(0, termWidth - usedWidth);
+  const leftDashes = Math.max(2, Math.floor(remainingDashes / 2));
+  const rightDashes = Math.max(2, remainingDashes - leftDashes);
+  return `${DIM}${"─".repeat(leftDashes)}${RESET}${BOLD}${label}${RESET}${DIM}${"─".repeat(2)}${RESET} ${hints}${DIM}${"─".repeat(rightDashes)}${RESET}`;
+}
+
+/**
+ * Build the separator line between status and detail panels.
+ * Format: "──── Detail ──── esc: back ────"
+ */
+function buildDetailSeparator(termWidth: number): string {
+  const label = ` Detail `;
+  const hints = ` esc: back `;
+  const usedWidth = label.length + hints.length + 4;
   const remainingDashes = Math.max(0, termWidth - usedWidth);
   const leftDashes = Math.max(2, Math.floor(remainingDashes / 2));
   const rightDashes = Math.max(2, remainingDashes - leftDashes);
@@ -1964,7 +2001,8 @@ export function renderHelpOverlay(
     `${BOLD}Keyboard Shortcuts${RESET}`,
     `  Shift+Tab   Cycle merge strategy`,
     `  ?           Toggle this help overlay`,
-    `  Escape      Dismiss help overlay`,
+    `  Enter/i     Item detail panel`,
+    `  Escape      Close overlay/detail`,
     `  q           Quit`,
     `  Ctrl+C x2   Quit (double-tap)`,
     `  d           Toggle blocker sub-lines`,

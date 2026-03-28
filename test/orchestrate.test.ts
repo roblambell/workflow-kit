@@ -2248,6 +2248,273 @@ describe("setupKeyboardShortcuts", () => {
     (stdin as any)._emit("data", "\x1b[B"); // Down arrow
     expect(tuiState.showHelp).toBe(true); // still showing
   });
+
+  // ── Item detail panel keyboard shortcuts ──────────────────────────
+
+  it("Enter opens detail panel for selected item", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 5,
+      logLevelFilter: "all",
+      selectedIndex: 0,
+      detailItemId: null,
+      savedLogScrollOffset: 0,
+      getSelectedItemId: (idx: number) => idx === 0 ? "H-UT-1" : undefined,
+      getItemCount: () => 2,
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+    (stdin as any)._emit("data", "\r"); // Enter
+
+    expect(tuiState.detailItemId).toBe("H-UT-1");
+    expect(tuiState.savedLogScrollOffset).toBe(5); // saved before opening
+  });
+
+  it("'i' opens detail panel for selected item", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 3,
+      logLevelFilter: "all",
+      selectedIndex: 1,
+      detailItemId: null,
+      savedLogScrollOffset: 0,
+      getSelectedItemId: (idx: number) => idx === 1 ? "H-UT-2" : undefined,
+      getItemCount: () => 3,
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+    (stdin as any)._emit("data", "i");
+
+    expect(tuiState.detailItemId).toBe("H-UT-2");
+    expect(tuiState.savedLogScrollOffset).toBe(3);
+  });
+
+  it("Escape closes detail panel and restores log scroll offset", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 10, // changed while viewing detail
+      logLevelFilter: "all",
+      selectedIndex: 0,
+      detailItemId: "H-UT-1",
+      savedLogScrollOffset: 5, // was 5 before opening detail
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+    (stdin as any)._emit("data", "\x1b"); // Escape
+
+    expect(tuiState.detailItemId).toBeNull();
+    expect(tuiState.logScrollOffset).toBe(5); // restored
+  });
+
+  it("Enter is no-op when no items exist", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 0,
+      logLevelFilter: "all",
+      selectedIndex: 0,
+      detailItemId: null,
+      savedLogScrollOffset: 0,
+      getSelectedItemId: () => undefined, // no items
+      getItemCount: () => 0,
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+    (stdin as any)._emit("data", "\r"); // Enter
+
+    expect(tuiState.detailItemId).toBeNull(); // no crash, no detail opened
+  });
+
+  it("Enter is no-op when getSelectedItemId is not set", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 0,
+      logLevelFilter: "all",
+      selectedIndex: 0,
+      detailItemId: null,
+      savedLogScrollOffset: 0,
+      // no getSelectedItemId callback
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+    (stdin as any)._emit("data", "\r"); // Enter
+
+    expect(tuiState.detailItemId).toBeNull();
+  });
+
+  it("detail updates when item state changes (re-render path)", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    let updates = 0;
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 0,
+      logLevelFilter: "all",
+      selectedIndex: 0,
+      detailItemId: null,
+      savedLogScrollOffset: 0,
+      getSelectedItemId: (idx: number) => idx === 0 ? "H-UT-1" : undefined,
+      getItemCount: () => 1,
+      onUpdate: () => { updates++; },
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+    (stdin as any)._emit("data", "\r"); // Enter -- triggers onUpdate
+
+    expect(tuiState.detailItemId).toBe("H-UT-1");
+    expect(updates).toBeGreaterThan(0);
+  });
+
+  it("Up/Down arrows move selectedIndex", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 0,
+      logLevelFilter: "all",
+      selectedIndex: 0,
+      detailItemId: null,
+      savedLogScrollOffset: 0,
+      getItemCount: () => 5,
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+
+    (stdin as any)._emit("data", "\x1b[B"); // Down
+    expect(tuiState.selectedIndex).toBe(1);
+
+    (stdin as any)._emit("data", "\x1b[B"); // Down
+    expect(tuiState.selectedIndex).toBe(2);
+
+    (stdin as any)._emit("data", "\x1b[A"); // Up
+    expect(tuiState.selectedIndex).toBe(1);
+
+    (stdin as any)._emit("data", "\x1b[A"); // Up
+    expect(tuiState.selectedIndex).toBe(0);
+
+    (stdin as any)._emit("data", "\x1b[A"); // Up at top -- stays at 0
+    expect(tuiState.selectedIndex).toBe(0);
+  });
+
+  it("Down arrow clamps selectedIndex to max items", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 0,
+      logLevelFilter: "all",
+      selectedIndex: 1,
+      detailItemId: null,
+      savedLogScrollOffset: 0,
+      getItemCount: () => 2, // max index is 1
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+
+    (stdin as any)._emit("data", "\x1b[B"); // Down -- already at max
+    expect(tuiState.selectedIndex).toBe(1); // stays clamped
+  });
+
+  it("Escape does nothing when no help and no detail open", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 0,
+      logLevelFilter: "all",
+      selectedIndex: 0,
+      detailItemId: null,
+      savedLogScrollOffset: 0,
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+    (stdin as any)._emit("data", "\x1b"); // Escape
+
+    expect(tuiState.showHelp).toBe(false);
+    expect(tuiState.detailItemId).toBeNull(); // unchanged
+    expect(ac.signal.aborted).toBe(false); // didn't quit
+  });
 });
 
 // ── onPollComplete callback ──────────────────────────────────────────
