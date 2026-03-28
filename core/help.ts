@@ -38,6 +38,7 @@ import { cmdRetry } from "./commands/retry.ts";
 import { cmdDoctor } from "./commands/doctor.ts";
 import { cmdHeartbeat } from "./commands/heartbeat.ts";
 import { cmdLogs } from "./commands/logs.ts";
+import { cmdSchedule } from "./commands/schedule.ts";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -299,6 +300,24 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
       "nw logs --level warn",
       "nw logs -n 100",
       "nw logs -f --item H-FOO-1 --level error",
+    ],
+  },
+
+  {
+    name: "schedule",
+    usage: "schedule [list|show <id>|validate|run <id>]",
+    description: "List, inspect, validate, or trigger scheduled tasks",
+    group: "diagnostic",
+    needsRoot: true,
+    needsWork: false,
+    handler: (ctx) => cmdSchedule(ctx.args, ctx.projectRoot),
+    flags: {},
+    examples: [
+      "nw schedule",
+      "nw schedule list",
+      "nw schedule show daily-tests",
+      "nw schedule validate",
+      "nw schedule run daily-tests",
     ],
   },
 
