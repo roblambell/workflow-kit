@@ -1782,16 +1782,38 @@ export function forkDaemon(
   return { pid, logPath };
 }
 
-/** Renamed entry point: `nw watch` dispatches here. */
-export const cmdWatch = cmdOrchestrate;
+// ── Arg parsing (extracted for testability) ──────────────────────────
 
-export async function cmdOrchestrate(
-  args: string[],
-  workDir: string,
-  worktreeDir: string,
-  projectRoot: string,
-): Promise<void> {
-  let itemIds: string[] = [];
+export interface ParsedWatchArgs {
+  itemIds: string[];
+  mergeStrategy: MergeStrategy;
+  wipLimitOverride?: number;
+  pollIntervalOverride?: number;
+  frictionDir?: string;
+  daemonMode: boolean;
+  isDaemonChild: boolean;
+  clickupListId?: string;
+  remoteFlag: boolean;
+  reviewEnabled: boolean;
+  reviewWipLimit?: number;
+  reviewAutoFix?: "off" | "direct" | "pr";
+  reviewCanApprove: boolean;
+  reviewExternal: boolean;
+  verifyMain: boolean;
+  watchMode: boolean;
+  noWatch: boolean;
+  watchIntervalSecs?: number;
+  jsonFlag: boolean;
+  skipPreflight: boolean;
+  crewCode?: string;
+  crewCreate: boolean;
+  crewPort: number;
+  crewUrl?: string;
+  crewName?: string;
+}
+
+export function parseWatchArgs(args: string[]): ParsedWatchArgs {
+  const itemIds: string[] = [];
   let mergeStrategy: MergeStrategy = "asap";
   let wipLimitOverride: number | undefined;
   let pollIntervalOverride: number | undefined;
@@ -1817,7 +1839,6 @@ export async function cmdOrchestrate(
   let crewUrl: string | undefined;
   let crewName: string | undefined;
 
-  // Parse args
   let i = 0;
   while (i < args.length) {
     switch (args[i]) {
@@ -1876,7 +1897,7 @@ export async function cmdOrchestrate(
       case "--review-auto-fix": {
         const autoFixVal = args[i + 1] ?? "off";
         if (autoFixVal !== "off" && autoFixVal !== "direct" && autoFixVal !== "pr") {
-          die(`Invalid --review-auto-fix value: "${autoFixVal}". Must be "off", "direct", or "pr".`);
+          throw new Error(`Invalid --review-auto-fix value: "${autoFixVal}". Must be "off", "direct", or "pr".`);
         }
         reviewAutoFix = autoFixVal;
         i += 2;
@@ -1940,14 +1961,56 @@ export async function cmdOrchestrate(
         i += 2;
         break;
       default:
-        die(`Unknown option: ${args[i]}`);
+        throw new Error(`Unknown option: ${args[i]}`);
     }
   }
 
-  // ── --daemon implies --watch unless --no-watch is explicitly set ─────
+  // --daemon implies --watch unless --no-watch is explicitly set
   if (daemonMode && !noWatch) {
     watchMode = true;
   }
+
+  return {
+    itemIds, mergeStrategy, wipLimitOverride, pollIntervalOverride, frictionDir,
+    daemonMode, isDaemonChild, clickupListId, remoteFlag,
+    reviewEnabled, reviewWipLimit, reviewAutoFix, reviewCanApprove, reviewExternal,
+    verifyMain, watchMode, noWatch, watchIntervalSecs,
+    jsonFlag, skipPreflight, crewCode, crewCreate, crewPort, crewUrl, crewName,
+  };
+}
+
+/**
+ * Validate that all item IDs exist in the todo map.
+ * Returns array of unknown IDs (empty = all valid).
+ */
+export function validateItemIds(itemIds: string[], todoMap: Map<string, WorkItem>): string[] {
+  return itemIds.filter(id => !todoMap.has(id));
+}
+
+/** Renamed entry point: `nw watch` dispatches here. */
+export const cmdWatch = cmdOrchestrate;
+
+export async function cmdOrchestrate(
+  args: string[],
+  workDir: string,
+  worktreeDir: string,
+  projectRoot: string,
+): Promise<void> {
+  const parsed = parseWatchArgs(args);
+  let {
+    itemIds,
+    mergeStrategy,
+  } = parsed;
+  const {
+    wipLimitOverride, pollIntervalOverride, frictionDir,
+    daemonMode, isDaemonChild, clickupListId, remoteFlag,
+    reviewEnabled, reviewWipLimit, reviewAutoFix, reviewCanApprove, reviewExternal,
+    verifyMain, noWatch, watchIntervalSecs,
+    jsonFlag, skipPreflight, crewCreate, crewPort, crewName,
+  } = parsed;
+  let watchMode = parsed.watchMode;
+  let crewCode = parsed.crewCode;
+  let crewUrl = parsed.crewUrl;
 
   // ── Pre-flight environment validation ────────────────────────────────
   if (!skipPreflight) {
@@ -2089,10 +2152,9 @@ export async function cmdOrchestrate(
   }
 
   // Validate all items exist
-  for (const id of itemIds) {
-    if (!workItemMap.has(id)) {
-      die(`Item ${id} not found in work item files`);
-    }
+  const unknownIds = validateItemIds(itemIds, workItemMap);
+  if (unknownIds.length > 0) {
+    die(`Item ${unknownIds[0]} not found in work item files`);
   }
 
   // Create orchestrator

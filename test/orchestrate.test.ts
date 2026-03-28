@@ -14,9 +14,12 @@ import {
   isWorkerAlive,
   forkDaemon,
   cleanOrphanedWorktrees,
+  parseWatchArgs,
+  validateItemIds,
   type LogEntry,
   type OrchestrateLoopDeps,
   type CleanOrphanedDeps,
+  type ParsedWatchArgs,
 } from "../core/commands/orchestrate.ts";
 import {
   Orchestrator,
@@ -30,6 +33,7 @@ import type { WorkItem } from "../core/types.ts";
 import type { Multiplexer } from "../core/mux.ts";
 import { pidFilePath, logFilePath, type DaemonState } from "../core/daemon.ts";
 import type { CrewBroker } from "../core/crew.ts";
+import { shouldEnterInteractive } from "../core/interactive.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -2952,5 +2956,187 @@ describe("orchestrateLoop crew mode", () => {
 
     // Broker should have been notified of completion
     expect(completedIds).toContain("T-1");
+  });
+});
+
+// ── parseWatchArgs (passthrough path) ──────────────────────────────────
+
+describe("parseWatchArgs", () => {
+  it("parses --items --merge-strategy --wip-limit for passthrough", () => {
+    const result = parseWatchArgs([
+      "--items", "H-FOO-1", "H-FOO-2",
+      "--merge-strategy", "asap",
+      "--wip-limit", "3",
+    ]);
+    expect(result.itemIds).toEqual(["H-FOO-1", "H-FOO-2"]);
+    expect(result.mergeStrategy).toBe("asap");
+    expect(result.wipLimitOverride).toBe(3);
+  });
+
+  it("skips interactive flow when items are pre-passed via CLI args", () => {
+    const result = parseWatchArgs([
+      "--items", "H-FOO-1",
+      "--merge-strategy", "asap",
+      "--wip-limit", "3",
+    ]);
+    // The passthrough assertion: having items means shouldEnterInteractive returns false
+    expect(result.itemIds.length).toBeGreaterThan(0);
+    expect(shouldEnterInteractive(result.itemIds.length > 0, { isTTY: true })).toBe(false);
+  });
+
+  it("accepts comma-separated items", () => {
+    const result = parseWatchArgs(["--items", "A-1,B-2,C-3"]);
+    expect(result.itemIds).toEqual(["A-1", "B-2", "C-3"]);
+  });
+
+  it("accepts space-separated items", () => {
+    const result = parseWatchArgs(["--items", "A-1", "B-2", "C-3"]);
+    expect(result.itemIds).toEqual(["A-1", "B-2", "C-3"]);
+  });
+
+  it("stops collecting items at next flag", () => {
+    const result = parseWatchArgs(["--items", "A-1", "B-2", "--wip-limit", "5"]);
+    expect(result.itemIds).toEqual(["A-1", "B-2"]);
+    expect(result.wipLimitOverride).toBe(5);
+  });
+
+  it("defaults merge strategy to asap when not specified", () => {
+    const result = parseWatchArgs(["--items", "A-1"]);
+    expect(result.mergeStrategy).toBe("asap");
+  });
+
+  it("parses approved merge strategy", () => {
+    const result = parseWatchArgs(["--items", "A-1", "--merge-strategy", "approved"]);
+    expect(result.mergeStrategy).toBe("approved");
+  });
+
+  it("leaves wipLimitOverride undefined when --wip-limit not passed", () => {
+    const result = parseWatchArgs(["--items", "A-1"]);
+    expect(result.wipLimitOverride).toBeUndefined();
+  });
+
+  it("preserves CLI wip-limit value (not overridden by defaults)", () => {
+    const result = parseWatchArgs([
+      "--items", "A-1",
+      "--wip-limit", "7",
+    ]);
+    // wipLimitOverride is set to 7, which cmdOrchestrate uses to override the
+    // computed default: `wipLimit = wipLimitOverride ?? computedWipLimit`
+    expect(result.wipLimitOverride).toBe(7);
+  });
+
+  it("parses all flags together", () => {
+    const result = parseWatchArgs([
+      "--items", "H-1", "H-2",
+      "--merge-strategy", "reviewed",
+      "--wip-limit", "5",
+      "--poll-interval", "60",
+      "--no-review",
+      "--skip-preflight",
+      "--json",
+    ]);
+    expect(result.itemIds).toEqual(["H-1", "H-2"]);
+    expect(result.mergeStrategy).toBe("reviewed");
+    expect(result.wipLimitOverride).toBe(5);
+    expect(result.pollIntervalOverride).toBe(60_000);
+    expect(result.reviewEnabled).toBe(false);
+    expect(result.skipPreflight).toBe(true);
+    expect(result.jsonFlag).toBe(true);
+  });
+
+  it("throws on unknown option", () => {
+    expect(() => parseWatchArgs(["--bogus"])).toThrow("Unknown option: --bogus");
+  });
+
+  it("--daemon implies --watch unless --no-watch", () => {
+    const daemonOnly = parseWatchArgs(["--daemon", "--items", "A-1"]);
+    expect(daemonOnly.daemonMode).toBe(true);
+    expect(daemonOnly.watchMode).toBe(true);
+
+    const daemonNoWatch = parseWatchArgs(["--daemon", "--no-watch", "--items", "A-1"]);
+    expect(daemonNoWatch.daemonMode).toBe(true);
+    expect(daemonNoWatch.watchMode).toBe(false);
+  });
+});
+
+// ── validateItemIds ────────────────────────────────────────────────────
+
+describe("validateItemIds", () => {
+  const todoMap = new Map<string, WorkItem>([
+    ["H-FOO-1", makeTodo("H-FOO-1")],
+    ["H-FOO-2", makeTodo("H-FOO-2")],
+    ["H-FOO-3", makeTodo("H-FOO-3")],
+  ]);
+
+  it("returns empty array when all IDs are valid", () => {
+    expect(validateItemIds(["H-FOO-1", "H-FOO-2"], todoMap)).toEqual([]);
+  });
+
+  it("returns unknown IDs", () => {
+    expect(validateItemIds(["H-FOO-1", "H-BAR-99"], todoMap)).toEqual(["H-BAR-99"]);
+  });
+
+  it("returns all IDs when none match", () => {
+    expect(validateItemIds(["X-1", "Y-2"], todoMap)).toEqual(["X-1", "Y-2"]);
+  });
+
+  it("returns empty for empty input", () => {
+    expect(validateItemIds([], todoMap)).toEqual([]);
+  });
+});
+
+// ── Passthrough integration ────────────────────────────────────────────
+
+describe("cmdOrchestrate passthrough path", () => {
+  it("full passthrough: parsed args + validation + no interactive flow", () => {
+    // Simulate the exact passthrough path used by cmdNoArgs:
+    // nw watch --items H-FOO-1 --merge-strategy asap --wip-limit 3
+
+    // Step 1: Parse args
+    const parsed = parseWatchArgs([
+      "--items", "H-FOO-1", "H-FOO-2",
+      "--merge-strategy", "asap",
+      "--wip-limit", "3",
+    ]);
+
+    // Step 2: Verify interactive flow is skipped (the key passthrough behavior)
+    expect(shouldEnterInteractive(parsed.itemIds.length > 0, { isTTY: true })).toBe(false);
+    expect(shouldEnterInteractive(parsed.itemIds.length > 0, { isTTY: false })).toBe(false);
+
+    // Step 3: Validate items against a todo map
+    const todoMap = new Map<string, WorkItem>([
+      ["H-FOO-1", makeTodo("H-FOO-1")],
+      ["H-FOO-2", makeTodo("H-FOO-2")],
+    ]);
+    expect(validateItemIds(parsed.itemIds, todoMap)).toEqual([]);
+
+    // Step 4: Verify orchestrator would receive correct config
+    expect(parsed.itemIds).toEqual(["H-FOO-1", "H-FOO-2"]);
+    expect(parsed.mergeStrategy).toBe("asap");
+    expect(parsed.wipLimitOverride).toBe(3);
+  });
+
+  it("CLI wip-limit overrides computed default (not the other way around)", () => {
+    const parsed = parseWatchArgs(["--items", "A-1", "--wip-limit", "3"]);
+    // In cmdOrchestrate: wipLimit = wipLimitOverride ?? computedWipLimit
+    // When wipLimitOverride is set, it takes precedence over computedWipLimit
+    const computedWipLimit = 5; // simulate any computed default
+    const effectiveWipLimit = parsed.wipLimitOverride ?? computedWipLimit;
+    expect(effectiveWipLimit).toBe(3);
+  });
+
+  it("unknown item ID would be caught by validation", () => {
+    const parsed = parseWatchArgs([
+      "--items", "H-FOO-1", "H-UNKNOWN-99",
+      "--merge-strategy", "asap",
+      "--wip-limit", "3",
+    ]);
+
+    const todoMap = new Map<string, WorkItem>([
+      ["H-FOO-1", makeTodo("H-FOO-1")],
+    ]);
+
+    const unknown = validateItemIds(parsed.itemIds, todoMap);
+    expect(unknown).toEqual(["H-UNKNOWN-99"]);
   });
 });
