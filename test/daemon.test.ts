@@ -13,8 +13,6 @@ import {
   writeStateFile,
   readStateFile,
   cleanStateFile,
-  archiveStateFile,
-  stateArchiveDir,
   serializeOrchestratorState,
   pidFilePath,
   stateFilePath,
@@ -154,11 +152,6 @@ describe("path helpers", () => {
     const path = logFilePath("/project");
     expect(path).toBe(join(userStateDir("/project"), "orchestrator.log"));
     expect(path).toMatch(/\.ninthwave\/projects\//);
-  });
-
-  it("stateArchiveDir returns path under user state dir", () => {
-    const path = stateArchiveDir("/project");
-    expect(path).toBe(join(userStateDir("/project"), "state-archive"));
   });
 
   it("path functions return paths outside the project directory", () => {
@@ -536,162 +529,6 @@ describe("serializeOrchestratorState", () => {
   });
 });
 
-// ── archiveStateFile ─────────────────────────────────────────────────
-
-describe("archiveStateFile", () => {
-  let io: ReturnType<typeof createMockIO>;
-
-  beforeEach(() => {
-    io = createMockIO();
-  });
-
-  it("returns null when no state file exists", () => {
-    expect(archiveStateFile("/project", io)).toBeNull();
-  });
-
-  it("moves existing state file to state-archive with startedAt timestamp", () => {
-    const oldState: DaemonState = {
-      pid: 111,
-      startedAt: "2026-03-24T09:00:00.000Z",
-      updatedAt: "2026-03-24T09:30:00.000Z",
-      items: [
-        {
-          id: "OLD-1-1",
-          state: "implementing",
-          prNumber: null,
-          title: "Old item",
-          lastTransition: "2026-03-24T09:00:00.000Z",
-          ciFailCount: 0,
-          retryCount: 0,
-        },
-      ],
-    };
-    writeStateFile("/project", oldState, io);
-
-    const archivePath = archiveStateFile("/project", io);
-
-    // State file should be removed
-    expect(io.existsSync(stateFilePath("/project"))).toBe(false);
-    // Archive should exist
-    expect(archivePath).not.toBeNull();
-    expect(archivePath).toContain("state-archive");
-    expect(archivePath).toContain("2026-03-24T09-00-00-000Z");
-    // Archived content should be readable and match the old state
-    const archivedContent = io.readFileSync(archivePath!, "utf-8");
-    const parsed = JSON.parse(archivedContent) as DaemonState;
-    expect(parsed.pid).toBe(111);
-    expect(parsed.items).toHaveLength(1);
-    expect(parsed.items[0]!.id).toBe("OLD-1-1");
-  });
-
-  it("creates archive directory if missing", () => {
-    const oldState: DaemonState = {
-      pid: 222,
-      startedAt: "2026-03-24T10:00:00.000Z",
-      updatedAt: "2026-03-24T10:01:00.000Z",
-      items: [],
-    };
-    writeStateFile("/project", oldState, io);
-
-    archiveStateFile("/project", io);
-
-    expect(io.mkdirSync).toHaveBeenCalledWith(
-      stateArchiveDir("/project"),
-      { recursive: true },
-    );
-  });
-
-  it("handles invalid JSON in state file gracefully", () => {
-    io.files.set(stateFilePath("/project"), "not valid json {{{");
-
-    const archivePath = archiveStateFile("/project", io);
-
-    // Should still archive (with fallback timestamp) and not throw
-    expect(archivePath).not.toBeNull();
-    expect(archivePath).toContain("state-archive");
-    // State file should be removed
-    expect(io.existsSync(stateFilePath("/project"))).toBe(false);
-  });
-
-  it("fresh state only contains new items after archive + rewrite", () => {
-    // Simulate old daemon's state with old items
-    const oldState: DaemonState = {
-      pid: 100,
-      startedAt: "2026-03-24T08:00:00.000Z",
-      updatedAt: "2026-03-24T08:30:00.000Z",
-      items: [
-        {
-          id: "OLD-1-1",
-          state: "implementing",
-          prNumber: 10,
-          title: "Old item 1",
-          lastTransition: "2026-03-24T08:00:00.000Z",
-          ciFailCount: 0,
-          retryCount: 0,
-        },
-        {
-          id: "OLD-1-2",
-          state: "merged",
-          prNumber: 11,
-          title: "Old item 2",
-          lastTransition: "2026-03-24T08:10:00.000Z",
-          ciFailCount: 0,
-          retryCount: 0,
-        },
-      ],
-    };
-    writeStateFile("/project", oldState, io);
-
-    // New daemon starts: archive old state
-    archiveStateFile("/project", io);
-
-    // Write fresh state with new items only
-    const newItems: OrchestratorItem[] = [
-      makeOrchestratorItem("NEW-1-1", "queued"),
-      makeOrchestratorItem("NEW-1-2", "queued"),
-    ];
-    const freshState = serializeOrchestratorState(
-      newItems,
-      200,
-      "2026-03-25T10:00:00.000Z",
-    );
-    writeStateFile("/project", freshState, io);
-
-    // Verify the state file only contains new items
-    const currentState = readStateFile("/project", io);
-    expect(currentState).not.toBeNull();
-    expect(currentState!.pid).toBe(200);
-    expect(currentState!.items).toHaveLength(2);
-    expect(currentState!.items[0]!.id).toBe("NEW-1-1");
-    expect(currentState!.items[1]!.id).toBe("NEW-1-2");
-    // Old items should NOT be present
-    const ids = currentState!.items.map((i) => i.id);
-    expect(ids).not.toContain("OLD-1-1");
-    expect(ids).not.toContain("OLD-1-2");
-  });
-
-  it("handles daemon crash gracefully -- missing state file on next start", () => {
-    // Simulate: daemon crashed without writing state (no state file)
-    // archiveStateFile should be a no-op
-    expect(archiveStateFile("/project", io)).toBeNull();
-
-    // readStateFile should also return null
-    expect(readStateFile("/project", io)).toBeNull();
-
-    // A new daemon can still write fresh state successfully
-    const freshState = serializeOrchestratorState(
-      [makeOrchestratorItem("FRESH-1-1", "queued")],
-      300,
-      "2026-03-25T12:00:00.000Z",
-    );
-    writeStateFile("/project", freshState, io);
-    const current = readStateFile("/project", io);
-    expect(current).not.toBeNull();
-    expect(current!.items).toHaveLength(1);
-    expect(current!.items[0]!.id).toBe("FRESH-1-1");
-  });
-});
-
 // ── migrateRuntimeState ─────────────────────────────────────────────
 
 describe("migrateRuntimeState", () => {
@@ -720,7 +557,6 @@ describe("migrateRuntimeState", () => {
     writeFileSync(join(oldDir, "orchestrator.pid"), "12345");
     writeFileSync(join(oldDir, "orchestrator.state.json"), '{"pid":12345}');
     writeFileSync(join(oldDir, "orchestrator.log"), "log content");
-    writeFileSync(join(oldDir, "health-samples.jsonl"), '{"t":"now"}');
     writeFileSync(join(oldDir, "version"), "v1.0.0\n");
     writeFileSync(join(oldDir, "external-reviews.json"), "[]");
 
@@ -732,7 +568,6 @@ describe("migrateRuntimeState", () => {
     expect(readFileSync(join(newDir, "orchestrator.pid"), "utf-8")).toBe("12345");
     expect(existsSync(join(newDir, "orchestrator.state.json"))).toBe(true);
     expect(existsSync(join(newDir, "orchestrator.log"))).toBe(true);
-    expect(existsSync(join(newDir, "health-samples.jsonl"))).toBe(true);
     expect(existsSync(join(newDir, "version"))).toBe(true);
     expect(existsSync(join(newDir, "external-reviews.json"))).toBe(true);
 
@@ -740,27 +575,8 @@ describe("migrateRuntimeState", () => {
     expect(existsSync(join(oldDir, "orchestrator.pid"))).toBe(false);
     expect(existsSync(join(oldDir, "orchestrator.state.json"))).toBe(false);
     expect(existsSync(join(oldDir, "orchestrator.log"))).toBe(false);
-    expect(existsSync(join(oldDir, "health-samples.jsonl"))).toBe(false);
     expect(existsSync(join(oldDir, "version"))).toBe(false);
     expect(existsSync(join(oldDir, "external-reviews.json"))).toBe(false);
-  });
-
-  it("migrates state-archive directory", () => {
-    const oldArchive = join(projectRoot, ".ninthwave", "state-archive");
-    mkdirSync(oldArchive, { recursive: true });
-    writeFileSync(join(oldArchive, "state-2026.json"), '{"pid":1}');
-    writeFileSync(join(oldArchive, "state-2025.json"), '{"pid":2}');
-
-    migrateRuntimeState(projectRoot);
-
-    const newArchive = join(userStateDir(projectRoot), "state-archive");
-    expect(existsSync(join(newArchive, "state-2026.json"))).toBe(true);
-    expect(existsSync(join(newArchive, "state-2025.json"))).toBe(true);
-    expect(readFileSync(join(newArchive, "state-2026.json"), "utf-8")).toBe('{"pid":1}');
-
-    // Old archive files should be cleaned up
-    expect(existsSync(join(oldArchive, "state-2026.json"))).toBe(false);
-    expect(existsSync(join(oldArchive, "state-2025.json"))).toBe(false);
   });
 
   it("does not overwrite existing files in new location", () => {

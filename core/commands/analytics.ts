@@ -1,18 +1,17 @@
 // analytics command: display orchestration performance trends.
-// Reads .ninthwave/analytics/*.json files and shows summary statistics
-// with trend arrows comparing the latest run to the overall average.
+// Reads run_metrics events from the JSONL orchestrator log (including
+// rotated files .1/.2/.3) and shows summary statistics with trend arrows.
 
-import { existsSync, readdirSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync } from "fs";
 import { BOLD, RESET, GREEN, RED, YELLOW, CYAN, DIM } from "../output.ts";
 import type { RunMetrics, DetectionLatencyStats } from "../analytics.ts";
 import { computeDetectionLatency } from "../analytics.ts";
+import { logFilePath, userStateDir } from "../daemon.ts";
 
 // ── Dependencies (injectable for testing) ─────────────────────────────
 
 export interface AnalyticsReadIO {
   existsSync: (path: string) => boolean;
-  readdirSync: (path: string) => string[];
   readFileSync: (path: string, encoding: "utf-8") => string;
 }
 
@@ -48,46 +47,85 @@ export interface AnalyticsSummary {
 // ── Core logic ────────────────────────────────────────────────────────
 
 /**
- * Load and parse analytics JSON files from the analytics directory.
- * Returns runs sorted by timestamp (oldest first).
+ * Resolve the ordered list of log file paths (current + rotated).
+ * Rotated files (.3, .2, .1) are read first (oldest), then the current log.
+ */
+export function resolveLogPaths(
+  logPath: string,
+  io: Pick<AnalyticsReadIO, "existsSync">,
+  maxRotations: number = 3,
+): string[] {
+  const paths: string[] = [];
+  // Rotated files first (oldest first): .3, .2, .1
+  for (let n = maxRotations; n >= 1; n--) {
+    const rotated = `${logPath}.${n}`;
+    if (io.existsSync(rotated)) paths.push(rotated);
+  }
+  // Current log last (newest)
+  if (io.existsSync(logPath)) paths.push(logPath);
+  return paths;
+}
+
+/**
+ * Load run metrics from orchestrator.log JSONL files.
+ * Parses `run_metrics` events and returns RunMetrics sorted by timestamp (oldest first).
  *
- * Validates JSON structure: runTimestamp (string), wallClockMs (number),
+ * Validates structure: runTimestamp (string), wallClockMs (number),
  * items (array where every entry has `id` and `state` strings).
- * Corrupt or structurally invalid files are skipped. When an `onWarn`
- * callback is provided, it is called with a diagnostic message for each
- * skipped file.
+ * Malformed lines are skipped. When an `onWarn` callback is provided,
+ * it is called with a diagnostic message for each skipped entry.
  */
 export function loadRuns(
-  analyticsDir: string,
+  logPath: string,
   io: AnalyticsReadIO,
   onWarn?: (message: string) => void,
 ): RunMetrics[] {
-  if (!io.existsSync(analyticsDir)) return [];
-
-  const files = io.readdirSync(analyticsDir)
-    .filter((f) => f.endsWith(".json"))
-    .sort(); // lexicographic sort on timestamp-based filenames = chronological
+  const paths = resolveLogPaths(logPath, io);
+  if (paths.length === 0) return [];
 
   const runs: RunMetrics[] = [];
-  for (const file of files) {
+
+  for (const filePath of paths) {
+    let content: string;
     try {
-      const content = io.readFileSync(join(analyticsDir, file), "utf-8");
-      const parsed = JSON.parse(content) as RunMetrics;
+      content = io.readFileSync(filePath, "utf-8");
+    } catch {
+      onWarn?.(`Skipping ${filePath}: could not read file`);
+      continue;
+    }
+
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!.trim();
+      if (!line) continue;
+
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        // Skip non-JSON lines silently (most lines are other events)
+        continue;
+      }
+
+      // Only process run_metrics events
+      if (parsed.event !== "run_metrics") continue;
+
+      const entry = parsed as unknown as RunMetrics;
 
       // Basic field validation
-      if (typeof parsed.runTimestamp !== "string" || typeof parsed.wallClockMs !== "number") {
-        onWarn?.(`Skipping ${file}: missing or invalid runTimestamp/wallClockMs`);
+      if (typeof entry.runTimestamp !== "string" || typeof entry.wallClockMs !== "number") {
+        onWarn?.(`Skipping malformed run_metrics at line ${i + 1}: missing runTimestamp/wallClockMs`);
         continue;
       }
 
       // Structural validation: items array must exist
-      if (!Array.isArray(parsed.items)) {
-        onWarn?.(`Skipping ${file}: missing or invalid items array`);
+      if (!Array.isArray(entry.items)) {
+        onWarn?.(`Skipping run_metrics at line ${i + 1}: missing items array`);
         continue;
       }
 
       // Structural validation: each item must have id (string) and state (string)
-      const hasInvalidItem = parsed.items.some(
+      const hasInvalidItem = entry.items.some(
         (item: unknown) =>
           typeof item !== "object" ||
           item === null ||
@@ -95,15 +133,16 @@ export function loadRuns(
           typeof (item as Record<string, unknown>).state !== "string",
       );
       if (hasInvalidItem) {
-        onWarn?.(`Skipping ${file}: one or more items missing id or state`);
+        onWarn?.(`Skipping run_metrics at line ${i + 1}: items missing id or state`);
         continue;
       }
 
-      runs.push(parsed);
-    } catch {
-      onWarn?.(`Skipping ${file}: invalid JSON`);
+      runs.push(entry);
     }
   }
+
+  // Sort by runTimestamp (oldest first)
+  runs.sort((a, b) => a.runTimestamp.localeCompare(b.runTimestamp));
 
   return runs;
 }
@@ -416,15 +455,15 @@ export function formatAnalytics(summary: AnalyticsSummary, showAll: boolean): st
 // ── Command entry point ───────────────────────────────────────────────
 
 /**
- * Run the analytics command. Reads files and prints to stdout.
+ * Run the analytics command. Reads run_metrics events from the orchestrator log.
  */
 export function analytics(
   projectRoot: string,
   showAll: boolean,
   io: AnalyticsReadIO,
 ): void {
-  const analyticsDir = join(projectRoot, ".ninthwave", "analytics");
-  const runs = loadRuns(analyticsDir, io);
+  const logPath = logFilePath(projectRoot);
+  const runs = loadRuns(logPath, io);
   const summary = computeSummary(runs);
   const lines = formatAnalytics(summary, showAll);
 
@@ -435,7 +474,7 @@ export function analytics(
 
 /** Default IO using real filesystem. */
 function defaultIO(): AnalyticsReadIO {
-  return { existsSync, readdirSync, readFileSync };
+  return { existsSync, readFileSync };
 }
 
 /** CLI entry point for `ninthwave analytics`. */

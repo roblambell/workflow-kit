@@ -28,7 +28,7 @@ import { checkPrStatus, scanExternalPRs } from "./pr-monitor.ts";
 import { launchSingleItem, launchReviewWorker, launchRepairWorker, launchVerifierWorker, detectAiTool, cleanStaleBranchForReuse } from "./launch.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI } from "../gh.ts";
-import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitPush, gitReset, daemonRebase } from "../git.ts";
+import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush, daemonRebase } from "../git.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
 import { die, warn, info, ALT_SCREEN_ON, ALT_SCREEN_OFF } from "../output.ts";
@@ -41,13 +41,8 @@ import { loadConfig } from "../config.ts";
 import { preflight } from "../preflight.ts";
 import {
   collectRunMetrics,
-  writeRunMetrics,
-  commitAnalyticsFiles,
-  commitFrictionFiles,
   parseCostSummary,
   parseWorkerTelemetry,
-  type AnalyticsIO,
-  type AnalyticsCommitDeps,
   type CostSummary,
 } from "../analytics.ts";
 import {
@@ -58,7 +53,6 @@ import {
   serializeOrchestratorState,
   writeStateFile,
   readStateFile,
-  archiveStateFile,
   readExternalReviews,
   writeExternalReviews,
   readHeartbeat,
@@ -1024,105 +1018,32 @@ function handleRunComplete(
     items: itemSummaries,
   });
 
-  // Analytics: write structured metrics file
-  if (config.analyticsDir && deps.analyticsIO) {
-    try {
-      const endTime = new Date().toISOString();
-      const metrics = collectRunMetrics(
-        allItems,
-        orch.config,
-        runStartTime,
-        endTime,
-        config.aiTool ?? "unknown",
-        costData.size > 0 ? costData : undefined,
-      );
-      const metricsPath = writeRunMetrics(metrics, config.analyticsDir, deps.analyticsIO);
-      log({
-        ts: new Date().toISOString(),
-        level: "info",
-        event: "analytics_written",
-        path: metricsPath,
-      });
-    } catch (e: unknown) {
-      // Non-fatal -- analytics failure shouldn't block the orchestrator
-      const msg = e instanceof Error ? e.message : String(e);
-      log({
-        ts: new Date().toISOString(),
-        level: "warn",
-        event: "analytics_error",
-        error: msg,
-      });
-    }
-  }
-
-  // Analytics: auto-commit analytics files to current branch
-  if (config.analyticsDir && deps.analyticsCommit) {
-    try {
-      const analyticsRelPath = ".ninthwave/analytics";
-      const result = commitAnalyticsFiles(
-        ctx.projectRoot,
-        analyticsRelPath,
-        deps.analyticsCommit,
-      );
-      if (result.committed) {
-        log({
-          ts: new Date().toISOString(),
-          level: "info",
-          event: "analytics_committed",
-        });
-      } else {
-        log({
-          ts: new Date().toISOString(),
-          level: "debug",
-          event: "analytics_commit_skipped",
-          reason: result.reason,
-        });
-      }
-    } catch (e: unknown) {
-      // Non-fatal -- commit failure shouldn't block the orchestrator
-      const msg = e instanceof Error ? e.message : String(e);
-      log({
-        ts: new Date().toISOString(),
-        level: "warn",
-        event: "analytics_commit_error",
-        error: msg,
-      });
-    }
-  }
-
-  // Friction: auto-commit friction entries to current branch
-  if (deps.analyticsCommit) {
-    try {
-      const frictionRelPath = ".ninthwave/friction";
-      const result = commitFrictionFiles(
-        ctx.projectRoot,
-        frictionRelPath,
-        deps.analyticsCommit,
-      );
-      if (result.committed) {
-        log({
-          ts: new Date().toISOString(),
-          level: "info",
-          event: "friction_committed",
-        });
-      } else {
-        log({
-          ts: new Date().toISOString(),
-          level: "debug",
-          event: "friction_commit_skipped",
-          reason: result.reason,
-        });
-      }
-    } catch (e: unknown) {
-      // Non-fatal -- commit failure shouldn't block the orchestrator
-      const msg = e instanceof Error ? e.message : String(e);
-      log({
-        ts: new Date().toISOString(),
-        level: "warn",
-        event: "friction_commit_error",
-        error: msg,
-      });
-    }
+  // Analytics: emit run_metrics as a structured log event (replaces JSON file writing)
+  try {
+    const endTime = new Date().toISOString();
+    const metrics = collectRunMetrics(
+      allItems,
+      orch.config,
+      runStartTime,
+      endTime,
+      config.aiTool ?? "unknown",
+      costData.size > 0 ? costData : undefined,
+    );
+    log({
+      ts: endTime,
+      level: "info",
+      event: "run_metrics",
+      ...metrics,
+    } as unknown as LogEntry);
+  } catch (e: unknown) {
+    // Non-fatal -- analytics failure shouldn't block the orchestrator
+    const msg = e instanceof Error ? e.message : String(e);
+    log({
+      ts: new Date().toISOString(),
+      level: "warn",
+      event: "analytics_error",
+      error: msg,
+    });
   }
 }
 
@@ -1264,10 +1185,6 @@ export interface OrchestrateLoopDeps {
   getFreeMem?: () => number;
   /** Reconcile work item files with GitHub state after merge actions. */
   reconcile?: (workDir: string, worktreeDir: string, projectRoot: string) => void;
-  /** File I/O for analytics metrics (injectable for testing). When absent, analytics is skipped. */
-  analyticsIO?: AnalyticsIO;
-  /** Git operations for auto-committing analytics files. When absent, commit is skipped. */
-  analyticsCommit?: AnalyticsCommitDeps;
   /** Read screen content from a worker workspace for cost/token parsing. */
   readScreen?: (ref: string, lines?: number) => string;
   /** Called after each poll cycle with current items. Used for daemon state persistence and TUI countdown. */
@@ -1287,8 +1204,6 @@ export interface OrchestrateLoopConfig {
   pollIntervalMs?: number;
   /** GitHub repo URL (e.g., "https://github.com/owner/repo") for constructing PR URLs. */
   repoUrl?: string;
-  /** Directory to write analytics metrics files. When set, metrics are emitted on run completion. */
-  analyticsDir?: string;
   /** AI tool identifier for per-item metrics (e.g., "claude", "cursor"). */
   aiTool?: string;
   /**
@@ -2510,9 +2425,6 @@ export async function cmdOrchestrate(
   const projectConfig = loadConfig(projectRoot);
   const reviewExternalEnabled = reviewExternal || projectConfig["review_external"] === "true";
 
-  // Analytics directory -- always enabled, writes to .ninthwave/analytics/
-  const analyticsDir = join(projectRoot, ".ninthwave", "analytics");
-
   // State persistence: serialize state each poll cycle so the status pane can display all items.
   // Written in both daemon and interactive mode -- the status pane reads this file to show
   // the full queue including queued items that don't have worktrees yet.
@@ -2523,18 +2435,10 @@ export async function cmdOrchestrate(
   // Persisted to state dir so it survives restarts.
   const operatorId = resolveOperatorId(projectRoot);
 
-  // Archive stale state from previous run and write a fresh initial state.
+  // Clean stale state from previous run and write a fresh initial state.
   // This ensures `ninthwave status` never shows items from a previous run mixed
   // with the current run -- even before the first poll cycle completes.
-  const archivePath = archiveStateFile(projectRoot);
-  if (archivePath) {
-    log({
-      ts: new Date().toISOString(),
-      level: "info",
-      event: "state_archived",
-      archivePath,
-    });
-  }
+  cleanStateFile(projectRoot);
   const initialState = serializeOrchestratorState(orch.getAllItems(), process.pid, daemonStartedAt, {
     wipLimit,
     operatorId,
@@ -2649,8 +2553,6 @@ export async function cmdOrchestrate(
     actionDeps,
     getFreeMem: getAvailableMemory,
     reconcile,
-    analyticsIO: { mkdirSync, writeFileSync },
-    analyticsCommit: { hasChanges, gitAdd, getStagedFiles, gitCommit, gitReset },
     readScreen: (ref, lines) => mux.readScreen(ref, lines),
     onPollComplete,
     syncDisplay: (o, snap) => syncWorkerDisplay(o, snap, mux),
@@ -2674,7 +2576,6 @@ export async function cmdOrchestrate(
   const loopConfig: OrchestrateLoopConfig = {
     ...(pollIntervalOverride ? { pollIntervalMs: pollIntervalOverride } : {}),
     ...(repoUrl ? { repoUrl } : {}),
-    analyticsDir,
     aiTool,
     ...(reviewExternalEnabled ? { reviewExternal: true } : {}),
     ...(watchMode ? { watch: true } : {}),
