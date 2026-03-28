@@ -1,7 +1,7 @@
 // Tests for core/commands/history.ts -- item state timeline display.
+// Now reads transition events from structured JSONL log files.
 
 import { describe, it, expect } from "vitest";
-import { join } from "path";
 import {
   loadSnapshots,
   extractTransitions,
@@ -11,10 +11,10 @@ import {
   type HistoryIO,
   type StateTransition,
   type TimelineEntry,
+  type LogTransitionEvent,
 } from "../core/commands/history.ts";
 import {
-  userStateDir,
-  stateArchiveDir,
+  logFilePath,
   stateFilePath,
   type DaemonState,
 } from "../core/daemon.ts";
@@ -31,36 +31,25 @@ function restoreHome() {
   process.env.HOME = origHome;
 }
 
-/** Create a DaemonState snapshot with the given items. */
-function makeState(
-  startedAt: string,
-  updatedAt: string,
-  items: { id: string; state: string; title: string; lastTransition: string }[],
-): DaemonState {
-  return {
-    pid: 1,
-    startedAt,
-    updatedAt,
-    items: items.map((i) => ({
-      id: i.id,
-      state: i.state,
-      prNumber: null,
-      title: i.title,
-      lastTransition: i.lastTransition,
-      ciFailCount: 0,
-      retryCount: 0,
-    })),
-  };
+/** Build a JSONL log line for a transition event. */
+function transitionLine(
+  itemId: string,
+  from: string,
+  to: string,
+  ts: string,
+): string {
+  return JSON.stringify({ ts, level: "info", event: "transition", itemId, from, to });
 }
 
-/** Create a mock IO backed by in-memory files. */
-function createMockIO(
-  files: Record<string, string>,
-  dirs: Record<string, string[]>,
-): HistoryIO {
+/** Build a JSONL log line for a non-transition event (should be ignored). */
+function otherLine(event: string, ts: string): string {
+  return JSON.stringify({ ts, level: "info", event });
+}
+
+/** Create a mock HistoryIO backed by in-memory files. */
+function createMockIO(files: Record<string, string>): HistoryIO {
   return {
-    existsSync: (path: string) => path in files || path in dirs,
-    readdirSync: (path: string) => dirs[path] ?? [],
+    existsSync: (path: string) => path in files,
     readFileSync: (path: string) => {
       const content = files[path];
       if (content === undefined) throw new Error(`ENOENT: ${path}`);
@@ -72,67 +61,94 @@ function createMockIO(
 // ── loadSnapshots ───────────────────────────────────────────────────
 
 describe("loadSnapshots", () => {
-  it("loads archive files and current state", () => {
+  it("loads transition events from the log file", () => {
     setHome("/home/test");
     try {
       const projectRoot = "/project";
-      const archDir = stateArchiveDir(projectRoot);
-      const curPath = stateFilePath(projectRoot);
+      const logPath = logFilePath(projectRoot);
 
-      const archive1 = makeState(
-        "2026-03-28T10:00:00.000Z",
-        "2026-03-28T10:15:00.000Z",
-        [{ id: "H-CR-1", state: "ready", title: "Test item", lastTransition: "2026-03-28T10:00:00.000Z" }],
-      );
-      const current = makeState(
-        "2026-03-28T11:00:00.000Z",
-        "2026-03-28T11:30:00.000Z",
-        [{ id: "H-CR-1", state: "merged", title: "Test item", lastTransition: "2026-03-28T11:25:00.000Z" }],
-      );
+      const logContent = [
+        transitionLine("H-CR-1", "queued", "ready", "2026-03-28T10:00:00.000Z"),
+        otherLine("poll_complete", "2026-03-28T10:00:01.000Z"),
+        transitionLine("H-CR-1", "ready", "launching", "2026-03-28T10:01:00.000Z"),
+      ].join("\n");
 
-      const io = createMockIO(
-        {
-          [join(archDir, "orchestrator.state.2026-03-28T10-00-00-000Z.json")]: JSON.stringify(archive1),
-          [curPath]: JSON.stringify(current),
-        },
-        {
-          [archDir]: ["orchestrator.state.2026-03-28T10-00-00-000Z.json"],
-        },
-      );
+      const io = createMockIO({ [logPath]: logContent });
+      const events = loadSnapshots(projectRoot, io);
 
-      const snapshots = loadSnapshots(projectRoot, io);
-      expect(snapshots).toHaveLength(2);
-      expect(snapshots[0]!.state.items[0]!.state).toBe("ready");
-      expect(snapshots[1]!.state.items[0]!.state).toBe("merged");
+      expect(events).toHaveLength(2);
+      expect(events[0]!.itemId).toBe("H-CR-1");
+      expect(events[0]!.to).toBe("ready");
+      expect(events[1]!.to).toBe("launching");
     } finally {
       restoreHome();
     }
   });
 
-  it("skips corrupt files gracefully", () => {
+  it("loads from rotated log files in chronological order", () => {
     setHome("/home/test");
     try {
       const projectRoot = "/project";
-      const archDir = stateArchiveDir(projectRoot);
+      const logPath = logFilePath(projectRoot);
 
-      const io = createMockIO(
-        { [join(archDir, "corrupt.json")]: "not valid json {{{" },
-        { [archDir]: ["corrupt.json"] },
-      );
+      const rotated1 = transitionLine("H-CR-1", "queued", "ready", "2026-03-28T08:00:00.000Z");
+      const current = transitionLine("H-CR-1", "ready", "launching", "2026-03-28T10:00:00.000Z");
 
-      const snapshots = loadSnapshots(projectRoot, io);
-      expect(snapshots).toHaveLength(0);
+      const io = createMockIO({
+        [`${logPath}.1`]: rotated1,
+        [logPath]: current,
+      });
+
+      const events = loadSnapshots(projectRoot, io);
+      expect(events).toHaveLength(2);
+      // Oldest first
+      expect(events[0]!.to).toBe("ready");
+      expect(events[1]!.to).toBe("launching");
     } finally {
       restoreHome();
     }
   });
 
-  it("returns empty when no archive or current state", () => {
+  it("skips malformed JSON lines gracefully", () => {
     setHome("/home/test");
     try {
-      const io = createMockIO({}, {});
-      const snapshots = loadSnapshots("/project", io);
-      expect(snapshots).toHaveLength(0);
+      const projectRoot = "/project";
+      const logPath = logFilePath(projectRoot);
+
+      const logContent = [
+        "not valid json {{{",
+        transitionLine("H-CR-1", "queued", "ready", "2026-03-28T10:00:00.000Z"),
+        "",
+      ].join("\n");
+
+      const io = createMockIO({ [logPath]: logContent });
+      const events = loadSnapshots(projectRoot, io);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.to).toBe("ready");
+    } finally {
+      restoreHome();
+    }
+  });
+
+  it("returns empty when no log files exist", () => {
+    setHome("/home/test");
+    try {
+      const io = createMockIO({});
+      const events = loadSnapshots("/project", io);
+      expect(events).toHaveLength(0);
+    } finally {
+      restoreHome();
+    }
+  });
+
+  it("returns empty for empty log file", () => {
+    setHome("/home/test");
+    try {
+      const projectRoot = "/project";
+      const logPath = logFilePath(projectRoot);
+      const io = createMockIO({ [logPath]: "" });
+      const events = loadSnapshots(projectRoot, io);
+      expect(events).toHaveLength(0);
     } finally {
       restoreHome();
     }
@@ -142,112 +158,61 @@ describe("loadSnapshots", () => {
 // ── extractTransitions ──────────────────────────────────────────────
 
 describe("extractTransitions", () => {
-  it("extracts transitions for a specific item across snapshots", () => {
-    const snapshots = [
-      {
-        timestamp: "2026-03-28T10:15:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:15:00.000Z",
-          [{ id: "H-CR-1", state: "ready", title: "Test", lastTransition: "2026-03-28T10:15:03.000Z" }],
-        ),
-      },
-      {
-        timestamp: "2026-03-28T10:17:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:17:00.000Z",
-          [{ id: "H-CR-1", state: "launching", title: "Test", lastTransition: "2026-03-28T10:17:17.000Z" }],
-        ),
-      },
-      {
-        timestamp: "2026-03-28T10:29:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:29:00.000Z",
-          [{ id: "H-CR-1", state: "implementing", title: "Test", lastTransition: "2026-03-28T10:17:25.000Z" }],
-        ),
-      },
+  it("extracts transitions for a specific item", () => {
+    const events: LogTransitionEvent[] = [
+      { ts: "2026-03-28T10:15:03.000Z", itemId: "H-CR-1", from: "queued", to: "ready" },
+      { ts: "2026-03-28T10:17:17.000Z", itemId: "H-CR-1", from: "ready", to: "launching" },
+      { ts: "2026-03-28T10:17:25.000Z", itemId: "H-CR-1", from: "launching", to: "implementing" },
     ];
 
-    const transitions = extractTransitions("H-CR-1", snapshots);
+    const transitions = extractTransitions("H-CR-1", events);
     expect(transitions).toHaveLength(3);
     expect(transitions[0]!.state).toBe("ready");
     expect(transitions[1]!.state).toBe("launching");
     expect(transitions[2]!.state).toBe("implementing");
   });
 
-  it("deduplicates consecutive identical states", () => {
-    const snapshots = [
-      {
-        timestamp: "2026-03-28T10:00:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:00:00.000Z",
-          [{ id: "H-CR-1", state: "implementing", title: "Test", lastTransition: "2026-03-28T10:00:00.000Z" }],
-        ),
-      },
-      {
-        timestamp: "2026-03-28T10:05:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:05:00.000Z",
-          [{ id: "H-CR-1", state: "implementing", title: "Test", lastTransition: "2026-03-28T10:00:00.000Z" }],
-        ),
-      },
-      {
-        timestamp: "2026-03-28T10:10:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:10:00.000Z",
-          [{ id: "H-CR-1", state: "implementing", title: "Test", lastTransition: "2026-03-28T10:00:00.000Z" }],
-        ),
-      },
-      {
-        timestamp: "2026-03-28T10:15:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:15:00.000Z",
-          [{ id: "H-CR-1", state: "ci-pending", title: "Test", lastTransition: "2026-03-28T10:15:00.000Z" }],
-        ),
-      },
+  it("filters out other items", () => {
+    const events: LogTransitionEvent[] = [
+      { ts: "2026-03-28T10:00:00.000Z", itemId: "H-CR-1", from: "queued", to: "ready" },
+      { ts: "2026-03-28T10:01:00.000Z", itemId: "H-OTHER-1", from: "queued", to: "ready" },
+      { ts: "2026-03-28T10:02:00.000Z", itemId: "H-CR-1", from: "ready", to: "launching" },
     ];
 
-    const transitions = extractTransitions("H-CR-1", snapshots);
+    const transitions = extractTransitions("H-CR-1", events);
+    expect(transitions).toHaveLength(2);
+    expect(transitions[0]!.state).toBe("ready");
+    expect(transitions[1]!.state).toBe("launching");
+  });
+
+  it("deduplicates consecutive identical states", () => {
+    const events: LogTransitionEvent[] = [
+      { ts: "2026-03-28T10:00:00.000Z", itemId: "H-CR-1", from: "queued", to: "implementing" },
+      { ts: "2026-03-28T10:05:00.000Z", itemId: "H-CR-1", from: "queued", to: "implementing" },
+      { ts: "2026-03-28T10:15:00.000Z", itemId: "H-CR-1", from: "implementing", to: "ci-pending" },
+    ];
+
+    const transitions = extractTransitions("H-CR-1", events);
     expect(transitions).toHaveLength(2);
     expect(transitions[0]!.state).toBe("implementing");
     expect(transitions[1]!.state).toBe("ci-pending");
   });
 
   it("returns empty for unknown item ID", () => {
-    const snapshots = [
-      {
-        timestamp: "2026-03-28T10:00:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:00:00.000Z",
-          [{ id: "H-CR-1", state: "implementing", title: "Test", lastTransition: "2026-03-28T10:00:00.000Z" }],
-        ),
-      },
+    const events: LogTransitionEvent[] = [
+      { ts: "2026-03-28T10:00:00.000Z", itemId: "H-CR-1", from: "queued", to: "ready" },
     ];
 
-    const transitions = extractTransitions("UNKNOWN-99", snapshots);
+    const transitions = extractTransitions("UNKNOWN-99", events);
     expect(transitions).toHaveLength(0);
   });
 
-  it("handles single-snapshot case", () => {
-    const snapshots = [
-      {
-        timestamp: "2026-03-28T10:00:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:00:00.000Z",
-          [{ id: "H-CR-1", state: "merged", title: "Test", lastTransition: "2026-03-28T10:31:38.000Z" }],
-        ),
-      },
+  it("handles single event", () => {
+    const events: LogTransitionEvent[] = [
+      { ts: "2026-03-28T10:31:38.000Z", itemId: "H-CR-1", from: "ci-passed", to: "merged" },
     ];
 
-    const transitions = extractTransitions("H-CR-1", snapshots);
+    const transitions = extractTransitions("H-CR-1", events);
     expect(transitions).toHaveLength(1);
     expect(transitions[0]!.state).toBe("merged");
     expect(transitions[0]!.timestamp).toBe("2026-03-28T10:31:38.000Z");
@@ -298,34 +263,70 @@ describe("buildTimeline", () => {
 // ── resolveTitle ────────────────────────────────────────────────────
 
 describe("resolveTitle", () => {
-  it("resolves title from snapshots", () => {
-    const snapshots = [
-      {
-        timestamp: "2026-03-28T10:00:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:00:00.000Z",
-          [{ id: "H-CR-1", state: "ready", title: "Rename watch.ts to pr-monitor.ts", lastTransition: "2026-03-28T10:00:00.000Z" }],
-        ),
-      },
-    ];
+  it("resolves title from current state file", () => {
+    setHome("/home/test");
+    try {
+      const projectRoot = "/project";
+      const curPath = stateFilePath(projectRoot);
 
-    expect(resolveTitle("H-CR-1", snapshots)).toBe("Rename watch.ts to pr-monitor.ts");
+      const state: DaemonState = {
+        pid: 1,
+        startedAt: "2026-03-28T10:00:00.000Z",
+        updatedAt: "2026-03-28T10:00:00.000Z",
+        items: [{
+          id: "H-CR-1",
+          state: "merged",
+          prNumber: 42,
+          title: "Rename watch.ts to pr-monitor.ts",
+          lastTransition: "2026-03-28T10:00:00.000Z",
+          ciFailCount: 0,
+          retryCount: 0,
+        }],
+      };
+
+      const io = createMockIO({ [curPath]: JSON.stringify(state) });
+      expect(resolveTitle("H-CR-1", projectRoot, io)).toBe("Rename watch.ts to pr-monitor.ts");
+    } finally {
+      restoreHome();
+    }
   });
 
   it("returns null for unknown ID", () => {
-    const snapshots = [
-      {
-        timestamp: "2026-03-28T10:00:00.000Z",
-        state: makeState(
-          "2026-03-28T10:00:00.000Z",
-          "2026-03-28T10:00:00.000Z",
-          [{ id: "H-CR-1", state: "ready", title: "Test", lastTransition: "2026-03-28T10:00:00.000Z" }],
-        ),
-      },
-    ];
+    setHome("/home/test");
+    try {
+      const projectRoot = "/project";
+      const curPath = stateFilePath(projectRoot);
 
-    expect(resolveTitle("UNKNOWN-1", snapshots)).toBeNull();
+      const state: DaemonState = {
+        pid: 1,
+        startedAt: "2026-03-28T10:00:00.000Z",
+        updatedAt: "2026-03-28T10:00:00.000Z",
+        items: [{
+          id: "H-CR-1",
+          state: "ready",
+          prNumber: null,
+          title: "Test",
+          lastTransition: "2026-03-28T10:00:00.000Z",
+          ciFailCount: 0,
+          retryCount: 0,
+        }],
+      };
+
+      const io = createMockIO({ [curPath]: JSON.stringify(state) });
+      expect(resolveTitle("UNKNOWN-1", projectRoot, io)).toBeNull();
+    } finally {
+      restoreHome();
+    }
+  });
+
+  it("returns null when no state file exists", () => {
+    setHome("/home/test");
+    try {
+      const io = createMockIO({});
+      expect(resolveTitle("H-CR-1", "/project", io)).toBeNull();
+    } finally {
+      restoreHome();
+    }
   });
 });
 
@@ -392,66 +393,44 @@ describe("full lifecycle integration", () => {
     setHome("/home/test");
     try {
       const projectRoot = "/project";
-      const archDir = stateArchiveDir(projectRoot);
+      const logPath = logFilePath(projectRoot);
       const curPath = stateFilePath(projectRoot);
 
-      // Simulate multiple archive snapshots capturing state changes
-      const snap1 = makeState(
-        "2026-03-28T10:00:00.000Z",
-        "2026-03-28T10:15:00.000Z",
-        [{ id: "H-CR-1", state: "ready", title: "Rename watch.ts", lastTransition: "2026-03-28T10:15:03.000Z" }],
-      );
-      const snap2 = makeState(
-        "2026-03-28T10:00:00.000Z",
-        "2026-03-28T10:17:00.000Z",
-        [{ id: "H-CR-1", state: "launching", title: "Rename watch.ts", lastTransition: "2026-03-28T10:17:17.000Z" }],
-      );
-      const snap3 = makeState(
-        "2026-03-28T10:00:00.000Z",
-        "2026-03-28T10:20:00.000Z",
-        [{ id: "H-CR-1", state: "implementing", title: "Rename watch.ts", lastTransition: "2026-03-28T10:17:25.000Z" }],
-      );
-      const snap4 = makeState(
-        "2026-03-28T10:00:00.000Z",
-        "2026-03-28T10:30:00.000Z",
-        [{ id: "H-CR-1", state: "ci-pending", title: "Rename watch.ts", lastTransition: "2026-03-28T10:29:28.000Z" }],
-      );
-      const snap5 = makeState(
-        "2026-03-28T10:00:00.000Z",
-        "2026-03-28T10:31:00.000Z",
-        [{ id: "H-CR-1", state: "ci-passed", title: "Rename watch.ts", lastTransition: "2026-03-28T10:31:13.000Z" }],
-      );
-      // Current state = merged
-      const currentState = makeState(
-        "2026-03-28T10:00:00.000Z",
-        "2026-03-28T10:32:00.000Z",
-        [{ id: "H-CR-1", state: "merged", title: "Rename watch.ts", lastTransition: "2026-03-28T10:31:38.000Z" }],
-      );
+      // Simulate log events for the full lifecycle
+      const logContent = [
+        transitionLine("H-CR-1", "queued", "ready", "2026-03-28T10:15:03.000Z"),
+        transitionLine("H-CR-1", "ready", "launching", "2026-03-28T10:17:17.000Z"),
+        transitionLine("H-CR-1", "launching", "implementing", "2026-03-28T10:17:25.000Z"),
+        transitionLine("H-CR-1", "implementing", "ci-pending", "2026-03-28T10:29:28.000Z"),
+        transitionLine("H-CR-1", "ci-pending", "ci-passed", "2026-03-28T10:31:13.000Z"),
+        transitionLine("H-CR-1", "ci-passed", "merged", "2026-03-28T10:31:38.000Z"),
+      ].join("\n");
 
-      const io = createMockIO(
-        {
-          [join(archDir, "orchestrator.state.2026-03-28T10-00-00-000Z.json")]: JSON.stringify(snap1),
-          [join(archDir, "orchestrator.state.2026-03-28T10-17-00-000Z.json")]: JSON.stringify(snap2),
-          [join(archDir, "orchestrator.state.2026-03-28T10-20-00-000Z.json")]: JSON.stringify(snap3),
-          [join(archDir, "orchestrator.state.2026-03-28T10-30-00-000Z.json")]: JSON.stringify(snap4),
-          [join(archDir, "orchestrator.state.2026-03-28T10-31-00-000Z.json")]: JSON.stringify(snap5),
-          [curPath]: JSON.stringify(currentState),
-        },
-        {
-          [archDir]: [
-            "orchestrator.state.2026-03-28T10-00-00-000Z.json",
-            "orchestrator.state.2026-03-28T10-17-00-000Z.json",
-            "orchestrator.state.2026-03-28T10-20-00-000Z.json",
-            "orchestrator.state.2026-03-28T10-30-00-000Z.json",
-            "orchestrator.state.2026-03-28T10-31-00-000Z.json",
-          ],
-        },
-      );
+      // Current state for title resolution
+      const currentState: DaemonState = {
+        pid: 1,
+        startedAt: "2026-03-28T10:00:00.000Z",
+        updatedAt: "2026-03-28T10:32:00.000Z",
+        items: [{
+          id: "H-CR-1",
+          state: "merged",
+          prNumber: 42,
+          title: "Rename watch.ts",
+          lastTransition: "2026-03-28T10:31:38.000Z",
+          ciFailCount: 0,
+          retryCount: 0,
+        }],
+      };
 
-      const snapshots = loadSnapshots(projectRoot, io);
-      const transitions = extractTransitions("H-CR-1", snapshots);
+      const io = createMockIO({
+        [logPath]: logContent,
+        [curPath]: JSON.stringify(currentState),
+      });
+
+      const events = loadSnapshots(projectRoot, io);
+      const transitions = extractTransitions("H-CR-1", events);
       const timeline = buildTimeline(transitions);
-      const title = resolveTitle("H-CR-1", snapshots);
+      const title = resolveTitle("H-CR-1", projectRoot, io);
 
       // Verify full lifecycle
       expect(transitions).toHaveLength(6);

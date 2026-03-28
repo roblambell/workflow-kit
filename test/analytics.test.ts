@@ -4,16 +4,11 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   collectRunMetrics,
-  writeRunMetrics,
-  commitAnalyticsFiles,
-  commitFrictionFiles,
   parseCostSummary,
   percentile,
   computeDetectionLatency,
   SLOW_DETECTION_THRESHOLD_MS,
   type RunMetrics,
-  type AnalyticsIO,
-  type AnalyticsCommitDeps,
   type CostSummary,
   type DetectionLatencyStats,
 } from "../core/analytics.ts";
@@ -79,16 +74,6 @@ function mockActionDeps(overrides?: Partial<OrchestratorDeps>): OrchestratorDeps
     fetchOrigin: vi.fn(),
     ffMerge: vi.fn(),
     ...overrides,
-  };
-}
-
-function mockAnalyticsIO(): AnalyticsIO & {
-  mkdirSync: ReturnType<typeof vi.fn>;
-  writeFileSync: ReturnType<typeof vi.fn>;
-} {
-  return {
-    mkdirSync: vi.fn(),
-    writeFileSync: vi.fn(),
   };
 }
 
@@ -224,70 +209,16 @@ describe("collectRunMetrics", () => {
   });
 });
 
-// ── writeRunMetrics ──────────────────────────────────────────────────
-
-describe("writeRunMetrics", () => {
-  it("creates the analytics directory and writes a JSON file", () => {
-    const io = mockAnalyticsIO();
-    const metrics: RunMetrics = {
-      runTimestamp: "2026-03-24T10:05:30.123Z",
-      wallClockMs: 5000,
-      itemsAttempted: 1,
-      itemsCompleted: 1,
-      itemsFailed: 0,
-      mergeStrategy: "auto",
-      items: [{ id: "T-1-1", state: "done", ciRetryCount: 0, tool: "claude" }],
-    };
-
-    const path = writeRunMetrics(metrics, "/tmp/.ninthwave/analytics", io);
-
-    expect(io.mkdirSync).toHaveBeenCalledWith("/tmp/.ninthwave/analytics", { recursive: true });
-    expect(io.writeFileSync).toHaveBeenCalledTimes(1);
-
-    const writtenPath = io.writeFileSync.mock.calls[0][0];
-    expect(writtenPath).toContain("2026-03-24T10-05-30-123Z.json");
-    expect(path).toBe(writtenPath);
-
-    const writtenContent = JSON.parse(io.writeFileSync.mock.calls[0][1]);
-    expect(writtenContent.runTimestamp).toBe("2026-03-24T10:05:30.123Z");
-    expect(writtenContent.wallClockMs).toBe(5000);
-    expect(writtenContent.items).toHaveLength(1);
-  });
-
-  it("names file by timestamp in filesystem-safe format", () => {
-    const io = mockAnalyticsIO();
-    const metrics: RunMetrics = {
-      runTimestamp: "2026-01-15T23:59:59.999Z",
-      wallClockMs: 0,
-      itemsAttempted: 0,
-      itemsCompleted: 0,
-      itemsFailed: 0,
-      mergeStrategy: "auto",
-      items: [],
-    };
-
-    writeRunMetrics(metrics, "/analytics", io);
-
-    const writtenPath = io.writeFileSync.mock.calls[0][0];
-    expect(writtenPath).toBe("/analytics/2026-01-15T23-59-59-999Z.json");
-    // No colons or dots in the filename
-    const filename = writtenPath.split("/").pop()!;
-    expect(filename).not.toContain(":");
-    expect(filename.replace(".json", "")).not.toContain(".");
-  });
-});
-
-// ── Integration: orchestrateLoop writes metrics ──────────────────────
+// ── Integration: orchestrateLoop emits run_metrics log event ─────────
 
 describe("orchestrateLoop analytics integration", () => {
-  it("writes metrics file on orchestrate_complete", async () => {
+  it("emits run_metrics log event on orchestrate_complete", async () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
     let cycle = 0;
     const logs: LogEntry[] = [];
-    const io = mockAnalyticsIO();
 
     const buildSnapshot = (): PollSnapshot => {
       cycle++;
@@ -311,42 +242,30 @@ describe("orchestrateLoop analytics integration", () => {
       sleep: () => Promise.resolve(),
       log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      analyticsIO: io,
     };
 
     const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
       aiTool: "claude",
     };
 
     await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
 
-    // Metrics file was written
-    expect(io.mkdirSync).toHaveBeenCalledWith("/tmp/.ninthwave/analytics", { recursive: true });
-    expect(io.writeFileSync).toHaveBeenCalledTimes(1);
-
-    // Parse and validate written metrics
-    const written = JSON.parse(io.writeFileSync.mock.calls[0][1]) as RunMetrics;
-    expect(written.itemsAttempted).toBe(1);
-    expect(written.itemsCompleted).toBe(1);
-    expect(written.itemsFailed).toBe(0);
-    expect(written.mergeStrategy).toBe("auto");
-    expect(written.wallClockMs).toBeGreaterThanOrEqual(0);
-    expect(written.items).toHaveLength(1);
-    expect(written.items[0].id).toBe("T-1-1");
-    expect(written.items[0].tool).toBe("claude");
-
-    // analytics_written log event was emitted
-    expect(logs.some((l) => l.event === "analytics_written")).toBe(true);
+    // run_metrics log event was emitted
+    const metricsLog = logs.find((l) => l.event === "run_metrics");
+    expect(metricsLog).toBeDefined();
+    expect(metricsLog!.itemsAttempted).toBe(1);
+    expect(metricsLog!.itemsCompleted).toBe(1);
+    expect(metricsLog!.itemsFailed).toBe(0);
+    expect(metricsLog!.mergeStrategy).toBe("auto");
   });
 
-  it("includes CI retry count in metrics for items with failures", async () => {
+  it("includes CI retry count in run_metrics for items with failures", async () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
     let cycle = 0;
-    const io = mockAnalyticsIO();
+    const logs: LogEntry[] = [];
 
     const buildSnapshot = (): PollSnapshot => {
       cycle++;
@@ -378,23 +297,21 @@ describe("orchestrateLoop analytics integration", () => {
     const deps: OrchestrateLoopDeps = {
       buildSnapshot,
       sleep: () => Promise.resolve(),
-      log: () => {},
+      log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      analyticsIO: io,
     };
 
     const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
       aiTool: "claude",
     };
 
     await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
 
-    const written = JSON.parse(io.writeFileSync.mock.calls[0][1]) as RunMetrics;
-    expect(written.items[0].ciRetryCount).toBe(1);
+    const metricsLog = logs.find((l) => l.event === "run_metrics") as any;
+    expect(metricsLog.items[0].ciRetryCount).toBe(1);
   });
 
-  it("skips analytics when analyticsDir is not configured", async () => {
+  it("always emits run_metrics (no analyticsDir needed)", async () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
@@ -424,77 +341,17 @@ describe("orchestrateLoop analytics integration", () => {
       sleep: () => Promise.resolve(),
       log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      // No analyticsIO provided
     };
 
     await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 200 });
 
-    // No analytics events
-    expect(logs.some((l) => l.event === "analytics_written")).toBe(false);
-    expect(logs.some((l) => l.event === "analytics_error")).toBe(false);
+    // run_metrics is always emitted
+    expect(logs.some((l) => l.event === "run_metrics")).toBe(true);
   });
 
-  it("handles analytics write failure gracefully", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
-    orch.addItem(makeWorkItem("T-1-1"));
-    orch.getItem("T-1-1")!.reviewCompleted = true;
-
-    let cycle = 0;
-    const logs: LogEntry[] = [];
-    const io: AnalyticsIO = {
-      mkdirSync: vi.fn(() => {
-        throw new Error("permission denied");
-      }),
-      writeFileSync: vi.fn(),
-    };
-
-    const buildSnapshot = (): PollSnapshot => {
-      cycle++;
-      switch (cycle) {
-        case 1:
-          return { items: [], readyIds: ["T-1-1"] };
-        case 2:
-          return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
-        case 3:
-          return {
-            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
-            readyIds: [],
-          };
-        default:
-          return { items: [], readyIds: [] };
-      }
-    };
-
-    const deps: OrchestrateLoopDeps = {
-      buildSnapshot,
-      sleep: () => Promise.resolve(),
-      log: (entry) => logs.push(entry),
-      actionDeps: mockActionDeps(),
-      analyticsIO: io,
-    };
-
-    const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
-      aiTool: "claude",
-    };
-
-    // Should not throw -- analytics failure is non-fatal
-    await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
-
-    // Item still completes
-    expect(orch.getItem("T-1-1")!.state).toBe("done");
-
-    // Error was logged
-    const errorLog = logs.find((l) => l.event === "analytics_error");
-    expect(errorLog).toBeDefined();
-    expect(errorLog!.error).toContain("permission denied");
-  });
-
-  it("handles zero-item run gracefully in the loop", async () => {
-    // Create orchestrator with no items -- all terminal immediately
+  it("emits run_metrics even for zero-item runs", async () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
 
-    const io = mockAnalyticsIO();
     const logs: LogEntry[] = [];
 
     const deps: OrchestrateLoopDeps = {
@@ -502,24 +359,20 @@ describe("orchestrateLoop analytics integration", () => {
       sleep: () => Promise.resolve(),
       log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      analyticsIO: io,
     };
 
     const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
       aiTool: "claude",
     };
 
     await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
 
-    // Metrics written even for zero items
-    expect(io.writeFileSync).toHaveBeenCalledTimes(1);
-    const written = JSON.parse(io.writeFileSync.mock.calls[0][1]) as RunMetrics;
-    expect(written.itemsAttempted).toBe(0);
-    expect(written.itemsCompleted).toBe(0);
-    expect(written.itemsFailed).toBe(0);
-    expect(written.items).toEqual([]);
-    expect(written.mergeStrategy).toBe("auto");
+    const metricsLog = logs.find((l) => l.event === "run_metrics") as any;
+    expect(metricsLog).toBeDefined();
+    expect(metricsLog.itemsAttempted).toBe(0);
+    expect(metricsLog.itemsCompleted).toBe(0);
+    expect(metricsLog.itemsFailed).toBe(0);
+    expect(metricsLog.mergeStrategy).toBe("auto");
   });
 });
 
@@ -547,13 +400,7 @@ function makeRun(overrides: Partial<RunMetrics> = {}): RunMetrics {
 
 function mockReadIO(files: Record<string, string>): AnalyticsReadIO {
   return {
-    existsSync: (path: string) => path in files || Object.keys(files).some((f) => f.startsWith(path + "/")),
-    readdirSync: (dir: string) => {
-      const prefix = dir.endsWith("/") ? dir : dir + "/";
-      return Object.keys(files)
-        .filter((f) => f.startsWith(prefix))
-        .map((f) => f.slice(prefix.length));
-    },
+    existsSync: (path: string) => path in files,
     readFileSync: (path: string) => {
       if (path in files) return files[path]!;
       throw new Error(`ENOENT: ${path}`);
@@ -561,121 +408,131 @@ function mockReadIO(files: Record<string, string>): AnalyticsReadIO {
   };
 }
 
-describe("loadRuns", () => {
-  it("parses metrics files correctly", () => {
+/** Helper: build a JSONL run_metrics log line from a RunMetrics object. */
+function metricsLine(run: RunMetrics): string {
+  return JSON.stringify({ ts: run.runTimestamp, level: "info", event: "run_metrics", ...run });
+}
+
+describe("loadRuns (log-based)", () => {
+  it("parses run_metrics events from JSONL log", () => {
     const run1 = makeRun({ runTimestamp: "2026-03-24T10:00:00.000Z" });
     const run2 = makeRun({ runTimestamp: "2026-03-24T11:00:00.000Z", wallClockMs: 600_000 });
 
-    const io = mockReadIO({
-      "/project/.ninthwave/analytics/2026-03-24T10-00-00-000Z.json": JSON.stringify(run1),
-      "/project/.ninthwave/analytics/2026-03-24T11-00-00-000Z.json": JSON.stringify(run2),
-    });
+    const logContent = [metricsLine(run1), metricsLine(run2)].join("\n");
+    const io = mockReadIO({ "/log": logContent });
 
-    const runs = loadRuns("/project/.ninthwave/analytics", io);
+    const runs = loadRuns("/log", io);
     expect(runs).toHaveLength(2);
     expect(runs[0]!.wallClockMs).toBe(300_000);
     expect(runs[1]!.wallClockMs).toBe(600_000);
   });
 
-  it("returns empty array when directory does not exist", () => {
+  it("returns empty array when log file does not exist", () => {
     const io = mockReadIO({});
     const runs = loadRuns("/nonexistent", io);
     expect(runs).toEqual([]);
   });
 
-  it("skips malformed JSON files", () => {
+  it("skips malformed JSON lines", () => {
     const validRun = makeRun();
-    const io = mockReadIO({
-      "/dir/bad.json": "not json{",
-      "/dir/good.json": JSON.stringify(validRun),
-    });
+    const logContent = [
+      "not json{",
+      metricsLine(validRun),
+    ].join("\n");
 
-    const runs = loadRuns("/dir", io);
+    const io = mockReadIO({ "/log": logContent });
+    const runs = loadRuns("/log", io);
     expect(runs).toHaveLength(1);
     expect(runs[0]!.runTimestamp).toBe(validRun.runTimestamp);
   });
 
-  it("sorts runs chronologically by filename", () => {
+  it("skips non-run_metrics events", () => {
+    const validRun = makeRun();
+    const logContent = [
+      JSON.stringify({ ts: "2026-03-24T10:00:00.000Z", level: "info", event: "transition", itemId: "T-1-1", from: "queued", to: "ready" }),
+      metricsLine(validRun),
+      JSON.stringify({ ts: "2026-03-24T12:00:00.000Z", level: "info", event: "orchestrate_complete" }),
+    ].join("\n");
+
+    const io = mockReadIO({ "/log": logContent });
+    const runs = loadRuns("/log", io);
+    expect(runs).toHaveLength(1);
+  });
+
+  it("sorts runs chronologically by runTimestamp", () => {
     const early = makeRun({ runTimestamp: "2026-03-24T08:00:00.000Z" });
     const late = makeRun({ runTimestamp: "2026-03-24T16:00:00.000Z" });
 
-    const io = mockReadIO({
-      "/dir/2026-03-24T16-00-00-000Z.json": JSON.stringify(late),
-      "/dir/2026-03-24T08-00-00-000Z.json": JSON.stringify(early),
-    });
+    // Intentionally in reverse order in the log
+    const logContent = [metricsLine(late), metricsLine(early)].join("\n");
+    const io = mockReadIO({ "/log": logContent });
 
-    const runs = loadRuns("/dir", io);
+    const runs = loadRuns("/log", io);
     expect(runs[0]!.runTimestamp).toBe("2026-03-24T08:00:00.000Z");
     expect(runs[1]!.runTimestamp).toBe("2026-03-24T16:00:00.000Z");
   });
 
-  it("skips file with valid timestamp but missing items array and warns", () => {
-    const noItems = { runTimestamp: "2026-03-24T10:00:00.000Z", wallClockMs: 100 };
-    const validRun = makeRun();
+  it("reads from rotated log files", () => {
+    const run1 = makeRun({ runTimestamp: "2026-03-24T08:00:00.000Z" });
+    const run2 = makeRun({ runTimestamp: "2026-03-24T12:00:00.000Z" });
+    const run3 = makeRun({ runTimestamp: "2026-03-24T16:00:00.000Z" });
+
     const io = mockReadIO({
-      "/dir/a-no-items.json": JSON.stringify(noItems),
-      "/dir/b-good.json": JSON.stringify(validRun),
+      "/log.2": metricsLine(run1),
+      "/log.1": metricsLine(run2),
+      "/log": metricsLine(run3),
     });
 
+    const runs = loadRuns("/log", io);
+    expect(runs).toHaveLength(3);
+    expect(runs[0]!.runTimestamp).toBe("2026-03-24T08:00:00.000Z");
+    expect(runs[2]!.runTimestamp).toBe("2026-03-24T16:00:00.000Z");
+  });
+
+  it("skips run_metrics with missing items array and warns", () => {
+    const noItems = { ts: "2026-03-24T10:00:00.000Z", level: "info", event: "run_metrics", runTimestamp: "2026-03-24T10:00:00.000Z", wallClockMs: 100 };
+    const validRun = makeRun();
+    const logContent = [JSON.stringify(noItems), metricsLine(validRun)].join("\n");
+    const io = mockReadIO({ "/log": logContent });
+
     const warnings: string[] = [];
-    const runs = loadRuns("/dir", io, (msg) => warnings.push(msg));
+    const runs = loadRuns("/log", io, (msg) => warnings.push(msg));
 
     expect(runs).toHaveLength(1);
     expect(runs[0]!.runTimestamp).toBe(validRun.runTimestamp);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("a-no-items.json");
     expect(warnings[0]).toContain("items array");
   });
 
-  it("skips file with malformed item entries and warns", () => {
-    const badItems = {
-      runTimestamp: "2026-03-24T10:00:00.000Z",
-      wallClockMs: 100,
-      items: [{ id: "T-1", state: "done" }, { notAnId: true }],
-    };
+  it("skips run_metrics with malformed item entries and warns", () => {
+    const badItems = { ts: "2026-03-24T10:00:00.000Z", level: "info", event: "run_metrics", runTimestamp: "2026-03-24T10:00:00.000Z", wallClockMs: 100, items: [{ id: "T-1", state: "done" }, { notAnId: true }] };
     const validRun = makeRun();
-    const io = mockReadIO({
-      "/dir/a-bad-items.json": JSON.stringify(badItems),
-      "/dir/b-good.json": JSON.stringify(validRun),
-    });
+    const logContent = [JSON.stringify(badItems), metricsLine(validRun)].join("\n");
+    const io = mockReadIO({ "/log": logContent });
 
     const warnings: string[] = [];
-    const runs = loadRuns("/dir", io, (msg) => warnings.push(msg));
+    const runs = loadRuns("/log", io, (msg) => warnings.push(msg));
 
     expect(runs).toHaveLength(1);
-    expect(runs[0]!.runTimestamp).toBe(validRun.runTimestamp);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("a-bad-items.json");
     expect(warnings[0]).toContain("missing id or state");
   });
 
-  it("warns on invalid JSON when onWarn is provided", () => {
-    const validRun = makeRun();
-    const io = mockReadIO({
-      "/dir/bad.json": "not json{",
-      "/dir/good.json": JSON.stringify(validRun),
-    });
-
-    const warnings: string[] = [];
-    const runs = loadRuns("/dir", io, (msg) => warnings.push(msg));
-
-    expect(runs).toHaveLength(1);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("bad.json");
-    expect(warnings[0]).toContain("invalid JSON");
+  it("handles empty log file", () => {
+    const io = mockReadIO({ "/log": "" });
+    const runs = loadRuns("/log", io);
+    expect(runs).toEqual([]);
   });
 
-  it("loads valid files normally without warnings", () => {
+  it("loads valid events without warnings", () => {
     const run1 = makeRun({ runTimestamp: "2026-03-24T10:00:00.000Z" });
     const run2 = makeRun({ runTimestamp: "2026-03-24T11:00:00.000Z", wallClockMs: 600_000 });
 
-    const io = mockReadIO({
-      "/dir/2026-03-24T10-00-00-000Z.json": JSON.stringify(run1),
-      "/dir/2026-03-24T11-00-00-000Z.json": JSON.stringify(run2),
-    });
+    const logContent = [metricsLine(run1), metricsLine(run2)].join("\n");
+    const io = mockReadIO({ "/log": logContent });
 
     const warnings: string[] = [];
-    const runs = loadRuns("/dir", io, (msg) => warnings.push(msg));
+    const runs = loadRuns("/log", io, (msg) => warnings.push(msg));
 
     expect(runs).toHaveLength(2);
     expect(warnings).toHaveLength(0);
@@ -858,325 +715,6 @@ describe("formatAnalytics", () => {
   });
 });
 
-// ── commitAnalyticsFiles ──────────────────────────────────────────────
-
-function mockCommitDeps(overrides?: Partial<AnalyticsCommitDeps>): AnalyticsCommitDeps & {
-  hasChanges: ReturnType<typeof vi.fn>;
-  gitAdd: ReturnType<typeof vi.fn>;
-  getStagedFiles: ReturnType<typeof vi.fn>;
-  gitCommit: ReturnType<typeof vi.fn>;
-  gitReset: ReturnType<typeof vi.fn>;
-} {
-  return {
-    hasChanges: vi.fn(() => true),
-    gitAdd: vi.fn(),
-    getStagedFiles: vi.fn(() => [".ninthwave/analytics/2026-03-24T10-00-00-000Z.json"]),
-    gitCommit: vi.fn(),
-    gitReset: vi.fn(),
-    ...overrides,
-  };
-}
-
-describe("commitAnalyticsFiles", () => {
-  it("commits when analytics files have changes", () => {
-    const deps = mockCommitDeps();
-
-    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
-
-    expect(result.committed).toBe(true);
-    expect(result.reason).toBe("committed");
-    expect(deps.hasChanges).toHaveBeenCalledWith("/project", ".ninthwave/analytics");
-    expect(deps.gitAdd).toHaveBeenCalledWith("/project", [".ninthwave/analytics"]);
-    expect(deps.gitCommit).toHaveBeenCalledWith(
-      "/project",
-      "chore: update orchestration analytics",
-    );
-  });
-
-  it("skips commit when no analytics files changed", () => {
-    const deps = mockCommitDeps({
-      hasChanges: vi.fn(() => false),
-    });
-
-    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
-
-    expect(result.committed).toBe(false);
-    expect(result.reason).toBe("no_changes");
-    expect(deps.gitAdd).not.toHaveBeenCalled();
-    expect(deps.gitCommit).not.toHaveBeenCalled();
-  });
-
-  it("skips commit when non-analytics files are staged (dirty index)", () => {
-    const deps = mockCommitDeps({
-      getStagedFiles: vi.fn(() => [
-        ".ninthwave/analytics/2026-03-24T10-00-00-000Z.json",
-        "src/unrelated-file.ts",
-      ]),
-    });
-
-    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
-
-    expect(result.committed).toBe(false);
-    expect(result.reason).toBe("dirty_index");
-    expect(deps.gitAdd).toHaveBeenCalled(); // analytics were staged
-    expect(deps.gitCommit).not.toHaveBeenCalled(); // but commit was skipped
-    expect(deps.gitReset).toHaveBeenCalledWith("/project", [".ninthwave/analytics"]);
-  });
-
-  it("unstages analytics files before returning dirty_index", () => {
-    const callOrder: string[] = [];
-    const deps = mockCommitDeps({
-      getStagedFiles: vi.fn(() => {
-        callOrder.push("getStagedFiles");
-        return [
-          ".ninthwave/analytics/2026-03-24T10-00-00-000Z.json",
-          "src/unrelated-file.ts",
-        ];
-      }),
-      gitAdd: vi.fn(() => { callOrder.push("gitAdd"); }),
-      gitReset: vi.fn(() => { callOrder.push("gitReset"); }),
-    });
-
-    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
-
-    expect(result.committed).toBe(false);
-    expect(result.reason).toBe("dirty_index");
-    // gitReset must be called after gitAdd and getStagedFiles
-    expect(callOrder).toEqual(["gitAdd", "getStagedFiles", "gitReset"]);
-    expect(deps.gitReset).toHaveBeenCalledWith("/project", [".ninthwave/analytics"]);
-  });
-
-  it("does not call gitReset on clean commit", () => {
-    const deps = mockCommitDeps();
-
-    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
-
-    expect(result.committed).toBe(true);
-    expect(deps.gitReset).not.toHaveBeenCalled();
-  });
-
-  it("handles multiple analytics files", () => {
-    const deps = mockCommitDeps({
-      getStagedFiles: vi.fn(() => [
-        ".ninthwave/analytics/2026-03-24T10-00-00-000Z.json",
-        ".ninthwave/analytics/2026-03-24T11-00-00-000Z.json",
-      ]),
-    });
-
-    const result = commitAnalyticsFiles("/project", ".ninthwave/analytics", deps);
-
-    expect(result.committed).toBe(true);
-    expect(result.reason).toBe("committed");
-  });
-});
-
-// ── Integration: orchestrateLoop auto-commits analytics ──────────────
-
-describe("orchestrateLoop analytics auto-commit", () => {
-  it("auto-commits analytics files after writing metrics", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
-    orch.addItem(makeWorkItem("T-1-1"));
-    orch.getItem("T-1-1")!.reviewCompleted = true;
-
-    let cycle = 0;
-    const logs: LogEntry[] = [];
-    const io = mockAnalyticsIO();
-    const commitDeps = mockCommitDeps();
-
-    const buildSnapshot = (): PollSnapshot => {
-      cycle++;
-      switch (cycle) {
-        case 1:
-          return { items: [], readyIds: ["T-1-1"] };
-        case 2:
-          return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
-        case 3:
-          return {
-            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
-            readyIds: [],
-          };
-        default:
-          return { items: [], readyIds: [] };
-      }
-    };
-
-    const deps: OrchestrateLoopDeps = {
-      buildSnapshot,
-      sleep: () => Promise.resolve(),
-      log: (entry) => logs.push(entry),
-      actionDeps: mockActionDeps(),
-      analyticsIO: io,
-      analyticsCommit: commitDeps,
-    };
-
-    const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
-      aiTool: "claude",
-    };
-
-    await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
-
-    // Analytics were written
-    expect(io.writeFileSync).toHaveBeenCalledTimes(1);
-
-    // Analytics were auto-committed
-    expect(commitDeps.gitCommit).toHaveBeenCalledTimes(1);
-    expect(logs.some((l) => l.event === "analytics_committed")).toBe(true);
-  });
-
-  it("logs skip when no analytics changes to commit", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
-    orch.addItem(makeWorkItem("T-1-1"));
-    orch.getItem("T-1-1")!.reviewCompleted = true;
-
-    let cycle = 0;
-    const logs: LogEntry[] = [];
-    const io = mockAnalyticsIO();
-    const commitDeps = mockCommitDeps({
-      hasChanges: vi.fn(() => false),
-    });
-
-    const buildSnapshot = (): PollSnapshot => {
-      cycle++;
-      switch (cycle) {
-        case 1:
-          return { items: [], readyIds: ["T-1-1"] };
-        case 2:
-          return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
-        case 3:
-          return {
-            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
-            readyIds: [],
-          };
-        default:
-          return { items: [], readyIds: [] };
-      }
-    };
-
-    const deps: OrchestrateLoopDeps = {
-      buildSnapshot,
-      sleep: () => Promise.resolve(),
-      log: (entry) => logs.push(entry),
-      actionDeps: mockActionDeps(),
-      analyticsIO: io,
-      analyticsCommit: commitDeps,
-    };
-
-    const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
-      aiTool: "claude",
-    };
-
-    await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
-
-    expect(commitDeps.gitCommit).not.toHaveBeenCalled();
-    expect(logs.some((l) => l.event === "analytics_commit_skipped")).toBe(true);
-  });
-
-  it("handles analytics commit failure gracefully", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
-    orch.addItem(makeWorkItem("T-1-1"));
-    orch.getItem("T-1-1")!.reviewCompleted = true;
-
-    let cycle = 0;
-    const logs: LogEntry[] = [];
-    const io = mockAnalyticsIO();
-    const commitDeps = mockCommitDeps({
-      gitCommit: vi.fn(() => { throw new Error("nothing to commit"); }),
-    });
-
-    const buildSnapshot = (): PollSnapshot => {
-      cycle++;
-      switch (cycle) {
-        case 1:
-          return { items: [], readyIds: ["T-1-1"] };
-        case 2:
-          return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
-        case 3:
-          return {
-            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
-            readyIds: [],
-          };
-        default:
-          return { items: [], readyIds: [] };
-      }
-    };
-
-    const deps: OrchestrateLoopDeps = {
-      buildSnapshot,
-      sleep: () => Promise.resolve(),
-      log: (entry) => logs.push(entry),
-      actionDeps: mockActionDeps(),
-      analyticsIO: io,
-      analyticsCommit: commitDeps,
-    };
-
-    const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
-      aiTool: "claude",
-    };
-
-    // Should not throw
-    await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
-
-    // Item still completes
-    expect(orch.getItem("T-1-1")!.state).toBe("done");
-
-    // Error was logged
-    const errorLog = logs.find((l) => l.event === "analytics_commit_error");
-    expect(errorLog).toBeDefined();
-    expect(errorLog!.error).toContain("nothing to commit");
-  });
-
-  it("skips auto-commit when analyticsCommit deps not provided", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
-    orch.addItem(makeWorkItem("T-1-1"));
-    orch.getItem("T-1-1")!.reviewCompleted = true;
-
-    let cycle = 0;
-    const logs: LogEntry[] = [];
-    const io = mockAnalyticsIO();
-
-    const buildSnapshot = (): PollSnapshot => {
-      cycle++;
-      switch (cycle) {
-        case 1:
-          return { items: [], readyIds: ["T-1-1"] };
-        case 2:
-          return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
-        case 3:
-          return {
-            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }],
-            readyIds: [],
-          };
-        default:
-          return { items: [], readyIds: [] };
-      }
-    };
-
-    const deps: OrchestrateLoopDeps = {
-      buildSnapshot,
-      sleep: () => Promise.resolve(),
-      log: (entry) => logs.push(entry),
-      actionDeps: mockActionDeps(),
-      analyticsIO: io,
-      // No analyticsCommit provided
-    };
-
-    const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
-      aiTool: "claude",
-    };
-
-    await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
-
-    // Analytics were written but no commit events
-    expect(io.writeFileSync).toHaveBeenCalledTimes(1);
-    expect(logs.some((l) => l.event === "analytics_committed")).toBe(false);
-    expect(logs.some((l) => l.event === "analytics_commit_skipped")).toBe(false);
-    expect(logs.some((l) => l.event === "analytics_commit_error")).toBe(false);
-  });
-});
 
 // ── parseCostSummary ─────────────────────────────────────────────────
 
@@ -1528,11 +1066,8 @@ describe("orchestrateLoop cost capture", () => {
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
     let cycle = 0;
-    const io = mockAnalyticsIO();
     const logs: LogEntry[] = [];
 
-    // Flow: launch → implementing → pr-open → ci-pending
-    // Then PR detected as merged externally → clean action fires (triggers cost capture)
     const buildSnapshot = (): PollSnapshot => {
       cycle++;
       switch (cycle) {
@@ -1560,12 +1095,10 @@ describe("orchestrateLoop cost capture", () => {
       sleep: () => Promise.resolve(),
       log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      analyticsIO: io,
       readScreen: () => "Total tokens: 25,000\nTotal cost: $1.75\n",
     };
 
     const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
       aiTool: "claude",
     };
 
@@ -1577,12 +1110,12 @@ describe("orchestrateLoop cost capture", () => {
     expect(costLog!.tokensUsed).toBe(25000);
     expect(costLog!.costUsd).toBe(1.75);
 
-    // Metrics include cost data
-    const written = JSON.parse(io.writeFileSync.mock.calls[0][1]) as RunMetrics;
-    expect(written.items[0]!.tokensUsed).toBe(25000);
-    expect(written.items[0]!.costUsd).toBe(1.75);
-    expect(written.totalTokensUsed).toBe(25000);
-    expect(written.totalCostUsd).toBe(1.75);
+    // run_metrics includes cost data
+    const metricsLog = logs.find((l) => l.event === "run_metrics") as any;
+    expect(metricsLog.items[0].tokensUsed).toBe(25000);
+    expect(metricsLog.items[0].costUsd).toBe(1.75);
+    expect(metricsLog.totalTokensUsed).toBe(25000);
+    expect(metricsLog.totalCostUsd).toBe(1.75);
   });
 
   it("handles missing cost data gracefully (readScreen returns no cost info)", async () => {
@@ -1591,7 +1124,7 @@ describe("orchestrateLoop cost capture", () => {
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
     let cycle = 0;
-    const io = mockAnalyticsIO();
+    const logs: LogEntry[] = [];
 
     const buildSnapshot = (): PollSnapshot => {
       cycle++;
@@ -1618,25 +1151,23 @@ describe("orchestrateLoop cost capture", () => {
     const deps: OrchestrateLoopDeps = {
       buildSnapshot,
       sleep: () => Promise.resolve(),
-      log: () => {},
+      log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      analyticsIO: io,
       readScreen: () => "Worker idle. Waiting for orchestrator.",
     };
 
     const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
       aiTool: "claude",
     };
 
     await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
 
-    // Metrics have null cost data (not 0)
-    const written = JSON.parse(io.writeFileSync.mock.calls[0][1]) as RunMetrics;
-    expect(written.items[0]!.tokensUsed).toBeNull();
-    expect(written.items[0]!.costUsd).toBeNull();
-    expect(written.totalTokensUsed).toBeNull();
-    expect(written.totalCostUsd).toBeNull();
+    // run_metrics have null cost data (not 0)
+    const metricsLog = logs.find((l) => l.event === "run_metrics") as any;
+    expect(metricsLog.items[0].tokensUsed).toBeNull();
+    expect(metricsLog.items[0].costUsd).toBeNull();
+    expect(metricsLog.totalTokensUsed).toBeNull();
+    expect(metricsLog.totalCostUsd).toBeNull();
   });
 
   it("handles readScreen not provided (null cost data)", async () => {
@@ -1645,7 +1176,7 @@ describe("orchestrateLoop cost capture", () => {
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
     let cycle = 0;
-    const io = mockAnalyticsIO();
+    const logs: LogEntry[] = [];
 
     const buildSnapshot = (): PollSnapshot => {
       cycle++;
@@ -1667,24 +1198,22 @@ describe("orchestrateLoop cost capture", () => {
     const deps: OrchestrateLoopDeps = {
       buildSnapshot,
       sleep: () => Promise.resolve(),
-      log: () => {},
+      log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      analyticsIO: io,
     };
 
     const config: OrchestrateLoopConfig = {
-      analyticsDir: "/tmp/.ninthwave/analytics",
       aiTool: "claude",
     };
 
     await orchestrateLoop(orch, defaultCtx, deps, { ...config, maxIterations: 200 });
 
-    // Metrics have null cost data
-    const written = JSON.parse(io.writeFileSync.mock.calls[0][1]) as RunMetrics;
-    expect(written.items[0]!.tokensUsed).toBeNull();
-    expect(written.items[0]!.costUsd).toBeNull();
-    expect(written.totalTokensUsed).toBeNull();
-    expect(written.totalCostUsd).toBeNull();
+    // run_metrics have null cost data
+    const metricsLog = logs.find((l) => l.event === "run_metrics") as any;
+    expect(metricsLog.items[0].tokensUsed).toBeNull();
+    expect(metricsLog.items[0].costUsd).toBeNull();
+    expect(metricsLog.totalTokensUsed).toBeNull();
+    expect(metricsLog.totalCostUsd).toBeNull();
   });
 });
 
@@ -2060,116 +1589,6 @@ describe("formatAnalytics with detection latency", () => {
   });
 });
 
-// ── commitFrictionFiles ────────────────────────────────────────────────
-
-function mockFrictionDeps(overrides?: Partial<AnalyticsCommitDeps>): AnalyticsCommitDeps & {
-  hasChanges: ReturnType<typeof vi.fn>;
-  gitAdd: ReturnType<typeof vi.fn>;
-  getStagedFiles: ReturnType<typeof vi.fn>;
-  gitCommit: ReturnType<typeof vi.fn>;
-  gitReset: ReturnType<typeof vi.fn>;
-} {
-  return {
-    hasChanges: vi.fn(() => true),
-    gitAdd: vi.fn(),
-    getStagedFiles: vi.fn(() => [".ninthwave/friction/2026-03-28T10-00-00Z--M-FRC-1.md"]),
-    gitCommit: vi.fn(),
-    gitReset: vi.fn(),
-    ...overrides,
-  };
-}
-
-describe("commitFrictionFiles", () => {
-  it("commits when friction files have changes", () => {
-    const deps = mockFrictionDeps();
-
-    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
-
-    expect(result.committed).toBe(true);
-    expect(result.reason).toBe("committed");
-    expect(deps.hasChanges).toHaveBeenCalledWith("/project", ".ninthwave/friction");
-    expect(deps.gitAdd).toHaveBeenCalledWith("/project", [".ninthwave/friction"]);
-    expect(deps.gitCommit).toHaveBeenCalledWith(
-      "/project",
-      "chore: commit friction entries",
-    );
-  });
-
-  it("skips commit when no friction files changed", () => {
-    const deps = mockFrictionDeps({
-      hasChanges: vi.fn(() => false),
-    });
-
-    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
-
-    expect(result.committed).toBe(false);
-    expect(result.reason).toBe("no_changes");
-    expect(deps.gitAdd).not.toHaveBeenCalled();
-    expect(deps.gitCommit).not.toHaveBeenCalled();
-  });
-
-  it("skips commit when non-friction files are staged (dirty index)", () => {
-    const deps = mockFrictionDeps({
-      getStagedFiles: vi.fn(() => [
-        ".ninthwave/friction/2026-03-28T10-00-00Z--M-FRC-1.md",
-        "src/unrelated-file.ts",
-      ]),
-    });
-
-    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
-
-    expect(result.committed).toBe(false);
-    expect(result.reason).toBe("dirty_index");
-    expect(deps.gitAdd).toHaveBeenCalled();
-    expect(deps.gitCommit).not.toHaveBeenCalled();
-    expect(deps.gitReset).toHaveBeenCalledWith("/project", [".ninthwave/friction"]);
-  });
-
-  it("unstages friction files before returning dirty_index", () => {
-    const callOrder: string[] = [];
-    const deps = mockFrictionDeps({
-      getStagedFiles: vi.fn(() => {
-        callOrder.push("getStagedFiles");
-        return [
-          ".ninthwave/friction/2026-03-28T10-00-00Z--M-FRC-1.md",
-          "src/unrelated-file.ts",
-        ];
-      }),
-      gitAdd: vi.fn(() => { callOrder.push("gitAdd"); }),
-      gitReset: vi.fn(() => { callOrder.push("gitReset"); }),
-    });
-
-    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
-
-    expect(result.committed).toBe(false);
-    expect(result.reason).toBe("dirty_index");
-    expect(callOrder).toEqual(["gitAdd", "getStagedFiles", "gitReset"]);
-    expect(deps.gitReset).toHaveBeenCalledWith("/project", [".ninthwave/friction"]);
-  });
-
-  it("does not call gitReset on clean commit", () => {
-    const deps = mockFrictionDeps();
-
-    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
-
-    expect(result.committed).toBe(true);
-    expect(deps.gitReset).not.toHaveBeenCalled();
-  });
-
-  it("handles multiple friction files", () => {
-    const deps = mockFrictionDeps({
-      getStagedFiles: vi.fn(() => [
-        ".ninthwave/friction/2026-03-28T10-00-00Z--M-FRC-1.md",
-        ".ninthwave/friction/2026-03-28T11-00-00Z--M-FRC-2.md",
-      ]),
-    });
-
-    const result = commitFrictionFiles("/project", ".ninthwave/friction", deps);
-
-    expect(result.committed).toBe(true);
-    expect(result.reason).toBe("committed");
-  });
-});
 
 // ── estimateCost pricing lookup ─────────────────────────────────────
 

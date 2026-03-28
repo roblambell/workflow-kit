@@ -9,6 +9,9 @@
 .ninthwave/health-samples.jsonl
 .ninthwave/version
 
+# Analytics JSON files (metrics now live in orchestrator.log)
+.ninthwave/analytics/
+
 # Worker prompt file (written by orchestrator, read by agent on startup)
 .nw-prompt
 

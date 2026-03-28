@@ -1,23 +1,21 @@
 // history command: show state transition timeline for a specific item.
-// Reads state archive files + current state, extracts (timestamp, state) pairs,
+// Reads transition events from the structured JSONL orchestrator log (including
+// rotated files .1/.2/.3), extracts (timestamp, state) pairs for the target item,
 // deduplicates consecutive identical states, and displays a timeline with durations.
 
-import { existsSync, readdirSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync } from "fs";
 import { BOLD, RESET, CYAN, DIM, YELLOW, GREEN, RED } from "../output.ts";
 import {
-  userStateDir,
-  stateArchiveDir,
+  logFilePath,
   stateFilePath,
   type DaemonState,
-  type DaemonStateItem,
 } from "../daemon.ts";
+import { resolveLogPaths, type AnalyticsReadIO } from "./analytics.ts";
 
 // ── Dependencies (injectable for testing) ─────────────────────────────
 
 export interface HistoryIO {
   existsSync: (path: string) => boolean;
-  readdirSync: (path: string) => string[];
   readFileSync: (path: string, encoding: "utf-8") => string;
 }
 
@@ -53,82 +51,80 @@ const STATE_COLORS: Record<string, string> = {
 
 // ── Core logic ─────────────────────────────────────────────────────────
 
+/** A parsed transition event from the structured log. */
+export interface LogTransitionEvent {
+  ts: string;
+  itemId: string;
+  from: string;
+  to: string;
+}
+
 /**
- * Load all state snapshots (archives + current) sorted chronologically.
- * Each snapshot is a DaemonState parsed from JSON.
+ * Load transition events from the structured JSONL orchestrator log.
+ * Reads the current log and all rotated files (.1, .2, .3).
+ * Returns events sorted chronologically (oldest first).
  */
 export function loadSnapshots(
   projectRoot: string,
   io: HistoryIO,
-): { timestamp: string; state: DaemonState }[] {
-  const snapshots: { timestamp: string; state: DaemonState }[] = [];
+): LogTransitionEvent[] {
+  const logPath = logFilePath(projectRoot);
+  const paths = resolveLogPaths(logPath, io);
+  const events: LogTransitionEvent[] = [];
 
-  // Load archived state files
-  const archiveDir = stateArchiveDir(projectRoot);
-  if (io.existsSync(archiveDir)) {
-    const files = io.readdirSync(archiveDir)
-      .filter((f) => f.endsWith(".json"))
-      .sort(); // lexicographic sort = chronological for timestamp-based names
+  for (const filePath of paths) {
+    let content: string;
+    try {
+      content = io.readFileSync(filePath, "utf-8");
+    } catch {
+      continue;
+    }
 
-    for (const file of files) {
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
       try {
-        const content = io.readFileSync(join(archiveDir, file), "utf-8");
-        const parsed = JSON.parse(content) as DaemonState;
-        if (parsed.startedAt && Array.isArray(parsed.items)) {
-          snapshots.push({ timestamp: parsed.updatedAt ?? parsed.startedAt, state: parsed });
+        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+        if (parsed.event === "transition" && typeof parsed.itemId === "string" && typeof parsed.to === "string") {
+          events.push({
+            ts: (parsed.ts as string) ?? "",
+            itemId: parsed.itemId as string,
+            from: (parsed.from as string) ?? "",
+            to: parsed.to as string,
+          });
         }
       } catch {
-        // Skip corrupt files
+        // Skip non-JSON lines
       }
     }
   }
 
-  // Load current state file
-  const currentPath = stateFilePath(projectRoot);
-  if (io.existsSync(currentPath)) {
-    try {
-      const content = io.readFileSync(currentPath, "utf-8");
-      const parsed = JSON.parse(content) as DaemonState;
-      if (parsed.startedAt && Array.isArray(parsed.items)) {
-        snapshots.push({ timestamp: parsed.updatedAt ?? parsed.startedAt, state: parsed });
-      }
-    } catch {
-      // Skip corrupt current state
-    }
-  }
-
-  return snapshots;
+  // Sort by timestamp
+  events.sort((a, b) => a.ts.localeCompare(b.ts));
+  return events;
 }
 
 /**
- * Extract state transitions for a specific item ID from snapshots.
- * Uses lastTransition timestamps from the items themselves for accuracy.
- * Deduplicates consecutive identical states.
+ * Extract state transitions for a specific item ID from log events.
+ * Filters to the target item and deduplicates consecutive identical states.
  */
 export function extractTransitions(
   itemId: string,
-  snapshots: { timestamp: string; state: DaemonState }[],
+  events: LogTransitionEvent[],
 ): StateTransition[] {
-  // Collect all (state, timestamp) observations across all snapshots.
-  // Use the item's lastTransition field for accurate timing.
   const observations: StateTransition[] = [];
 
-  for (const snapshot of snapshots) {
-    const item = snapshot.state.items.find((i) => i.id === itemId);
-    if (!item) continue;
-
+  for (const event of events) {
+    if (event.itemId !== itemId) continue;
     observations.push({
-      state: item.state,
-      timestamp: item.lastTransition,
+      state: event.to,
+      timestamp: event.ts,
     });
   }
 
   if (observations.length === 0) return [];
 
-  // Sort by timestamp
-  observations.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
-  // Deduplicate consecutive identical states
+  // Already sorted by loadSnapshots, but deduplicate consecutive identical states
   const transitions: StateTransition[] = [observations[0]!];
   for (let i = 1; i < observations.length; i++) {
     const prev = transitions[transitions.length - 1]!;
@@ -169,17 +165,24 @@ export function buildTimeline(transitions: StateTransition[]): TimelineEntry[] {
 }
 
 /**
- * Resolve the title for an item ID from the snapshots.
+ * Resolve the title for an item ID from the current state file.
+ * Falls back to null if not available.
  */
 export function resolveTitle(
   itemId: string,
-  snapshots: { timestamp: string; state: DaemonState }[],
+  projectRoot: string,
+  io: HistoryIO,
 ): string | null {
-  for (const snapshot of snapshots) {
-    const item = snapshot.state.items.find((i) => i.id === itemId);
-    if (item?.title) return item.title;
+  const currentPath = stateFilePath(projectRoot);
+  if (!io.existsSync(currentPath)) return null;
+  try {
+    const content = io.readFileSync(currentPath, "utf-8");
+    const state = JSON.parse(content) as DaemonState;
+    const item = state.items?.find((i) => i.id === itemId);
+    return item?.title ?? null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 // ── Formatting helpers ─────────────────────────────────────────────────
@@ -275,10 +278,10 @@ export function history(
   projectRoot: string,
   io: HistoryIO,
 ): void {
-  const snapshots = loadSnapshots(projectRoot, io);
-  const transitions = extractTransitions(itemId, snapshots);
+  const events = loadSnapshots(projectRoot, io);
+  const transitions = extractTransitions(itemId, events);
   const timeline = buildTimeline(transitions);
-  const title = resolveTitle(itemId, snapshots);
+  const title = resolveTitle(itemId, projectRoot, io);
   const lines = formatTimeline(itemId, title, timeline);
 
   for (const line of lines) {
@@ -288,7 +291,7 @@ export function history(
 
 /** Default IO using real filesystem. */
 function defaultIO(): HistoryIO {
-  return { existsSync, readdirSync, readFileSync };
+  return { existsSync, readFileSync };
 }
 
 /** CLI entry point for `nw history`. */
