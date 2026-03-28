@@ -279,7 +279,7 @@ export async function cmdStatusWatch(
 ): Promise<void> {
   // Mutable view state -- toggled by keyboard shortcuts
   const viewOpts: ViewOptions = {
-    showBlockerDetail: false,
+    showBlockerDetail: true,
   };
 
   const isTTY = process.stdin.isTTY === true;

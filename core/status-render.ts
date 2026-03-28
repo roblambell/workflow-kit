@@ -428,7 +428,8 @@ export function formatTelemetrySuffix(item: StatusItem): string {
 /**
  * Format a single item row for the status table.
  * Returns a string with ANSI color codes.
- * When depsStr is provided, it's displayed as the DEPS column.
+ * When depIndicator is provided, it's displayed as a 2-char inline blocker
+ * indicator before the title (e.g., color-coded ⧗ + space, or 2 spaces).
  * stateColWidth controls the state+PR column width (default 14).
  * repoUrl enables OSC 8 hyperlinks on PR numbers.
  * daemonCol is the optional DAEMON column string (8 chars wide, pre-padded).
@@ -436,7 +437,7 @@ export function formatTelemetrySuffix(item: StatusItem): string {
 export function formatItemRow(
   item: StatusItem,
   titleWidth: number,
-  depsStr?: string,
+  depIndicator?: string,
   stateColWidth: number = 14,
   repoUrl?: string,
   daemonCol?: string,
@@ -447,13 +448,13 @@ export function formatItemRow(
   const stateCell = formatStateLabelWithPr(item.state, item.prNumber, stateColWidth, repoUrl);
   const duration = pad(formatDuration(item), 8);
   const daemon = daemonCol ?? "";
-  const depsCol = depsStr ?? "";
+  const depCol = depIndicator ?? "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` ${DIM}[${item.repoLabel}]${RESET}` : "";
   const reason = item.failureReason ? ` ${DIM}(${item.failureReason})${RESET}` : "";
   const telemetry = formatTelemetrySuffix(item);
 
-  return `  ${color}${icon}${RESET} ${id}${color}${stateCell}${RESET} ${duration} ${daemon}${depsCol}${title}${repo}${reason}${telemetry}`;
+  return `  ${color}${icon}${RESET} ${id}${color}${stateCell}${RESET} ${duration} ${daemon}${depCol}${title}${repo}${reason}${telemetry}`;
 }
 
 /**
@@ -515,13 +516,14 @@ export function formatSummary(items: StatusItem[]): string {
 /**
  * Format a fully dimmed item row for the queue section.
  * Returns a string with DIM applied to the entire row.
+ * depIndicator is the optional 2-char inline blocker indicator before the title.
  * stateColWidth controls the state column width (default 14).
  * daemonCol is the optional DAEMON column string (8 chars wide, pre-padded).
  */
 export function formatQueuedItemRow(
   item: StatusItem,
   titleWidth: number,
-  depsStr?: string,
+  depIndicator?: string,
   stateColWidth: number = 14,
   daemonCol?: string,
 ): string {
@@ -530,11 +532,11 @@ export function formatQueuedItemRow(
   const stateCell = formatStateLabelWithPr(item.state, item.prNumber, stateColWidth);
   const duration = pad(formatDuration(item), 8);
   const daemon = daemonCol ?? "";
-  const depsCol = depsStr ?? "";
+  const depCol = depIndicator ?? "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` [${item.repoLabel}]` : "";
 
-  return `  ${DIM}${icon} ${id}${stateCell} ${duration} ${daemon}${depsCol}${title}${repo}${RESET}`;
+  return `  ${DIM}${icon} ${id}${stateCell} ${duration} ${daemon}${depCol}${title}${repo}${RESET}`;
 }
 
 // ─── Dependency tree building ─────────────────────────────────────────────────
@@ -766,10 +768,11 @@ export function formatCrewStatusPanel(status: CrewStatusInfo): string {
  * When wipLimit is provided, shows WIP slot usage in the queue header.
  *
  * When items have dependencies, renders a flat list sorted by blocked-by count
- * (ascending) then ID alphanumeric, with a BLOCKED BY column showing unresolved deps.
+ * (ascending) then ID alphanumeric, with inline blocker icons before titles
+ * and optional sub-lines showing blocker IDs.
  *
  * viewOptions controls optional panels:
- * - showBlockerDetail: expand DEPS column to show full blocker IDs instead of counts.
+ * - showBlockerDetail: show blocker sub-lines below blocked items (default: true).
  * - sessionStartedAt: ISO timestamp for throughput/session duration calculations.
  */
 export function formatStatusTable(
@@ -806,24 +809,11 @@ export function formatStatusTable(
   // Check if any items have dependency relationships
   const hasDeps = !flat && items.some((i) => (i.dependencies ?? []).length > 0);
 
-  // Precompute blocked-by map (needed for DEPS column and blocker detail)
+  // Precompute blocked-by map (needed for inline blocker indicator + sub-lines)
   const blockedBy = hasDeps ? computeBlockedBy(items) : undefined;
 
-  // DEPS column width: dynamic when showBlockerDetail is true, fixed 5 otherwise
-  let depsColWidth = 0;
-  if (hasDeps) {
-    if (opts.showBlockerDetail && blockedBy) {
-      // Compute max width needed for full blocker ID lists
-      let maxLen = 4; // minimum "DEPS" header width
-      for (const [, blockers] of blockedBy) {
-        const str = blockers.length > 0 ? blockers.join(",") : "-";
-        if (str.length > maxLen) maxLen = str.length;
-      }
-      depsColWidth = maxLen + 1; // +1 for padding
-    } else {
-      depsColWidth = 5;
-    }
-  }
+  // Inline dep indicator: 2-char slot (icon + space) before title when deps exist
+  const depIndicatorWidth = hasDeps ? 2 : 0;
 
   // DAEMON column: 9 chars wide (8 + space), only in crew mode
   const daemonColWidth = crewActive ? 9 : 0;
@@ -833,7 +823,7 @@ export function formatStatusTable(
 
   // Column widths
   // Base: 2 indent + 2 icon+space + 12 ID + stateColWidth state + 1 space + 8 duration + 1 space = 26 + stateColWidth
-  const fixedWidth = 26 + stateColWidth + daemonColWidth + depsColWidth;
+  const fixedWidth = 26 + stateColWidth + daemonColWidth + depIndicatorWidth;
   const titleWidth = Math.max(10, termWidth - fixedWidth);
 
   /** Format daemon column for an item. */
@@ -843,25 +833,22 @@ export function formatStatusTable(
     return pad(name, daemonColWidth);
   }
 
-  // Header
+  /** Build the 2-char dep indicator for an item. */
+  function depIndicator(itemId: string): string {
+    if (!blockedBy) return "  ";
+    const blockers = blockedBy.get(itemId) ?? [];
+    return blockerIcon(blockers.length) + " ";
+  }
+
+  // Header (no DEPS column -- indicator is inline before TITLE)
   const daemonHeader = crewActive ? pad("DAEMON", daemonColWidth) : "";
-  const depsHeader = hasDeps ? `${pad("DEPS", depsColWidth)}` : "";
-  const header = `  ${DIM}  ${pad("ID", 12)}${pad("STATE", stateColWidth)} ${pad("DURATION", 8)} ${daemonHeader}${depsHeader}TITLE${RESET}`;
+  const depPad = hasDeps ? "  " : "";
+  const header = `  ${DIM}  ${pad("ID", 12)}${pad("STATE", stateColWidth)} ${pad("DURATION", 8)} ${daemonHeader}${depPad}TITLE${RESET}`;
   lines.push(header);
 
   // Separator
   const sep = `  ${DIM}${"─".repeat(Math.min(termWidth - 2, fixedWidth + titleWidth))}${RESET}`;
   lines.push(sep);
-
-  /** Format the DEPS column string for an item. */
-  function depsStr(itemId: string): string {
-    if (!blockedBy) return "-";
-    const blockers = blockedBy.get(itemId) ?? [];
-    if (opts.showBlockerDetail) {
-      return blockers.length > 0 ? blockers.join(",") : "-";
-    }
-    return blockers.length > 0 ? String(blockers.length) : "-";
-  }
 
   if (hasDeps) {
     // Flat blocked-by mode: sort by blocked count asc, then ID alpha
@@ -872,10 +859,18 @@ export function formatStatusTable(
     const queuedItems = sorted.filter((i) => i.state === "queued");
 
     for (const item of activeItems) {
-      lines.push(formatItemRow(item, titleWidth, pad(depsStr(item.id), depsColWidth), stateColWidth, repoUrl, daemonStr(item)));
+      lines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
+      const blockers = blockedBy!.get(item.id) ?? [];
+      if (opts.showBlockerDetail && blockers.length > 0) {
+        lines.push(formatBlockerSubline(blockers, titleWidth, false));
+      }
     }
     for (const item of mergedItems) {
-      lines.push(formatItemRow(item, titleWidth, pad(depsStr(item.id), depsColWidth), stateColWidth, repoUrl, daemonStr(item)));
+      lines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
+      const blockers = blockedBy!.get(item.id) ?? [];
+      if (opts.showBlockerDetail && blockers.length > 0) {
+        lines.push(formatBlockerSubline(blockers, titleWidth, false));
+      }
     }
 
     // Queue section
@@ -894,7 +889,11 @@ export function formatStatusTable(
       lines.push(sep);
 
       for (const item of queuedItems) {
-        lines.push(formatQueuedItemRow(item, titleWidth, pad(depsStr(item.id), depsColWidth), stateColWidth, daemonStr(item)));
+        lines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, daemonStr(item)));
+        const blockers = blockedBy!.get(item.id) ?? [];
+        if (opts.showBlockerDetail && blockers.length > 0) {
+          lines.push(formatBlockerSubline(blockers, titleWidth, true));
+        }
       }
     }
   } else {
@@ -1211,23 +1210,12 @@ export function buildStatusLayout(
   const hasDeps = !flat && items.some((i) => (i.dependencies ?? []).length > 0);
   const blockedBy = hasDeps ? computeBlockedBy(items) : undefined;
 
-  let depsColWidth = 0;
-  if (hasDeps) {
-    if (opts.showBlockerDetail && blockedBy) {
-      let maxLen = 4;
-      for (const [, blockers] of blockedBy) {
-        const str = blockers.length > 0 ? blockers.join(",") : "-";
-        if (str.length > maxLen) maxLen = str.length;
-      }
-      depsColWidth = maxLen + 1;
-    } else {
-      depsColWidth = 5;
-    }
-  }
+  // Inline dep indicator: 2-char slot (icon + space) before title when deps exist
+  const depIndicatorWidth = hasDeps ? 2 : 0;
 
   const daemonColWidth = crewActive ? 9 : 0;
   const stateColWidth = computeStateColWidth(items);
-  const fixedWidth = 26 + stateColWidth + daemonColWidth + depsColWidth;
+  const fixedWidth = 26 + stateColWidth + daemonColWidth + depIndicatorWidth;
   const titleWidth = Math.max(10, termWidth - fixedWidth);
 
   /** Format daemon column for an item. */
@@ -1235,6 +1223,13 @@ export function buildStatusLayout(
     if (!crewActive) return "";
     const name = item.daemonName ?? "--";
     return pad(name, daemonColWidth);
+  }
+
+  /** Build the 2-char dep indicator for an item. */
+  function depIndicator(itemId: string): string {
+    if (!blockedBy) return "  ";
+    const blockers = blockedBy.get(itemId) ?? [];
+    return blockerIcon(blockers.length) + " ";
   }
 
   // Header: title (with right-aligned metrics when available) + column headers + separator
@@ -1246,22 +1241,13 @@ export function buildStatusLayout(
     headerLines.push("");
   }
   const daemonHeader = crewActive ? pad("DAEMON", daemonColWidth) : "";
-  const depsHeader = hasDeps ? `${pad("DEPS", depsColWidth)}` : "";
-  headerLines.push(`  ${DIM}  ${pad("ID", 12)}${pad("STATE", stateColWidth)} ${pad("DURATION", 8)} ${daemonHeader}${depsHeader}TITLE${RESET}`);
+  const depPad = hasDeps ? "  " : "";
+  headerLines.push(`  ${DIM}  ${pad("ID", 12)}${pad("STATE", stateColWidth)} ${pad("DURATION", 8)} ${daemonHeader}${depPad}TITLE${RESET}`);
   const sep = `  ${DIM}${"─".repeat(Math.min(termWidth - 2, fixedWidth + titleWidth))}${RESET}`;
   headerLines.push(sep);
 
   // Build item lines
   const itemLines: string[] = [];
-
-  function depsStr(itemId: string): string {
-    if (!blockedBy) return "-";
-    const blockers = blockedBy.get(itemId) ?? [];
-    if (opts.showBlockerDetail) {
-      return blockers.length > 0 ? blockers.join(",") : "-";
-    }
-    return blockers.length > 0 ? String(blockers.length) : "-";
-  }
 
   if (hasDeps) {
     const sorted = sortByBlockedThenId(items, blockedBy!);
@@ -1270,10 +1256,18 @@ export function buildStatusLayout(
     const queuedItems = sorted.filter((i) => i.state === "queued");
 
     for (const item of activeItems) {
-      itemLines.push(formatItemRow(item, titleWidth, pad(depsStr(item.id), depsColWidth), stateColWidth, repoUrl, daemonStr(item)));
+      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
+      const blockers = blockedBy!.get(item.id) ?? [];
+      if (opts.showBlockerDetail && blockers.length > 0) {
+        itemLines.push(formatBlockerSubline(blockers, titleWidth, false));
+      }
     }
     for (const item of mergedItems) {
-      itemLines.push(formatItemRow(item, titleWidth, pad(depsStr(item.id), depsColWidth), stateColWidth, repoUrl, daemonStr(item)));
+      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
+      const blockers = blockedBy!.get(item.id) ?? [];
+      if (opts.showBlockerDetail && blockers.length > 0) {
+        itemLines.push(formatBlockerSubline(blockers, titleWidth, false));
+      }
     }
     if (queuedItems.length > 0) {
       const activeCount = items.filter((i) => i.state !== "queued" && i.state !== "merged").length;
@@ -1284,7 +1278,11 @@ export function buildStatusLayout(
       itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
       itemLines.push(sep);
       for (const item of queuedItems) {
-        itemLines.push(formatQueuedItemRow(item, titleWidth, pad(depsStr(item.id), depsColWidth), stateColWidth, daemonStr(item)));
+        itemLines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, daemonStr(item)));
+        const blockers = blockedBy!.get(item.id) ?? [];
+        if (opts.showBlockerDetail && blockers.length > 0) {
+          itemLines.push(formatBlockerSubline(blockers, titleWidth, true));
+        }
       }
     }
   } else {
@@ -1446,7 +1444,7 @@ export function renderHelpOverlay(
     `  Escape      Dismiss help overlay`,
     `  q           Quit`,
     `  Ctrl+C x2   Quit (double-tap)`,
-    `  d           Toggle dependency details`,
+    `  d           Toggle blocker sub-lines`,
     `  Up/Down     Scroll item list`,
   ]);
 

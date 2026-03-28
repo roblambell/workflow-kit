@@ -1382,7 +1382,7 @@ describe("formatTreeRows", () => {
 // ─── formatStatusTable with dependency trees ──────────────────────────────────
 
 describe("formatStatusTable blocked-by rendering", () => {
-  it("renders dependency chain as flat list with DEPS column", () => {
+  it("renders dependency chain as flat list with inline blocker icons", () => {
     const items = [
       makeItem("H-PRX-4", "merged", "Add session CA", 123, 3600000),
       makeItem("H-PRX-5", "merged", "Add Cedar policy", 124, 3600000, ["H-PRX-4"]),
@@ -1394,7 +1394,8 @@ describe("formatStatusTable blocked-by rendering", () => {
     expect(output).toContain("H-PRX-5");
     expect(output).toContain("H-PRX-6");
     expect(output).toContain("H-PRX-7");
-    expect(output).toContain("DEPS");
+    // No DEPS header — inline indicator only
+    expect(output).not.toContain("DEPS");
     // No tree chars
     expect(output).not.toContain("└──");
     expect(output).not.toContain("├──");
@@ -1438,13 +1439,14 @@ describe("formatStatusTable blocked-by rendering", () => {
     expect(output).toContain("A-2");
     expect(output).toContain("B-1");
     expect(output).toContain("B-2");
-    expect(output).toContain("DEPS");
+    // No DEPS header — inline blocker indicator only
+    expect(output).not.toContain("DEPS");
     // No tree chars
     expect(output).not.toContain("└──");
     expect(output).not.toContain("├──");
   });
 
-  it("--flat flag forces flat rendering without DEPS column", () => {
+  it("--flat flag forces flat rendering without blocker indicators", () => {
     const items = [
       makeItem("A-1", "merged", "Root"),
       makeItem("A-2", "implementing", "Child", null, 3600000, ["A-1"]),

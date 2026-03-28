@@ -183,7 +183,7 @@ describe("blockerIcon", () => {
   });
 
   it("output is always 1 visible character wide", () => {
-    // Icon or space — strip ANSI, should be 1 char
+    // Icon or space -- strip ANSI, should be 1 char
     expect(stripAnsi(blockerIcon(0))).toHaveLength(1);
     expect(stripAnsi(blockerIcon(1))).toHaveLength(1);
     expect(stripAnsi(blockerIcon(3))).toHaveLength(1);
@@ -209,8 +209,8 @@ describe("formatBlockerSubline", () => {
 
   it("truncates with ... when IDs exceed titleWidth", () => {
     // prefix "    └ " is 6 chars, so available = 20 - 6 = 14
-    // "H-CA-1, H-CA-3" is 14 chars — fits exactly at titleWidth 20
-    // "H-CA-1, H-CA-3, H-CA-5" is 23 chars — needs truncation at titleWidth 20
+    // "H-CA-1, H-CA-3" is 14 chars -- fits exactly at titleWidth 20
+    // "H-CA-1, H-CA-3, H-CA-5" is 23 chars -- needs truncation at titleWidth 20
     const result = formatBlockerSubline(["H-CA-1", "H-CA-3", "H-CA-5"], 20, false);
     const text = stripAnsi(result);
     expect(text).toContain("...");
@@ -444,11 +444,36 @@ describe("formatItemRow", () => {
   });
 });
 
+describe("formatItemRow with depIndicator", () => {
+  it("includes depIndicator string before title when provided", () => {
+    const item = makeStatusItem({ id: "C-1-1", title: "My feature" });
+    const indicator = "⧗ "; // 2-char indicator
+    const row = stripAnsi(formatItemRow(item, 20, indicator));
+    expect(row).toContain("⧗");
+    expect(row).toContain("My feature");
+  });
+
+  it("omits indicator when not provided", () => {
+    const item = makeStatusItem({ id: "C-1-1", title: "My feature" });
+    const row = stripAnsi(formatItemRow(item, 20));
+    expect(row).not.toContain("⧗");
+    expect(row).toContain("My feature");
+  });
+});
+
 describe("formatQueuedItemRow", () => {
   it("renders without ANSI color markers in test env", () => {
     const item = makeStatusItem({ state: "queued", id: "C-1-2" });
     const row = stripAnsi(formatQueuedItemRow(item, 20));
     expect(row).toContain("C-1-2");
+  });
+
+  it("includes depIndicator string before title when provided", () => {
+    const item = makeStatusItem({ state: "queued", id: "C-1-2", title: "Waiting" });
+    const indicator = "⧗ ";
+    const row = stripAnsi(formatQueuedItemRow(item, 20, indicator));
+    expect(row).toContain("⧗");
+    expect(row).toContain("Waiting");
   });
 });
 
@@ -755,7 +780,8 @@ describe("formatStatusTable", () => {
 
   it("separator width matches data row content width across terminal widths", () => {
     const items = [makeStatusItem({ id: "TEST-1", title: "A title" })];
-    // No deps, no PRs: stateColWidth=14, fixedWidth=26+14=40, titleWidth=max(10, termWidth-40)
+    // No deps, no PRs: stateColWidth=14, depIndicatorWidth=0, fixedWidth=26+14=40
+    // titleWidth=max(10, termWidth-40)
     // Separator visible width = 2 + min(termWidth-2, fixedWidth+titleWidth)
     const fixedWidth = 40;
     for (const termWidth of [40, 80, 120, 200]) {
@@ -771,7 +797,7 @@ describe("formatStatusTable", () => {
     }
   });
 
-  it("separator width with DEPS column active (hasDeps=true) exceeds 78", () => {
+  it("separator width with deps (hasDeps=true) uses 2-char indicator slot", () => {
     const items = [
       makeStatusItem({ id: "A-1", state: "implementing", dependencies: [] }),
       makeStatusItem({ id: "B-2", state: "queued", dependencies: ["A-1"], title: "A longer title for testing width" }),
@@ -780,17 +806,20 @@ describe("formatStatusTable", () => {
     const lines = table.split("\n");
     const sepLines = lines.filter(l => /^\s+─+$/.test(l));
     expect(sepLines.length).toBeGreaterThan(0);
-    // With a 120-char terminal and DEPS column, separator should be wider than 80 (2 + 78)
-    expect(sepLines[0]!.length).toBeGreaterThan(80);
+    // With a 120-char terminal and 2-char dep indicator, separator should span most of the width
+    // fixedWidth = 26 + 14 + 0 + 2 = 42, titleWidth = max(10, 120 - 42) = 78
+    // sep = 2 + min(118, 42 + 78) = 2 + 118 = 120
+    expect(sepLines[0]!.length).toBe(120);
   });
 
-  it("shows DEPS header when items have dependencies", () => {
+  it("no DEPS header when items have dependencies (inline indicator only)", () => {
     const items = [
       makeStatusItem({ id: "A", state: "merged", dependencies: [] }),
       makeStatusItem({ id: "B", state: "queued", dependencies: ["A"] }),
     ];
     const table = stripAnsi(formatStatusTable(items, 100));
-    expect(table).toContain("DEPS");
+    // DEPS column header is removed -- indicator is inline before title
+    expect(table).not.toContain("DEPS");
   });
 
   it("does not show DEPS header when no items have dependencies", () => {
@@ -802,7 +831,7 @@ describe("formatStatusTable", () => {
     expect(table).not.toContain("DEPS");
   });
 
-  it("shows unresolved blocker count for multi-dep items", () => {
+  it("shows ⧗ icon before blocked item titles", () => {
     const items = [
       makeStatusItem({ id: "H-NW-1", state: "merged", dependencies: [] }),
       makeStatusItem({ id: "H-NW-2", state: "ci-pending", dependencies: [] }),
@@ -813,49 +842,57 @@ describe("formatStatusTable", () => {
     ];
     const table = stripAnsi(formatStatusTable(items, 120));
     const lines = table.split("\n");
-    // M-NW-5 has 1 unresolved blocker (H-NW-2) -- DEPS column shows "1"
+    // M-NW-5 has 1 unresolved blocker (H-NW-2) -- blocker icon should appear
     const m5Line = lines.find(l => l.includes("M-NW-5"));
     expect(m5Line).toBeDefined();
-    expect(m5Line).toContain("1");
-    // M-NW-6 has 1 unresolved blocker (M-NW-5) -- DEPS column shows "1"
+    expect(m5Line).toContain("⧗");
+    // M-NW-6 has 1 unresolved blocker (M-NW-5) -- blocker icon should appear
     const m6Line = lines.find(l => l.includes("M-NW-6"));
     expect(m6Line).toBeDefined();
-    expect(m6Line).toContain("1");
+    expect(m6Line).toContain("⧗");
     // Should NOT use tree nesting
     expect(table).not.toContain("└──");
     expect(table).not.toContain("├──");
   });
 
-  it("DEPS column shows count and never overflows 5 chars", () => {
+  it("sub-lines show blocker IDs by default (showBlockerDetail defaults to undefined/true in callers)", () => {
     // Create an item with many unresolved blockers
     const deps = Array.from({ length: 15 }, (_, i) => `DEP-${i}`);
     const items = [
       ...deps.map(id => makeStatusItem({ id, state: "implementing", dependencies: [] })),
       makeStatusItem({ id: "TARGET", state: "queued", dependencies: deps }),
     ];
-    const table = stripAnsi(formatStatusTable(items, 120));
+    // With showBlockerDetail=true, sub-lines appear showing blocker IDs
+    const table = stripAnsi(formatStatusTable(items, 120, undefined, false, {
+      showBlockerDetail: true,
+    }));
     const lines = table.split("\n");
     const targetLine = lines.find(l => l.includes("TARGET"));
     expect(targetLine).toBeDefined();
-    // DEPS column should show "15" (count), not the full list of IDs
-    expect(targetLine).toContain("15");
-    // Verify DEPS header is present and only 4 chars + space
-    expect(table).toContain("DEPS");
-    // The column header "DEPS " is 5 chars, verify it doesn't say "BLOCKED BY"
-    expect(table).not.toContain("BLOCKED BY");
+    // ⧗ icon should appear on the TARGET row (RED for 15 blockers >= 2)
+    expect(targetLine).toContain("⧗");
+    // Sub-line with └ prefix should appear below TARGET
+    const subLine = lines.find(l => l.includes("└"));
+    expect(subLine).toBeDefined();
+    // No DEPS header
+    expect(table).not.toContain("DEPS");
   });
 
-  it("DEPS column shows dash for items with no unresolved blockers", () => {
+  it("no icon and no sub-line when all deps resolved", () => {
     const items = [
       makeStatusItem({ id: "A-1", state: "merged", dependencies: [] }),
       makeStatusItem({ id: "B-2", state: "queued", dependencies: ["A-1"] }),
     ];
-    const table = stripAnsi(formatStatusTable(items, 100));
+    const table = stripAnsi(formatStatusTable(items, 100, undefined, false, {
+      showBlockerDetail: true,
+    }));
     const lines = table.split("\n");
-    // B-2's only dep (A-1) is merged, so DEPS should show "-"
+    // B-2's only dep (A-1) is merged, so no ⧗ icon and no sub-line
     const b2Line = lines.find(l => l.includes("B-2"));
     expect(b2Line).toBeDefined();
-    expect(b2Line).toContain("-");
+    expect(b2Line).not.toContain("⧗");
+    // No sub-line with └
+    expect(table).not.toContain("└");
   });
 
   it("sorts by blocked-by count ascending then ID alphanumeric", () => {
@@ -876,6 +913,39 @@ describe("formatStatusTable", () => {
     expect(a1Line).toBeLessThan(c4Line);
     expect(b2Line).toBeLessThan(c4Line);
     expect(c4Line).toBeLessThan(z3Line);
+  });
+
+  it("titles align whether or not item has blockers (2-char slot consistent)", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing", title: "No blockers here", dependencies: [] }),
+      makeStatusItem({ id: "B-2", state: "queued", title: "Blocked item", dependencies: ["A-1"] }),
+    ];
+    const table = stripAnsi(formatStatusTable(items, 120));
+    const lines = table.split("\n");
+    const a1Line = lines.find(l => l.includes("A-1"));
+    const b2Line = lines.find(l => l.includes("B-2"));
+    expect(a1Line).toBeDefined();
+    expect(b2Line).toBeDefined();
+    // Both titles should start at the same column position
+    // A-1 has "  " (2 spaces) before title, B-2 has "⧗ " (icon + space)
+    const a1TitlePos = a1Line!.indexOf("No blockers here");
+    const b2TitlePos = b2Line!.indexOf("Blocked item");
+    expect(a1TitlePos).toBe(b2TitlePos);
+  });
+
+  it("RED ⧗ for 2+ blockers, YELLOW ⧗ for 1 blocker in formatStatusTable", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "B-2", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "C-3", state: "queued", dependencies: ["A-1"] }),       // 1 blocker
+      makeStatusItem({ id: "D-4", state: "queued", dependencies: ["A-1", "B-2"] }), // 2 blockers
+    ];
+    // Use raw (non-stripped) output to check colors
+    const table = formatStatusTable(items, 120);
+    // C-3 has 1 blocker → YELLOW ⧗
+    expect(table).toContain(`${YELLOW}⧗${RESET}`);
+    // D-4 has 2 blockers → RED ⧗
+    expect(table).toContain(`${RED}⧗${RESET}`);
   });
 });
 
@@ -1466,7 +1536,7 @@ describe("formatStatusTable with ViewOptions", () => {
     expect(table).toContain("TEST-1");
   });
 
-  it("showBlockerDetail=true shows full blocker IDs in DEPS column", () => {
+  it("showBlockerDetail=true shows sub-lines with blocker IDs", () => {
     const items = [
       makeStatusItem({ id: "A-1", state: "implementing", dependencies: [] }),
       makeStatusItem({ id: "B-2", state: "implementing", dependencies: [] }),
@@ -1476,13 +1546,18 @@ describe("formatStatusTable with ViewOptions", () => {
       showBlockerDetail: true,
     }));
     const lines = table.split("\n");
+    // C-3 should have ⧗ icon and a sub-line with └ prefix showing blocker IDs
     const c3Line = lines.find(l => l.includes("C-3"));
     expect(c3Line).toBeDefined();
-    // Should show full IDs instead of count
-    expect(c3Line).toContain("A-1,B-2");
+    expect(c3Line).toContain("⧗");
+    // Sub-line should contain both blocker IDs
+    const subLine = lines.find(l => l.includes("└"));
+    expect(subLine).toBeDefined();
+    expect(subLine).toContain("A-1");
+    expect(subLine).toContain("B-2");
   });
 
-  it("showBlockerDetail=false shows counts (default behavior)", () => {
+  it("showBlockerDetail=false hides sub-lines but icon persists", () => {
     const items = [
       makeStatusItem({ id: "A-1", state: "implementing", dependencies: [] }),
       makeStatusItem({ id: "B-2", state: "implementing", dependencies: [] }),
@@ -1492,32 +1567,37 @@ describe("formatStatusTable with ViewOptions", () => {
       showBlockerDetail: false,
     }));
     const lines = table.split("\n");
+    // C-3 should still have ⧗ icon
     const c3Line = lines.find(l => l.includes("C-3"));
     expect(c3Line).toBeDefined();
-    // Should show count "2", not full IDs
-    expect(c3Line).toContain("2");
-    expect(c3Line).not.toContain("A-1,B-2");
+    expect(c3Line).toContain("⧗");
+    // But no sub-line with └
+    expect(table).not.toContain("└");
   });
 
-  it("showBlockerDetail widens DEPS column dynamically", () => {
+  it("sub-line truncates with ... for many deps", () => {
     const items = [
       makeStatusItem({ id: "LONG-ID-1", state: "implementing", dependencies: [] }),
       makeStatusItem({ id: "LONG-ID-2", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "LONG-ID-3", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "LONG-ID-4", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "LONG-ID-5", state: "implementing", dependencies: [] }),
       makeStatusItem({
         id: "TARGET",
         state: "queued",
-        dependencies: ["LONG-ID-1", "LONG-ID-2"],
+        dependencies: ["LONG-ID-1", "LONG-ID-2", "LONG-ID-3", "LONG-ID-4", "LONG-ID-5"],
       }),
     ];
-    const tableNormal = stripAnsi(formatStatusTable(items, 120));
-    const tableDetail = stripAnsi(formatStatusTable(items, 120, undefined, false, {
+    // Use a narrow terminal to force truncation of sub-line
+    const table = stripAnsi(formatStatusTable(items, 60, undefined, false, {
       showBlockerDetail: true,
     }));
-    const detailLines = tableDetail.split("\n");
-    const targetLine = detailLines.find(l => l.includes("TARGET"));
-    expect(targetLine).toContain("LONG-ID-1,LONG-ID-2");
-    // Header should still say DEPS
-    expect(tableDetail).toContain("DEPS");
+    const lines = table.split("\n");
+    // Sub-line should exist and may be truncated with ...
+    const subLine = lines.find(l => l.includes("└"));
+    expect(subLine).toBeDefined();
+    // Sub-line should contain at least the first ID
+    expect(subLine).toContain("LONG-ID-1");
   });
 
   it("all options can be combined", () => {
@@ -1539,8 +1619,11 @@ describe("formatStatusTable with ViewOptions", () => {
       showBlockerDetail: true,
       sessionStartedAt: "2026-01-01T00:00:00Z",
     }));
-    // A-1 is merged, so B-2 has no unresolved blockers → shows "-"
-    expect(table).toContain("DEPS");
+    // A-1 is merged, so B-2 has no unresolved blockers -- no icon, no sub-line
+    expect(table).not.toContain("⧗");
+    expect(table).not.toContain("└");
+    // No DEPS header
+    expect(table).not.toContain("DEPS");
   });
 });
 
@@ -1641,13 +1724,31 @@ describe("buildStatusLayout", () => {
     expect(headerText).toContain("Thru:");
   });
 
+  it("counts sub-lines in itemLines.length when showBlockerDetail is true", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "B-2", state: "queued", dependencies: ["A-1"] }),
+    ];
+    const layoutWithDetail = buildStatusLayout(items, 100, undefined, false, {
+      showBlockerDetail: true,
+    });
+    const layoutWithoutDetail = buildStatusLayout(items, 100, undefined, false, {
+      showBlockerDetail: false,
+    });
+    // With showBlockerDetail=true, B-2 has 1 unresolved blocker → sub-line emitted
+    // So itemLines should have 1 extra line
+    expect(layoutWithDetail.itemLines.length).toBeGreaterThan(layoutWithoutDetail.itemLines.length);
+    // The extra line should be a sub-line with └ prefix
+    const subLine = layoutWithDetail.itemLines.find(l => stripAnsi(l).includes("└"));
+    expect(subLine).toBeDefined();
+  });
+
   it("includes keyboard shortcuts in footer", () => {
     const items = [makeStatusItem({ id: "A-1" })];
     const layout = buildStatusLayout(items, 80);
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("quit");
     expect(footerText).toContain("scroll");
-    expect(footerText).toContain("deps");
     // Removed shortcuts should not appear
     expect(footerText).not.toContain("metrics");
     expect(footerText).not.toContain("help");
