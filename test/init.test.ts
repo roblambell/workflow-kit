@@ -2092,6 +2092,64 @@ describe("initProject — preserves existing files", () => {
     expect(matches).toHaveLength(1);
   });
 
+  it("creates .ninthwave/schedules/ with example file on fresh init", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+
+    // Directory exists
+    expect(existsSync(join(projectDir, ".ninthwave/schedules"))).toBe(true);
+
+    // Example file exists with correct format
+    const examplePath = join(projectDir, ".ninthwave/schedules/ci--example-daily-audit.md");
+    expect(existsSync(examplePath)).toBe(true);
+
+    const content = readFileSync(examplePath, "utf-8");
+    expect(content).toContain("# Daily CI Audit");
+    expect(content).toContain("**Schedule:**");
+    expect(content).toContain("**Priority:**");
+    expect(content).toContain("**Domain:**");
+    expect(content).toContain("**Timeout:**");
+    expect(content).toContain("**Enabled:** false");
+  });
+
+  it("does not overwrite existing schedule files on re-init", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    // First init — creates the schedules dir and example
+    initProject(projectDir, bundleDir, deps);
+
+    // User creates their own schedule file
+    const userSchedule = join(projectDir, ".ninthwave/schedules/deploy--nightly-deploy.md");
+    writeFileSync(userSchedule, "# Nightly Deploy\n**Enabled:** true\n");
+
+    // Overwrite the example with custom content
+    const examplePath = join(projectDir, ".ninthwave/schedules/ci--example-daily-audit.md");
+    writeFileSync(examplePath, "# Custom content\n");
+
+    // Re-init
+    initProject(projectDir, bundleDir, deps);
+
+    // User's schedule file is preserved
+    expect(existsSync(userSchedule)).toBe(true);
+    expect(readFileSync(userSchedule, "utf-8")).toBe("# Nightly Deploy\n**Enabled:** true\n");
+
+    // Example file is NOT overwritten (directory already existed)
+    expect(readFileSync(examplePath, "utf-8")).toBe("# Custom content\n");
+  });
+
   it("records version in user state directory", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");

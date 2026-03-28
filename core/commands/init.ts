@@ -708,6 +708,30 @@ function scaffold(
     console.log("  Migrated .ninthwave/todos/ → .ninthwave/work/");
   }
 
+  // --- .ninthwave/schedules/ directory with example ---
+  const schedulesDir = join(projectDir, ".ninthwave", "schedules");
+  const schedulesIsNew = !existsSync(schedulesDir);
+  mkdirSync(schedulesDir, { recursive: true });
+
+  if (schedulesIsNew) {
+    const examplePath = join(schedulesDir, "ci--example-daily-audit.md");
+    writeFileSync(
+      examplePath,
+      `# Daily CI Audit (ci--example-daily-audit)
+
+**Schedule:** Every day at 8am UTC
+**Priority:** Low
+**Domain:** ci
+**Timeout:** 10m
+**Enabled:** false
+
+Review the last 24 hours of CI runs. Summarise any flaky tests,
+unusual failure patterns, or builds that took significantly longer
+than average. Open a work item for anything that needs attention.
+`,
+    );
+  }
+
   // --- .ninthwave/work/ and .ninthwave/friction/ directories ---
   mkdirSync(workDir, { recursive: true });
   writeFileSync(join(workDir, ".gitkeep"), "");
@@ -840,6 +864,7 @@ export function initProject(
   console.log(`  .ninthwave/domains.conf`);
   console.log(`  .ninthwave/work/ ${DIM}(work items)${RESET}`);
   console.log(`  .ninthwave/friction/ ${DIM}(friction log)${RESET}`);
+  console.log(`  .ninthwave/schedules/ ${DIM}(scheduled tasks)${RESET}`);
   console.log(`  .claude/skills/ ${DIM}(symlinks)${RESET}`);
   console.log(`  .gitignore`);
   console.log();
