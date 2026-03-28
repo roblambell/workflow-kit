@@ -615,6 +615,7 @@ ${itemText}`;
 export interface ReviewLaunchResult {
   worktreePath: string | null;
   workspaceRef: string;
+  verdictPath: string;
 }
 
 /**
@@ -688,6 +689,7 @@ export function launchReviewWorker(
 
   // Build system prompt
   const reviewType = options.reviewType ?? "todo";
+  const verdictPath = join(tmpdir(), `nw-verdict-${itemId}.json`);
   const baseBranchLine = options.baseBranch
     ? `BASE_BRANCH: ${options.baseBranch}\n`
     : "";
@@ -700,6 +702,7 @@ PROJECT_ROOT: ${repoRoot}
 REPO_ROOT: ${repoRoot}
 AUTO_FIX_MODE: ${autoFixMode}
 REVIEW_TYPE: ${reviewType}
+VERDICT_FILE: ${verdictPath}
 ${baseBranchLine}${securityLine}`;
 
   const safeTitle = sanitizeTitle(`Review PR #${prNumber}`);
@@ -722,7 +725,7 @@ ${baseBranchLine}${securityLine}`;
       { projectRoot: repoRoot, agentName: "ninthwave-reviewer" },
     );
     if (!workspaceRef) return null;
-    return { worktreePath, workspaceRef };
+    return { worktreePath, workspaceRef, verdictPath };
   } finally {
     try {
       unlinkSync(promptFile);

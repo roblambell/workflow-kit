@@ -22,8 +22,8 @@ Read the following variables from the appended system prompt:
 - **PROJECT_ROOT**: Absolute path to the project repository
 - **REPO_ROOT**: Repository root (may differ from PROJECT_ROOT in monorepos)
 - **AUTO_FIX_MODE**: One of `off`, `direct`, or `pr` (default: `off`)
-- **REVIEW_CAN_APPROVE**: `true` or `false` (default: `false`)
 - **REVIEW_TYPE**: One of `todo` or `external` (default: `todo`)
+- **VERDICT_FILE**: Absolute path to write the review verdict JSON
 
 ### Review Type
 
@@ -173,53 +173,40 @@ Include diagrams in the review summary comment (section 6), not as inline commen
 
 ## 6. Review Output
 
-Post your review as a single GitHub PR review with inline comments on specific lines and a summary comment.
+Write your verdict to the file specified by `VERDICT_FILE`. Do NOT post reviews directly to GitHub — the orchestrator handles that.
 
-### Output Mode: Comment-Only (`REVIEW_CAN_APPROVE=false`, default)
+### Verdict File
 
-You are in informational mode. Your review provides signal but does not gate the merge.
+Write a JSON file to the `VERDICT_FILE` path:
 
-**Always use `gh pr review --comment`.** Never use `--approve` or `--request-changes`.
-
-Summary comment format:
-
-```
-**[Review: {ITEM_ID}]** Reviewed PR #{PR_NUMBER}
-
-**Findings:** {BLOCKER_COUNT} blockers, {NIT_COUNT} nits, {PRE_EXISTING_COUNT} pre-existing
-
-{If blockers > 0:}
-### Blockers
-- **[BLOCKER]** `file:line` — Description of the issue. Suggested fix.
-
-{If nits > 0:}
-### Nits
-- **[NIT]** `file:line` — Description. Suggested fix.
-
-{If pre-existing > 0:}
-### Pre-existing (not introduced by this PR)
-- **[PRE-EXISTING]** `file:line` — Description.
-
-{If diagram is warranted:}
-### Architecture
-```mermaid
-graph TD
-  ...
-```​
-
-{If no findings:}
-No issues found. Clean PR.
+```bash
+cat > "$VERDICT_FILE" << 'VERDICT_EOF'
+{
+  "verdict": "approve",
+  "summary": "your full review summary in markdown",
+  "blockerCount": 0,
+  "nitCount": 0,
+  "preExistingCount": 0
+}
+VERDICT_EOF
 ```
 
-### Output Mode: Approve (`REVIEW_CAN_APPROVE=true`)
+### Verdict Decision
 
-You can gate the merge. Choose the appropriate review action:
+- **0 blockers**: `"verdict": "approve"`
+- **≥1 blocker**: `"verdict": "request-changes"`
 
-- **0 blockers, 0 nits**: `gh pr review --approve` with summary
-- **0 blockers, ≥1 nit**: `gh pr review --comment` with summary (approve is also acceptable if nits are trivial)
-- **≥1 blocker**: `gh pr review --request-changes` with summary
+### Summary Content
 
-Same summary format as above, with the review action noted.
+The `summary` field should contain your full review in markdown, including:
+
+- Blocker details with `file:line` references and suggested fixes
+- Nit details with `file:line` references
+- Pre-existing issues flagged for awareness
+- Mermaid diagrams (if warranted per section 5)
+- If no findings: `"No issues found. Clean PR."`
+
+The orchestrator will post this summary as a formatted PR comment.
 
 ### Inline Comments
 
@@ -239,7 +226,7 @@ corrected code here
   -f side="RIGHT"
 ```
 
-If a finding spans multiple lines or is about the overall approach rather than a specific line, include it in the summary comment only.
+If a finding spans multiple lines or is about the overall approach rather than a specific line, include it in the summary field only.
 
 ## 7. Auto-Fix Behavior
 
@@ -308,15 +295,15 @@ These are the domain of linters and formatters, not code review. The only except
 
 ## 9. Completion
 
-After posting your review:
+After writing the verdict file:
 
-1. Verify the review was posted: `gh pr view YOUR_REVIEW_PR --json reviews --jq '.reviews[-1]'`
+1. Verify the verdict file was written: `cat $VERDICT_FILE`
 2. Stop. Do not poll for responses, watch for CI, or take follow-up action.
 
-The orchestrator daemon handles the post-review lifecycle. If the PR author pushes changes in response to your review, the orchestrator will dispatch a re-review if configured to do so.
+The orchestrator daemon handles the post-review lifecycle — it reads the verdict file, posts the review comment on the PR, and manages the commit status.
 
 **Do NOT:**
-- Approve your own PRs (if the review worker authored the PR)
+- Post `gh pr review` commands (the orchestrator posts the review comment)
 - Comment on PRs you've already reviewed in this session (one review per dispatch)
-- Engage in back-and-forth discussion — post findings once, then stop
+- Engage in back-and-forth discussion — write the verdict once, then stop
 - Modify files outside the PR's changed files (even if you find pre-existing issues)

@@ -299,16 +299,6 @@ EOF
 
 Choose the right PR title prefix based on the change type (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`, `chore:`).
 
-### Lock the PR conversation
-
-Immediately after creating the PR, lock the conversation to prevent prompt injection via public comments:
-
-```bash
-gh api --method PUT "repos/{owner}/{repo}/issues/$(gh pr view --json number --jq .number)/lock" -f lock_reason=resolved
-```
-
-If the lock fails (e.g., insufficient permissions), continue — the `pr-activity` and `pr-watch` commands still filter out untrusted comments by `author_association`.
-
 ```bash
 nw heartbeat --progress 1.0 --label "PR created"
 ```
@@ -368,7 +358,7 @@ When you receive a message, it will be one of these categories:
 
 #### Review Feedback
 
-> **Note:** Feedback is pre-filtered by the toolchain to only include comments from trusted collaborators (`OWNER`, `MEMBER`, `COLLABORATOR`). PR conversations are locked at creation time, and the `pr-activity`/`pr-watch` commands ignore comments from non-collaborators. You can safely act on any feedback the orchestrator daemon relays.
+> **Note:** Feedback is pre-filtered by the toolchain to only include comments from trusted collaborators (`OWNER`, `MEMBER`, `COLLABORATOR`). The `pr-activity`/`pr-watch` commands ignore comments from non-collaborators. You can safely act on any feedback the orchestrator daemon relays.
 
 1. Report progress: `nw heartbeat --progress 0.85 --label "Addressing feedback"`
 2. Pull latest: `git fetch origin && git reset --hard origin/ninthwave/YOUR_TODO_ID`

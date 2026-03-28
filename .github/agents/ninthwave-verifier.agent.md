@@ -120,11 +120,6 @@ If the root cause is clear and fixable:
    )"
    ```
 
-6. Lock the PR conversation:
-   ```bash
-   gh api --method PUT "repos/{owner}/{repo}/issues/$(gh pr view --json number --jq .number)/lock" -f lock_reason=resolved
-   ```
-
 ```bash
 nw heartbeat --progress 1.0 --label "Fix PR created"
 ```

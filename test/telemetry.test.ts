@@ -502,7 +502,6 @@ describe("collectRunMetrics includes telemetry fields", () => {
       reviewEnabled: false,
       reviewWipLimit: 2,
       reviewAutoFix: "off",
-      reviewCanApprove: false,
     };
 
     const metrics = collectRunMetrics(items, config, "2026-03-25T10:00:00.000Z", "2026-03-25T10:20:00.000Z", "claude");
@@ -541,7 +540,6 @@ describe("collectRunMetrics includes telemetry fields", () => {
       reviewEnabled: false,
       reviewWipLimit: 2,
       reviewAutoFix: "off",
-      reviewCanApprove: false,
     };
 
     const metrics = collectRunMetrics(items, config, "2026-03-25T10:00:00.000Z", "2026-03-25T10:20:00.000Z", "claude");

@@ -76,6 +76,8 @@ export interface OrchestratorItem {
   resolvedRepoRoot?: string;
   /** cmux workspace reference for the review worker session. */
   reviewWorkspaceRef?: string;
+  /** Absolute path to the verdict file written by the review worker. */
+  reviewVerdictPath?: string;
   /** cmux workspace reference for the repair worker session (rebase-only). */
   repairWorkspaceRef?: string;
   /** Whether this item's review has been completed (approved). Resets on CI regression. */
@@ -133,8 +135,6 @@ export interface OrchestratorConfig {
   reviewWipLimit: number;
   /** How the review worker handles requested fixes: off (report only), direct (push fixes), pr (open fix PR). Default: "off". */
   reviewAutoFix: "off" | "direct" | "pr";
-  /** Whether the review worker can approve PRs on behalf of the orchestrator. Default: false. */
-  reviewCanApprove: boolean;
   /** Max merge failures before marking stuck. Default: 3. */
   maxMergeRetries: number;
   /** Max consecutive repair worker launches before marking stuck. Default: 3. */
@@ -174,6 +174,8 @@ export interface ItemSnapshot {
   lastHeartbeat?: import("./daemon.ts").WorkerProgress | null;
   /** CI status of the merge commit on main (for post-merge verification). */
   mergeCommitCIStatus?: "pass" | "fail" | "pending";
+  /** Structured verdict from the review worker (read from verdict file). */
+  reviewVerdict?: import("./daemon.ts").ReviewVerdict;
 }
 
 export interface PollSnapshot {
@@ -202,7 +204,8 @@ export type ActionType =
   | "launch-verifier"
   | "clean-verifier"
   | "send-message"
-  | "set-commit-status";
+  | "set-commit-status"
+  | "post-review";
 
 export interface Action {
   type: ActionType;
@@ -217,6 +220,8 @@ export interface Action {
   statusState?: "pending" | "success" | "failure";
   /** For set-commit-status actions, the description text. */
   statusDescription?: string;
+  /** For post-review actions, the verdict data to format and post as a PR comment. */
+  verdict?: import("./daemon.ts").ReviewVerdict;
 }
 
 // ── Execution context and dependencies ──────────────────────────────
@@ -294,7 +299,7 @@ export interface OrchestratorDeps {
    * Launch a review worker for a PR. Returns a workspace reference on success.
    * Actual logic lives in H-RVW-3; stub for now.
    */
-  launchReview?: (itemId: string, prNumber: number, repoRoot: string) => { workspaceRef: string } | null;
+  launchReview?: (itemId: string, prNumber: number, repoRoot: string) => { workspaceRef: string; verdictPath: string } | null;
   /**
    * Clean up a review worker session and workspace.
    * Actual logic lives in H-RVW-3; stub for now.
@@ -374,7 +379,6 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   reviewEnabled: true,
   reviewWipLimit: 2,
   reviewAutoFix: "off",
-  reviewCanApprove: false,
   maxMergeRetries: 3,
   maxRepairAttempts: 3,
   verifyMain: true,
@@ -1027,7 +1031,7 @@ export class Orchestrator {
 
   /**
    * Handle reviewing state.
-   * Review worker is active — check for review outcome, CI regression, external merge, or worker death.
+   * Review worker is active — check for verdict file, CI regression, external merge, or worker death.
    */
   private handleReviewing(
     item: OrchestratorItem,
@@ -1060,44 +1064,54 @@ export class Orchestrator {
       return actions;
     }
 
-    // Review APPROVED → set reviewCompleted, transition back to ci-passed (evaluateMerge handles merge)
-    if (snap?.reviewDecision === "APPROVED") {
-      item.reviewCompleted = true;
-      this.transition(item, "ci-passed", snap?.eventTime);
-      // Set success commit status — review passed with no blockers
-      actions.push({
-        type: "set-commit-status",
-        itemId: item.id,
-        prNumber: item.prNumber,
-        statusState: "success",
-        statusDescription: "Review passed — no blockers",
-      });
-      // Chain through evaluateMerge to handle merge in the same cycle
-      actions.push(...this.evaluateMerge(item, snap, snap?.eventTime));
-      return actions;
-    }
+    // Verdict file detected → process review outcome
+    if (snap?.reviewVerdict) {
+      const v = snap.reviewVerdict;
 
-    // Review CHANGES_REQUESTED → transition to review-pending, notify worker
-    if (snap?.reviewDecision === "CHANGES_REQUESTED") {
-      this.transition(item, "review-pending", snap?.eventTime);
-      // Set commit status based on reviewCanApprove:
-      // - If reviewCanApprove: "failure" (blockers are gate-blocking)
-      // - Otherwise: "success" (blockers are informational, not gate-blocking)
-      actions.push({
-        type: "set-commit-status",
-        itemId: item.id,
-        prNumber: item.prNumber,
-        statusState: this.config.reviewCanApprove ? "failure" : "success",
-        statusDescription: this.config.reviewCanApprove
-          ? "Review found blockers"
-          : "Review found issues (non-blocking)",
-      });
-      actions.push({
-        type: "notify-review",
-        itemId: item.id,
-        message: "[ORCHESTRATOR] Review Feedback: Review worker requested changes — please address.",
-      });
-      return actions;
+      if (v.verdict === "approve") {
+        item.reviewCompleted = true;
+        this.transition(item, "ci-passed", snap?.eventTime);
+        actions.push({ type: "clean-review", itemId: item.id });
+        actions.push({
+          type: "post-review",
+          itemId: item.id,
+          prNumber: item.prNumber,
+          verdict: v,
+        });
+        actions.push({
+          type: "set-commit-status",
+          itemId: item.id,
+          prNumber: item.prNumber,
+          statusState: "success",
+          statusDescription: `Review passed — ${v.blockerCount} blockers, ${v.nitCount} nits`,
+        });
+        actions.push(...this.evaluateMerge(item, snap, snap?.eventTime));
+        return actions;
+      }
+
+      if (v.verdict === "request-changes") {
+        this.transition(item, "review-pending", snap?.eventTime);
+        actions.push({ type: "clean-review", itemId: item.id });
+        actions.push({
+          type: "post-review",
+          itemId: item.id,
+          prNumber: item.prNumber,
+          verdict: v,
+        });
+        actions.push({
+          type: "set-commit-status",
+          itemId: item.id,
+          prNumber: item.prNumber,
+          statusState: "failure",
+          statusDescription: `Review found ${v.blockerCount} blockers`,
+        });
+        actions.push({
+          type: "notify-review",
+          itemId: item.id,
+          message: "[ORCHESTRATOR] Review Feedback: Review worker requested changes — please address.",
+        });
+        return actions;
+      }
     }
 
     return actions;
@@ -1453,6 +1467,8 @@ export class Orchestrator {
         return this.executeSendMessage(item, action, deps);
       case "set-commit-status":
         return this.executeSetCommitStatus(item, action, ctx, deps);
+      case "post-review":
+        return this.executePostReview(item, action, ctx, deps);
     }
   }
 
@@ -2194,6 +2210,7 @@ export class Orchestrator {
       const result = deps.launchReview(item.id, prNum, repoRoot);
       if (result) {
         item.reviewWorkspaceRef = result.workspaceRef;
+        item.reviewVerdictPath = result.verdictPath;
       }
       return { success: true };
     } catch (e: unknown) {
@@ -2202,11 +2219,17 @@ export class Orchestrator {
     }
   }
 
-  /** Clean up a review worker session. */
+  /** Clean up a review worker session and verdict file. */
   private executeCleanReview(
     item: OrchestratorItem,
     deps: OrchestratorDeps,
   ): ActionResult {
+    // Clean up verdict file
+    if (item.reviewVerdictPath) {
+      try { unlinkSync(item.reviewVerdictPath); } catch { /* best-effort */ }
+      item.reviewVerdictPath = undefined;
+    }
+
     if (!deps.cleanReview || !item.reviewWorkspaceRef) {
       item.reviewWorkspaceRef = undefined;
       return { success: true }; // no-op when not wired or no review workspace
@@ -2220,6 +2243,44 @@ export class Orchestrator {
       const msg = e instanceof Error ? e.message : String(e);
       item.reviewWorkspaceRef = undefined;
       return { success: false, error: `Review cleanup failed for ${item.id}: ${msg}` };
+    }
+  }
+
+  /** Post a formatted review comment on the PR from a reviewer verdict. */
+  private executePostReview(
+    item: OrchestratorItem,
+    action: Action,
+    ctx: ExecutionContext,
+    deps: OrchestratorDeps,
+  ): ActionResult {
+    const prNum = action.prNumber ?? item.prNumber;
+    if (!prNum || !action.verdict) {
+      return { success: false, error: `Missing PR number or verdict for post-review of ${item.id}` };
+    }
+
+    const v = action.verdict;
+    const verdictLabel = v.verdict === "approve" ? "Approved" : "Changes Requested";
+    const statsLine = `${v.blockerCount} blockers, ${v.nitCount} nits, ${v.preExistingCount} pre-existing`;
+
+    const body = [
+      `**[Reviewer]** Reviewed PR #${prNum}`,
+      "",
+      `**Verdict:** ${verdictLabel} — ${statsLine}`,
+      "",
+      "<details><summary>Review details</summary>",
+      "",
+      v.summary,
+      "",
+      "</details>",
+    ].join("\n");
+
+    const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
+    try {
+      deps.prComment(repoRoot, prNum, body);
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { success: false, error: `Post-review comment failed for ${item.id}: ${msg}` };
     }
   }
 

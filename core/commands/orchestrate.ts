@@ -62,6 +62,7 @@ import {
   readExternalReviews,
   writeExternalReviews,
   readHeartbeat,
+  readVerdictFile,
   logFilePath,
   stateFilePath,
   userStateDir,
@@ -324,12 +325,17 @@ export function buildSnapshot(
       }
     }
 
-    // Check review worker health for items in reviewing state
+    // Check review worker health and verdict file for items in reviewing state
     if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {
       snap.workerAlive = isWorkerAlive(
         { ...orchItem, workspaceRef: orchItem.reviewWorkspaceRef } as OrchestratorItem,
         mux,
       );
+      if (orchItem.reviewVerdictPath) {
+        try {
+          snap.reviewVerdict = readVerdictFile(orchItem.reviewVerdictPath) ?? undefined;
+        } catch { /* best-effort — verdict read failure doesn't block polling */ }
+      }
     }
 
     // Check repair worker health for items in repairing state
@@ -1797,7 +1803,6 @@ export interface ParsedWatchArgs {
   reviewEnabled: boolean;
   reviewWipLimit?: number;
   reviewAutoFix?: "off" | "direct" | "pr";
-  reviewCanApprove: boolean;
   reviewExternal: boolean;
   verifyMain: boolean;
   watchMode: boolean;
@@ -1825,7 +1830,6 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   let reviewEnabled = true;
   let reviewWipLimit: number | undefined;
   let reviewAutoFix: "off" | "direct" | "pr" | undefined;
-  let reviewCanApprove = false;
   let reviewExternal = false;
   let verifyMain = true;
   let watchMode = false;
@@ -1903,10 +1907,6 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         i += 2;
         break;
       }
-      case "--review-can-approve":
-        reviewCanApprove = true;
-        i += 1;
-        break;
       case "--review-external":
         reviewExternal = true;
         i += 1;
@@ -1973,7 +1973,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   return {
     itemIds, mergeStrategy, wipLimitOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, clickupListId, remoteFlag,
-    reviewEnabled, reviewWipLimit, reviewAutoFix, reviewCanApprove, reviewExternal,
+    reviewEnabled, reviewWipLimit, reviewAutoFix, reviewExternal,
     verifyMain, watchMode, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewCode, crewCreate, crewPort, crewUrl, crewName,
   };
@@ -2004,7 +2004,7 @@ export async function cmdOrchestrate(
   const {
     wipLimitOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, clickupListId, remoteFlag,
-    reviewEnabled, reviewWipLimit, reviewAutoFix, reviewCanApprove, reviewExternal,
+    reviewEnabled, reviewWipLimit, reviewAutoFix, reviewExternal,
     verifyMain, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewCreate, crewPort, crewName,
   } = parsed;
@@ -2165,7 +2165,6 @@ export async function cmdOrchestrate(
     verifyMain,
     ...(reviewWipLimit !== undefined ? { reviewWipLimit } : {}),
     ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
-    ...(reviewCanApprove ? { reviewCanApprove } : {}),
   });
   for (const id of itemIds) {
     orch.addItem(workItemMap.get(id)!);
@@ -2270,7 +2269,7 @@ export async function cmdOrchestrate(
       const autoFix = orch.config.reviewAutoFix;
       const result = launchReviewWorker(prNumber, itemId, autoFix, repoRoot, aiTool, mux);
       if (!result) return null;
-      return { workspaceRef: result.workspaceRef };
+      return { workspaceRef: result.workspaceRef, verdictPath: result.verdictPath };
     },
     bootstrapRepo: (alias, projRoot) => bootstrapRepo(alias, projRoot),
     cleanReview: (itemId, reviewWorkspaceRef) => {

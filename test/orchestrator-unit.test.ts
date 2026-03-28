@@ -1113,34 +1113,41 @@ describe("handleMerging", () => {
 // ── Reviewing state ──────────────────────────────────────────────────
 
 describe("handleReviewing", () => {
-  it("transitions to ci-passed with reviewCompleted on APPROVED", () => {
+  const approveVerdict = { verdict: "approve" as const, summary: "No issues.", blockerCount: 0, nitCount: 0, preExistingCount: 0 };
+  const requestChangesVerdict = { verdict: "request-changes" as const, summary: "Found blockers.", blockerCount: 2, nitCount: 0, preExistingCount: 0 };
+
+  it("transitions to ci-passed with reviewCompleted on approve verdict", () => {
     const orch = new Orchestrator({ mergeStrategy: "reviewed", reviewEnabled: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "reviewing");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewVerdict: approveVerdict }]),
     );
 
     expect(orch.getItem("H-1-1")!.reviewCompleted).toBe(true);
     // Should chain through to merging (reviewed + reviewCompleted)
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
     expect(actions.some((a) => a.type === "merge")).toBe(true);
+    expect(actions.some((a) => a.type === "post-review")).toBe(true);
+    expect(actions.some((a) => a.type === "clean-review")).toBe(true);
   });
 
-  it("transitions to review-pending on CHANGES_REQUESTED", () => {
+  it("transitions to review-pending on request-changes verdict", () => {
     const orch = new Orchestrator({ reviewEnabled: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "reviewing");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewDecision: "CHANGES_REQUESTED" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewVerdict: requestChangesVerdict }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
     expect(actions.some((a) => a.type === "notify-review")).toBe(true);
+    expect(actions.some((a) => a.type === "post-review")).toBe(true);
+    expect(actions.some((a) => a.type === "clean-review")).toBe(true);
   });
 
   it("transitions to ci-failed on CI regression during review", () => {

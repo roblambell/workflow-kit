@@ -304,6 +304,33 @@ export interface WorkerProgress {
   outputTokens?: number;
 }
 
+// ── Review verdict ──────────────────────────────────────────────────
+
+/** Structured verdict written by the review worker for the orchestrator to consume. */
+export interface ReviewVerdict {
+  verdict: "approve" | "request-changes";
+  summary: string;
+  blockerCount: number;
+  nitCount: number;
+  preExistingCount: number;
+}
+
+/** Read a verdict file. Returns null if the file doesn't exist or is invalid. */
+export function readVerdictFile(
+  filePath: string,
+  io: DaemonIO = defaultIO,
+): ReviewVerdict | null {
+  if (!io.existsSync(filePath)) return null;
+  try {
+    const content = io.readFileSync(filePath, "utf-8");
+    return JSON.parse(content) as ReviewVerdict;
+  } catch {
+    return null;
+  }
+}
+
+// ── Heartbeat ───────────────────────────────────────────────────────
+
 /** Directory for heartbeat files: ~/.ninthwave/projects/{slug}/heartbeats/ */
 export function heartbeatDir(projectRoot: string): string {
   return join(userStateDir(projectRoot), "heartbeats");
