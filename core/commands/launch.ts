@@ -910,6 +910,14 @@ export async function cmdRunItems(
   muxOverride?: Multiplexer,
   wipLimitOverride?: number,
 ): Promise<void> {
+  // Pre-flight: fail fast if the mux backend is not usable (binary missing
+  // or no active session). Without this, workers create worktrees first and
+  // then fail with misleading errors.
+  const muxEarly = muxOverride ?? getMux();
+  if (!muxEarly.isAvailable()) {
+    die(muxEarly.diagnoseUnavailable());
+  }
+
   const items = parseWorkItems(workDir, worktreeDir);
   const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
@@ -1016,7 +1024,7 @@ export async function cmdRunItems(
     getWorktreeInfo(itemId, crossRepoIndex, worktreeDir),
   );
 
-  const mux = muxOverride ?? getMux();
+  const mux = muxEarly;
   const launched: string[] = [];
   const skipped: string[] = [];
   let wipReached = false;
@@ -1076,6 +1084,14 @@ export async function cmdStart(
   projectRoot: string,
   muxOverride?: Multiplexer,
 ): Promise<void> {
+  // Pre-flight: fail fast if the mux backend is not usable (binary missing
+  // or no active session). Without this, workers create worktrees first and
+  // then fail with misleading errors.
+  const muxEarly = muxOverride ?? getMux();
+  if (!muxEarly.isAvailable()) {
+    die(muxEarly.diagnoseUnavailable());
+  }
+
   const ids = splitIds(args);
 
   if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...]");
@@ -1178,7 +1194,7 @@ export async function cmdStart(
   const freeGB = Math.round(freemem() / (1024 ** 3));
   info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (${freeGB}GB free)`);
 
-  const mux = muxOverride ?? getMux();
+  const mux = muxEarly;
   const launched: string[] = [];
   const skipped: string[] = [];
 

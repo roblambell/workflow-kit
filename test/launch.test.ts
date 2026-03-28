@@ -285,6 +285,28 @@ describe("cmdStart", () => {
 
     expect(output).toContain("Detected AI tool: opencode");
   });
+
+  it("dies early when mux is unavailable (before any git operations)", async () => {
+    const mockMux = createMockMux();
+    mockMux.isAvailable.mockReturnValue(false);
+    mockMux.diagnoseUnavailable.mockReturnValue(
+      "cmux is not available. Ensure cmux is installed and running.",
+    );
+
+    const repo = setupTempRepo();
+    const workDir = setupWorkItemsDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+
+    const output = await captureOutput(() =>
+      cmdStart(["M-CI-1"], workDir, worktreeDir, repo, mockMux),
+    );
+
+    expect(output).toContain("cmux is not available");
+    // Should NOT have attempted to launch a workspace
+    expect(mockMux.launchWorkspace).not.toHaveBeenCalled();
+    // Should NOT have attempted worktree creation
+    expect(createWorktree).not.toHaveBeenCalled();
+  });
 });
 
 describe("launchSingleItem", () => {
@@ -1708,5 +1730,44 @@ describe("cmdRunItems", () => {
     expect(output).toContain("Launch plan:");
     expect(output).toContain("Batch 1:");
     expect(output).toContain("M-CI-1");
+  });
+
+  it("dies early when mux is unavailable (before any worktree creation)", async () => {
+    const mockMux = createMockMux();
+    mockMux.isAvailable.mockReturnValue(false);
+    mockMux.diagnoseUnavailable.mockReturnValue(
+      "cmux is not available. Ensure cmux is installed and running.",
+    );
+
+    const repo = setupTempRepo();
+    const workDir = setupWorkItemsDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+
+    const output = await captureOutput(() =>
+      cmdRunItems(["M-CI-1"], workDir, worktreeDir, repo, mockMux),
+    );
+
+    expect(output).toContain("cmux is not available");
+    // Should NOT have attempted to launch a workspace
+    expect(mockMux.launchWorkspace).not.toHaveBeenCalled();
+    // Should NOT have attempted worktree creation
+    expect(createWorktree).not.toHaveBeenCalled();
+  });
+
+  it("uses same error message as diagnoseUnavailable()", async () => {
+    const mockMux = createMockMux();
+    mockMux.isAvailable.mockReturnValue(false);
+    const diagMsg = "Custom diagnostic: install cmux first";
+    mockMux.diagnoseUnavailable.mockReturnValue(diagMsg);
+
+    const repo = setupTempRepo();
+    const workDir = setupWorkItemsDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+
+    const output = await captureOutput(() =>
+      cmdRunItems(["M-CI-1"], workDir, worktreeDir, repo, mockMux),
+    );
+
+    expect(output).toContain(diagMsg);
   });
 });
