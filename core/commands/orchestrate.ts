@@ -1965,10 +1965,20 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
           i += 1;
         }
         break;
-      case "--merge-strategy":
-        mergeStrategy = (args[i + 1] ?? "auto") as MergeStrategy;
+      case "--merge-strategy": {
+        const raw = args[i + 1] ?? "auto";
+        // Map skill aliases to actual strategies
+        const strategyMap: Record<string, MergeStrategy> = {
+          auto: "auto", manual: "manual", bypass: "bypass",
+          asap: "auto", approved: "auto", ask: "manual",
+        };
+        mergeStrategy = strategyMap[raw] ?? "auto";
+        if (!strategyMap[raw]) {
+          warn(`Unknown merge strategy "${raw}", defaulting to "auto"`);
+        }
         i += 2;
         break;
+      }
       case "--wip-limit":
         wipLimitOverride = parseInt(args[i + 1] ?? "4", 10);
         i += 2;
