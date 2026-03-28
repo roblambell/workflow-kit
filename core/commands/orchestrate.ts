@@ -73,7 +73,6 @@ import {
 import {
   formatStatusTable,
   mapDaemonItemState,
-  computeCountdownText,
   getTerminalWidth,
   getTerminalHeight,
   buildStatusLayout,
@@ -439,27 +438,9 @@ export function syncWorkerDisplay(
 
 // ── Adaptive poll interval ─────────────────────────────────────────
 
-/** Compute poll interval based on current item states. */
-export function adaptivePollInterval(orch: Orchestrator): number {
-  const items = orch.getAllItems();
-
-  // 5s between batches: items are ready and about to launch
-  if (items.some((i) => i.state === "ready")) {
-    return 5_000;
-  }
-
-  // 10s when workers active: bootstrapping, launching, or implementing
-  if (items.some((i) => i.state === "bootstrapping" || i.state === "launching" || i.state === "implementing")) {
-    return 10_000;
-  }
-
-  // 15s when waiting for CI or reviews — still want fast feedback
-  if (items.some((i) => i.state === "ci-pending" || i.state === "ci-passed" || i.state === "ci-failed")) {
-    return 15_000;
-  }
-
-  // 30s idle fallback
-  return 30_000;
+/** Flat 2s poll interval — fast enough that users never need to think about refresh timing. */
+export function adaptivePollInterval(_orch: Orchestrator): number {
+  return 2_000;
 }
 
 // ── External PR review processing ─────────────────────────────────
@@ -1595,8 +1576,6 @@ export async function orchestrateLoop(
 export interface TuiState {
   scrollOffset: number;
   viewOptions: ViewOptions;
-  /** Unix timestamp (ms) of when the next data refresh will occur. Used for countdown display. */
-  nextRefreshAt?: number;
   /** Called after any key that should trigger an immediate re-render. */
   onUpdate?: () => void;
 }
@@ -2249,10 +2228,6 @@ export async function cmdOrchestrate(
     onUpdate: () => {
       if (tuiMode) {
         try {
-          // Update countdown text before rendering
-          if (tuiState.nextRefreshAt != null) {
-            tuiState.viewOptions.countdownText = computeCountdownText(tuiState.nextRefreshAt);
-          }
           renderTuiFrame(lastTuiItems, wipLimit, undefined, tuiState.viewOptions, tuiState.scrollOffset, resolvedCrewName);
         } catch {
           // Non-fatal
@@ -2261,12 +2236,8 @@ export async function cmdOrchestrate(
     },
   };
 
-  const onPollComplete = (items: OrchestratorItem[], pollIntervalMs?: number) => {
+  const onPollComplete = (items: OrchestratorItem[], _pollIntervalMs?: number) => {
     lastTuiItems = items;
-    // Update countdown target for next poll cycle
-    if (pollIntervalMs != null) {
-      tuiState.nextRefreshAt = Date.now() + pollIntervalMs;
-    }
     // Update crew status from broker
     if (crewBroker && crewCode) {
       const cs = crewBroker.getCrewStatus();
@@ -2291,10 +2262,6 @@ export async function cmdOrchestrate(
     // TUI mode: render live status table to stdout after each poll cycle
     if (tuiMode) {
       try {
-        // Update countdown text before rendering
-        if (tuiState.nextRefreshAt != null) {
-          tuiState.viewOptions.countdownText = computeCountdownText(tuiState.nextRefreshAt);
-        }
         renderTuiFrame(items, wipLimit, undefined, tuiState.viewOptions, tuiState.scrollOffset, resolvedCrewName);
       } catch {
         // Non-fatal — TUI render failure shouldn't block the orchestrator
@@ -2382,23 +2349,6 @@ export async function cmdOrchestrate(
     cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
   }
 
-  // 1-second countdown interval: re-renders TUI to tick countdown each second (decoupled from poll loop)
-  // lint-ignore: no-uncleared-interval
-  let countdownInterval: ReturnType<typeof setInterval> | null = null;
-  if (tuiMode) {
-    countdownInterval = setInterval(() => {
-      if (abortController.signal.aborted) return;
-      try {
-        if (tuiState.nextRefreshAt != null) {
-          tuiState.viewOptions.countdownText = computeCountdownText(tuiState.nextRefreshAt);
-        }
-        renderTuiFrame(lastTuiItems, wipLimit, undefined, tuiState.viewOptions, tuiState.scrollOffset);
-      } catch {
-        // Non-fatal — countdown render failure shouldn't crash the daemon
-      }
-    }, 1_000);
-  }
-
   // Write PID file for foreground mode too (prevents duplicate instances)
   if (!isDaemonChild) {
     writePidFile(projectRoot, process.pid);
@@ -2437,11 +2387,6 @@ export async function cmdOrchestrate(
         itemIds: closedWorkspaces,
         count: closedWorkspaces.length,
       });
-    }
-
-    // Clean up countdown interval
-    if (countdownInterval != null) {
-      clearInterval(countdownInterval);
     }
 
     // Restore terminal state (disable raw mode)

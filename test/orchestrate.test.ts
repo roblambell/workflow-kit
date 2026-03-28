@@ -863,54 +863,20 @@ describe("orchestrateLoop", () => {
 });
 
 describe("adaptivePollInterval", () => {
-  it("returns 5s when items are ready", () => {
+  it("returns flat 2s regardless of item states", () => {
     const orch = new Orchestrator();
     orch.addItem(makeTodo("A-1-1"));
     orch.setState("A-1-1", "ready");
+    expect(adaptivePollInterval(orch)).toBe(2_000);
 
-    expect(adaptivePollInterval(orch)).toBe(5_000);
-  });
-
-  it("returns 10s when workers are active", () => {
-    const orch = new Orchestrator();
-    orch.addItem(makeTodo("A-1-1"));
     orch.setState("A-1-1", "implementing");
+    expect(adaptivePollInterval(orch)).toBe(2_000);
 
-    expect(adaptivePollInterval(orch)).toBe(10_000);
-  });
-
-  it("returns 10s when workers are launching", () => {
-    const orch = new Orchestrator();
-    orch.addItem(makeTodo("A-1-1"));
-    orch.setState("A-1-1", "launching");
-
-    expect(adaptivePollInterval(orch)).toBe(10_000);
-  });
-
-  it("returns 15s when waiting for CI", () => {
-    const orch = new Orchestrator();
-    orch.addItem(makeTodo("A-1-1"));
     orch.setState("A-1-1", "ci-pending");
+    expect(adaptivePollInterval(orch)).toBe(2_000);
 
-    expect(adaptivePollInterval(orch)).toBe(15_000);
-  });
-
-  it("returns 30s when all items are in terminal states", () => {
-    const orch = new Orchestrator();
-    orch.addItem(makeTodo("A-1-1"));
     orch.setState("A-1-1", "done");
-
-    expect(adaptivePollInterval(orch)).toBe(30_000);
-  });
-
-  it("prioritizes ready (5s) over implementing (10s)", () => {
-    const orch = new Orchestrator();
-    orch.addItem(makeTodo("A-1-1"));
-    orch.addItem(makeTodo("A-1-2"));
-    orch.setState("A-1-1", "ready");
-    orch.setState("A-1-2", "implementing");
-
-    expect(adaptivePollInterval(orch)).toBe(5_000);
+    expect(adaptivePollInterval(orch)).toBe(2_000);
   });
 });
 

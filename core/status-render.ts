@@ -30,8 +30,6 @@ export interface ViewOptions {
   sessionStartedAt?: string;
   /** Base repository URL for PR hyperlinks (e.g., "https://github.com/org/repo"). */
   repoUrl?: string;
-  /** Pre-computed countdown text to display in the footer (e.g., "Refresh: 3s" or "Refreshing..."). */
-  countdownText?: string;
   /** Crew mode status info. When present, renders crew status panel and DAEMON column. */
   crewStatus?: CrewStatusInfo;
 }
@@ -233,24 +231,6 @@ export function formatAge(ms: number): string {
     return `${minutes}m`;
   }
   return "<1m";
-}
-
-/**
- * Compute the countdown text for the status footer.
- * Returns "Refreshing..." when at 0, "Refresh: Ns" when counting down.
- * Clamps to 0 — never shows negative values.
- *
- * @param nextRefreshAt - Unix timestamp (ms) when next refresh will occur.
- * @param now - Current time in ms (injectable for testing). Defaults to Date.now().
- */
-export function computeCountdownText(
-  nextRefreshAt: number,
-  now: number = Date.now(),
-): string {
-  const remainingMs = nextRefreshAt - now;
-  const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
-  if (remainingSeconds <= 0) return "Refreshing...";
-  return `Refresh: ${remainingSeconds}s`;
 }
 
 /** Right-pad a string to a given width. */
@@ -883,11 +863,6 @@ export function formatStatusTable(
   lines.push(sep);
   lines.push(formatUnifiedProgress(items, termWidth));
 
-  // Countdown text
-  if (opts.countdownText) {
-    lines.push(`  ${DIM}${opts.countdownText}${RESET}`);
-  }
-
   return lines.join("\n");
 }
 
@@ -1264,13 +1239,9 @@ export function buildStatusLayout(
   footerLines.push(sep);
   footerLines.push(formatUnifiedProgress(items, termWidth));
 
-  // Always show keyboard shortcuts in full-screen mode, with countdown on the right
+  // Always show keyboard shortcuts in full-screen mode
   const shortcuts = `q quit  d deps  ↑/↓ scroll`;
-  if (opts.countdownText) {
-    footerLines.push(`  ${DIM}${shortcuts}${RESET}    ${DIM}${opts.countdownText}${RESET}`);
-  } else {
-    footerLines.push(`  ${DIM}${shortcuts}${RESET}`);
-  }
+  footerLines.push(`  ${DIM}${shortcuts}${RESET}`);
 
   return { headerLines, itemLines, footerLines };
 }

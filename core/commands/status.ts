@@ -23,7 +23,6 @@ import {
   stateLabel,
   truncateTitle,
   formatAge,
-  computeCountdownText,
   pad,
   osc8Link,
   stripAnsiForWidth,
@@ -56,7 +55,6 @@ export {
   stateLabel,
   truncateTitle,
   formatAge,
-  computeCountdownText,
   pad,
   osc8Link,
   stripAnsiForWidth,
@@ -274,7 +272,7 @@ function getWorktreeAge(wtDir: string): number {
 export async function cmdStatusWatch(
   worktreeDir: string,
   projectRoot: string,
-  intervalMs: number = 5_000,
+  intervalMs: number = 2_000,
   signal?: AbortSignal,
   flat: boolean = false,
 ): Promise<void> {
@@ -289,10 +287,7 @@ export async function cmdStatusWatch(
   /** Track last item count for scroll clamping on data changes */
   let lastItemCount = 0;
 
-  // Countdown state: track when next data refresh will occur
-  let nextRefreshAt = Date.now() + intervalMs;
-
-  // Cache last gathered data for countdown-only re-renders (avoids re-polling every second)
+  // Cache last gathered data for keypress re-renders (avoids re-polling)
   let lastStatusItems: ReturnType<typeof gatherStatusItems> | null = null;
 
   // Resolver to wake the sleep early on keypress
@@ -305,14 +300,11 @@ export async function cmdStatusWatch(
     }
   }
 
-  /** Re-render the display using cached data (for countdown tick and keypress re-renders). */
+  /** Re-render the display using cached data (for keypress re-renders). */
   function renderFrame() {
     if (!lastStatusItems) return;
     const termRows = getTerminalHeight();
     const termCols = getTerminalWidth();
-
-    // Compute countdown text
-    viewOpts.countdownText = computeCountdownText(nextRefreshAt);
 
     process.stdout.write("\x1B[H");
 
@@ -349,7 +341,7 @@ export async function cmdStatusWatch(
       default:
         return; // Don't wake for unknown keys
     }
-    // Re-render immediately on keypress with current countdown
+    // Re-render immediately on keypress
     renderFrame();
     wake();
   }
@@ -372,19 +364,7 @@ export async function cmdStatusWatch(
     process.stdout.on("resize", handleResize);
   }
 
-  // 1-second countdown interval: re-renders footer to tick countdown each second
-  // lint-ignore: no-uncleared-interval
-  const countdownInterval = setInterval(() => {
-    if (quitRequested || signal?.aborted) return;
-    try {
-      renderFrame();
-    } catch {
-      // Non-fatal — countdown render failure shouldn't crash
-    }
-  }, 1_000);
-
   function cleanup() {
-    clearInterval(countdownInterval);
     if (isTTY) {
       process.stdin.removeListener("data", handleKey);
       process.stdout.removeListener("resize", handleResize);
@@ -402,8 +382,6 @@ export async function cmdStatusWatch(
       // Gather fresh data and render
       lastStatusItems = gatherStatusItems(worktreeDir, projectRoot);
 
-      // Update countdown text to show current state
-      viewOpts.countdownText = computeCountdownText(nextRefreshAt);
       renderFrame();
 
       // Wait for interval, abort signal, or keypress (whichever comes first)
@@ -431,8 +409,7 @@ export async function cmdStatusWatch(
         );
       });
 
-      // After waking: set next refresh target (data will be gathered at top of loop)
-      nextRefreshAt = Date.now() + intervalMs;
+      // Data will be gathered at top of loop
     }
   } finally {
     cleanup();

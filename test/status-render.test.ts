@@ -8,7 +8,6 @@ import {
   stateLabel,
   truncateTitle,
   formatAge,
-  computeCountdownText,
   formatDuration,
   formatTelemetrySuffix,
   pad,
@@ -1901,102 +1900,6 @@ describe("small terminal fallback", () => {
     // Should not crash and should contain header/footer
     expect(frame.join("\n")).toContain("H");
     expect(frame.join("\n")).toContain("F");
-  });
-});
-
-// ── computeCountdownText ────────────────────────────────────────────────────
-
-describe("computeCountdownText", () => {
-  it("shows seconds remaining when countdown is active", () => {
-    const now = 1000000;
-    const nextRefreshAt = now + 5000; // 5 seconds from now
-    expect(computeCountdownText(nextRefreshAt, now)).toBe("Refresh: 5s");
-  });
-
-  it("shows 1s when just over 0", () => {
-    const now = 1000000;
-    const nextRefreshAt = now + 100; // 100ms from now
-    expect(computeCountdownText(nextRefreshAt, now)).toBe("Refresh: 1s");
-  });
-
-  it("shows Refreshing... when countdown reaches 0", () => {
-    const now = 1000000;
-    const nextRefreshAt = now; // exactly now
-    expect(computeCountdownText(nextRefreshAt, now)).toBe("Refreshing...");
-  });
-
-  it("shows Refreshing... when countdown is past (negative remaining)", () => {
-    const now = 1000000;
-    const nextRefreshAt = now - 2000; // 2 seconds ago
-    expect(computeCountdownText(nextRefreshAt, now)).toBe("Refreshing...");
-  });
-
-  it("never shows negative values", () => {
-    const now = 1000000;
-    // Test a range of past timestamps
-    for (const offset of [0, -1, -100, -1000, -60000]) {
-      const text = computeCountdownText(now + offset, now);
-      expect(text).not.toMatch(/-\d/);
-    }
-  });
-
-  it("handles large countdown values", () => {
-    const now = 1000000;
-    const nextRefreshAt = now + 30000; // 30 seconds
-    expect(computeCountdownText(nextRefreshAt, now)).toBe("Refresh: 30s");
-  });
-
-  it("rounds up partial seconds", () => {
-    const now = 1000000;
-    // 3500ms remaining → ceil(3.5) = 4s
-    const nextRefreshAt = now + 3500;
-    expect(computeCountdownText(nextRefreshAt, now)).toBe("Refresh: 4s");
-  });
-
-  it("uses Date.now() as default when now is not provided", () => {
-    const futureMs = Date.now() + 10000;
-    const text = computeCountdownText(futureMs);
-    // Should be "Refresh: Ns" where N is around 10
-    expect(text).toMatch(/^Refresh: \d+s$/);
-  });
-});
-
-// ── countdown text in footer (buildStatusLayout / formatStatusTable) ──────
-
-describe("countdown text in footer", () => {
-  it("buildStatusLayout includes countdownText in footer when provided", () => {
-    const items: StatusItem[] = [makeStatusItem()];
-    const layout = buildStatusLayout(items, 80, undefined, false, {
-      countdownText: "Refresh: 3s",
-    });
-    const footerText = stripAnsi(layout.footerLines.join("\n"));
-    expect(footerText).toContain("Refresh: 3s");
-  });
-
-  it("buildStatusLayout footer omits countdown when not provided", () => {
-    const items: StatusItem[] = [makeStatusItem()];
-    const layout = buildStatusLayout(items, 80, undefined, false, {});
-    const footerText = stripAnsi(layout.footerLines.join("\n"));
-    expect(footerText).not.toContain("Refresh:");
-    expect(footerText).not.toContain("Refreshing...");
-  });
-
-  it("formatStatusTable includes countdownText when provided", () => {
-    const items: StatusItem[] = [makeStatusItem()];
-    const output = formatStatusTable(items, 80, undefined, false, {
-      countdownText: "Refreshing...",
-    });
-    const text = stripAnsi(output);
-    expect(text).toContain("Refreshing...");
-  });
-
-  it("buildStatusLayout shows Refreshing... text in footer", () => {
-    const items: StatusItem[] = [makeStatusItem()];
-    const layout = buildStatusLayout(items, 80, undefined, false, {
-      countdownText: "Refreshing...",
-    });
-    const footerText = stripAnsi(layout.footerLines.join("\n"));
-    expect(footerText).toContain("Refreshing...");
   });
 });
 
