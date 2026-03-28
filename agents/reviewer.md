@@ -173,23 +173,34 @@ Include diagrams in the review body (section 6), not as inline comments on speci
 
 ## 6. Review Output
 
-Two outputs: a verdict file (for orchestrator lifecycle integration) and a GitHub review with inline comments (for the PR author).
+Two outputs for two different consumers:
+
+1. **Verdict file** -- detailed findings for the orchestrator and implementer worker
+2. **GitHub review** -- inline comments on specific lines for the human PR author
 
 ### Verdict File
 
-Write a JSON file to the `VERDICT_FILE` path:
+Write a JSON file to the `VERDICT_FILE` path. The `summary` field must contain **detailed** findings in markdown -- all blockers and nits with `file:line` references and suggested fixes. The orchestrator sends this summary to the implementer worker as review feedback, so it must contain enough detail for the implementer to act on without reading GitHub inline comments.
 
 ```bash
 cat > "$VERDICT_FILE" << 'VERDICT_EOF'
 {
   "verdict": "approve",
-  "summary": "Brief verdict summary (same as the review body)",
+  "summary": "Detailed review findings in markdown (all blockers/nits with file:line references and suggested fixes)",
   "blockerCount": 0,
   "nitCount": 2,
   "preExistingCount": 0
 }
 VERDICT_EOF
 ```
+
+The `summary` field should include:
+
+- Blocker details with `file:line` references and suggested fixes
+- Nit details with `file:line` references
+- Pre-existing issues flagged for awareness
+- Mermaid diagrams (if warranted per section 5)
+- If no findings: `"No issues found. Clean PR."`
 
 ### Verdict Decision
 
@@ -199,11 +210,11 @@ VERDICT_EOF
 ### Post GitHub Review
 
 Post your review using GitHub's Pull Request Review API. This is a single API call that atomically submits:
-- **Inline comments** on specific lines (the primary feedback mechanism)
+- **Inline comments** on specific lines (the primary feedback mechanism for the human PR author)
 - **Verdict** as the review event (`APPROVE` or `REQUEST_CHANGES`)
-- **Body** as a brief summary -- do NOT repeat individual findings here since they appear inline
+- **Body** as a brief summary -- do NOT repeat individual findings here since they appear as inline comments on specific lines
 
-Inline comments are the primary feedback mechanism. Each finding should be an inline comment on the relevant line. The review body is only a brief summary (e.g., "LGTM -- 2 nits" or "2 blockers found -- see inline comments").
+Inline comments are the primary feedback mechanism for the GitHub UI. Each finding should be an inline comment on the relevant line. The review `body` is only a brief summary (e.g., "LGTM -- 2 nits" or "2 blockers found -- see inline comments"). This is separate from the verdict file `summary`, which must remain detailed.
 
 #### Building the review payload
 
