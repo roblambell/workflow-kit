@@ -15,7 +15,7 @@ You are a focused fix-forward agent. A PR was merged to main and CI is now faili
 
 ## 1. Context
 
-Read the following variables from the appended system prompt:
+Read the following variables from your system prompt (written to `.nw-prompt` in your working directory by the orchestrator):
 
 - **YOUR_VERIFY_ITEM_ID**: The original work item identifier whose merge broke CI (e.g., `H-VF-3`)
 - **YOUR_VERIFY_MERGE_SHA**: The merge commit SHA on main that is failing CI

@@ -17,7 +17,9 @@ vi.mock("../core/git.ts", () => ({
   branchExists: vi.fn(() => false),
   deleteBranch: vi.fn(),
   deleteRemoteBranch: vi.fn(),
-  createWorktree: vi.fn(),
+  createWorktree: vi.fn((_repo: string, wtPath: string) => {
+    mkdirSync(wtPath, { recursive: true });
+  }),
   attachWorktree: vi.fn(),
   removeWorktree: vi.fn(),
   findWorktreeForBranch: vi.fn(() => null),

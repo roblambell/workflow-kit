@@ -206,7 +206,7 @@ export function launchAiSession(
 
   switch (tool) {
     case "claude":
-      cmd = `claude --name '${wsName}' --permission-mode bypassPermissions --agent ${agentName} --append-system-prompt "$(cat '${promptFile}')" -- Start`;
+      cmd = `claude --name '${wsName}' --permission-mode bypassPermissions --agent ${agentName} --append-system-prompt "$(cat '.nw-prompt')" -- Start`;
       initialPrompt = ""; // embedded as positional arg — skip post-launch send
       break;
     case "opencode":
@@ -586,8 +586,8 @@ HUB_ROOT: ${projectRoot}
 ${baseBranchLine}${seededAgentsLine}
 ${itemText}`;
 
-  // Write system prompt to a temp file
-  const promptFile = join(tmpdir(), `nw-prompt-${item.id}-${Date.now()}`);
+  // Write system prompt into the workspace (gitignored .nw-prompt)
+  const promptFile = join(worktreePath, ".nw-prompt");
   writeFileSync(promptFile, systemPrompt);
 
   const workspaceRef = launchAiSession(
@@ -702,8 +702,8 @@ ${baseBranchLine}${securityLine}`;
     `Launching ${aiTool} review session for ${itemId}: PR #${prNumber} (${autoFixMode} mode)`,
   );
 
-  // Write system prompt to a temp file
-  const promptFile = join(tmpdir(), `nw-review-prompt-${itemId}-${Date.now()}`);
+  // Write system prompt into the workspace (gitignored .nw-prompt)
+  const promptFile = join(workDir, ".nw-prompt");
   writeFileSync(promptFile, systemPrompt);
 
   const workspaceRef = launchAiSession(
@@ -756,7 +756,7 @@ PROJECT_ROOT: ${repoRoot}`;
     `Launching ${aiTool} repair session for ${itemId}: PR #${prNumber}`,
   );
 
-  const promptFile = join(tmpdir(), `nw-repair-prompt-${itemId}-${Date.now()}`);
+  const promptFile = join(worktreePath, ".nw-prompt");
   writeFileSync(promptFile, systemPrompt);
 
   const workspaceRef = launchAiSession(
@@ -839,7 +839,7 @@ REPO_ROOT: ${repoRoot}`;
     `Launching ${aiTool} verifier session for ${itemId}: merge SHA ${mergeCommitSha.slice(0, 8)}`,
   );
 
-  const promptFile = join(tmpdir(), `nw-verify-prompt-${itemId}-${Date.now()}`);
+  const promptFile = join(worktreePath, ".nw-prompt");
   writeFileSync(promptFile, systemPrompt);
 
   const workspaceRef = launchAiSession(
