@@ -24,7 +24,7 @@ import {
   cleanStaleBranchForReuse,
   type StaleBranchCleanupDeps,
 } from "../core/commands/launch.ts";
-import type { TodoItem, Priority } from "../core/types.ts";
+import type { WorkItem, Priority } from "../core/types.ts";
 import {
   writeHeartbeat,
   readHeartbeat,
@@ -35,7 +35,7 @@ import type { Multiplexer } from "../core/mux.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeTodo(id: string, deps: string[] = [], priority: Priority = "medium"): TodoItem {
+function makeTodo(id: string, deps: string[] = [], priority: Priority = "medium"): WorkItem {
   return {
     id,
     priority,

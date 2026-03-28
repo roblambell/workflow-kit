@@ -26,14 +26,14 @@ import {
   type ExecutionContext,
   type OrchestratorDeps,
 } from "../core/orchestrator.ts";
-import type { TodoItem } from "../core/types.ts";
+import type { WorkItem } from "../core/types.ts";
 import type { Multiplexer } from "../core/mux.ts";
 import { pidFilePath, logFilePath, type DaemonState } from "../core/daemon.ts";
 import type { CrewBroker } from "../core/crew.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeTodo(id: string, deps: string[] = []): TodoItem {
+function makeTodo(id: string, deps: string[] = []): WorkItem {
   return {
     id,
     priority: "high",
@@ -150,7 +150,7 @@ describe("orchestrateLoop", () => {
 
       for (const item of o.getAllItems()) {
         if (item.state === "queued") {
-          const depsMet = item.todo.dependencies.every((depId) => {
+          const depsMet = item.workItem.dependencies.every((depId) => {
             const dep = o.getItem(depId);
             return !dep || dep.state === "done" || dep.state === "merged";
           });
@@ -222,7 +222,7 @@ describe("orchestrateLoop", () => {
 
       for (const item of o.getAllItems()) {
         if (item.state === "queued") {
-          const depsMet = item.todo.dependencies.every((depId) => {
+          const depsMet = item.workItem.dependencies.every((depId) => {
             const dep = o.getItem(depId);
             return !dep || dep.state === "done" || dep.state === "merged";
           });
@@ -244,7 +244,7 @@ describe("orchestrateLoop", () => {
     };
 
     const actionDeps = mockActionDeps({
-      launchSingleItem: vi.fn((item: TodoItem) => {
+      launchSingleItem: vi.fn((item: WorkItem) => {
         launchedItems.push(item.id);
         return { worktreePath: `/tmp/test/ninthwave-${item.id}`, workspaceRef: `ws:${item.id}` };
       }),
@@ -1341,7 +1341,7 @@ describe("serializeOrchestratorState includes ciFailCount", () => {
     const { serializeOrchestratorState } = require("../core/daemon.ts");
     const item: OrchestratorItem = {
       id: "SER-1",
-      todo: makeTodo("SER-1"),
+      workItem: makeTodo("SER-1"),
       state: "ci-failed",
       prNumber: 10,
       lastTransition: "2026-01-01T00:00:00Z",
@@ -1361,7 +1361,7 @@ describe("serializeOrchestratorState includes rebaseRequested", () => {
     const { serializeOrchestratorState } = require("../core/daemon.ts");
     const item: OrchestratorItem = {
       id: "REB-1",
-      todo: makeTodo("REB-1"),
+      workItem: makeTodo("REB-1"),
       state: "ci-pending",
       prNumber: 20,
       lastTransition: "2026-01-01T00:00:00Z",
@@ -1379,7 +1379,7 @@ describe("serializeOrchestratorState includes rebaseRequested", () => {
     const { serializeOrchestratorState } = require("../core/daemon.ts");
     const item: OrchestratorItem = {
       id: "REB-2",
-      todo: makeTodo("REB-2"),
+      workItem: makeTodo("REB-2"),
       state: "ci-pending",
       prNumber: 21,
       lastTransition: "2026-01-01T00:00:00Z",
@@ -2110,7 +2110,7 @@ describe("isWorkerAlive", () => {
   function makeItem(id: string, workspaceRef?: string): OrchestratorItem {
     return {
       id,
-      todo: makeTodo(id),
+      workItem: makeTodo(id),
       state: "implementing",
       workspaceRef,
       lastTransition: new Date().toISOString(),
@@ -2481,7 +2481,7 @@ describe("orchestrateLoop watch mode", () => {
       sleep: () => Promise.resolve(),
       log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      scanTodos: () => {
+      scanWorkItems: () => {
         scanCallCount++;
         // On first scan, return the new item
         if (scanCallCount >= 1) {
@@ -2507,7 +2507,7 @@ describe("orchestrateLoop watch mode", () => {
     const newItemsLog = logs.find((l) => l.event === "watch_new_items")!;
     expect(newItemsLog.newIds).toEqual(["W-1-2"]);
 
-    // scanTodos was called
+    // scanWorkItems was called
     expect(scanCallCount).toBeGreaterThan(0);
   });
 
@@ -2541,7 +2541,7 @@ describe("orchestrateLoop watch mode", () => {
       sleep: () => Promise.resolve(),
       log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      scanTodos: () => {
+      scanWorkItems: () => {
         scanCalled = true;
         return [];
       },
@@ -2588,7 +2588,7 @@ describe("orchestrateLoop watch mode", () => {
       },
       log: () => {},
       actionDeps: mockActionDeps(),
-      scanTodos: () => [makeTodo("I-1-1")], // Only return existing item, no new ones
+      scanWorkItems: () => [makeTodo("I-1-1")], // Only return existing item, no new ones
     };
 
     // maxIterations will limit the watch loop too
@@ -2646,7 +2646,7 @@ describe("orchestrateLoop watch mode", () => {
         }
       },
       actionDeps: mockActionDeps(),
-      scanTodos: () => [makeTodo("S-1-1")], // No new items
+      scanWorkItems: () => [makeTodo("S-1-1")], // No new items
     };
 
     await orchestrateLoop(
@@ -2683,7 +2683,7 @@ describe("orchestrateLoop watch mode", () => {
 
       for (const item of o.getAllItems()) {
         if (item.state === "queued") {
-          const depsMet = item.todo.dependencies.every((depId) => {
+          const depsMet = item.workItem.dependencies.every((depId) => {
             const dep = o.getItem(depId);
             return !dep || dep.state === "done" || dep.state === "merged";
           });
@@ -2717,7 +2717,7 @@ describe("orchestrateLoop watch mode", () => {
       sleep: () => Promise.resolve(),
       log: (entry) => logs.push(entry),
       actionDeps: mockActionDeps(),
-      scanTodos: () => {
+      scanWorkItems: () => {
         scanCount++;
         // Return 3 items — but WIP limit is 1, so they should be queued/serial
         return [makeTodo("L-1-1"), makeTodo("L-1-2"), makeTodo("L-1-3")];
@@ -2768,7 +2768,7 @@ describe("orchestrateLoop watch mode", () => {
       },
       log: () => {},
       actionDeps: mockActionDeps(),
-      scanTodos: () => [makeTodo("D-1-1")], // No new items
+      scanWorkItems: () => [makeTodo("D-1-1")], // No new items
     };
 
     // maxIterations will bound the watch loop

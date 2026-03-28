@@ -28,11 +28,11 @@ import {
   type ProcessExistsCheck,
 } from "../core/daemon.ts";
 import type { OrchestratorItem } from "../core/orchestrator.ts";
-import type { TodoItem } from "../core/types.ts";
+import type { WorkItem } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function makeTodo(id: string): TodoItem {
+function makeTodo(id: string): WorkItem {
   return {
     id,
     priority: "high",
@@ -55,7 +55,7 @@ function makeOrchestratorItem(
 ): OrchestratorItem {
   return {
     id,
-    todo: makeTodo(id),
+    workItem: makeTodo(id),
     state: state as any,
     prNumber,
     lastTransition: "2026-03-24T10:00:00.000Z",

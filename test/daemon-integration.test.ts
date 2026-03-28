@@ -23,7 +23,7 @@ import {
   cleanStateFile,
   type DaemonIO,
 } from "../core/daemon.ts";
-import type { TodoItem, Priority } from "../core/types.ts";
+import type { WorkItem, Priority } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ function makeTodo(
   id: string,
   deps: string[] = [],
   priority: Priority = "high",
-): TodoItem {
+): WorkItem {
   return {
     id,
     priority,

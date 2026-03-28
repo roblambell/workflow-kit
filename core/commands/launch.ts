@@ -3,9 +3,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, copyFileSync } from "fs";
 import { join, basename, dirname } from "path";
 import { tmpdir, freemem } from "os";
-import { parseTodos } from "../parser.ts";
+import { parseWorkItems } from "../parser.ts";
 import { die, warn, info, GREEN, BOLD, DIM, RESET } from "../output.ts";
-import { splitIds } from "../todo-utils.ts";
+import { splitIds } from "../work-item-utils.ts";
 import { computeBatches, CircularDependencyError } from "./batch-order.ts";
 import { calculateMemoryWipLimit } from "../orchestrator.ts";
 import { computeDefaultWipLimit } from "./orchestrate.ts";
@@ -35,12 +35,12 @@ import {
   ensureWorktreeExcluded,
 } from "../cross-repo.ts";
 import { cmdConflicts } from "./conflicts.ts";
-import { readTodo } from "../todo-files.ts";
+import { readWorkItem } from "../work-item-files.ts";
 import { applyGithubToken, prList } from "../gh.ts";
-import { prTitleMatchesTodo } from "../todo-utils.ts";
-import { checkUncommittedTodos } from "../preflight.ts";
+import { prTitleMatchesWorkItem } from "../work-item-utils.ts";
+import { checkUncommittedWorkItems } from "../preflight.ts";
 import { run as defaultRun } from "../shell.ts";
-import type { TodoItem } from "../types.ts";
+import type { WorkItem } from "../types.ts";
 
 /**
  * Sanitize a title for safe shell interpolation.
@@ -324,7 +324,7 @@ export function cleanStaleBranchForReuse(
 
   // Check if any merged PR title matches the current TODO title
   const hasMatchingTitle = mergedPrs.some((pr) =>
-    prTitleMatchesTodo(pr.title, todoTitle),
+    prTitleMatchesWorkItem(pr.title, todoTitle),
   );
   if (hasMatchingTitle) {
     return false; // Title matches — same work, normal flow
@@ -366,7 +366,7 @@ export function cleanStaleBranchForReuse(
  * Looks for a file matching `*--{targetId}.md` in workDir.
  */
 export function extractTodoText(workDir: string, targetId: string): string {
-  const item = readTodo(workDir, targetId);
+  const item = readWorkItem(workDir, targetId);
   if (!item) return "";
   return item.rawText;
 }
@@ -376,7 +376,7 @@ export function extractTodoText(workDir: string, targetId: string): string {
  * Used by the orchestrator to launch items one at a time as WIP slots open.
  */
 export function launchSingleItem(
-  item: TodoItem,
+  item: WorkItem,
   workDir: string,
   worktreeDir: string,
   projectRoot: string,
@@ -906,8 +906,8 @@ export async function cmdRunItems(
   muxOverride?: Multiplexer,
   wipLimitOverride?: number,
 ): Promise<void> {
-  const items = parseTodos(workDir, worktreeDir);
-  const itemMap = new Map<string, TodoItem>();
+  const items = parseWorkItems(workDir, worktreeDir);
+  const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
   }
@@ -980,7 +980,7 @@ export async function cmdRunItems(
   console.log();
 
   // Pre-flight: check for uncommitted TODO files
-  const todoCheck = checkUncommittedTodos(
+  const todoCheck = checkUncommittedWorkItems(
     projectRoot,
     (cmd, a, opts) => defaultRun(cmd, a, opts),
   );
@@ -1075,15 +1075,15 @@ export async function cmdStart(
   const ids = splitIds(args);
 
   if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...]");
-  const items = parseTodos(workDir, worktreeDir);
-  const itemMap = new Map<string, TodoItem>();
+  const items = parseWorkItems(workDir, worktreeDir);
+  const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
   }
   const allIds = new Set(items.map((it) => it.id));
 
   // Pre-flight: check for uncommitted TODO files
-  const todoCheck = checkUncommittedTodos(
+  const todoCheck = checkUncommittedWorkItems(
     projectRoot,
     (cmd, args, opts) => defaultRun(cmd, args, opts),
   );

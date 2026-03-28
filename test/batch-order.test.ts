@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { setupTempRepo, useFixtureDir, writeTodoFiles, cleanupTempRepos } from "./helpers.ts";
 import { join } from "path";
-import { parseTodos } from "../core/parser.ts";
+import { parseWorkItems } from "../core/parser.ts";
 import {
   cmdBatchOrder,
   computeBatches,
@@ -200,7 +200,7 @@ describe("computeBatches", () => {
   it("all independent items land in batch 1", () => {
     const repo = setupTempRepo();
     const workDir = useFixtureDir(repo, "valid.md");
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
 
     const result = computeBatches(items, ["M-CI-1", "C-UO-1"]);
 
@@ -213,7 +213,7 @@ describe("computeBatches", () => {
   it("linear dependency produces two batches", () => {
     const repo = setupTempRepo();
     const workDir = useFixtureDir(repo, "valid.md");
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
 
     const result = computeBatches(items, ["M-CI-1", "H-CI-2"]);
 
@@ -225,7 +225,7 @@ describe("computeBatches", () => {
   it("single item returns batch 1", () => {
     const repo = setupTempRepo();
     const workDir = useFixtureDir(repo, "valid.md");
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
 
     const result = computeBatches(items, ["C-UO-1"]);
 
@@ -237,7 +237,7 @@ describe("computeBatches", () => {
   it("unknown IDs are silently skipped", () => {
     const repo = setupTempRepo();
     const workDir = useFixtureDir(repo, "valid.md");
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
 
     const result = computeBatches(items, ["M-CI-1", "FAKE-99"]);
 
@@ -250,7 +250,7 @@ describe("computeBatches", () => {
   it("circular dependency throws CircularDependencyError", () => {
     const repo = setupTempRepo();
     const workDir = useFixtureDir(repo, "circular_deps.md");
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
 
     expect(() =>
       computeBatches(items, ["H-CC-1", "H-CC-2", "H-CC-3"]),
@@ -260,7 +260,7 @@ describe("computeBatches", () => {
   it("circular dependency error contains all circular item IDs", () => {
     const repo = setupTempRepo();
     const workDir = useFixtureDir(repo, "circular_deps.md");
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
 
     try {
       computeBatches(items, ["H-CC-1", "H-CC-2", "H-CC-3"]);
@@ -318,7 +318,7 @@ Acceptance: Test fixture only.
 ---
 `);
 
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
 
     try {
       computeBatches(items, ["H-MX-1", "H-MX-2", "H-MX-3"]);
@@ -391,7 +391,7 @@ Acceptance: Test fixture only.
 ---
 `);
 
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
     const result = computeBatches(items, [
       "H-DI-1",
       "H-DI-2",
@@ -409,7 +409,7 @@ Acceptance: Test fixture only.
   it("empty selectedIds returns empty result", () => {
     const repo = setupTempRepo();
     const workDir = useFixtureDir(repo, "valid.md");
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
 
     const result = computeBatches(items, []);
 
@@ -462,7 +462,7 @@ Acceptance: Test fixture only.
 ---
 `);
 
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
     const result = computeBatches(items, ["H-AL-1", "M-AL-2", "H-BE-1"]);
 
     // Alpha items in batch 1, wildcard-dependent item in batch 2
@@ -475,7 +475,7 @@ Acceptance: Test fixture only.
   it("external deps are ignored (only selected set matters)", () => {
     const repo = setupTempRepo();
     const workDir = useFixtureDir(repo, "valid.md");
-    const items = parseTodos(workDir, join(repo, ".worktrees"));
+    const items = parseWorkItems(workDir, join(repo, ".worktrees"));
 
     // H-CI-2 depends on M-CI-1, but M-CI-1 is not in the selected set
     // So H-CI-2 should be batch 1 (its dep is external)

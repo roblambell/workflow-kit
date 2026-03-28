@@ -134,7 +134,7 @@ export function listCrossRepoEntries(indexPath: string): WorktreeInfo[] {
       if (!line.trim()) continue;
       const [id, repoRoot, worktreePath] = line.split("\t");
       if (id && repoRoot && worktreePath) {
-        entries.push({ todoId: id, repoRoot, worktreePath });
+        entries.push({ itemId: id, repoRoot, worktreePath });
       }
     }
     return entries;
@@ -157,7 +157,7 @@ export function getWorktreeInfo(
   // Check cross-repo index first (use cached entries if provided)
   const entries = cachedEntries ?? listCrossRepoEntries(indexPath);
   for (const entry of entries) {
-    if (entry.todoId === todoId) {
+    if (entry.itemId === todoId) {
       return entry;
     }
   }
@@ -167,7 +167,7 @@ export function getWorktreeInfo(
   if (existsSync(hubPath)) {
     // Derive project root from worktree dir (worktreeDir = <projectRoot>/.worktrees)
     const projectRoot = dirname(worktreeDir);
-    return { todoId, repoRoot: projectRoot, worktreePath: hubPath };
+    return { itemId: todoId, repoRoot: projectRoot, worktreePath: hubPath };
   }
 
   return null;

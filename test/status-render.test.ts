@@ -48,7 +48,7 @@ import {
 } from "../core/commands/orchestrate.ts";
 import type { OrchestratorItem } from "../core/orchestrator.ts";
 import type { DaemonState } from "../core/daemon.ts";
-import type { TodoItem } from "../core/types.ts";
+import type { WorkItem } from "../core/types.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ function makeStatusItem(overrides: Partial<StatusItem> = {}): StatusItem {
   };
 }
 
-function makeTodo(id: string, deps: string[] = []): TodoItem {
+function makeTodo(id: string, deps: string[] = []): WorkItem {
   return {
     id,
     priority: "high",
@@ -87,7 +87,7 @@ function makeTodo(id: string, deps: string[] = []): TodoItem {
 function makeOrchestratorItem(id: string, state: OrchestratorItem["state"] = "implementing"): OrchestratorItem {
   return {
     id,
-    todo: makeTodo(id),
+    workItem: makeTodo(id),
     state,
     lastTransition: new Date(Date.now() - 10_000).toISOString(),
     ciFailCount: 0,

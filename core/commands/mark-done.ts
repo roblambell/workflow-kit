@@ -3,10 +3,10 @@
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { die, GREEN, YELLOW, RESET } from "../output.ts";
-import { splitIds } from "../todo-utils.ts";
+import { splitIds } from "../work-item-utils.ts";
 import { isBranchMerged, commitCount } from "../git.ts";
 import { prList } from "../gh.ts";
-import { deleteTodoFile } from "../todo-files.ts";
+import { deleteWorkItemFile } from "../work-item-files.ts";
 
 /**
  * Remove completed items by deleting their individual todo files.
@@ -23,7 +23,7 @@ export function cmdMarkDone(
   const notFound: string[] = [];
 
   for (const id of ids) {
-    if (deleteTodoFile(workDir, id)) {
+    if (deleteWorkItemFile(workDir, id)) {
       done.push(id);
     } else {
       notFound.push(id);

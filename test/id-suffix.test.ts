@@ -12,8 +12,8 @@ import {
   ID_IN_FILENAME,
   ID_PATTERN_SOURCE,
 } from "../core/types.ts";
-import { parseTodoFile, listTodos, readTodo } from "../core/todo-files.ts";
-import { normalizeTitleForComparison } from "../core/todo-utils.ts";
+import { parseWorkItemFile, listWorkItems, readWorkItem } from "../core/work-item-files.ts";
+import { normalizeTitleForComparison } from "../core/work-item-utils.ts";
 
 // Track temp dirs for cleanup
 const tempDirs: string[] = [];
@@ -136,9 +136,9 @@ describe("ID_PATTERN_SOURCE for composite regexes", () => {
   });
 });
 
-// --- parseTodoFile with suffixed IDs ---
+// --- parseWorkItemFile with suffixed IDs ---
 
-describe("parseTodoFile with suffixed IDs", () => {
+describe("parseWorkItemFile with suffixed IDs", () => {
   it("parses a todo file with a single-letter suffix", () => {
     const dir = makeTempDir();
     const content = `# Fix: Support suffixed IDs (H-CP-7a)
@@ -155,7 +155,7 @@ Acceptance: suffixed IDs are recognized
     const fp = join(dir, "1-cli-parsing--H-CP-7a.md");
     writeFileSync(fp, content);
 
-    const item = parseTodoFile(fp);
+    const item = parseWorkItemFile(fp);
     expect(item).not.toBeNull();
     expect(item!.id).toBe("H-CP-7a");
     expect(item!.title).toBe("Support suffixed IDs");
@@ -177,7 +177,7 @@ Follow-up after the suffixed items.
     const fp = join(dir, "2-features--M-FT-2.md");
     writeFileSync(fp, content);
 
-    const item = parseTodoFile(fp);
+    const item = parseWorkItemFile(fp);
     expect(item).not.toBeNull();
     expect(item!.dependencies).toEqual(["H-CP-7a", "H-CP-7b"]);
   });
@@ -194,15 +194,15 @@ Follow-up after the suffixed items.
     const fp = join(dir, "1-testing--H-CP-7ab.md");
     writeFileSync(fp, content);
 
-    const item = parseTodoFile(fp);
+    const item = parseWorkItemFile(fp);
     expect(item).not.toBeNull();
     expect(item!.id).toBe("H-CP-7ab");
   });
 });
 
-// --- listTodos with suffixed IDs ---
+// --- listWorkItems with suffixed IDs ---
 
-describe("listTodos with suffixed IDs", () => {
+describe("listWorkItems with suffixed IDs", () => {
   it("lists both suffixed and plain IDs correctly", () => {
     const dir = makeTempDir();
     const workDir = join(dir, "work");
@@ -243,7 +243,7 @@ describe("listTodos with suffixed IDs", () => {
 `,
     );
 
-    const items = listTodos(workDir, worktreeDir);
+    const items = listWorkItems(workDir, worktreeDir);
     expect(items).toHaveLength(3);
 
     const ids = items.map((i) => i.id).sort();
@@ -254,9 +254,9 @@ describe("listTodos with suffixed IDs", () => {
   });
 });
 
-// --- readTodo with suffixed IDs ---
+// --- readWorkItem with suffixed IDs ---
 
-describe("readTodo with suffixed IDs", () => {
+describe("readWorkItem with suffixed IDs", () => {
   it("finds item by suffixed ID", () => {
     const dir = makeTempDir();
     const workDir = join(dir, "work");
@@ -273,7 +273,7 @@ describe("readTodo with suffixed IDs", () => {
 `,
     );
 
-    const item = readTodo(workDir, "H-CP-7a");
+    const item = readWorkItem(workDir, "H-CP-7a");
     expect(item).toBeDefined();
     expect(item!.id).toBe("H-CP-7a");
   });

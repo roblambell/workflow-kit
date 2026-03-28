@@ -1,7 +1,7 @@
 // Shared utility functions for todo parsing.
 // Extracted to break the bidirectional dependency between parser.ts and todo-files.ts.
 
-import type { TodoItem } from "./types.ts";
+import type { WorkItem } from "./types.ts";
 import { WILDCARD_DEP_PATTERN, CODE_EXTENSIONS, ID_PATTERN_SOURCE } from "./types.ts";
 
 /**
@@ -70,7 +70,7 @@ export function truncateSlug(slug: string, maxLen: number): string {
 }
 
 /**
- * Extract test plan from a TodoItem's rawText.
+ * Extract test plan from a WorkItem's rawText.
  * The test plan starts with **Test plan:** and includes subsequent bullet lines.
  */
 export function extractTestPlan(rawText: string): string {
@@ -110,7 +110,7 @@ export function extractTestPlan(rawText: string): string {
 }
 
 /**
- * Extract file paths from a TodoItem's rawText.
+ * Extract file paths from a WorkItem's rawText.
  * Only scans lines starting with "Key files:" to avoid false positives
  * from paths mentioned incidentally in description or acceptance text.
  * Matches:
@@ -118,7 +118,7 @@ export function extractTestPlan(rawText: string): string {
  * 2. file:line patterns (e.g., file.ex:123)
  * 3. Backtick-quoted directory-like paths without extensions
  */
-export function extractFilePaths(item: TodoItem): string[] {
+export function extractFilePaths(item: WorkItem): string[] {
   const paths = new Set<string>();
   const text = item.rawText;
 
@@ -281,7 +281,7 @@ export function normalizeTitleForComparison(title: string): string {
  * Substring matches are intentionally rejected — a PR titled "old work"
  * should not match a TODO titled "old work extended".
  */
-export function prTitleMatchesTodo(prTitle: string, todoTitle: string): boolean {
+export function prTitleMatchesWorkItem(prTitle: string, todoTitle: string): boolean {
   if (!prTitle || !todoTitle) return false;
   const normPr = normalizeTitleForComparison(prTitle);
   const normTodo = normalizeTitleForComparison(todoTitle);

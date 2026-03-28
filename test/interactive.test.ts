@@ -12,7 +12,7 @@ import {
   type PromptFn,
   type InteractiveResult,
 } from "../core/interactive.ts";
-import type { TodoItem } from "../core/types.ts";
+import type { WorkItem } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ function makeTodo(
   title: string,
   priority: "critical" | "high" | "medium" | "low" = "medium",
   deps: string[] = [],
-): TodoItem {
+): WorkItem {
   return {
     id,
     priority,

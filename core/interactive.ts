@@ -4,7 +4,7 @@
 
 import { createInterface } from "readline";
 import { BOLD, DIM, GREEN, YELLOW, CYAN, RESET } from "./output.ts";
-import type { TodoItem } from "./types.ts";
+import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
 
@@ -83,7 +83,7 @@ export function shouldEnterInteractive(
  * Entering "all" selects everything.
  */
 export async function promptItems(
-  todos: TodoItem[],
+  todos: WorkItem[],
   prompt: PromptFn,
 ): Promise<string[]> {
   if (todos.length === 0) {
@@ -239,7 +239,7 @@ export async function promptWipLimit(
 
 export async function confirmSummary(
   result: InteractiveResult,
-  todos: TodoItem[],
+  todos: WorkItem[],
   prompt: PromptFn,
 ): Promise<boolean> {
   const todoMap = new Map(todos.map((t) => [t.id, t]));
@@ -269,7 +269,7 @@ export async function confirmSummary(
  * Returns null if the user cancels at any point.
  */
 export async function runInteractiveFlow(
-  todos: TodoItem[],
+  todos: WorkItem[],
   defaultWipLimit: number,
   deps: InteractiveDeps = {},
 ): Promise<InteractiveResult | null> {

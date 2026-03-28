@@ -1,10 +1,10 @@
 // deps command: show dependency chain for a TODO item.
 
-import { parseTodos } from "../parser.ts";
+import { parseWorkItems } from "../parser.ts";
 import { die, BOLD, DIM, RESET } from "../output.ts";
-import { splitIds } from "../todo-utils.ts";
+import { splitIds } from "../work-item-utils.ts";
 import { ID_PATTERN_GLOBAL } from "../types.ts";
-import type { TodoItem } from "../types.ts";
+import type { WorkItem } from "../types.ts";
 
 export function cmdDeps(
   args: string[],
@@ -15,8 +15,8 @@ export function cmdDeps(
   const targetId = ids[0];
   if (!targetId) die("Usage: ninthwave deps <ID>");
 
-  const items = parseTodos(workDir, worktreeDir);
-  const itemMap = new Map<string, TodoItem>();
+  const items = parseWorkItems(workDir, worktreeDir);
+  const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
   }

@@ -6,8 +6,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { setupTempRepo, setupTempRepoPair, cleanupTempRepos, writeTodoFiles } from "./helpers.ts";
-import { parseTodoFile } from "../core/todo-files.ts";
-import { parseTodos } from "../core/parser.ts";
+import { parseWorkItemFile } from "../core/work-item-files.ts";
+import { parseWorkItems } from "../core/parser.ts";
 import { bootstrapRepo, detectGhOrg } from "../core/cross-repo.ts";
 import {
   Orchestrator,
@@ -17,7 +17,7 @@ import {
   type Action,
 } from "../core/orchestrator.ts";
 import { mapDaemonItemState, stateLabel, stateColor, stateIcon } from "../core/commands/status.ts";
-import type { TodoItem, Priority } from "../core/types.ts";
+import type { WorkItem, Priority } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -25,8 +25,8 @@ afterEach(() => cleanupTempRepos());
 
 function makeTodo(
   id: string,
-  overrides: Partial<TodoItem> = {},
-): TodoItem {
+  overrides: Partial<WorkItem> = {},
+): WorkItem {
   return {
     id,
     priority: "high" as Priority,
@@ -92,7 +92,7 @@ Create a new repo and scaffold it.
 `,
     );
 
-    const item = parseTodoFile(join(workDir, "1-test--H-BST-1.md"));
+    const item = parseWorkItemFile(join(workDir, "1-test--H-BST-1.md"));
     expect(item).not.toBeNull();
     expect(item!.bootstrap).toBe(true);
     expect(item!.repoAlias).toBe("new-repo");
@@ -117,7 +117,7 @@ Work in existing repo.
 `,
     );
 
-    const item = parseTodoFile(join(workDir, "1-test--H-BST-2.md"));
+    const item = parseWorkItemFile(join(workDir, "1-test--H-BST-2.md"));
     expect(item).not.toBeNull();
     expect(item!.bootstrap).toBe(false);
   });
@@ -139,7 +139,7 @@ A standard todo without bootstrap field.
 `,
     );
 
-    const item = parseTodoFile(join(workDir, "1-test--H-BST-3.md"));
+    const item = parseWorkItemFile(join(workDir, "1-test--H-BST-3.md"));
     expect(item).not.toBeNull();
     expect(item!.bootstrap).toBe(false);
   });
@@ -163,7 +163,7 @@ Case insensitive.
 `,
     );
 
-    const item = parseTodoFile(join(workDir, "1-test--H-BST-4.md"));
+    const item = parseWorkItemFile(join(workDir, "1-test--H-BST-4.md"));
     expect(item).not.toBeNull();
     expect(item!.bootstrap).toBe(true);
   });

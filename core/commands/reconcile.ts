@@ -10,8 +10,8 @@ import { listCrossRepoEntries } from "../cross-repo.ts";
 import { cmdMarkDone } from "./mark-done.ts";
 import { cleanSingleWorktree, closeWorkspacesForIds } from "./clean.ts";
 import { getMux } from "../mux.ts";
-import { readTodo } from "../todo-files.ts";
-import { prTitleMatchesTodo } from "../todo-utils.ts";
+import { readWorkItem } from "../work-item-files.ts";
+import { prTitleMatchesWorkItem } from "../work-item-utils.ts";
 import { ID_IN_FILENAME } from "../types.ts";
 
 /**
@@ -268,8 +268,8 @@ export function reconcile(
 
     // Title-match check: read the TODO file's title and compare with the merged PR's title
     if (merged.prTitle) {
-      const todoItem = readTodo(workDir, merged.id);
-      if (todoItem?.title && !prTitleMatchesTodo(merged.prTitle, todoItem.title)) {
+      const todoItem = readWorkItem(workDir, merged.id);
+      if (todoItem?.title && !prTitleMatchesWorkItem(merged.prTitle, todoItem.title)) {
         skippedCollisions.push(merged.id);
         continue;
       }
@@ -320,11 +320,11 @@ export function reconcile(
   const crossRepoCleaned = new Set<string>();
 
   for (const entry of crossRepoEntries) {
-    if (doneIds.has(entry.todoId) && !crossRepoCleaned.has(entry.todoId)) {
+    if (doneIds.has(entry.itemId) && !crossRepoCleaned.has(entry.itemId)) {
       const targetWtDir = join(entry.repoRoot, ".worktrees");
-      if (deps.cleanWorktree(entry.todoId, targetWtDir, entry.repoRoot)) {
+      if (deps.cleanWorktree(entry.itemId, targetWtDir, entry.repoRoot)) {
         cleanedCount++;
-        crossRepoCleaned.add(entry.todoId);
+        crossRepoCleaned.add(entry.itemId);
       }
     }
   }
@@ -353,12 +353,12 @@ export function reconcile(
   }
   // Also clean orphaned cross-repo worktrees
   for (const entry of crossRepoEntries) {
-    if (crossRepoCleaned.has(entry.todoId)) continue;
-    if (!doneIds.has(entry.todoId) && !refreshedOpenIds.has(entry.todoId)) {
+    if (crossRepoCleaned.has(entry.itemId)) continue;
+    if (!doneIds.has(entry.itemId) && !refreshedOpenIds.has(entry.itemId)) {
       const targetWtDir = join(entry.repoRoot, ".worktrees");
-      if (deps.cleanWorktree(entry.todoId, targetWtDir, entry.repoRoot)) {
+      if (deps.cleanWorktree(entry.itemId, targetWtDir, entry.repoRoot)) {
         orphanCount++;
-        crossRepoCleaned.add(entry.todoId);
+        crossRepoCleaned.add(entry.itemId);
       }
     }
   }
@@ -387,17 +387,17 @@ export function reconcile(
   }
   // Also check cross-repo worktrees for staleness
   for (const entry of crossRepoEntries) {
-    if (crossRepoCleaned.has(entry.todoId)) continue;
-    if (doneIds.has(entry.todoId)) continue;
-    if (!refreshedOpenIds.has(entry.todoId)) continue;
+    if (crossRepoCleaned.has(entry.itemId)) continue;
+    if (doneIds.has(entry.itemId)) continue;
+    if (!refreshedOpenIds.has(entry.itemId)) continue;
     const targetWtDir = join(entry.repoRoot, ".worktrees");
-    if (deps.worktreeHasCommits(entry.todoId, targetWtDir, entry.repoRoot)) continue;
-    if (deps.branchHasOpenPR(entry.todoId, entry.repoRoot)) continue;
+    if (deps.worktreeHasCommits(entry.itemId, targetWtDir, entry.repoRoot)) continue;
+    if (deps.branchHasOpenPR(entry.itemId, entry.repoRoot)) continue;
 
-    info(`Cleaning stale cross-repo worktree for ${entry.todoId} (zero commits, no open PR)`);
-    if (deps.cleanWorktree(entry.todoId, targetWtDir, entry.repoRoot)) {
+    info(`Cleaning stale cross-repo worktree for ${entry.itemId} (zero commits, no open PR)`);
+    if (deps.cleanWorktree(entry.itemId, targetWtDir, entry.repoRoot)) {
       staleCount++;
-      crossRepoCleaned.add(entry.todoId);
+      crossRepoCleaned.add(entry.itemId);
     }
   }
   if (staleCount > 0) {

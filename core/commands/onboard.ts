@@ -21,11 +21,11 @@ import {
   RESET,
 } from "../output.ts";
 import { run } from "../shell.ts";
-import type { RunResult, TodoItem } from "../types.ts";
+import type { RunResult, WorkItem } from "../types.ts";
 import { initProject } from "./init.ts";
 import { getBundleDir } from "../paths.ts";
 import { isDaemonRunning } from "../daemon.ts";
-import { parseTodos } from "../parser.ts";
+import { parseWorkItems } from "../parser.ts";
 import { promptItems } from "../interactive.ts";
 import { printHelp } from "../help.ts";
 
@@ -101,9 +101,9 @@ export interface OnboardDeps {
 export interface NoArgsDeps extends OnboardDeps {
   isTTY?: boolean;
   existsSync?: typeof existsSync;
-  parseTodos?: (workDir: string, worktreeDir: string) => TodoItem[];
+  parseWorkItems?: (workDir: string, worktreeDir: string) => WorkItem[];
   isDaemonRunning?: (projectRoot: string) => number | null;
-  promptItems?: (todos: TodoItem[], prompt: PromptFn) => Promise<string[]>;
+  promptItems?: (todos: WorkItem[], prompt: PromptFn) => Promise<string[]>;
   promptAction?: (prompt: PromptFn) => Promise<"run" | "watch" | "quit">;
   runSelected?: (ids: string[], workDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
   runWatch?: (args: string[], workDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
@@ -452,7 +452,7 @@ export async function cmdNoArgs(
 ): Promise<void> {
   const isTTY = deps.isTTY ?? (process.stdin.isTTY === true);
   const checkExists = deps.existsSync ?? existsSync;
-  const doParseT = deps.parseTodos ?? parseTodos;
+  const doParseT = deps.parseWorkItems ?? parseWorkItems;
   const checkDaemon = deps.isDaemonRunning ?? isDaemonRunning;
   const doPromptItems = deps.promptItems ?? promptItems;
   const doPromptAction = deps.promptAction ?? promptAction;
@@ -481,7 +481,7 @@ export async function cmdNoArgs(
   const worktreeDir = join(projectRoot, ".worktrees");
 
   // State 3: .ninthwave/ exists but no TODO files
-  let todos: TodoItem[] = [];
+  let todos: WorkItem[] = [];
   if (checkExists(workDir)) {
     todos = doParseT(workDir, worktreeDir);
   }

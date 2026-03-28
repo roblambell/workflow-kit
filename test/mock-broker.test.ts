@@ -93,7 +93,7 @@ function waitForMessageByType<T = unknown>(ws: WebSocket, type: string, timeoutM
 
 /** Send sync and wait for sync_ack. */
 async function sendSync(ws: WebSocket, daemonId: string, todoIds: string[]): Promise<void> {
-  ws.send(JSON.stringify({ type: "sync", daemonId, activeTodoIds: todoIds }));
+  ws.send(JSON.stringify({ type: "sync", daemonId, activeItemIds: todoIds }));
   await waitForMessageByType(ws, "sync_ack");
 }
 
@@ -620,7 +620,7 @@ describe("mock-broker", () => {
       // Creator should still be d1
       const crew = broker.getCrew(code);
       expect(crew).toBeDefined();
-      const todo = crew!.todos.get("todo-A");
+      const todo = crew!.items.get("todo-A");
       expect(todo).toBeDefined();
       expect(todo!.creatorDaemonId).toBe("d1");
 
