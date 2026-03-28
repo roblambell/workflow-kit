@@ -261,18 +261,24 @@ export function blockerIcon(blockerCount: number): string {
 }
 
 /**
- * Render a dimmed sub-line showing blocker IDs, indented to align under the ID column.
- * Format: "    └ H-CA-1, H-CA-3" with truncation and "..." when the list exceeds titleWidth.
+ * Render a dimmed sub-line showing blocker IDs, aligned under the blocker icon column.
+ * Format: "          └ H-CA-1, H-CA-3" (padded to blockerColOffset) with truncation
+ * and "..." when the list exceeds titleWidth.
  * The entire line is wrapped in DIM regardless of queued state.
+ *
+ * @param blockerColOffset - Column position of the ⧗ blocker icon in the parent row
+ *   (typically 26 + stateColWidth + daemonColWidth). The └ indicator is padded to
+ *   this position so it aligns directly under the ⧗ icon.
  */
 export function formatBlockerSubline(
   blockerIds: string[],
   titleWidth: number,
   isQueued: boolean,
+  blockerColOffset: number = 4,
 ): string {
-  const prefix = "    └ ";
+  const prefix = " ".repeat(blockerColOffset) + "└ ";
   const idList = blockerIds.join(", ");
-  const available = titleWidth - prefix.length;
+  const available = titleWidth;
   let content: string;
   if (available <= 0) {
     content = "";
@@ -847,6 +853,9 @@ export function formatStatusTable(
   const fixedWidth = 26 + stateColWidth + daemonColWidth + depIndicatorWidth;
   const titleWidth = Math.max(10, termWidth - fixedWidth);
 
+  // Column offset where the ⧗ blocker icon sits (for aligning sub-lines)
+  const blockerColOffset = 26 + stateColWidth + daemonColWidth;
+
   /** Format daemon column for an item. */
   function daemonStr(item: StatusItem): string {
     if (!crewActive) return "";
@@ -883,14 +892,14 @@ export function formatStatusTable(
       lines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
-        lines.push(formatBlockerSubline(blockers, titleWidth, false));
+        lines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
       }
     }
     for (const item of mergedItems) {
       lines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
-        lines.push(formatBlockerSubline(blockers, titleWidth, false));
+        lines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
       }
     }
 
@@ -913,7 +922,7 @@ export function formatStatusTable(
         lines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, daemonStr(item)));
         const blockers = blockedBy!.get(item.id) ?? [];
         if (opts.showBlockerDetail && blockers.length > 0) {
-          lines.push(formatBlockerSubline(blockers, titleWidth, true));
+          lines.push(formatBlockerSubline(blockers, titleWidth, true, blockerColOffset));
         }
       }
     }
@@ -1248,6 +1257,9 @@ export function buildStatusLayout(
   const fixedWidth = 26 + stateColWidth + daemonColWidth + depIndicatorWidth;
   const titleWidth = Math.max(10, termWidth - fixedWidth);
 
+  // Column offset where the ⧗ blocker icon sits (for aligning sub-lines)
+  const blockerColOffset = 26 + stateColWidth + daemonColWidth;
+
   /** Format daemon column for an item. */
   function daemonStr(item: StatusItem): string {
     if (!crewActive) return "";
@@ -1289,14 +1301,14 @@ export function buildStatusLayout(
       itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
-        itemLines.push(formatBlockerSubline(blockers, titleWidth, false));
+        itemLines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
       }
     }
     for (const item of mergedItems) {
       itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
-        itemLines.push(formatBlockerSubline(blockers, titleWidth, false));
+        itemLines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
       }
     }
     if (queuedItems.length > 0) {
@@ -1311,7 +1323,7 @@ export function buildStatusLayout(
         itemLines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, daemonStr(item)));
         const blockers = blockedBy!.get(item.id) ?? [];
         if (opts.showBlockerDetail && blockers.length > 0) {
-          itemLines.push(formatBlockerSubline(blockers, titleWidth, true));
+          itemLines.push(formatBlockerSubline(blockers, titleWidth, true, blockerColOffset));
         }
       }
     }

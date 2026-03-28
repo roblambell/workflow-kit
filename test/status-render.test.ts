@@ -198,45 +198,75 @@ describe("blockerIcon", () => {
 });
 
 describe("formatBlockerSubline", () => {
-  it("renders 4-char indent + └ prefix with comma-separated IDs", () => {
-    const result = formatBlockerSubline(["H-CA-1", "H-CA-3"], 40, false);
+  // Default stateColWidth=14, no daemon → blockerColOffset = 26 + 14 + 0 = 40
+  const defaultOffset = 40;
+
+  it("pads └ to blockerColOffset so it aligns under ⧗ icon", () => {
+    const result = formatBlockerSubline(["H-CA-1", "H-CA-3"], 30, false, defaultOffset);
     const text = stripAnsi(result);
-    expect(text).toBe("    └ H-CA-1, H-CA-3");
+    // └ should start at column 40 (defaultOffset)
+    expect(text.indexOf("└")).toBe(defaultOffset);
+    expect(text).toBe(" ".repeat(defaultOffset) + "└ H-CA-1, H-CA-3");
+  });
+
+  it("aligns with wider state column (e.g. CI Pending (#123))", () => {
+    // stateColWidth=24 → offset = 26 + 24 + 0 = 50
+    const wideStateOffset = 50;
+    const result = formatBlockerSubline(["H-CA-1"], 20, false, wideStateOffset);
+    const text = stripAnsi(result);
+    expect(text.indexOf("└")).toBe(wideStateOffset);
+    expect(text).toBe(" ".repeat(wideStateOffset) + "└ H-CA-1");
+  });
+
+  it("aligns with daemon column active (crew mode)", () => {
+    // stateColWidth=14, daemonColWidth=9 → offset = 26 + 14 + 9 = 49
+    const crewOffset = 49;
+    const result = formatBlockerSubline(["H-CA-1"], 20, false, crewOffset);
+    const text = stripAnsi(result);
+    expect(text.indexOf("└")).toBe(crewOffset);
+    expect(text).toBe(" ".repeat(crewOffset) + "└ H-CA-1");
   });
 
   it("wraps output in DIM for normal mode", () => {
-    const result = formatBlockerSubline(["H-CA-1"], 40, false);
-    expect(result).toBe(`${DIM}    └ H-CA-1${RESET}`);
+    const result = formatBlockerSubline(["H-CA-1"], 40, false, defaultOffset);
+    expect(result).toBe(`${DIM}${" ".repeat(defaultOffset)}└ H-CA-1${RESET}`);
   });
 
   it("wraps output in DIM for queued mode", () => {
-    const result = formatBlockerSubline(["H-CA-1"], 40, true);
-    expect(result).toBe(`${DIM}    └ H-CA-1${RESET}`);
+    const result = formatBlockerSubline(["H-CA-1"], 40, true, defaultOffset);
+    expect(result).toBe(`${DIM}${" ".repeat(defaultOffset)}└ H-CA-1${RESET}`);
   });
 
   it("truncates with ... when IDs exceed titleWidth", () => {
-    // prefix "    └ " is 6 chars, so available = 20 - 6 = 14
-    // "H-CA-1, H-CA-3" is 14 chars -- fits exactly at titleWidth 20
-    // "H-CA-1, H-CA-3, H-CA-5" is 23 chars -- needs truncation at titleWidth 20
-    const result = formatBlockerSubline(["H-CA-1", "H-CA-3", "H-CA-5"], 20, false);
+    // titleWidth=20, available=20
+    // "H-CA-1, H-CA-3, H-CA-5" is 23 chars → needs truncation
+    const result = formatBlockerSubline(["H-CA-1", "H-CA-3", "H-CA-5"], 20, false, defaultOffset);
     const text = stripAnsi(result);
     expect(text).toContain("...");
-    expect(text.startsWith("    └ ")).toBe(true);
-    // Total length should not exceed titleWidth
-    expect(text.length).toBeLessThanOrEqual(20);
+    expect(text.indexOf("└")).toBe(defaultOffset);
+    // Content after "└ " should not exceed titleWidth
+    const content = text.slice(defaultOffset + 2);
+    expect(content.length).toBeLessThanOrEqual(20);
   });
 
-  it("handles very narrow titleWidth gracefully", () => {
-    const result = formatBlockerSubline(["H-1"], 4, false);
+  it("handles zero titleWidth gracefully", () => {
+    const result = formatBlockerSubline(["H-1"], 0, false, defaultOffset);
     const text = stripAnsi(result);
-    // prefix is 6 chars, available = 4 - 6 = -2, so content is empty
-    expect(text).toBe("    └ ");
+    // available=0, so content is empty
+    expect(text).toBe(" ".repeat(defaultOffset) + "└ ");
   });
 
   it("renders single ID without truncation", () => {
+    const result = formatBlockerSubline(["H-1"], 30, false, defaultOffset);
+    const text = stripAnsi(result);
+    expect(text).toBe(" ".repeat(defaultOffset) + "└ H-1");
+  });
+
+  it("uses default offset of 4 when blockerColOffset is omitted", () => {
     const result = formatBlockerSubline(["H-1"], 30, false);
     const text = stripAnsi(result);
     expect(text).toBe("    └ H-1");
+    expect(text.indexOf("└")).toBe(4);
   });
 });
 
