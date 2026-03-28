@@ -2,7 +2,7 @@
 
 **Priority:** High
 **Source:** TUI status improvements plan 2026-03-28, refined by CEO review 2026-03-28
-**Depends on:** H-TUI-3
+**Depends on:** H-MS-3
 **Ships with:** M-TUI-5 (help overlay must exist before shortcuts are removed from footer)
 **Domain:** cli-ux
 
