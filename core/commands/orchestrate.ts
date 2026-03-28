@@ -28,16 +28,17 @@ import { checkPrStatus, scanExternalPRs } from "./watch.ts";
 import { launchSingleItem, launchReviewWorker, launchRepairWorker, detectAiTool, cleanStaleBranchForReuse } from "./start.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments, upsertOrchestratorComment } from "../gh.ts";
-import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitReset, daemonRebase } from "../git.ts";
+import { fetchOrigin, ffMerge, hasChanges, getStagedFiles, gitAdd, gitCommit, gitPush, gitReset, daemonRebase } from "../git.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
-import { die } from "../output.ts";
+import { die, warn, info } from "../output.ts";
+import { confirmPrompt } from "../prompt.ts";
 import { shouldEnterInteractive, runInteractiveFlow } from "../interactive.ts";
 import type { TodoItem } from "../types.ts";
 import { ID_IN_FILENAME } from "../types.ts";
 import { prTitleMatchesTodo } from "../todo-utils.ts";
 import { loadConfig } from "../config.ts";
-import { preflight } from "../preflight.ts";
+import { preflight, checkUncommittedTodos } from "../preflight.ts";
 import {
   collectRunMetrics,
   writeRunMetrics,
@@ -1736,12 +1737,52 @@ export async function cmdOrchestrate(
 
   // ── Pre-flight environment validation ────────────────────────────────
   if (!skipPreflight) {
-    const pf = preflight();
+    const pf = preflight(undefined, projectRoot);
     if (!pf.passed) {
-      for (const err of pf.errors) {
-        console.error(`Pre-flight failed: ${err}`);
+      // Check if the only failure is uncommitted TODOs — handle with auto-commit
+      const todoCheck = pf.checks.find(
+        (c) => c.status === "fail" && c.message.includes("uncommitted TODO file"),
+      );
+      const otherErrors = pf.errors.filter(
+        (e) => !e.includes("uncommitted TODO file"),
+      );
+
+      if (todoCheck && otherErrors.length === 0) {
+        // Only uncommitted TODOs failed — try auto-commit
+        const isInteractive = !isDaemonChild && !daemonMode && process.stdout.isTTY === true;
+        let shouldCommit = false;
+
+        if (isInteractive) {
+          warn(todoCheck.message);
+          shouldCommit = await confirmPrompt(
+            "Commit and push TODO files before launching workers?",
+            true,
+          );
+          if (!shouldCommit) {
+            die("Uncommitted TODO files detected. Commit them before launching workers.");
+          }
+        } else {
+          // Daemon/non-interactive mode: auto-commit
+          info(`Auto-committing: ${todoCheck.message}`);
+          shouldCommit = true;
+        }
+
+        if (shouldCommit) {
+          try {
+            gitAdd(projectRoot, [".ninthwave/todos/"]);
+            gitCommit(projectRoot, "chore: commit TODO files before orchestration");
+            gitPush(projectRoot);
+            info("TODO files committed and pushed.");
+          } catch (err) {
+            die(`Failed to auto-commit TODO files: ${(err as Error).message}`);
+          }
+        }
+      } else {
+        for (const err of pf.errors) {
+          console.error(`Pre-flight failed: ${err}`);
+        }
+        die("Environment checks failed. Fix the issues above or use --skip-preflight to bypass.");
       }
-      die("Environment checks failed. Fix the issues above or use --skip-preflight to bypass.");
     }
   }
 

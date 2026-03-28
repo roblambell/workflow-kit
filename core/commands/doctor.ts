@@ -18,6 +18,7 @@ export {
   checkAiTool,
   checkMultiplexer,
   checkGitConfig,
+  checkUncommittedTodos,
 } from "../preflight.ts";
 
 import {
@@ -27,6 +28,7 @@ import {
   checkAiTool,
   checkMultiplexer,
   checkGitConfig,
+  checkUncommittedTodos,
 } from "../preflight.ts";
 
 /** Category of a check. */
@@ -163,6 +165,7 @@ export function buildChecks(
     // Recommended
     { category: "Recommended", run: () => checkNinthwaveConfig(projectRoot) },
     { category: "Recommended", run: () => checkPreCommitHook(projectRoot) },
+    { category: "Recommended", run: () => checkUncommittedTodos(projectRoot, runner) },
 
     // Optional
     { category: "Optional", run: () => checkGithubIdentity(projectRoot, runner) },

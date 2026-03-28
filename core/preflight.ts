@@ -126,21 +126,47 @@ export function checkGitConfig(runner: ShellRunner): CheckResult {
   };
 }
 
+/** Check: no uncommitted TODO files in .ninthwave/todos/. */
+export function checkUncommittedTodos(
+  projectRoot: string,
+  runner: ShellRunner,
+): CheckResult {
+  const status = runner("git", ["-C", projectRoot, "status", "--porcelain", ".ninthwave/todos/"]);
+  if (status.exitCode !== 0) {
+    return { status: "warn", message: "Could not check TODO file status" };
+  }
+  const changes = status.stdout.trim();
+  if (!changes) {
+    return { status: "pass", message: "All TODO files committed" };
+  }
+  const count = changes.split("\n").filter(Boolean).length;
+  return {
+    status: "fail",
+    message: `${count} uncommitted TODO file(s) in .ninthwave/todos/`,
+    detail: "Run: git add .ninthwave/todos/ && git commit -m 'chore: add TODO files' && git push",
+  };
+}
+
 // ── Pre-flight runner ────────────────────────────────────────────────
 
 /**
  * Run all required pre-flight checks.
  * Returns a result with pass/fail per check, overall pass/fail, and
  * human-readable error messages for any failures.
+ *
+ * When projectRoot is provided, includes project-specific checks
+ * (e.g., uncommitted TODO files). Without it, only environment checks run.
  */
 export function preflight(
   runner: ShellRunner = defaultShellRunner,
+  projectRoot?: string,
 ): PreflightResult {
   const checks = [
     checkGh(runner),
     checkAiTool(runner),
     checkMultiplexer(runner),
     checkGitConfig(runner),
+    ...(projectRoot ? [checkUncommittedTodos(projectRoot, runner)] : []),
   ];
 
   const errors: string[] = [];

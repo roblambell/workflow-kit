@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { join } from "path";
 import { writeFileSync, mkdirSync, readFileSync } from "fs";
+import { spawnSync } from "child_process";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 import type { Multiplexer } from "../core/mux.ts";
 
@@ -126,6 +127,10 @@ function setupTodosDir(repo: string): string {
       "",
     ].join("\n"),
   );
+
+  // Commit TODO files so pre-flight checks pass
+  spawnSync("git", ["-C", repo, "add", ".ninthwave/todos/"], { stdio: "pipe" });
+  spawnSync("git", ["-C", repo, "commit", "-m", "Add todo files", "--quiet"], { stdio: "pipe" });
 
   return todosDir;
 }

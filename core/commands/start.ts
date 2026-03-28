@@ -35,6 +35,8 @@ import { cmdConflicts } from "./conflicts.ts";
 import { readTodo } from "../todo-files.ts";
 import { applyGithubToken, prList } from "../gh.ts";
 import { prTitleMatchesTodo } from "../todo-utils.ts";
+import { checkUncommittedTodos } from "../preflight.ts";
+import { run as defaultRun } from "../shell.ts";
 import type { TodoItem } from "../types.ts";
 
 /**
@@ -770,6 +772,17 @@ export async function cmdStart(
     itemMap.set(item.id, item);
   }
   const allIds = new Set(items.map((it) => it.id));
+
+  // Pre-flight: check for uncommitted TODO files
+  const todoCheck = checkUncommittedTodos(
+    projectRoot,
+    (cmd, args, opts) => defaultRun(cmd, args, opts),
+  );
+  if (todoCheck.status === "fail") {
+    warn(todoCheck.message);
+    warn(todoCheck.detail ?? "Commit TODO files before launching workers.");
+    die("Workers will branch from committed main and miss uncommitted TODO specs.");
+  }
 
   // Apply custom GitHub token so workers inherit it via environment
   applyGithubToken(projectRoot);
