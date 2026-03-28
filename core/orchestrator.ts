@@ -145,6 +145,8 @@ export interface OrchestratorConfig {
   maxVerifyRetries: number;
   /** Optional callback invoked on every state transition. Receives item ID, previous state, new state, detected timestamp, and detection latency in ms. */
   onTransition?: (itemId: string, from: string, to: string, timestamp: string, latencyMs: number) => void;
+  /** Optional callback for structured events that don't result in state transitions (e.g., timeout suppression). */
+  onEvent?: (itemId: string, event: string, data?: Record<string, unknown>) => void;
 }
 
 // ── Poll snapshot ────────────────────────────────────────────────────
@@ -842,19 +844,40 @@ export class Orchestrator {
         // Worker is actively heartbeating — healthy, skip timeout checks
         return [];
       }
-      // Stale heartbeat — fall through to commit-based timeout as backstop
+      // Stale heartbeat — fall through to process liveness / commit-based timeout
     }
+
+    // ── Process liveness as activity signal ──
+    // If the worker process is alive (workerAlive=true), it suppresses the launch timeout.
+    // The timeout hierarchy becomes:
+    // - Fresh heartbeat (< 5 min) → healthy (handled above)
+    // - Process alive → suppress launch timeout, use activityTimeoutMs as hard cap
+    // - Process dead → use launchTimeoutMs or crash detection
+    const workerAlive = snap?.workerAlive === true;
 
     // Commit-based timeout: final backstop for workers with no/stale heartbeat
     const commitTime = snap?.lastCommitTime ?? item.lastCommitTime;
     if (!commitTime) {
-      // No commits yet — check against launch timeout
+      // No commits yet — check launch timeout or activity timeout based on liveness
       const sinceTransition = nowMs - new Date(item.lastTransition).getTime();
-      if (sinceTransition > this.config.launchTimeoutMs) {
+      if (workerAlive) {
+        // Process alive: suppress launch timeout, use activity timeout as hard cap
+        if (sinceTransition > this.config.activityTimeoutMs) {
+          return this.stuckOrRetry(item, "worker-stalled: process alive but no commits after activity timeout");
+        }
+        // Suppressed launch timeout — log it if we would have timed out
+        if (sinceTransition > this.config.launchTimeoutMs) {
+          this.config.onEvent?.(item.id, "timeout-suppressed-by-liveness", {
+            sinceTransitionMs: sinceTransition,
+            launchTimeoutMs: this.config.launchTimeoutMs,
+            activityTimeoutMs: this.config.activityTimeoutMs,
+          });
+        }
+      } else if (sinceTransition > this.config.launchTimeoutMs) {
         return this.stuckOrRetry(item, "worker-stalled: no commits after launch timeout");
       }
     } else {
-      // Has commits — check against activity timeout
+      // Has commits — check against activity timeout (same for alive or dead)
       const sinceCommit = nowMs - new Date(commitTime).getTime();
       if (sinceCommit > this.config.activityTimeoutMs) {
         return this.stuckOrRetry(item, "worker-stalled: no new commits after activity timeout");

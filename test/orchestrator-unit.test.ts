@@ -442,15 +442,16 @@ describe("handleImplementing", () => {
     expect(orch.getItem("H-1-1")!.notAliveCount).toBe(0);
   });
 
-  it("detects launch timeout when no commits after launchTimeoutMs", () => {
+  it("detects launch timeout when no commits after launchTimeoutMs (process dead)", () => {
     const orch = new Orchestrator({ reviewEnabled: false, launchTimeoutMs: 1000 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "implementing");
 
     // Transition timestamp is "now" from setState — advance past timeout
+    // workerAlive=false means launch timeout applies (not suppressed by liveness)
     const futureTime = new Date(Date.now() + 2000);
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null }]),
+      snapshotWith([{ id: "H-1-1", workerAlive: false, lastCommitTime: null }]),
       futureTime,
     );
 
@@ -527,17 +528,17 @@ describe("heartbeat-based health detection", () => {
     expect(actions).toHaveLength(0);
   });
 
-  it("worker with stale heartbeat (> 5 min) and no recent commits transitions to stuck", () => {
+  it("worker with stale heartbeat (> 5 min) and no recent commits transitions to stuck (process dead)", () => {
     const orch = new Orchestrator({ reviewEnabled: false, launchTimeoutMs: 1000, maxRetries: 0 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "implementing");
 
-    // Advance past launch timeout with stale heartbeat (> 5 min old)
+    // Advance past launch timeout with stale heartbeat (> 5 min old) and dead process
     const futureTime = new Date(Date.now() + 2000);
     const staleHeartbeat = { id: "H-1-1", progress: 30, label: "Stalled", ts: new Date(futureTime.getTime() - 6 * 60 * 1000).toISOString() };
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null, lastHeartbeat: staleHeartbeat }]),
+      snapshotWith([{ id: "H-1-1", workerAlive: false, lastCommitTime: null, lastHeartbeat: staleHeartbeat }]),
       futureTime,
     );
 
@@ -545,16 +546,16 @@ describe("heartbeat-based health detection", () => {
     expect(actions.some((a) => a.type === "clean")).toBe(true);
   });
 
-  it("worker with no heartbeat file falls back to commit-based timeout detection", () => {
+  it("worker with no heartbeat file falls back to commit-based timeout detection (process dead)", () => {
     const orch = new Orchestrator({ reviewEnabled: false, launchTimeoutMs: 1000, maxRetries: 0 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.setState("H-1-1", "implementing");
 
-    // No heartbeat (null), advance past launch timeout
+    // No heartbeat (null), process dead, advance past launch timeout
     const futureTime = new Date(Date.now() + 2000);
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null, lastHeartbeat: null }]),
+      snapshotWith([{ id: "H-1-1", workerAlive: false, lastCommitTime: null, lastHeartbeat: null }]),
       futureTime,
     );
 
@@ -608,6 +609,116 @@ describe("heartbeat-based health detection", () => {
     };
     // The workerHealth property should not exist on the type
     expect("workerHealth" in snap).toBe(false);
+  });
+});
+
+// ── Process liveness as timeout suppression signal ─────────────────────
+
+describe("process liveness timeout suppression", () => {
+  it("worker with stale heartbeat but workerAlive=true is NOT marked stuck at launchTimeoutMs", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, launchTimeoutMs: 1000, activityTimeoutMs: 60_000, maxRetries: 0 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    // Advance past launch timeout (1s) but well within activity timeout (60s)
+    const futureTime = new Date(Date.now() + 2000);
+    const staleHeartbeat = { id: "H-1-1", progress: 30, label: "Working", ts: new Date(futureTime.getTime() - 6 * 60 * 1000).toISOString() };
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null, lastHeartbeat: staleHeartbeat }]),
+      futureTime,
+    );
+
+    // Process is alive — should NOT be stuck despite exceeding launchTimeoutMs
+    expect(orch.getItem("H-1-1")!.state).toBe("implementing");
+    expect(actions).toHaveLength(0);
+  });
+
+  it("worker with stale heartbeat and workerAlive=true IS marked stuck at activityTimeoutMs", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, launchTimeoutMs: 1000, activityTimeoutMs: 5000, maxRetries: 0 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    // Advance past both launch timeout AND activity timeout
+    const futureTime = new Date(Date.now() + 10_000);
+    const staleHeartbeat = { id: "H-1-1", progress: 30, label: "Stalled", ts: new Date(futureTime.getTime() - 6 * 60 * 1000).toISOString() };
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null, lastHeartbeat: staleHeartbeat }]),
+      futureTime,
+    );
+
+    // Activity timeout is the hard cap even when process is alive
+    expect(orch.getItem("H-1-1")!.state).toBe("stuck");
+    expect(actions.some((a) => a.type === "clean")).toBe(true);
+  });
+
+  it("worker with stale heartbeat and workerAlive=false is marked stuck at launchTimeoutMs", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, launchTimeoutMs: 1000, maxRetries: 0 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    // Advance past launch timeout with dead process
+    const futureTime = new Date(Date.now() + 2000);
+    const staleHeartbeat = { id: "H-1-1", progress: 30, label: "Stalled", ts: new Date(futureTime.getTime() - 6 * 60 * 1000).toISOString() };
+
+    // Need 3 not-alive checks to trigger crash detection, so test the timeout path directly
+    // by having workerAlive=false but not enough consecutive checks for crash
+    // The timeout path: workerAlive is not true, so launch timeout applies
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: false, lastCommitTime: null, lastHeartbeat: staleHeartbeat }]),
+      futureTime,
+    );
+
+    // workerAlive=false: launch timeout applies (existing behavior)
+    expect(orch.getItem("H-1-1")!.state).toBe("stuck");
+    expect(actions.some((a) => a.type === "clean")).toBe(true);
+  });
+
+  it("fresh heartbeat still takes priority over process liveness signal", () => {
+    const orch = new Orchestrator({ reviewEnabled: false, launchTimeoutMs: 1000, activityTimeoutMs: 5000 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    // Past both timeouts, but heartbeat is fresh
+    const futureTime = new Date(Date.now() + 10_000);
+    const freshHeartbeat = { id: "H-1-1", progress: 80, label: "Testing", ts: new Date(futureTime.getTime() - 1000).toISOString() };
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null, lastHeartbeat: freshHeartbeat }]),
+      futureTime,
+    );
+
+    // Fresh heartbeat wins — worker stays implementing regardless of timeouts
+    expect(orch.getItem("H-1-1")!.state).toBe("implementing");
+    expect(actions).toHaveLength(0);
+  });
+
+  it("timeout suppression by process liveness is logged via onEvent", () => {
+    const events: Array<{ itemId: string; event: string; data?: Record<string, unknown> }> = [];
+    const orch = new Orchestrator({
+      reviewEnabled: false,
+      launchTimeoutMs: 1000,
+      activityTimeoutMs: 60_000,
+      onEvent: (itemId, event, data) => events.push({ itemId, event, data }),
+    });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "implementing");
+
+    // Past launch timeout, process alive, no commits → suppression should be logged
+    const futureTime = new Date(Date.now() + 2000);
+    const staleHeartbeat = { id: "H-1-1", progress: 30, label: "Working", ts: new Date(futureTime.getTime() - 6 * 60 * 1000).toISOString() };
+
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null, lastHeartbeat: staleHeartbeat }]),
+      futureTime,
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0].itemId).toBe("H-1-1");
+    expect(events[0].event).toBe("timeout-suppressed-by-liveness");
+    expect(events[0].data?.launchTimeoutMs).toBe(1000);
+    expect(events[0].data?.activityTimeoutMs).toBe(60_000);
   });
 });
 

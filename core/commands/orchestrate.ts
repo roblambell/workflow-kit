@@ -1334,6 +1334,19 @@ export async function orchestrateLoop(
     };
   }
 
+  // Wire onEvent callback for structured event logging (non-transition events).
+  if (!orch.config.onEvent) {
+    orch.config.onEvent = (itemId, event, data) => {
+      log({
+        ts: new Date().toISOString(),
+        level: "info",
+        event,
+        itemId,
+        ...data,
+      } as LogEntry);
+    };
+  }
+
   // Initialize external review state from persisted file
   let externalReviews: ExternalReviewItem[] = [];
   if (config.reviewExternal && deps.externalReviewDeps) {

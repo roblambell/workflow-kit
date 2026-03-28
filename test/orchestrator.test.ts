@@ -3513,7 +3513,7 @@ describe("Orchestrator", () => {
   // ── 12. Time-based heartbeat for stuck worker detection ────────────
 
   describe("heartbeat stuck detection", () => {
-    it("transitions implementing → stuck when no commits after launch timeout", () => {
+    it("transitions implementing → stuck when no commits after launch timeout (process dead)", () => {
       orch = new Orchestrator({ reviewEnabled: false, launchTimeoutMs: 30 * 60 * 1000, maxRetries: 0, wipLimit: 5 });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.setState("H-1-1", "implementing");
@@ -3522,9 +3522,10 @@ describe("Orchestrator", () => {
       const item = orch.getItem("H-1-1")!;
       item.lastTransition = new Date(Date.now() - 31 * 60 * 1000).toISOString();
 
+      // workerAlive=false: launch timeout applies (process is dead)
       const now = new Date();
       const actions = orch.processTransitions(
-        snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null }]),
+        snapshotWith([{ id: "H-1-1", workerAlive: false, lastCommitTime: null }]),
         now,
       );
 
@@ -3579,12 +3580,13 @@ describe("Orchestrator", () => {
       orch.setState("H-1-1", "implementing");
 
       // Backdate lastTransition to 6 seconds ago (exceeds 5s launch timeout)
+      // workerAlive=false: launch timeout applies (not suppressed by liveness)
       const item = orch.getItem("H-1-1")!;
       const now = new Date();
       item.lastTransition = new Date(now.getTime() - 6000).toISOString();
 
       orch.processTransitions(
-        snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null }]),
+        snapshotWith([{ id: "H-1-1", workerAlive: false, lastCommitTime: null }]),
         now,
       );
 
@@ -3626,7 +3628,7 @@ describe("Orchestrator", () => {
       expect(orch.getItem("H-1-1")!.state).toBe("implementing");
     });
 
-    it("heartbeat retries instead of stuck when retries remain", () => {
+    it("heartbeat retries instead of stuck when retries remain (process dead)", () => {
       orch = new Orchestrator({ reviewEnabled: false,
         launchTimeoutMs: 30 * 60 * 1000,
         maxRetries: 1,
@@ -3635,13 +3637,13 @@ describe("Orchestrator", () => {
       orch.addItem(makeWorkItem("H-1-1"));
       orch.setState("H-1-1", "implementing");
 
-      // Backdate lastTransition past launch timeout
+      // Backdate lastTransition past launch timeout, process dead
       const item = orch.getItem("H-1-1")!;
       const now = new Date();
       item.lastTransition = new Date(now.getTime() - 31 * 60 * 1000).toISOString();
 
       const actions = orch.processTransitions(
-        snapshotWith([{ id: "H-1-1", workerAlive: true, lastCommitTime: null }]),
+        snapshotWith([{ id: "H-1-1", workerAlive: false, lastCommitTime: null }]),
         now,
       );
 
