@@ -1436,6 +1436,490 @@ export function renderFullScreenFrame(
 /** Minimum terminal rows for full-screen mode. Below this, use legacy non-fullscreen rendering. */
 export const MIN_FULLSCREEN_ROWS = 10;
 
+/** Minimum terminal rows for split panel mode. Below this, split degrades to full-screen cycling. */
+export const MIN_SPLIT_ROWS = 35;
+
+/** Fraction of available rows allocated to the status panel in split mode (0.6 = 60%). */
+export const STATUS_SPLIT_RATIO = 0.6;
+
+// ─── Panel layout types ─────────────────────────────────────────────────────
+
+/** Panel display modes for the unified TUI. */
+export type PanelMode = "status-only" | "split" | "logs-only";
+
+/** Layout geometry for a single panel within the split view. */
+export interface LogPanelLayout {
+  /** Visible log lines (already sliced to fit). */
+  lines: string[];
+  /** Total number of log entries (for scroll indicators). */
+  totalEntries: number;
+  /** Current scroll offset into the log entries. */
+  scrollOffset: number;
+}
+
+/** Full panel layout produced by buildPanelLayout(). */
+export interface PanelLayout {
+  /** The mode that was actually used (may differ from requested if terminal too small). */
+  mode: PanelMode;
+  /** Status panel lines (header + items, from buildStatusLayout). null in logs-only mode. */
+  statusPanel: FrameLayout | null;
+  /** Log panel data. null in status-only mode. */
+  logPanel: LogPanelLayout | null;
+  /** Footer lines pinned at the bottom (separator, progress, shortcuts). */
+  footerLines: string[];
+}
+
+/** A single log entry for the log panel. */
+export interface LogEntry {
+  /** ISO timestamp. */
+  timestamp: string;
+  /** The item ID this log relates to (e.g., "H-UT-2"). */
+  itemId: string;
+  /** Log message text. */
+  message: string;
+}
+
+// ─── Panel layout building ──────────────────────────────────────────────────
+
+/**
+ * Format a log entry as a single line for the log panel.
+ * Format: "HH:MM:SS  ITEM-ID  message"
+ */
+function formatLogLine(entry: LogEntry, termWidth: number): string {
+  let timeStr: string;
+  try {
+    const d = new Date(entry.timestamp);
+    if (isNaN(d.getTime())) {
+      timeStr = "--:--:--";
+    } else {
+      timeStr = d.toTimeString().slice(0, 8);
+    }
+  } catch {
+    timeStr = "--:--:--";
+  }
+  const idPad = pad(entry.itemId, 12);
+  const prefix = `  ${DIM}${timeStr}${RESET}  ${idPad}`;
+  const prefixPlain = `  ${timeStr}  ${stripAnsiForWidth(idPad)}`;
+  const available = Math.max(10, termWidth - prefixPlain.length);
+  const msg = entry.message.length > available
+    ? entry.message.slice(0, available - 3) + "..."
+    : entry.message;
+  return `${prefix}${DIM}${msg}${RESET}`;
+}
+
+/**
+ * Build a PanelLayout from the given inputs.
+ *
+ * Layout rules:
+ * - Below MIN_FULLSCREEN_ROWS (10): returns status-only with no footer (legacy flat).
+ * - Below MIN_SPLIT_ROWS (35): "split" degrades to "status-only" (full-screen cycling).
+ * - At MIN_SPLIT_ROWS+: split gives status top (60%) and logs bottom (40%).
+ * - "logs-only": full screen of logs.
+ * - "status-only": delegates entirely to buildStatusLayout().
+ */
+export function buildPanelLayout(
+  mode: PanelMode,
+  items: StatusItem[],
+  logEntries: LogEntry[],
+  termWidth: number,
+  termRows: number,
+  opts?: {
+    wipLimit?: number;
+    flat?: boolean;
+    viewOptions?: ViewOptions;
+    logScrollOffset?: number;
+    statusScrollOffset?: number;
+  },
+): PanelLayout {
+  const logScrollOffset = opts?.logScrollOffset ?? 0;
+
+  // Below MIN_FULLSCREEN_ROWS: legacy flat rendering, no panels
+  if (termRows < MIN_FULLSCREEN_ROWS) {
+    const statusLayout = buildStatusLayout(
+      items,
+      termWidth,
+      opts?.wipLimit,
+      opts?.flat,
+      opts?.viewOptions,
+    );
+    return {
+      mode: "status-only",
+      statusPanel: statusLayout,
+      logPanel: null,
+      footerLines: statusLayout.footerLines,
+    };
+  }
+
+  // Split mode degrades to status-only below MIN_SPLIT_ROWS
+  const effectiveMode = mode === "split" && termRows < MIN_SPLIT_ROWS
+    ? "status-only"
+    : mode;
+
+  if (effectiveMode === "status-only") {
+    const statusLayout = buildStatusLayout(
+      items,
+      termWidth,
+      opts?.wipLimit,
+      opts?.flat,
+      opts?.viewOptions,
+    );
+    return {
+      mode: "status-only",
+      statusPanel: statusLayout,
+      logPanel: null,
+      footerLines: statusLayout.footerLines,
+    };
+  }
+
+  if (effectiveMode === "logs-only") {
+    // Full screen of logs with footer
+    const footerLines = buildPanelFooter(items, logEntries.length, termWidth, opts?.viewOptions);
+    const logViewHeight = Math.max(1, termRows - footerLines.length);
+    const clampedLogOffset = clampScrollOffset(logScrollOffset, logEntries.length, logViewHeight);
+    const visibleLogs = logEntries
+      .slice(clampedLogOffset, clampedLogOffset + logViewHeight)
+      .map((e) => formatLogLine(e, termWidth));
+
+    return {
+      mode: "logs-only",
+      statusPanel: null,
+      logPanel: {
+        lines: visibleLogs,
+        totalEntries: logEntries.length,
+        scrollOffset: clampedLogOffset,
+      },
+      footerLines,
+    };
+  }
+
+  // Split mode: status top (60%), logs bottom (40%)
+  const footerLines = buildPanelFooter(items, logEntries.length, termWidth, opts?.viewOptions);
+  const separatorLine = buildPanelSeparator(logEntries.length, termWidth);
+
+  // Available rows = total - footer - separator (1 line)
+  const availableRows = Math.max(2, termRows - footerLines.length - 1);
+  const statusRows = Math.max(1, Math.floor(availableRows * STATUS_SPLIT_RATIO));
+  const logRows = Math.max(1, availableRows - statusRows);
+
+  // Build status panel (header + items fit within statusRows)
+  const statusLayout = buildStatusLayout(
+    items,
+    termWidth,
+    opts?.wipLimit,
+    opts?.flat,
+    opts?.viewOptions,
+  );
+  // Strip footer from the status layout -- we use our own panel footer
+  const statusPanel: FrameLayout = {
+    headerLines: statusLayout.headerLines,
+    itemLines: statusLayout.itemLines,
+    footerLines: [], // managed by panel footer
+  };
+
+  // Build log panel
+  const clampedLogOffset = clampScrollOffset(logScrollOffset, logEntries.length, logRows);
+  const visibleLogs = logEntries
+    .slice(clampedLogOffset, clampedLogOffset + logRows)
+    .map((e) => formatLogLine(e, termWidth));
+
+  return {
+    mode: "split",
+    statusPanel,
+    logPanel: {
+      lines: visibleLogs,
+      totalEntries: logEntries.length,
+      scrollOffset: clampedLogOffset,
+    },
+    footerLines: [separatorLine, ...footerLines],
+  };
+}
+
+/**
+ * Build the separator line between status and log panels.
+ * Shows log count and shortcut hints.
+ * Format: "──── Logs (42) ──── tab: switch  ↑↓: scroll ────"
+ */
+function buildPanelSeparator(logCount: number, termWidth: number): string {
+  const label = ` Logs (${logCount}) `;
+  const hints = ` tab: switch  ${DIM}↑↓: scroll${RESET} `;
+  const hintsPlain = ` tab: switch  ↑↓: scroll `;
+  const usedWidth = label.length + hintsPlain.length + 4; // 4 for dash segments
+  const remainingDashes = Math.max(0, termWidth - usedWidth);
+  const leftDashes = Math.max(2, Math.floor(remainingDashes / 2));
+  const rightDashes = Math.max(2, remainingDashes - leftDashes);
+  return `${DIM}${"─".repeat(leftDashes)}${RESET}${BOLD}${label}${RESET}${DIM}${"─".repeat(2)}${RESET} ${hints}${DIM}${"─".repeat(rightDashes)}${RESET}`;
+}
+
+/**
+ * Build footer lines for panel modes.
+ * Reuses the unified progress line and strategy indicator from buildStatusLayout.
+ */
+function buildPanelFooter(
+  items: StatusItem[],
+  logCount: number,
+  termWidth: number,
+  viewOptions?: ViewOptions,
+): string[] {
+  const footerLines: string[] = [];
+  const sep = `  ${DIM}${"─".repeat(Math.max(1, termWidth - 4))}${RESET}`;
+  footerLines.push(sep);
+  footerLines.push(formatUnifiedProgress(items, termWidth));
+
+  if (viewOptions?.ctrlCPending) {
+    footerLines.push(`  ${YELLOW}Press Ctrl-C again to exit${RESET}`);
+  } else if (viewOptions?.mergeStrategy) {
+    const badge = strategyIndicator(viewOptions.mergeStrategy);
+    footerLines.push(`  ${badge} ${DIM}(shift+tab to cycle) · ? for help${RESET}`);
+  } else {
+    const shortcuts = `q quit  d deps  ↑/↓ scroll`;
+    footerLines.push(`  ${DIM}${shortcuts}${RESET}`);
+  }
+
+  return footerLines;
+}
+
+/**
+ * Render a complete panel frame as an array of terminal lines.
+ *
+ * Composites the status panel (with scroll indicators), separator, log panel
+ * (with scroll indicators), and footer -- producing exactly termRows lines.
+ *
+ * For status-only and logs-only modes, delegates to simpler rendering.
+ */
+export function renderPanelFrame(
+  panelLayout: PanelLayout,
+  termRows: number,
+  termCols: number,
+  statusScrollOffset: number = 0,
+): string[] {
+  const { mode, statusPanel, logPanel, footerLines } = panelLayout;
+
+  if (mode === "status-only" && statusPanel) {
+    // Use existing renderFullScreenFrame for status-only
+    const fullLayout: FrameLayout = {
+      headerLines: statusPanel.headerLines,
+      itemLines: statusPanel.itemLines,
+      footerLines,
+    };
+    const frame = renderFullScreenFrame(fullLayout, termRows, termCols, statusScrollOffset);
+    return padToHeight(frame, termRows);
+  }
+
+  if (mode === "logs-only" && logPanel) {
+    const output: string[] = [];
+
+    // Calculate scroll indicators first to adjust viewport
+    const hiddenAbove = logPanel.scrollOffset;
+    const rawLogViewHeight = Math.max(1, termRows - footerLines.length);
+    const hasLogScrollUp = hiddenAbove > 0;
+    const hasLogScrollDown = logPanel.totalEntries > logPanel.scrollOffset + rawLogViewHeight;
+    const logScrollLines = (hasLogScrollUp ? 1 : 0) + (hasLogScrollDown ? 1 : 0);
+    const adjustedLogViewport = Math.max(1, rawLogViewHeight - logScrollLines);
+
+    if (hasLogScrollUp) {
+      output.push(`  ${DIM}↑ ${hiddenAbove} more above${RESET}`);
+    }
+
+    // Re-slice log lines to account for scroll indicators
+    const visibleLogLines = logPanel.lines.slice(0, adjustedLogViewport);
+    output.push(...visibleLogLines);
+
+    const hiddenBelow = Math.max(0, logPanel.totalEntries - logPanel.scrollOffset - adjustedLogViewport);
+    if (hiddenBelow > 0) {
+      output.push(`  ${DIM}↓ ${hiddenBelow} more below${RESET}`);
+    }
+
+    output.push(...footerLines);
+    return padToHeight(output, termRows);
+  }
+
+  // Split mode
+  if (!statusPanel || !logPanel) {
+    // Defensive: shouldn't happen in split mode
+    return padToHeight([...footerLines], termRows);
+  }
+
+  // The footerLines for split include separator + actual footer
+  // Extract the separator (first line of footerLines) and the rest
+  const separatorLine = footerLines[0] ?? "";
+  const actualFooter = footerLines.slice(1);
+
+  // Calculate available space
+  const footerHeight = actualFooter.length;
+  const separatorHeight = 1;
+  const availableRows = Math.max(2, termRows - footerHeight - separatorHeight);
+  const statusRows = Math.max(1, Math.floor(availableRows * STATUS_SPLIT_RATIO));
+  const logRows = Math.max(1, availableRows - statusRows);
+
+  const output: string[] = [];
+
+  // Status panel with scroll indicators
+  const statusHeader = statusPanel.headerLines;
+  const statusItemViewport = Math.max(1, statusRows - statusHeader.length);
+  const clampedStatusOffset = clampScrollOffset(statusScrollOffset, statusPanel.itemLines.length, statusItemViewport);
+
+  const hasStatusScrollUp = clampedStatusOffset > 0;
+  const hasStatusScrollDown = statusPanel.itemLines.length > clampedStatusOffset + statusItemViewport;
+  const statusScrollLines = (hasStatusScrollUp ? 1 : 0) + (hasStatusScrollDown ? 1 : 0);
+  const adjustedStatusViewport = Math.max(1, statusItemViewport - statusScrollLines);
+
+  output.push(...statusHeader);
+
+  if (hasStatusScrollUp) {
+    const hidden = clampedStatusOffset;
+    output.push(`  ${DIM}↑ ${hidden} more above${RESET}`);
+  }
+
+  const visibleStatusItems = statusPanel.itemLines.slice(
+    clampedStatusOffset,
+    clampedStatusOffset + adjustedStatusViewport,
+  );
+  output.push(...visibleStatusItems);
+
+  if (hasStatusScrollDown) {
+    const hidden = Math.max(0, statusPanel.itemLines.length - clampedStatusOffset - adjustedStatusViewport);
+    output.push(`  ${DIM}↓ ${hidden} more below${RESET}`);
+  }
+
+  // Pad status section to fill its allocation
+  while (output.length < statusRows) {
+    output.push("");
+  }
+
+  // Separator
+  output.push(separatorLine);
+
+  // Log panel with scroll indicators
+  const hasLogScrollUp = logPanel.scrollOffset > 0;
+  const hasLogScrollDown = logPanel.totalEntries > logPanel.scrollOffset + logRows;
+  const logScrollLines = (hasLogScrollUp ? 1 : 0) + (hasLogScrollDown ? 1 : 0);
+  const adjustedLogViewport = Math.max(1, logRows - logScrollLines);
+
+  if (hasLogScrollUp) {
+    const hidden = logPanel.scrollOffset;
+    output.push(`  ${DIM}↑ ${hidden} more above${RESET}`);
+  }
+
+  // Re-slice log lines to account for scroll indicators
+  const visibleLogLines = logPanel.lines.slice(0, adjustedLogViewport);
+  output.push(...visibleLogLines);
+
+  if (hasLogScrollDown) {
+    const hidden = Math.max(0, logPanel.totalEntries - logPanel.scrollOffset - adjustedLogViewport);
+    output.push(`  ${DIM}↓ ${hidden} more below${RESET}`);
+  }
+
+  // Footer
+  output.push(...actualFooter);
+
+  return padToHeight(output, termRows);
+}
+
+/**
+ * Pad an array of lines to exactly the given height.
+ * Truncates if too many, appends empty lines if too few.
+ */
+function padToHeight(lines: string[], height: number): string[] {
+  if (lines.length > height) {
+    return lines.slice(0, height);
+  }
+  const result = [...lines];
+  while (result.length < height) {
+    result.push("");
+  }
+  return result;
+}
+
+// ─── Item detail view ───────────────────────────────────────────────────────
+
+/**
+ * Format an item detail view for the selected item.
+ *
+ * Shows:
+ * - Item ID and title
+ * - PR link (clickable via OSC 8 when repoUrl is provided)
+ * - CI status with failure reason
+ * - Last error / stderr tail
+ * - Progress (worker heartbeat label)
+ * - Cost (tokens in/out if available)
+ * - Time in current state
+ */
+export function formatItemDetail(
+  item: StatusItem,
+  opts?: {
+    repoUrl?: string;
+    /** Worker heartbeat label (e.g., "Writing tests"). */
+    progressLabel?: string;
+    /** Token cost info. */
+    tokensIn?: number;
+    tokensOut?: number;
+  },
+): string[] {
+  const lines: string[] = [];
+  const color = stateColor(item.state);
+
+  // Title line
+  lines.push(`  ${BOLD}${item.id}${RESET}  ${item.title || item.id}`);
+  lines.push("");
+
+  // State
+  lines.push(`  ${DIM}State:${RESET}     ${color}${stateIcon(item.state)} ${stateLabel(item.state)}${RESET}`);
+
+  // PR link
+  if (item.prNumber) {
+    const prText = `#${item.prNumber}`;
+    if (opts?.repoUrl) {
+      const prUrl = `${opts.repoUrl}/pull/${item.prNumber}`;
+      lines.push(`  ${DIM}PR:${RESET}        ${osc8Link(prUrl, prText)}`);
+    } else {
+      lines.push(`  ${DIM}PR:${RESET}        ${prText}`);
+    }
+  } else {
+    lines.push(`  ${DIM}PR:${RESET}        ${DIM}--${RESET}`);
+  }
+
+  // CI status / failure reason
+  if (item.failureReason) {
+    lines.push(`  ${DIM}CI:${RESET}        ${RED}${item.failureReason}${RESET}`);
+  } else if (item.state === "ci-failed") {
+    lines.push(`  ${DIM}CI:${RESET}        ${RED}Failed${RESET}`);
+  } else if (item.state === "ci-pending") {
+    lines.push(`  ${DIM}CI:${RESET}        ${CYAN}Pending${RESET}`);
+  } else if (item.state === "merged" || item.state === "review") {
+    lines.push(`  ${DIM}CI:${RESET}        ${GREEN}Passed${RESET}`);
+  }
+
+  // Last error (stderr tail)
+  if (item.stderrTail) {
+    const firstLine = item.stderrTail.split("\n").filter((l) => l.trim())[0];
+    if (firstLine) {
+      const trimmed = firstLine.length > 60 ? firstLine.slice(0, 57) + "..." : firstLine;
+      lines.push(`  ${DIM}Error:${RESET}     ${RED}${trimmed}${RESET}`);
+    }
+  }
+
+  // Progress label
+  if (opts?.progressLabel) {
+    lines.push(`  ${DIM}Progress:${RESET}  ${opts.progressLabel}`);
+  }
+
+  // Cost
+  if (opts?.tokensIn != null || opts?.tokensOut != null) {
+    const parts: string[] = [];
+    if (opts?.tokensIn != null) parts.push(`${opts.tokensIn.toLocaleString()} in`);
+    if (opts?.tokensOut != null) parts.push(`${opts.tokensOut.toLocaleString()} out`);
+    lines.push(`  ${DIM}Cost:${RESET}      ${parts.join(", ")} tokens`);
+  }
+
+  // Time in state
+  const duration = formatDuration(item);
+  if (duration && duration !== "-") {
+    lines.push(`  ${DIM}Duration:${RESET}  ${duration}`);
+  }
+
+  return lines;
+}
+
 // ─── Help overlay ────────────────────────────────────────────────────────────
 
 /**

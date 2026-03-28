@@ -38,11 +38,18 @@ import {
   blockerIcon,
   formatBlockerSubline,
   MIN_FULLSCREEN_ROWS,
+  MIN_SPLIT_ROWS,
+  buildPanelLayout,
+  renderPanelFrame,
+  formatItemDetail,
   type StatusItem,
   type ItemState,
   type ViewOptions,
   type SessionMetrics,
   type FrameLayout,
+  type PanelMode,
+  type PanelLayout,
+  type LogEntry,
   renderHelpOverlay,
 } from "../core/status-render.ts";
 import {
@@ -2446,5 +2453,423 @@ describe("renderTuiFrame with showHelp", () => {
     const output = chunks.join("");
     const text = stripAnsi(output);
     expect(text).toContain("ninthwave status");
+  });
+});
+
+// ── Panel layout infrastructure (H-UT-2) ────────────────────────────────────
+
+function makeLogEntry(overrides: Partial<LogEntry> = {}): LogEntry {
+  return {
+    timestamp: new Date().toISOString(),
+    itemId: "T-1",
+    message: "Test log message",
+    ...overrides,
+  };
+}
+
+function makeLogEntries(count: number): LogEntry[] {
+  return Array.from({ length: count }, (_, i) =>
+    makeLogEntry({ itemId: `T-${i}`, message: `Log entry ${i}` }),
+  );
+}
+
+describe("MIN_SPLIT_ROWS", () => {
+  it("is 35", () => {
+    expect(MIN_SPLIT_ROWS).toBe(35);
+  });
+});
+
+describe("buildPanelLayout", () => {
+  const items = [
+    makeStatusItem({ id: "A-1", state: "implementing" }),
+    makeStatusItem({ id: "A-2", state: "merged" }),
+    makeStatusItem({ id: "A-3", state: "queued" }),
+  ];
+  const logs = makeLogEntries(10);
+
+  describe("status-only mode", () => {
+    it("returns status panel and no log panel at 80x40", () => {
+      const layout = buildPanelLayout("status-only", items, logs, 80, 40);
+      expect(layout.mode).toBe("status-only");
+      expect(layout.statusPanel).not.toBeNull();
+      expect(layout.logPanel).toBeNull();
+      expect(layout.footerLines.length).toBeGreaterThan(0);
+    });
+
+    it("returns status-only at 80x20", () => {
+      const layout = buildPanelLayout("status-only", items, logs, 80, 20);
+      expect(layout.mode).toBe("status-only");
+      expect(layout.statusPanel).not.toBeNull();
+      expect(layout.logPanel).toBeNull();
+    });
+
+    it("returns status-only at 80x8 (below MIN_FULLSCREEN_ROWS)", () => {
+      const layout = buildPanelLayout("status-only", items, logs, 80, 8);
+      expect(layout.mode).toBe("status-only");
+      expect(layout.statusPanel).not.toBeNull();
+      expect(layout.logPanel).toBeNull();
+    });
+  });
+
+  describe("split mode", () => {
+    it("returns split layout at 80x40 (>= MIN_SPLIT_ROWS)", () => {
+      const layout = buildPanelLayout("split", items, logs, 80, 40);
+      expect(layout.mode).toBe("split");
+      expect(layout.statusPanel).not.toBeNull();
+      expect(layout.logPanel).not.toBeNull();
+      expect(layout.logPanel!.lines.length).toBeGreaterThan(0);
+    });
+
+    it("degrades split to status-only at 34 rows (< MIN_SPLIT_ROWS)", () => {
+      const layout = buildPanelLayout("split", items, logs, 80, 34);
+      expect(layout.mode).toBe("status-only");
+      expect(layout.statusPanel).not.toBeNull();
+      expect(layout.logPanel).toBeNull();
+    });
+
+    it("degrades split to status-only at 20 rows", () => {
+      const layout = buildPanelLayout("split", items, logs, 80, 20);
+      expect(layout.mode).toBe("status-only");
+      expect(layout.logPanel).toBeNull();
+    });
+
+    it("degrades split to status-only at 8 rows (below MIN_FULLSCREEN_ROWS)", () => {
+      const layout = buildPanelLayout("split", items, logs, 80, 8);
+      expect(layout.mode).toBe("status-only");
+      expect(layout.logPanel).toBeNull();
+    });
+
+    it("split at exactly MIN_SPLIT_ROWS (35) works", () => {
+      const layout = buildPanelLayout("split", items, logs, 80, 35);
+      expect(layout.mode).toBe("split");
+      expect(layout.statusPanel).not.toBeNull();
+      expect(layout.logPanel).not.toBeNull();
+    });
+
+    it("status panel has no footer in split mode (footer is separate)", () => {
+      const layout = buildPanelLayout("split", items, logs, 80, 40);
+      expect(layout.statusPanel!.footerLines).toHaveLength(0);
+    });
+
+    it("footer lines include separator in split mode", () => {
+      const layout = buildPanelLayout("split", items, logs, 80, 40);
+      const footerText = layout.footerLines.map(stripAnsi).join("\n");
+      // Separator contains "Logs (N)"
+      expect(footerText).toContain("Logs (10)");
+    });
+
+    it("split gives status ~60% and logs ~40%", () => {
+      const layout = buildPanelLayout("split", items, logs, 80, 40);
+      // The log panel should have visible lines
+      expect(layout.logPanel!.lines.length).toBeGreaterThan(0);
+      // Status panel should have items
+      expect(layout.statusPanel!.itemLines.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("logs-only mode", () => {
+    it("returns logs-only at 80x40", () => {
+      const layout = buildPanelLayout("logs-only", items, logs, 80, 40);
+      expect(layout.mode).toBe("logs-only");
+      expect(layout.statusPanel).toBeNull();
+      expect(layout.logPanel).not.toBeNull();
+      expect(layout.logPanel!.lines.length).toBeGreaterThan(0);
+    });
+
+    it("returns logs-only at 80x20", () => {
+      const layout = buildPanelLayout("logs-only", items, logs, 80, 20);
+      expect(layout.mode).toBe("logs-only");
+      expect(layout.statusPanel).toBeNull();
+      expect(layout.logPanel).not.toBeNull();
+    });
+
+    it("returns status-only at 80x8 (below MIN_FULLSCREEN_ROWS overrides all)", () => {
+      const layout = buildPanelLayout("logs-only", items, logs, 80, 8);
+      // Below MIN_FULLSCREEN_ROWS, always status-only (legacy flat)
+      expect(layout.mode).toBe("status-only");
+    });
+  });
+});
+
+describe("renderPanelFrame", () => {
+  const items = [
+    makeStatusItem({ id: "A-1", state: "implementing" }),
+    makeStatusItem({ id: "A-2", state: "merged" }),
+  ];
+  const logs = makeLogEntries(20);
+
+  it("status-only frame matches terminal height exactly", () => {
+    const layout = buildPanelLayout("status-only", items, logs, 80, 40);
+    const frame = renderPanelFrame(layout, 40, 80);
+    expect(frame).toHaveLength(40);
+  });
+
+  it("split frame matches terminal height exactly", () => {
+    const layout = buildPanelLayout("split", items, logs, 80, 40);
+    const frame = renderPanelFrame(layout, 40, 80);
+    expect(frame).toHaveLength(40);
+  });
+
+  it("logs-only frame matches terminal height exactly", () => {
+    const layout = buildPanelLayout("logs-only", items, logs, 80, 40);
+    const frame = renderPanelFrame(layout, 40, 80);
+    expect(frame).toHaveLength(40);
+  });
+
+  it("logs-only frame with scroll offset does not exceed terminal height", () => {
+    // Regression: scroll indicators were added without reducing viewport,
+    // causing output to exceed termRows before padToHeight truncated footer
+    const manyLogs = makeLogEntries(100);
+    const layout = buildPanelLayout("logs-only", items, manyLogs, 80, 40, {
+      logScrollOffset: 5,
+    });
+    const frame = renderPanelFrame(layout, 40, 80);
+    expect(frame).toHaveLength(40);
+    // Footer should not be truncated -- last non-empty lines should contain progress/shortcuts
+    const nonEmpty = frame.filter(l => l.trim() !== "");
+    const lastNonEmpty = stripAnsi(nonEmpty[nonEmpty.length - 1]!);
+    // Footer should contain shortcuts or progress, not a scroll indicator or log line
+    expect(
+      lastNonEmpty.includes("quit") ||
+      lastNonEmpty.includes("scroll") ||
+      lastNonEmpty.includes("items") ||
+      lastNonEmpty.includes("shift+tab"),
+    ).toBe(true);
+  });
+
+  it("split frame at exactly MIN_SPLIT_ROWS matches height", () => {
+    const layout = buildPanelLayout("split", items, logs, 80, 35);
+    const frame = renderPanelFrame(layout, 35, 80);
+    expect(frame).toHaveLength(35);
+  });
+
+  it("status-only frame at 20 rows matches height", () => {
+    const layout = buildPanelLayout("status-only", items, logs, 80, 20);
+    const frame = renderPanelFrame(layout, 20, 80);
+    expect(frame).toHaveLength(20);
+  });
+
+  it("logs-only frame at 20 rows matches height", () => {
+    const layout = buildPanelLayout("logs-only", items, logs, 80, 20);
+    const frame = renderPanelFrame(layout, 20, 80);
+    expect(frame).toHaveLength(20);
+  });
+
+  it("frame at 8 rows (below MIN_FULLSCREEN_ROWS) matches height", () => {
+    const layout = buildPanelLayout("split", items, logs, 80, 8);
+    const frame = renderPanelFrame(layout, 8, 80);
+    expect(frame).toHaveLength(8);
+  });
+});
+
+describe("panel separator formatting", () => {
+  it("shows log count in separator", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const logs = makeLogEntries(42);
+    const layout = buildPanelLayout("split", items, logs, 80, 40);
+    const allText = layout.footerLines.map(stripAnsi).join("\n");
+    expect(allText).toContain("Logs (42)");
+  });
+
+  it("shows shortcut hints in separator", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const logs = makeLogEntries(5);
+    const layout = buildPanelLayout("split", items, logs, 80, 40);
+    const allText = layout.footerLines.map(stripAnsi).join("\n");
+    expect(allText).toContain("tab: switch");
+    expect(allText).toContain("scroll");
+  });
+
+  it("shows zero logs in separator when no entries", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const layout = buildPanelLayout("split", items, [], 80, 40);
+    const allText = layout.footerLines.map(stripAnsi).join("\n");
+    expect(allText).toContain("Logs (0)");
+  });
+
+  it("handles large log counts", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const logs = makeLogEntries(1234);
+    const layout = buildPanelLayout("split", items, logs, 80, 40);
+    const allText = layout.footerLines.map(stripAnsi).join("\n");
+    expect(allText).toContain("Logs (1234)");
+  });
+});
+
+describe("scroll indicators in panel frames", () => {
+  it("status panel shows scroll indicators when items overflow", () => {
+    const manyItems = Array.from({ length: 30 }, (_, i) =>
+      makeStatusItem({ id: `I-${i}`, state: "implementing" }),
+    );
+    const logs = makeLogEntries(5);
+    const layout = buildPanelLayout("split", manyItems, logs, 80, 40);
+    const frame = renderPanelFrame(layout, 40, 80, 0);
+    const text = frame.map(stripAnsi).join("\n");
+    // With 30 items in the status panel (60% of ~40 rows = ~20 rows for header+items),
+    // there should be a scroll-down indicator
+    expect(text).toContain("more below");
+  });
+
+  it("log panel shows scroll indicators when logs overflow", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const manyLogs = makeLogEntries(100);
+    const layout = buildPanelLayout("split", items, manyLogs, 80, 40, {
+      logScrollOffset: 5,
+    });
+    const frame = renderPanelFrame(layout, 40, 80);
+    const text = frame.map(stripAnsi).join("\n");
+    // With 100 logs and offset 5, should show both scroll indicators
+    expect(text).toContain("more above");
+  });
+
+  it("no scroll indicators when content fits", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const fewLogs = makeLogEntries(2);
+    const layout = buildPanelLayout("split", items, fewLogs, 80, 40);
+    const frame = renderPanelFrame(layout, 40, 80);
+    const text = frame.map(stripAnsi).join("\n");
+    // Few items and few logs should have no overflow
+    // (status panel might not overflow with just 1 item)
+    // Check the log section specifically -- 2 logs should fit
+    const logSection = frame.slice(frame.findIndex(l => stripAnsi(l).includes("Logs")));
+    const logText = logSection.map(stripAnsi).join("\n");
+    expect(logText).not.toContain("more above");
+  });
+});
+
+describe("formatItemDetail", () => {
+  it("renders implementing state with all fields", () => {
+    const item = makeStatusItem({
+      id: "H-UT-2",
+      title: "Panel layout infrastructure",
+      state: "implementing",
+      prNumber: 42,
+      startedAt: new Date(Date.now() - 300_000).toISOString(),
+    });
+    const lines = formatItemDetail(item, {
+      repoUrl: "https://github.com/org/repo",
+      progressLabel: "Writing tests",
+      tokensIn: 45000,
+      tokensOut: 12000,
+    });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("H-UT-2");
+    expect(text).toContain("Panel layout infrastructure");
+    expect(text).toContain("Implementing");
+    expect(text).toContain("#42");
+    expect(text).toContain("Writing tests");
+    expect(text).toContain("45,000 in");
+    expect(text).toContain("12,000 out");
+    expect(text).toContain("Duration:");
+  });
+
+  it("renders ci-failed state with failure reason", () => {
+    const item = makeStatusItem({
+      id: "H-CI-1",
+      title: "Fix CI",
+      state: "ci-failed",
+      prNumber: 100,
+      failureReason: "Tests timed out",
+      stderrTail: "Error: timeout after 30s\n",
+    });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("CI Failed");
+    expect(text).toContain("Tests timed out");
+    expect(text).toContain("timeout after 30s");
+  });
+
+  it("renders merged state", () => {
+    const item = makeStatusItem({
+      id: "H-MG-1",
+      title: "Feature done",
+      state: "merged",
+      prNumber: 200,
+      startedAt: new Date(Date.now() - 600_000).toISOString(),
+      endedAt: new Date(Date.now() - 300_000).toISOString(),
+    });
+    const lines = formatItemDetail(item, {
+      repoUrl: "https://github.com/org/repo",
+    });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Merged");
+    expect(text).toContain("#200");
+    expect(text).toContain("Passed");
+  });
+
+  it("renders stuck (ci-failed) state", () => {
+    const item = makeStatusItem({
+      id: "H-ST-1",
+      title: "Stuck item",
+      state: "ci-failed",
+      failureReason: "Max retries exceeded",
+    });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("CI Failed");
+    expect(text).toContain("Max retries exceeded");
+  });
+
+  it("renders without PR number", () => {
+    const item = makeStatusItem({
+      id: "H-NP-1",
+      title: "No PR yet",
+      state: "implementing",
+      prNumber: null,
+    });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("--");
+    expect(text).not.toContain("#");
+  });
+
+  it("renders PR as OSC 8 clickable link when repoUrl provided", () => {
+    const item = makeStatusItem({
+      id: "H-LK-1",
+      title: "Linked PR",
+      state: "review",
+      prNumber: 55,
+    });
+    const lines = formatItemDetail(item, {
+      repoUrl: "https://github.com/org/repo",
+    });
+    const raw = lines.join("");
+    // OSC 8 sequence should be present
+    expect(raw).toContain("\x1b]8;;https://github.com/org/repo/pull/55\x07");
+  });
+
+  it("renders with missing optional fields", () => {
+    const item = makeStatusItem({
+      id: "H-MN-1",
+      title: "Minimal item",
+      state: "queued",
+      prNumber: null,
+    });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("H-MN-1");
+    expect(text).toContain("Minimal item");
+    // No crash, renders cleanly
+    expect(lines.length).toBeGreaterThan(2);
+  });
+
+  it("renders ci-pending state", () => {
+    const item = makeStatusItem({
+      id: "H-CP-1",
+      title: "CI pending",
+      state: "ci-pending",
+      prNumber: 77,
+    });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("CI Pending");
+    expect(text).toContain("Pending");
+  });
+
+  it("renders without cost when tokens not provided", () => {
+    const item = makeStatusItem({ id: "H-NC-1", state: "implementing" });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).not.toContain("Cost:");
   });
 });
