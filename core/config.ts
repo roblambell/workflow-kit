@@ -10,6 +10,7 @@ export const KNOWN_CONFIG_KEYS = new Set([
   "LOC_EXTENSIONS",
   "review_external",
   "github_token",
+  "schedule_enabled",
 ]);
 
 /**
