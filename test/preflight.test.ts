@@ -7,6 +7,7 @@ import {
   checkAiTool,
   checkMultiplexer,
   checkGitConfig,
+  checkUncommittedTodos,
   preflight,
   type ShellRunner,
 } from "../core/preflight.ts";
@@ -113,6 +114,64 @@ describe("checkGitConfig (preflight)", () => {
   });
 });
 
+// ── checkUncommittedTodos ────────────────────────────────────────────
+
+describe("checkUncommittedTodos (preflight)", () => {
+  it("passes when no changes in .ninthwave/todos/", () => {
+    const runner: ShellRunner = (cmd, args) => {
+      if (cmd === "git" && args.includes("--porcelain")) {
+        return { stdout: "", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "", exitCode: 1 };
+    };
+    const result = checkUncommittedTodos("/fake/project", runner);
+    expect(result.status).toBe("pass");
+    expect(result.message).toBe("All TODO files committed");
+  });
+
+  it("fails with count when untracked files exist", () => {
+    const runner: ShellRunner = (cmd, args) => {
+      if (cmd === "git" && args.includes("--porcelain")) {
+        return {
+          stdout: "?? .ninthwave/todos/01--H-PFL-1.md\n?? .ninthwave/todos/02--H-PFL-2.md",
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      return { stdout: "", stderr: "", exitCode: 1 };
+    };
+    const result = checkUncommittedTodos("/fake/project", runner);
+    expect(result.status).toBe("fail");
+    expect(result.message).toContain("2 uncommitted TODO file(s)");
+    expect(result.detail).toContain("git add .ninthwave/todos/");
+  });
+
+  it("fails when modified files exist", () => {
+    const runner: ShellRunner = (cmd, args) => {
+      if (cmd === "git" && args.includes("--porcelain")) {
+        return {
+          stdout: " M .ninthwave/todos/01--H-PFL-1.md",
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      return { stdout: "", stderr: "", exitCode: 1 };
+    };
+    const result = checkUncommittedTodos("/fake/project", runner);
+    expect(result.status).toBe("fail");
+    expect(result.message).toContain("1 uncommitted TODO file(s)");
+  });
+
+  it("warns when git status fails", () => {
+    const runner: ShellRunner = () => {
+      return { stdout: "", stderr: "fatal: not a git repo", exitCode: 128 };
+    };
+    const result = checkUncommittedTodos("/fake/project", runner);
+    expect(result.status).toBe("warn");
+    expect(result.message).toBe("Could not check TODO file status");
+  });
+});
+
 // ── preflight() integration ──────────────────────────────────────────
 
 describe("preflight", () => {
@@ -189,6 +248,56 @@ describe("preflight", () => {
   });
 });
 
+describe("preflight with projectRoot", () => {
+  it("includes TODO check when projectRoot is provided", () => {
+    const runner: ShellRunner = (cmd: string, args: string[]): RunResult => {
+      if (cmd === "git" && args.includes("--porcelain")) {
+        return { stdout: "", stderr: "", exitCode: 0 };
+      }
+      if (cmd === "git" && args[0] === "config" && args[1] === "user.name") {
+        return { stdout: "Test User", stderr: "", exitCode: 0 };
+      }
+      if (cmd === "git" && args[0] === "config" && args[1] === "user.email") {
+        return { stdout: "test@example.com", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "/usr/local/bin/mock", stderr: "", exitCode: 0 };
+    };
+    const result = preflight(runner, "/fake/project");
+    expect(result.passed).toBe(true);
+    // 4 env checks + 1 TODO check = 5
+    expect(result.checks).toHaveLength(5);
+    expect(result.checks[4]!.message).toBe("All TODO files committed");
+  });
+
+  it("fails when uncommitted TODOs detected with projectRoot", () => {
+    const runner: ShellRunner = (cmd: string, args: string[]): RunResult => {
+      if (cmd === "git" && args.includes("--porcelain")) {
+        return {
+          stdout: "?? .ninthwave/todos/01--TEST-1.md",
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      if (cmd === "git" && args[0] === "config" && args[1] === "user.name") {
+        return { stdout: "Test User", stderr: "", exitCode: 0 };
+      }
+      if (cmd === "git" && args[0] === "config" && args[1] === "user.email") {
+        return { stdout: "test@example.com", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "/usr/local/bin/mock", stderr: "", exitCode: 0 };
+    };
+    const result = preflight(runner, "/fake/project");
+    expect(result.passed).toBe(false);
+    expect(result.errors.length).toBe(1);
+    expect(result.errors[0]).toContain("uncommitted TODO file");
+  });
+
+  it("omits TODO check when projectRoot is not provided", () => {
+    const result = preflight(allPassRunner());
+    expect(result.checks).toHaveLength(4);
+  });
+});
+
 // ── doctor.ts reuses preflight checks (no duplication) ──────────────
 
 describe("doctor reuses preflight", () => {
@@ -200,5 +309,6 @@ describe("doctor reuses preflight", () => {
     expect(doctorModule.checkAiTool).toBe(preflightModule.checkAiTool);
     expect(doctorModule.checkMultiplexer).toBe(preflightModule.checkMultiplexer);
     expect(doctorModule.checkGitConfig).toBe(preflightModule.checkGitConfig);
+    expect(doctorModule.checkUncommittedTodos).toBe(preflightModule.checkUncommittedTodos);
   });
 });
