@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vite
 import { join } from "path";
 import { writeFileSync, mkdirSync, readFileSync } from "fs";
 import { spawnSync } from "child_process";
-import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
+import { setupTempRepo, cleanupTempRepos, captureOutputAsync } from "./helpers.ts";
 import type { Multiplexer } from "../core/mux.ts";
 
 // Only mock modules that don't have their own test files and aren't
@@ -147,30 +147,8 @@ function setupWorkItemsDir(repo: string): string {
   return workDir;
 }
 
-async function captureOutput(fn: () => void | Promise<void>): Promise<string> {
-  const lines: string[] = [];
-  const origLog = console.log;
-  const origError = console.error;
-  console.log = (...args: unknown[]) => lines.push(args.join(" "));
-  console.error = (...args: unknown[]) => lines.push(args.join(" "));
-
-  const origExit = process.exit;
-  process.exit = ((code?: number) => {
-    throw new Error(`EXIT:${code}`);
-  }) as never;
-
-  try {
-    await fn();
-  } catch (e: unknown) {
-    if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
-  } finally {
-    console.log = origLog;
-    console.error = origError;
-    process.exit = origExit;
-  }
-
-  return lines.join("\n");
-}
+// Alias: launch.test.ts previously used `captureOutput` for the async variant
+const captureOutput = captureOutputAsync;
 
 describe("detectAiTool", () => {
   const originalEnv = { ...process.env };

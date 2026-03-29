@@ -1,7 +1,7 @@
 // Tests for ci-failures command.
 
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
-import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
+import { setupTempRepo, cleanupTempRepos, captureOutput } from "./helpers.ts";
 
 // Mock gh module
 // lint-ignore: no-leaked-mock
@@ -14,31 +14,6 @@ import * as gh from "../core/gh.ts";
 
 // Import after mocks
 import { cmdCiFailures } from "../core/commands/ci.ts";
-
-function captureOutput(fn: () => void): string {
-  const lines: string[] = [];
-  const origLog = console.log;
-  const origError = console.error;
-  console.log = (...args: unknown[]) => lines.push(args.join(" "));
-  console.error = (...args: unknown[]) => lines.push(args.join(" "));
-
-  const origExit = process.exit;
-  process.exit = ((code?: number) => {
-    throw new Error(`EXIT:${code}`);
-  }) as never;
-
-  try {
-    fn();
-  } catch (e: unknown) {
-    if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
-  } finally {
-    console.log = origLog;
-    console.error = origError;
-    process.exit = origExit;
-  }
-
-  return lines.join("\n");
-}
 
 describe("cmdCiFailures", () => {
   beforeEach(() => vi.clearAllMocks());

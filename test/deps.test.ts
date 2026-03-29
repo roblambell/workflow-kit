@@ -1,35 +1,10 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { setupTempRepo, useFixtureDir, cleanupTempRepos } from "./helpers.ts";
+import { setupTempRepo, useFixtureDir, cleanupTempRepos, captureOutput } from "./helpers.ts";
 import { join } from "path";
 import { cmdDeps } from "../core/commands/deps.ts";
 
 describe("deps", () => {
   afterEach(() => cleanupTempRepos());
-
-  function captureOutput(fn: () => void): string {
-    const lines: string[] = [];
-    const origLog = console.log;
-    const origError = console.error;
-    console.log = (...args: unknown[]) => lines.push(args.join(" "));
-    console.error = (...args: unknown[]) => lines.push(args.join(" "));
-
-    const origExit = process.exit;
-    process.exit = ((code?: number) => {
-      throw new Error(`EXIT:${code}`);
-    }) as never;
-
-    try {
-      fn();
-    } catch (e: unknown) {
-      if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
-    } finally {
-      console.log = origLog;
-      console.error = origError;
-      process.exit = origExit;
-    }
-
-    return lines.join("\n");
-  }
 
   it("shows upstream dependencies", () => {
     const repo = setupTempRepo();

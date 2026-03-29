@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { setupTempRepo, useFixtureDir, writeWorkItemFiles, cleanupTempRepos } from "./helpers.ts";
+import { setupTempRepo, useFixtureDir, writeWorkItemFiles, cleanupTempRepos, captureOutputWithExit } from "./helpers.ts";
 import { join } from "path";
 import { parseWorkItems } from "../core/parser.ts";
 import {
@@ -11,36 +11,8 @@ import {
 describe("batch-order", () => {
   afterEach(() => cleanupTempRepos());
 
-  function captureOutput(
-    fn: () => void,
-  ): { stdout: string; exitCode: number } {
-    const lines: string[] = [];
-    const origLog = console.log;
-    const origError = console.error;
-    let exitCode = 0;
-
-    console.log = (...args: unknown[]) => lines.push(args.join(" "));
-    console.error = (...args: unknown[]) => lines.push(args.join(" "));
-
-    // Mock process.exit to capture exit code
-    const origExit = process.exit;
-    process.exit = ((code?: number) => {
-      exitCode = code ?? 0;
-      throw new Error(`EXIT:${code}`);
-    }) as never;
-
-    try {
-      fn();
-    } catch (e: unknown) {
-      if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
-    } finally {
-      console.log = origLog;
-      console.error = origError;
-      process.exit = origExit;
-    }
-
-    return { stdout: lines.join("\n"), exitCode };
-  }
+  // Alias for backward compatibility with existing test call sites
+  const captureOutput = captureOutputWithExit;
 
   it("items with no mutual deps are all in batch 1", () => {
     const repo = setupTempRepo();

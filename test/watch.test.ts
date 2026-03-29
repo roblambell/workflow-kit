@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { join } from "path";
 import { mkdirSync, writeFileSync } from "fs";
-import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
+import { setupTempRepo, cleanupTempRepos, captureOutput, captureOutputAsync } from "./helpers.ts";
 
 // Mock gh module
 // lint-ignore: no-leaked-mock
@@ -31,56 +31,6 @@ import {
   TRUSTED_ASSOC,
   CI_FAILURE_STATES,
 } from "../core/commands/pr-monitor.ts";
-
-function captureOutput(fn: () => void): string {
-  const lines: string[] = [];
-  const origLog = console.log;
-  const origError = console.error;
-  console.log = (...args: unknown[]) => lines.push(args.join(" "));
-  console.error = (...args: unknown[]) => lines.push(args.join(" "));
-
-  const origExit = process.exit;
-  process.exit = ((code?: number) => {
-    throw new Error(`EXIT:${code}`);
-  }) as never;
-
-  try {
-    fn();
-  } catch (e: unknown) {
-    if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
-  } finally {
-    console.log = origLog;
-    console.error = origError;
-    process.exit = origExit;
-  }
-
-  return lines.join("\n");
-}
-
-async function captureOutputAsync(fn: () => Promise<void>): Promise<string> {
-  const lines: string[] = [];
-  const origLog = console.log;
-  const origError = console.error;
-  console.log = (...args: unknown[]) => lines.push(args.join(" "));
-  console.error = (...args: unknown[]) => lines.push(args.join(" "));
-
-  const origExit = process.exit;
-  process.exit = ((code?: number) => {
-    throw new Error(`EXIT:${code}`);
-  }) as never;
-
-  try {
-    await fn();
-  } catch (e: unknown) {
-    if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
-  } finally {
-    console.log = origLog;
-    console.error = origError;
-    process.exit = origExit;
-  }
-
-  return lines.join("\n");
-}
 
 describe("cmdWatchReady", () => {
   beforeEach(() => vi.clearAllMocks());

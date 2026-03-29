@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { setupTempRepo, setupTempRepoWithRemote, useFixtureDir, cleanupTempRepos } from "./helpers.ts";
+import { setupTempRepo, setupTempRepoWithRemote, useFixtureDir, cleanupTempRepos, captureOutput } from "./helpers.ts";
 import { join } from "path";
 import { mkdirSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
@@ -7,31 +7,6 @@ import { cmdList } from "../core/commands/list.ts";
 
 describe("list", () => {
   afterEach(() => cleanupTempRepos());
-
-  function captureOutput(fn: () => void): string {
-    const lines: string[] = [];
-    const origLog = console.log;
-    const origError = console.error;
-    console.log = (...args: unknown[]) => lines.push(args.join(" "));
-    console.error = (...args: unknown[]) => lines.push(args.join(" "));
-
-    const origExit = process.exit;
-    process.exit = ((code?: number) => {
-      throw new Error(`EXIT:${code}`);
-    }) as never;
-
-    try {
-      fn();
-    } catch (e: unknown) {
-      if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
-    } finally {
-      console.log = origLog;
-      console.error = origError;
-      process.exit = origExit;
-    }
-
-    return lines.join("\n");
-  }
 
   it("lists all items with no filters", () => {
     const repo = setupTempRepo();

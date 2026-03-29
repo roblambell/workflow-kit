@@ -12,6 +12,7 @@ import {
   prTitleMatchesWorkItem,
 } from "../core/work-item-files.ts";
 import { reconcile, type ReconcileDeps } from "../core/commands/reconcile.ts";
+import { captureOutput } from "./helpers.ts";
 import {
   Orchestrator,
   type PollSnapshot,
@@ -79,20 +80,6 @@ function setupWorkItemsDir(files: Record<string, string>): {
   return { workDir, worktreeDir, projectRoot: dir };
 }
 
-function captureOutput(fn: () => void): string {
-  const lines: string[] = [];
-  const origLog = console.log;
-  const origError = console.error;
-  console.log = (...args: unknown[]) => lines.push(args.join(" "));
-  console.error = (...args: unknown[]) => lines.push(args.join(" "));
-  try {
-    fn();
-  } finally {
-    console.log = origLog;
-    console.error = origError;
-  }
-  return lines.join("\n");
-}
 
 function makeDeps(overrides: Partial<ReconcileDeps> = {}): ReconcileDeps {
   return {

@@ -297,6 +297,99 @@ export function registerCleanup(): void {
   });
 }
 
+/**
+ * Run a synchronous function while capturing console.log, console.error,
+ * and process.exit output. Returns the combined captured output as a string.
+ * process.exit calls are intercepted and swallowed (non-EXIT errors re-throw).
+ */
+export function captureOutput(fn: () => void): string {
+  const lines: string[] = [];
+  const origLog = console.log;
+  const origError = console.error;
+  console.log = (...args: unknown[]) => lines.push(args.join(" "));
+  console.error = (...args: unknown[]) => lines.push(args.join(" "));
+
+  const origExit = process.exit;
+  process.exit = ((code?: number) => {
+    throw new Error(`EXIT:${code}`);
+  }) as never;
+
+  try {
+    fn();
+  } catch (e: unknown) {
+    if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
+  } finally {
+    console.log = origLog;
+    console.error = origError;
+    process.exit = origExit;
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Async version of captureOutput for functions that return a Promise.
+ */
+export async function captureOutputAsync(
+  fn: () => void | Promise<void>,
+): Promise<string> {
+  const lines: string[] = [];
+  const origLog = console.log;
+  const origError = console.error;
+  console.log = (...args: unknown[]) => lines.push(args.join(" "));
+  console.error = (...args: unknown[]) => lines.push(args.join(" "));
+
+  const origExit = process.exit;
+  process.exit = ((code?: number) => {
+    throw new Error(`EXIT:${code}`);
+  }) as never;
+
+  try {
+    await fn();
+  } catch (e: unknown) {
+    if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
+  } finally {
+    console.log = origLog;
+    console.error = origError;
+    process.exit = origExit;
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Like captureOutput but also returns the exit code from process.exit calls.
+ */
+export function captureOutputWithExit(
+  fn: () => void,
+): { stdout: string; exitCode: number } {
+  const lines: string[] = [];
+  const origLog = console.log;
+  const origError = console.error;
+  let exitCode = 0;
+
+  console.log = (...args: unknown[]) => lines.push(args.join(" "));
+  console.error = (...args: unknown[]) => lines.push(args.join(" "));
+
+  const origExit = process.exit;
+  process.exit = ((code?: number) => {
+    exitCode = code ?? 0;
+    throw new Error(`EXIT:${code}`);
+  }) as never;
+
+  try {
+    fn();
+  } catch (e: unknown) {
+    if (e instanceof Error && !e.message.startsWith("EXIT:")) throw e;
+  } finally {
+    console.log = origLog;
+    console.error = origError;
+    process.exit = origExit;
+  }
+
+  return { stdout: lines.join("\n"), exitCode };
+}
+
 // Internal helper to run git commands
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync("git", ["-C", cwd, ...args], {
