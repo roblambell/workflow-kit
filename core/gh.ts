@@ -312,7 +312,7 @@ export function resolveGithubToken(projectRoot: string): string | undefined {
   if (envToken) return envToken;
 
   const config = loadConfig(projectRoot);
-  const configToken = config["github_token"];
+  const configToken = config.githubToken;
   if (configToken) return configToken;
 
   return undefined;

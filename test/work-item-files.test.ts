@@ -12,6 +12,8 @@ import {
   readWorkItem,
   deleteWorkItemFile,
   priorityNum,
+  isPriority,
+  extractBody,
 } from "../core/work-item-files.ts";
 import type { WorkItem, Priority } from "../core/types.ts";
 
@@ -559,5 +561,74 @@ describe("deleteWorkItemFile", () => {
 
   it("returns false for nonexistent directory", () => {
     expect(deleteWorkItemFile("/tmp/nw-does-not-exist", "X-X-1")).toBe(false);
+  });
+});
+
+// --- isPriority ---
+
+describe("isPriority", () => {
+  it("returns true for valid priorities", () => {
+    expect(isPriority("critical")).toBe(true);
+    expect(isPriority("high")).toBe(true);
+    expect(isPriority("medium")).toBe(true);
+    expect(isPriority("low")).toBe(true);
+  });
+
+  it("returns false for invalid strings", () => {
+    expect(isPriority("urgent")).toBe(false);
+    expect(isPriority("")).toBe(false);
+    expect(isPriority("HIGH")).toBe(false);
+    expect(isPriority("Critical")).toBe(false);
+    expect(isPriority("none")).toBe(false);
+  });
+
+  it("rejects priority in parseWorkItemFile for unknown values", () => {
+    const dir = makeTempDir();
+    const fp = join(dir, "test.md");
+    writeFileSync(
+      fp,
+      "# Test item (H-T-1)\n\n**Priority:** Urgent\n**Domain:** test\n",
+    );
+    expect(parseWorkItemFile(fp)).toBeNull();
+  });
+});
+
+// --- extractBody ---
+
+describe("extractBody", () => {
+  it("strips metadata prefixes including Bootstrap", () => {
+    const raw = [
+      "# Title (H-T-1)",
+      "",
+      "**Priority:** High",
+      "**Source:** local",
+      "**Depends on:** None",
+      "**Domain:** test",
+      "**Bootstrap:** true",
+      "",
+      "Body text here.",
+    ].join("\n");
+    const body = extractBody(raw);
+    expect(body).toEqual(["Body text here."]);
+  });
+
+  it("does not leak Bootstrap line into body", () => {
+    const raw = [
+      "# Title (H-T-1)",
+      "",
+      "**Priority:** High",
+      "**Source:** local",
+      "**Depends on:** None",
+      "**Domain:** test",
+      "**Repo:** my-repo",
+      "**Bootstrap:** true",
+      "",
+      "Description of work.",
+      "",
+      "More details.",
+    ].join("\n");
+    const body = extractBody(raw);
+    expect(body.join("\n")).not.toContain("Bootstrap");
+    expect(body[0]).toBe("Description of work.");
   });
 });

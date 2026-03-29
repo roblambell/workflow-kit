@@ -19,6 +19,11 @@ import {
   CODE_EXTENSIONS,
 } from "./types.ts";
 
+/** Type guard: checks whether a string is a valid Priority. */
+export function isPriority(s: string): s is Priority {
+  return s in PRIORITY_NUM;
+}
+
 // ---------------------------------------------------------------------------
 // Shared utility functions (formerly in work-item-utils.ts)
 // ---------------------------------------------------------------------------
@@ -228,6 +233,7 @@ const METADATA_PREFIXES = [
   "**Domain:**",
   "**Bundle with:**",
   "**Repo:**",
+  "**Bootstrap:**",
 ];
 
 /**
@@ -376,7 +382,9 @@ export function parseWorkItemFile(filePath: string): WorkItem | null {
     if (priorityMatch) {
       let p = priorityMatch[1]!.toLowerCase().trim();
       p = p.replace(/ \(.*/, ""); // strip parenthetical suffixes
-      priority = p as Priority;
+      if (isPriority(p)) {
+        priority = p;
+      }
     }
 
     const dependsMatch = line.match(/^\*\*Depends on:\*\*\s+(.+)/);
@@ -407,10 +415,6 @@ export function parseWorkItemFile(filePath: string): WorkItem | null {
 
   if (!priority) return null;
 
-  // Validate priority is a known value
-  const validPriorities: Set<string> = new Set(Object.keys(PRIORITY_NUM));
-  if (!validPriorities.has(priority)) return null;
-
   // Parse dependencies
   const dependencies: string[] = [];
   if (depends && depends.toLowerCase() !== "none") {
@@ -433,7 +437,7 @@ export function parseWorkItemFile(filePath: string): WorkItem | null {
 
   const item: WorkItem = {
     id,
-    priority: priority as Priority,
+    priority,
     title,
     domain: domain || "uncategorized",
     dependencies,

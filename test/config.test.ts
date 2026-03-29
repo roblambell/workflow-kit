@@ -18,18 +18,18 @@ describe("loadConfig", () => {
     expect(config.locExtensions).toBe(DEFAULT_LOC_EXTENSIONS);
   });
 
-  it("loads key=value pairs from config file", () => {
+  it("loads key=value pairs into typed fields", () => {
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config"),
-      'FOO=bar\nBAZ="quoted value"\n',
+      'review_external=true\ngithub_token="ghp_abc"\n',
     );
 
     const config = loadConfig(repo);
-    expect(config["FOO"]).toBe("bar");
-    expect(config["BAZ"]).toBe("quoted value");
+    expect(config.reviewExternal).toBe("true");
+    expect(config.githubToken).toBe("ghp_abc");
   });
 
   it("skips comments and blank lines", () => {
@@ -38,12 +38,11 @@ describe("loadConfig", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config"),
-      "# this is a comment\n\nKEY=value\n",
+      "# this is a comment\n\nreview_external=true\n",
     );
 
     const config = loadConfig(repo);
-    expect(config["KEY"]).toBe("value");
-    expect(Object.keys(config)).not.toContain("#");
+    expect(config.reviewExternal).toBe("true");
   });
 
   it("applies LOC_EXTENSIONS from config", () => {
@@ -65,13 +64,13 @@ describe("loadConfig", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config"),
-      "A='single'\nB=\"double\"\nC=none\n",
+      "review_external='true'\ngithub_token=\"ghp_tok\"\nschedule_enabled=false\n",
     );
 
     const config = loadConfig(repo);
-    expect(config["A"]).toBe("single");
-    expect(config["B"]).toBe("double");
-    expect(config["C"]).toBe("none");
+    expect(config.reviewExternal).toBe("true");
+    expect(config.githubToken).toBe("ghp_tok");
+    expect(config.scheduleEnabled).toBe("false");
   });
 
   it("does not warn for known config keys", () => {
@@ -86,8 +85,49 @@ describe("loadConfig", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const config = loadConfig(repo);
-      expect(config["LOC_EXTENSIONS"]).toBe("*.ts");
-      expect(config["review_external"]).toBe("true");
+      expect(config.locExtensions).toBe("*.ts");
+      expect(config.reviewExternal).toBe("true");
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not store unknown keys on config object", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config"),
+      "TYPO_KEY=oops\nLOC_EXTENSIONS=*.ts\n",
+    );
+
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const config = loadConfig(repo);
+      expect(Object.keys(config)).not.toContain("TYPO_KEY");
+      expect(config.locExtensions).toBe("*.ts");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("loads all four typed fields correctly", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config"),
+      "LOC_EXTENSIONS=*.rs\nreview_external=true\ngithub_token=ghp_abc\nschedule_enabled=true\n",
+    );
+
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const config = loadConfig(repo);
+      expect(config.locExtensions).toBe("*.rs");
+      expect(config.reviewExternal).toBe("true");
+      expect(config.githubToken).toBe("ghp_abc");
+      expect(config.scheduleEnabled).toBe("true");
       expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
@@ -168,8 +208,8 @@ describe("KNOWN_CONFIG_KEYS", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const config = loadConfig(repo);
-      expect(config["review_external"]).toBe("true");
-      expect(config["github_token"]).toBe("ghp_test");
+      expect(config.reviewExternal).toBe("true");
+      expect(config.githubToken).toBe("ghp_test");
       expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();

@@ -38,22 +38,28 @@ export function loadConfig(projectRoot: string): ProjectConfig {
     let value = rawLine.slice(eqIdx + 1).trim();
     value = value.replace(/^["']/, "").replace(/["']$/, "");
 
-    config[key] = value;
-  }
-
-  // Warn on unrecognised keys (typos, removed options, etc.)
-  for (const k of Object.keys(config)) {
-    if (k === "locExtensions") continue; // internal default, not user-supplied
-    if (!KNOWN_CONFIG_KEYS.has(k)) {
+    if (!KNOWN_CONFIG_KEYS.has(key)) {
       console.warn(
-        `[ninthwave] warning: unknown config key "${k}" in ${configPath}`,
+        `[ninthwave] warning: unknown config key "${key}" in ${configPath}`,
       );
+      continue;
     }
-  }
 
-  // Apply LOC_EXTENSIONS if set in config
-  if (config["LOC_EXTENSIONS"]) {
-    config.locExtensions = config["LOC_EXTENSIONS"];
+    // Assign to typed fields
+    switch (key) {
+      case "LOC_EXTENSIONS":
+        config.locExtensions = value;
+        break;
+      case "review_external":
+        config.reviewExternal = value;
+        break;
+      case "github_token":
+        config.githubToken = value;
+        break;
+      case "schedule_enabled":
+        config.scheduleEnabled = value;
+        break;
+    }
   }
 
   return config;

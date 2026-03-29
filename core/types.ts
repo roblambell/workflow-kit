@@ -50,7 +50,9 @@ export interface WorkspaceConfig {
 
 export interface ProjectConfig {
   locExtensions: string;
-  [key: string]: string;
+  reviewExternal?: string;
+  githubToken?: string;
+  scheduleEnabled?: string;
 }
 
 export interface WorktreeInfo {

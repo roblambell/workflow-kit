@@ -1947,8 +1947,8 @@ export async function cmdOrchestrate(
 
   // Resolve config-file flags
   const projectConfig = loadConfig(projectRoot);
-  const reviewExternalEnabled = reviewExternal || projectConfig["review_external"] === "true";
-  const scheduleEnabled = projectConfig["schedule_enabled"] === "true";
+  const reviewExternalEnabled = reviewExternal || projectConfig.reviewExternal === "true";
+  const scheduleEnabled = projectConfig.scheduleEnabled === "true";
 
   // State persistence: serialize state each poll cycle so the status pane can display all items.
   // Written in both daemon and interactive mode -- the status pane reads this file to show

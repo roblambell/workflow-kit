@@ -5,18 +5,10 @@
 import { join } from "path";
 import { existsSync, unlinkSync } from "fs";
 import type { WorkItem, Priority, WorktreeInfo } from "./types.ts";
+import { PRIORITY_NUM } from "./types.ts";
 import { getWorktreeInfo, listCrossRepoEntries } from "./cross-repo.ts";
 import { heartbeatFilePath, writeHeartbeat } from "./daemon.ts";
 import { NINTHWAVE_FOOTER, ORCHESTRATOR_LINK } from "./gh.ts";
-
-// ── Priority rank for merge queue ordering (lower = higher priority) ─
-
-const PRIORITY_RANK: Record<Priority, number> = {
-  critical: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-};
 
 // ── State types ──────────────────────────────────────────────────────
 
@@ -2375,25 +2367,42 @@ export class Orchestrator {
     }
   }
 
+  /**
+   * Shared cleanup for worker sessions (repair, review, verifier).
+   * Closes the workspace via the provided clean function and clears the ref.
+   */
+  private cleanWorkerWorkspace(
+    label: string,
+    itemId: string,
+    workspaceRef: string | undefined,
+    cleanFn: ((id: string, ref: string) => boolean) | undefined,
+    clearRef: () => void,
+  ): ActionResult {
+    if (!cleanFn || !workspaceRef) {
+      clearRef();
+      return { success: true };
+    }
+
+    try {
+      cleanFn(itemId, workspaceRef);
+      clearRef();
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      clearRef();
+      return { success: false, error: `${label} cleanup failed for ${itemId}: ${msg}` };
+    }
+  }
+
   /** Clean up a repair worker session. */
   private executeCleanRepair(
     item: OrchestratorItem,
     deps: OrchestratorDeps,
   ): ActionResult {
-    if (!deps.cleanRepair || !item.repairWorkspaceRef) {
-      item.repairWorkspaceRef = undefined;
-      return { success: true };
-    }
-
-    try {
-      deps.cleanRepair(item.id, item.repairWorkspaceRef);
-      item.repairWorkspaceRef = undefined;
-      return { success: true };
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      item.repairWorkspaceRef = undefined;
-      return { success: false, error: `Repair cleanup failed for ${item.id}: ${msg}` };
-    }
+    return this.cleanWorkerWorkspace(
+      "Repair", item.id, item.repairWorkspaceRef, deps.cleanRepair,
+      () => { item.repairWorkspaceRef = undefined; },
+    );
   }
 
   private executeLaunchReview(
@@ -2430,26 +2439,16 @@ export class Orchestrator {
     item: OrchestratorItem,
     deps: OrchestratorDeps,
   ): ActionResult {
-    // Clean up verdict file
+    // Clean up verdict file (review-specific, before shared workspace cleanup)
     if (item.reviewVerdictPath) {
       try { unlinkSync(item.reviewVerdictPath); } catch { /* best-effort */ }
       item.reviewVerdictPath = undefined;
     }
 
-    if (!deps.cleanReview || !item.reviewWorkspaceRef) {
-      item.reviewWorkspaceRef = undefined;
-      return { success: true }; // no-op when not wired or no review workspace
-    }
-
-    try {
-      deps.cleanReview(item.id, item.reviewWorkspaceRef);
-      item.reviewWorkspaceRef = undefined;
-      return { success: true };
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      item.reviewWorkspaceRef = undefined;
-      return { success: false, error: `Review cleanup failed for ${item.id}: ${msg}` };
-    }
+    return this.cleanWorkerWorkspace(
+      "Review", item.id, item.reviewWorkspaceRef, deps.cleanReview,
+      () => { item.reviewWorkspaceRef = undefined; },
+    );
   }
 
   /** Post a formatted review comment on the PR from a reviewer verdict. */
@@ -2535,20 +2534,10 @@ export class Orchestrator {
     item: OrchestratorItem,
     deps: OrchestratorDeps,
   ): ActionResult {
-    if (!deps.cleanVerifier || !item.verifyWorkspaceRef) {
-      item.verifyWorkspaceRef = undefined;
-      return { success: true };
-    }
-
-    try {
-      deps.cleanVerifier(item.id, item.verifyWorkspaceRef);
-      item.verifyWorkspaceRef = undefined;
-      return { success: true };
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      item.verifyWorkspaceRef = undefined;
-      return { success: false, error: `Verifier cleanup failed for ${item.id}: ${msg}` };
-    }
+    return this.cleanWorkerWorkspace(
+      "Verifier", item.id, item.verifyWorkspaceRef, deps.cleanVerifier,
+      () => { item.verifyWorkspaceRef = undefined; },
+    );
   }
 
   /**
@@ -2567,8 +2556,8 @@ export class Orchestrator {
       .map((a) => ({ action: a, item: this.items.get(a.itemId)! }))
       .filter((entry) => entry.item != null)
       .sort((a, b) => {
-        const aRank = PRIORITY_RANK[a.item.workItem.priority as Priority] ?? 999;
-        const bRank = PRIORITY_RANK[b.item.workItem.priority as Priority] ?? 999;
+        const aRank = PRIORITY_NUM[a.item.workItem.priority as Priority] ?? 999;
+        const bRank = PRIORITY_NUM[b.item.workItem.priority as Priority] ?? 999;
         if (aRank !== bRank) return aRank - bRank;
         return a.item.id.localeCompare(b.item.id);
       });
