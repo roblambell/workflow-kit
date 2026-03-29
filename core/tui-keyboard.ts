@@ -224,19 +224,22 @@ export function setupKeyboardShortcuts(
         }
         break;
       }
-      case "\x1b[A": // Up arrow
+      case "\x1b[A": { // Up arrow
         if ((tuiState.selectedIndex ?? 0) > 0) {
           tuiState.selectedIndex = (tuiState.selectedIndex ?? 0) - 1;
         }
-        tuiState.scrollOffset = Math.max(0, tuiState.scrollOffset - 1);
+        // Scroll follows selection: keep selected item in view
+        tuiState.scrollOffset = Math.min(tuiState.scrollOffset, tuiState.selectedIndex ?? 0);
         break;
+      }
       case "\x1b[B": { // Down arrow
         const maxIdx = (tuiState.getItemCount?.() ?? 0) - 1;
         const curIdx = tuiState.selectedIndex ?? 0;
         if (curIdx < maxIdx) {
           tuiState.selectedIndex = curIdx + 1;
         }
-        tuiState.scrollOffset += 1;
+        // Scroll follows selection: ensure selected item stays visible
+        tuiState.scrollOffset = tuiState.selectedIndex ?? 0;
         break;
       }
       case "\t": { // Tab -- cycle panel mode (split -> logs-only -> status-only -> split)

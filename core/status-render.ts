@@ -461,6 +461,7 @@ export function formatItemRow(
   depIndicator?: string,
   stateColWidth: number = 14,
   repoUrl?: string,
+  isSelected?: boolean,
 ): string {
   const icon = stateIcon(item.state);
   const id = pad(item.id, 12);
@@ -474,7 +475,10 @@ export function formatItemRow(
   const reason = item.failureReason ? ` ${DIM}(${item.failureReason})${RESET}` : "";
   const telemetry = formatTelemetrySuffix(item);
 
-  return `  ${color}${icon}${RESET} ${id}${color}${stateCell}${RESET}${remoteDot} ${duration} ${depCol}${title}${repo}${reason}${telemetry}`;
+  // Selection highlight: replace leading 2-space indent with bold ">" prefix
+  const prefix = isSelected ? `${BOLD}>${RESET} ` : "  ";
+
+  return `${prefix}${color}${icon}${RESET} ${id}${color}${stateCell}${RESET}${remoteDot} ${duration} ${depCol}${title}${repo}${reason}${telemetry}`;
 }
 
 /**
@@ -1208,6 +1212,7 @@ export function buildStatusLayout(
   wipLimit?: number,
   flat: boolean = false,
   viewOptions?: ViewOptions,
+  selectedItemId?: string,
 ): FrameLayout {
   const headerLines: string[] = [];
   const footerLines: string[] = [];
@@ -1267,14 +1272,14 @@ export function buildStatusLayout(
     const queuedItems = sorted.filter((i) => i.state === "queued");
 
     for (const item of activeItems) {
-      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl));
+      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, item.id === selectedItemId));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
         itemLines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
       }
     }
     for (const item of mergedItems) {
-      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl));
+      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, item.id === selectedItemId));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
         itemLines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
@@ -1302,10 +1307,10 @@ export function buildStatusLayout(
     const mergedItems = items.filter((i) => i.state === "merged");
 
     for (const item of activeItems) {
-      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl));
+      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, item.id === selectedItemId));
     }
     for (const item of mergedItems) {
-      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl));
+      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, item.id === selectedItemId));
     }
     if (queuedItems.length > 0) {
       const activeCount = activeItems.length;
@@ -1518,6 +1523,14 @@ export function buildPanelLayout(
 ): PanelLayout {
   const logScrollOffset = opts?.logScrollOffset ?? 0;
 
+  // Resolve selectedIndex → selectedItemId using the non-queued item list
+  const selectedIndex = opts?.selectedIndex;
+  let selectedItemId: string | undefined;
+  if (selectedIndex != null && selectedIndex >= 0) {
+    const nonQueued = items.filter((i) => i.state !== "queued");
+    selectedItemId = nonQueued[selectedIndex]?.id;
+  }
+
   // Below MIN_FULLSCREEN_ROWS: legacy flat rendering, no panels
   if (termRows < MIN_FULLSCREEN_ROWS) {
     const statusLayout = buildStatusLayout(
@@ -1526,6 +1539,7 @@ export function buildPanelLayout(
       opts?.wipLimit,
       opts?.flat,
       opts?.viewOptions,
+      selectedItemId,
     );
     return {
       mode: "status-only",
@@ -1547,6 +1561,7 @@ export function buildPanelLayout(
       opts?.wipLimit,
       opts?.flat,
       opts?.viewOptions,
+      selectedItemId,
     );
     return {
       mode: "status-only",
@@ -1597,6 +1612,7 @@ export function buildPanelLayout(
     opts?.wipLimit,
     opts?.flat,
     opts?.viewOptions,
+    selectedItemId,
   );
   // Strip footer from the status layout -- we use our own panel footer
   const statusPanel: FrameLayout = {

@@ -641,6 +641,90 @@ describe("formatItemRow with inline PR", () => {
   });
 });
 
+describe("formatItemRow with isSelected", () => {
+  it("shows > prefix when isSelected is true", () => {
+    const item = makeStatusItem({ id: "C-1-1", title: "My feature" });
+    const row = stripAnsi(formatItemRow(item, 20, undefined, 14, undefined, true));
+    expect(row).toMatch(/^> /);
+    expect(row).toContain("C-1-1");
+    expect(row).toContain("My feature");
+  });
+
+  it("shows 2-space indent when isSelected is false", () => {
+    const item = makeStatusItem({ id: "C-1-1", title: "My feature" });
+    const row = stripAnsi(formatItemRow(item, 20, undefined, 14, undefined, false));
+    expect(row).toMatch(/^ {2}/);
+    expect(row).not.toMatch(/^>/);
+  });
+
+  it("shows 2-space indent when isSelected is omitted", () => {
+    const item = makeStatusItem({ id: "C-1-1", title: "My feature" });
+    const row = stripAnsi(formatItemRow(item, 20));
+    expect(row).toMatch(/^ {2}/);
+    expect(row).not.toMatch(/^>/);
+  });
+
+  it("preserves depIndicator when isSelected is true", () => {
+    const item = makeStatusItem({ id: "C-1-1", title: "My feature" });
+    const row = stripAnsi(formatItemRow(item, 20, "⧗ ", 14, undefined, true));
+    expect(row).toMatch(/^> /);
+    expect(row).toContain("⧗");
+    expect(row).toContain("My feature");
+  });
+});
+
+describe("buildStatusLayout with selectedItemId", () => {
+  it("only the matching row has > prefix", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing" }),
+      makeStatusItem({ id: "A-2", state: "ci-pending" }),
+      makeStatusItem({ id: "A-3", state: "merged" }),
+    ];
+    const layout = buildStatusLayout(items, 80, undefined, false, undefined, "A-2");
+    const stripped = layout.itemLines.map(stripAnsi);
+    // A-2 should have > prefix
+    const selectedRow = stripped.find(l => l.includes("A-2"));
+    expect(selectedRow).toBeDefined();
+    expect(selectedRow!).toMatch(/^> /);
+    // A-1 should not have > prefix
+    const otherRow = stripped.find(l => l.includes("A-1"));
+    expect(otherRow).toBeDefined();
+    expect(otherRow!).toMatch(/^ {2}/);
+    // A-3 (merged) should not have > prefix
+    const mergedRow = stripped.find(l => l.includes("A-3"));
+    expect(mergedRow).toBeDefined();
+    expect(mergedRow!).toMatch(/^ {2}/);
+  });
+
+  it("no rows have > prefix when selectedItemId is omitted", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing" }),
+      makeStatusItem({ id: "A-2", state: "ci-pending" }),
+    ];
+    const layout = buildStatusLayout(items, 80);
+    const stripped = layout.itemLines.map(stripAnsi);
+    for (const line of stripped) {
+      if (line.trim().length > 0) {
+        expect(line).not.toMatch(/^>/);
+      }
+    }
+  });
+
+  it("queued items are never highlighted", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing" }),
+      makeStatusItem({ id: "A-2", state: "queued" }),
+    ];
+    // Even if we pass the queued item's id, it should not be highlighted
+    // (queued items use formatQueuedItemRow which doesn't support isSelected)
+    const layout = buildStatusLayout(items, 80, undefined, false, undefined, "A-2");
+    const stripped = layout.itemLines.map(stripAnsi);
+    const queuedRow = stripped.find(l => l.includes("A-2"));
+    expect(queuedRow).toBeDefined();
+    expect(queuedRow!).not.toMatch(/^>/);
+  });
+});
+
 describe("formatStatusTable dynamic state column width", () => {
   it("uses narrow state column when no items have PRs", () => {
     const items = [
