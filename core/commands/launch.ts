@@ -2,7 +2,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "fs";
 import { join, basename, dirname } from "path";
-import { tmpdir, freemem } from "os";
+import { tmpdir } from "os";
+import { getAvailableMemory } from "../memory.ts";
 import { parseWorkItems } from "../parser.ts";
 import { die, warn, info, GREEN, BOLD, DIM, RESET } from "../output.ts";
 import { splitIds } from "../work-item-utils.ts";
@@ -1075,8 +1076,8 @@ export async function cmdRunItems(
     info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (explicit override)`);
   } else {
     const configuredLimit = computeDefaultWipLimit();
-    effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, freemem());
-    const freeGB = Math.round(freemem() / (1024 ** 3));
+    effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, getAvailableMemory());
+    const freeGB = Math.round(getAvailableMemory() / (1024 ** 3));
     info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (${freeGB}GB free)`);
   }
   console.log();
@@ -1262,8 +1263,8 @@ export async function cmdStart(
 
   // Compute WIP limit from RAM
   const configuredLimit = computeDefaultWipLimit();
-  const effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, freemem());
-  const freeGB = Math.round(freemem() / (1024 ** 3));
+  const effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, getAvailableMemory());
+  const freeGB = Math.round(getAvailableMemory() / (1024 ** 3));
   info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (${freeGB}GB free)`);
 
   const mux = muxEarly;
