@@ -1046,11 +1046,15 @@ export class Orchestrator {
       return [];
     }
 
-    // Detect merge conflicts on PRs stuck in ci-pending -- a CONFLICTING
-    // PR will never get CI results, so waiting is pointless. Send a rebase
-    // request (once) so the worker can resolve and re-push.
-    if (item.state === "ci-pending" && snap?.isMergeable === false && !item.rebaseRequested) {
+    // Detect merge conflicts regardless of CI status. Catches conflicts
+    // from other PRs merging to main between polls, including cases where
+    // stale CI results still show "pass". Regress ci-passed items to
+    // ci-pending since the branch needs updating before review/merge.
+    if (snap?.isMergeable === false && !item.rebaseRequested) {
       item.rebaseRequested = true;
+      if (item.state === "ci-passed") {
+        this.transition(item, "ci-pending", snap?.eventTime);
+      }
       actions.push({
         type: "daemon-rebase",
         itemId: item.id,
@@ -1069,7 +1073,8 @@ export class Orchestrator {
     }
 
     // No CI status change or unknown -- stay in current state
-    // But if we're already in ci-passed, re-evaluate merge
+    // But if we're already in ci-passed, re-evaluate merge (another PR may
+    // have merged to main, changing the mergeable status)
     if (item.state === "ci-passed") {
       actions.push(...this.evaluateMerge(item, snap, snap?.eventTime));
     }
@@ -1190,6 +1195,20 @@ export class Orchestrator {
         itemId: item.id,
         prNumber: item.prNumber,
         message: "[ORCHESTRATOR] CI Fix Request: CI failed during review -- please investigate and fix.",
+      });
+      return actions;
+    }
+
+    // Merge conflict during review → abort review and rebase.
+    // Another PR may have merged to main while the review was in progress.
+    if (snap?.isMergeable === false && !item.rebaseRequested) {
+      item.rebaseRequested = true;
+      this.transition(item, "ci-pending", snap?.eventTime);
+      actions.push({ type: "clean-review", itemId: item.id });
+      actions.push({
+        type: "daemon-rebase",
+        itemId: item.id,
+        message: "[ORCHESTRATOR] Rebase Request: PR has merge conflicts with main. Please rebase onto latest main.",
       });
       return actions;
     }

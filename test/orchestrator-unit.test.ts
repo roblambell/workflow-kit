@@ -272,7 +272,7 @@ describe("evaluateMerge", () => {
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
@@ -288,7 +288,7 @@ describe("evaluateMerge", () => {
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewDecision: "CHANGES_REQUESTED" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true, reviewDecision: "CHANGES_REQUESTED" }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
@@ -304,7 +304,7 @@ describe("evaluateMerge", () => {
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true, reviewDecision: "APPROVED" }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
@@ -319,7 +319,7 @@ describe("evaluateMerge", () => {
 
     // First pass: not reviewed → goes to reviewing
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("reviewing");
@@ -337,7 +337,7 @@ describe("evaluateMerge", () => {
     orch.getItem("H-1-1")!.reviewCompleted = true;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
@@ -353,7 +353,7 @@ describe("evaluateMerge", () => {
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
@@ -371,7 +371,7 @@ describe("evaluateMerge", () => {
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", reviewDecision: "CHANGES_REQUESTED" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true, reviewDecision: "CHANGES_REQUESTED" }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
@@ -391,8 +391,8 @@ describe("evaluateMerge", () => {
 
     const actions = orch.processTransitions(
       snapshotWith([
-        { id: "H-1-1", ciStatus: "pass", prState: "open" },
-        { id: "H-1-2", ciStatus: "pass", prState: "open" },
+        { id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true },
+        { id: "H-1-2", ciStatus: "pass", prState: "open", isMergeable: true },
       ]),
     );
 
@@ -415,7 +415,7 @@ describe("setMergeStrategy", () => {
 
     // Manual → review-pending
     orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
     expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
 
@@ -424,7 +424,7 @@ describe("setMergeStrategy", () => {
     orch.setState("H-1-1", "ci-passed");
     orch.getItem("H-1-1")!.reviewCompleted = true;
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
     expect(actions.some((a) => a.type === "merge")).toBe(true);
@@ -459,8 +459,8 @@ describe("setMergeStrategy", () => {
     orch.setMergeStrategy("auto");
     const actions = orch.processTransitions(
       snapshotWith([
-        { id: "H-1-1", ciStatus: "pass", prState: "open" },
-        { id: "H-1-2", ciStatus: "pass", prState: "open" },
+        { id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true },
+        { id: "H-1-2", ciStatus: "pass", prState: "open", isMergeable: true },
       ]),
     );
 
@@ -977,6 +977,24 @@ describe("handleCiPending", () => {
     expect(actions2.some((a) => a.type === "daemon-rebase")).toBe(false);
   });
 
+  it("detects merge conflicts on ci-passed PR and regresses to ci-pending with rebase", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.setState("H-1-1", "ci-passed");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    // Another PR merged to main → this PR is now CONFLICTING despite stale CI pass
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: false }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-pending");
+    expect(actions.some((a) => a.type === "daemon-rebase")).toBe(true);
+    expect(actions.some((a) => a.type === "launch-review")).toBe(false);
+    expect(actions.some((a) => a.type === "merge")).toBe(false);
+  });
+
   it("transitions to merged when PR is externally merged", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-1-1"));
@@ -1006,7 +1024,7 @@ describe("handleCiPassed", () => {
     orch.getItem("H-1-1")!.reviewCompleted = true; // Re-set after ci-failed reset
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
@@ -1093,7 +1111,7 @@ describe("full lifecycle: queued → done", () => {
 
     // Step 4: ci-pending → ci-passed → merging
     const a4 = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
     expect(a4.some((a) => a.type === "merge" && a.prNumber === 42)).toBe(true);
@@ -1129,8 +1147,8 @@ describe("merge queue prioritization", () => {
 
     const actions = orch.processTransitions(
       snapshotWith([
-        { id: "L-1-1", ciStatus: "pass", prState: "open" },
-        { id: "C-1-1", ciStatus: "pass", prState: "open" },
+        { id: "L-1-1", ciStatus: "pass", prState: "open", isMergeable: true },
+        { id: "C-1-1", ciStatus: "pass", prState: "open", isMergeable: true },
       ]),
     );
 
@@ -1150,7 +1168,7 @@ describe("merge queue prioritization", () => {
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     expect(actions.filter((a) => a.type === "merge")).toHaveLength(1);
@@ -1172,7 +1190,7 @@ describe("stacked branch launches", () => {
     orch.getItem("H-1-1")!.prNumber = 10;
 
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     // H-1-2 should be promoted from queued → ready → launching via stacking
@@ -1209,7 +1227,7 @@ describe("stacked branch launches", () => {
     orch.getItem("H-1-1")!.prNumber = 10;
 
     orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     expect(orch.getItem("H-1-2")!.state).toBe("queued");
@@ -1598,6 +1616,22 @@ describe("handleReviewing", () => {
     orch.processTransitions(emptySnapshot());
     expect(orch.getItem("H-1-1")!.state).toBe("done");
   });
+
+  it("aborts review and rebases when PR becomes CONFLICTING during review", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.setState("H-1-1", "reviewing");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.reviewWorkspaceRef = "workspace:5";
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: false }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-pending");
+    expect(actions.some((a) => a.type === "daemon-rebase")).toBe(true);
+    expect(actions.some((a) => a.type === "clean-review")).toBe(true);
+  });
 });
 
 // ── handleReviewPending CI detection (H-RX-1) ──────────────────────────
@@ -1760,7 +1794,7 @@ describe("multi-round review cycle", () => {
 
     // Step 3: CI passes → ci-passed → evaluateMerge → reviewing (reviewCompleted was reset)
     const actions3 = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
     expect(orch.getItem("H-1-1")!.state).toBe("reviewing");
     expect(actions3.some((a) => a.type === "launch-review")).toBe(true);
@@ -3931,7 +3965,7 @@ describe("onTransition callback", () => {
     const pastTime = new Date(Date.now() - 5000).toISOString();
     orch.processTransitions(
       snapshotWith([
-        { id: "H-1-1", prNumber: 42, ciStatus: "pass", prState: "open", workerAlive: true, eventTime: pastTime },
+        { id: "H-1-1", prNumber: 42, ciStatus: "pass", prState: "open", isMergeable: true, workerAlive: true, eventTime: pastTime },
       ]),
     );
 
@@ -3970,7 +4004,7 @@ describe("review round counter", () => {
 
     // Round 1: ci-passed → reviewing (launches review)
     const actions1 = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
     expect(orch.getItem("H-1-1")!.state).toBe("reviewing");
     expect(orch.getItem("H-1-1")!.reviewRound).toBe(1);
@@ -3987,7 +4021,7 @@ describe("review round counter", () => {
       snapshotWith([{ id: "H-1-1", ciStatus: "pending", prState: "open" }]),
     );
     orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     // Round 2: ci-passed → reviewing (launches review again)
@@ -4006,7 +4040,7 @@ describe("review round counter", () => {
 
     // Next review attempt would be round 3, which exceeds maxReviewRounds=2
     const actions = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("stuck");
@@ -4043,7 +4077,7 @@ describe("review round counter", () => {
 
     // Round 1: status description should NOT include round number
     const actions1 = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
     const statusAction1 = actions1.find((a) => a.type === "set-commit-status" && a.statusState === "pending");
     expect(statusAction1).toBeDefined();
@@ -4057,7 +4091,7 @@ describe("review round counter", () => {
       snapshotWith([{ id: "H-1-1", ciStatus: "pending", prState: "open" }]),
     );
     const actions2 = orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     // Round 2: status description SHOULD include round number
@@ -4075,7 +4109,7 @@ describe("review round counter", () => {
     // reviewRound is undefined by default
 
     orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     expect(orch.getItem("H-1-1")!.reviewRound).toBe(1);
@@ -4094,7 +4128,7 @@ describe("review round counter", () => {
     orch.getItem("H-1-1")!.prNumber = 42;
 
     orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
 
     const reviewEvent = events.find((e) => e.event === "review-round");
