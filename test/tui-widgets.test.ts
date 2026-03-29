@@ -268,6 +268,148 @@ describe("runCheckboxList", () => {
   });
 });
 
+// ── CheckboxList with linkAllId (linked toggle) ─────────────────────
+
+describe("runCheckboxList with linkAllId", () => {
+  /** Creates [__ALL__(T), T-1(T), ..., T-N(T)] -- all checked. */
+  function makeLinkedItems(count: number): CheckboxItem[] {
+    const allItem: CheckboxItem = { id: "__ALL__", label: "All", checked: true };
+    const regularItems = Array.from({ length: count }, (_, i) => ({
+      id: `T-${i + 1}`,
+      label: `Item ${i + 1}`,
+      checked: true,
+    }));
+    return [allItem, ...regularItems];
+  }
+
+  it("toggling __ALL__ off unchecks all items", async () => {
+    const { io, sendKeys } = createMockIO();
+    const items = makeLinkedItems(3); // __ALL__, T-1, T-2, T-3 -- all checked
+
+    const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
+    // Space on __ALL__ (index 0): unchecks all. Down to T-1, space to re-check. Confirm.
+    sendKeys([" ", "\x1B[B", " ", "\r"]);
+
+    const result = await resultPromise;
+    expect(result.cancelled).toBe(false);
+    expect(result.selectedIds).toContain("T-1");
+    expect(result.selectedIds).not.toContain("T-2");
+    expect(result.selectedIds).not.toContain("T-3");
+    expect(result.selectedIds).not.toContain("__ALL__");
+    expect(result.allSelected).toBe(false);
+  });
+
+  it("toggling __ALL__ on checks all items", async () => {
+    const { io, sendKeys } = createMockIO();
+    // Start all unchecked
+    const items: CheckboxItem[] = [
+      { id: "__ALL__", label: "All", checked: false },
+      { id: "T-1", label: "Item 1", checked: false },
+      { id: "T-2", label: "Item 2", checked: false },
+    ];
+
+    const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
+    // Space on __ALL__: checks all. Confirm.
+    sendKeys([" ", "\r"]);
+
+    const result = await resultPromise;
+    expect(result.cancelled).toBe(false);
+    expect(result.selectedIds).toContain("__ALL__");
+    expect(result.selectedIds).toContain("T-1");
+    expect(result.selectedIds).toContain("T-2");
+    expect(result.allSelected).toBe(true);
+  });
+
+  it("unchecking any item auto-unchecks __ALL__", async () => {
+    const { io, sendKeys } = createMockIO();
+    const items = makeLinkedItems(2); // __ALL__, T-1, T-2 -- all checked
+
+    const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
+    // Down to T-2 (index 2), space to uncheck. __ALL__ auto-unchecks.
+    sendKeys(["\x1B[B", "\x1B[B", " ", "\r"]);
+
+    const result = await resultPromise;
+    expect(result.selectedIds).toContain("T-1");
+    expect(result.selectedIds).not.toContain("T-2");
+    expect(result.selectedIds).not.toContain("__ALL__");
+    expect(result.allSelected).toBe(false);
+  });
+
+  it("re-checking the last unchecked item re-checks __ALL__", async () => {
+    const { io, sendKeys } = createMockIO();
+    const items = makeLinkedItems(2); // __ALL__, T-1, T-2 -- all checked
+
+    const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
+    // Down to T-2 (index 2), space to uncheck (auto-unchecks __ALL__).
+    // Space again to re-check T-2 (__ALL__ re-checks since all regular items now checked).
+    // Confirm.
+    sendKeys(["\x1B[B", "\x1B[B", " ", " ", "\r"]);
+
+    const result = await resultPromise;
+    expect(result.selectedIds).toContain("T-1");
+    expect(result.selectedIds).toContain("T-2");
+    expect(result.selectedIds).toContain("__ALL__");
+    expect(result.allSelected).toBe(true);
+  });
+
+  it("'a' key interacts correctly with __ALL__", async () => {
+    const { io, sendKeys } = createMockIO();
+    const items = makeLinkedItems(2); // all checked
+
+    const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
+    // "a" unchecks all (allChecked=true), "a" re-checks all, confirm
+    sendKeys(["a", "a", "\r"]);
+
+    const result = await resultPromise;
+    expect(result.selectedIds).toContain("__ALL__");
+    expect(result.selectedIds).toContain("T-1");
+    expect(result.selectedIds).toContain("T-2");
+    expect(result.allSelected).toBe(true);
+  });
+
+  it("'a' key uncheck when all checked leaves __ALL__ unchecked", async () => {
+    const { io, sendKeys } = createMockIO();
+    const items = makeLinkedItems(2); // all checked
+
+    const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
+    // "a" unchecks all, then select T-1 to avoid empty error
+    sendKeys(["a", "\x1B[B", " ", "\r"]);
+
+    const result = await resultPromise;
+    expect(result.selectedIds).toContain("T-1");
+    expect(result.selectedIds).not.toContain("__ALL__");
+    expect(result.allSelected).toBe(false);
+  });
+
+  it("edge case: single work item + __ALL__ (2 items total)", async () => {
+    const { io, sendKeys } = createMockIO();
+    const items = makeLinkedItems(1); // __ALL__ + T-1, both checked
+
+    const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
+    // Just confirm (all already checked)
+    sendKeys(["\r"]);
+
+    const result = await resultPromise;
+    expect(result.selectedIds).toContain("__ALL__");
+    expect(result.selectedIds).toContain("T-1");
+    expect(result.allSelected).toBe(true);
+  });
+
+  it("uncheck single item re-checks __ALL__ when re-checked (single item edge case)", async () => {
+    const { io, sendKeys } = createMockIO();
+    const items = makeLinkedItems(1); // __ALL__ + T-1, both checked
+
+    const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
+    // Down to T-1, uncheck (auto-unchecks __ALL__), re-check (auto-re-checks __ALL__)
+    sendKeys(["\x1B[B", " ", " ", "\r"]);
+
+    const result = await resultPromise;
+    expect(result.selectedIds).toContain("T-1");
+    expect(result.selectedIds).toContain("__ALL__");
+    expect(result.allSelected).toBe(true);
+  });
+});
+
 // ── SingleSelect picker ─────────────────────────────────────────────
 
 describe("runSingleSelect", () => {
@@ -646,7 +788,7 @@ describe("toCheckboxItems", () => {
     const checkboxItems = toCheckboxItems(items);
     expect(checkboxItems).toHaveLength(2);
     expect(checkboxItems[0]!.id).toBe("A-1");
-    expect(checkboxItems[0]!.checked).toBe(false);
+    expect(checkboxItems[0]!.checked).toBe(true);
     expect(checkboxItems[1]!.id).toBe("B-2");
     expect(checkboxItems[1]!.detail).toContain("[medium]");
     expect(checkboxItems[1]!.detail).toContain("deps: A-1");
@@ -677,9 +819,9 @@ describe("runSelectionScreen", () => {
 
     const resultPromise = runSelectionScreen(io, items, 4);
 
-    // Each batch is separated by a microtask gap for widget transitions
+    // All items start checked (including __ALL__ sentinel). Just confirm each step.
     sendKeyBatches(
-      [" ", "\r"],   // Step 1: Select first item, confirm
+      ["\r"],        // Step 1: Confirm all items (all pre-checked)
       ["\r"],        // Step 2: Accept default strategy (auto)
       ["\r"],        // Step 3: Accept default WIP (4)
       ["\r"],        // Step 4: Confirm summary
@@ -687,7 +829,10 @@ describe("runSelectionScreen", () => {
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(result!.itemIds).toEqual(["A-1"]);
+    expect(result!.itemIds).toContain("A-1");
+    expect(result!.itemIds).toContain("B-2");
+    expect(result!.itemIds).not.toContain("__ALL__");
+    expect(result!.allSelected).toBe(true);
     expect(result!.mergeStrategy).toBe("auto");
     expect(result!.wipLimit).toBe(4);
     expect(result!.cancelled).toBe(false);
@@ -710,7 +855,7 @@ describe("runSelectionScreen", () => {
 
     const resultPromise = runSelectionScreen(io, items, 4);
     sendKeyBatches(
-      [" ", "\r"],  // Select item, confirm
+      ["\r"],       // Confirm all items (pre-checked)
       ["\x1B"],     // Escape at strategy
     );
 
@@ -724,7 +869,7 @@ describe("runSelectionScreen", () => {
 
     const resultPromise = runSelectionScreen(io, items, 4);
     sendKeyBatches(
-      [" ", "\r"],  // Select item, confirm
+      ["\r"],       // Confirm all items (pre-checked)
       ["\r"],       // Accept strategy
       ["\x1B"],     // Escape at WIP
     );
@@ -739,7 +884,7 @@ describe("runSelectionScreen", () => {
 
     const resultPromise = runSelectionScreen(io, items, 4);
     sendKeyBatches(
-      [" ", "\r"],  // Select item, confirm
+      ["\r"],       // Confirm all items (pre-checked)
       ["\r"],       // Accept strategy
       ["\r"],       // Accept WIP
       ["n"],        // Cancel confirmation
@@ -758,11 +903,12 @@ describe("runSelectionScreen", () => {
     ];
 
     const resultPromise = runSelectionScreen(io, items, 3);
+    // All items start checked; just confirm
     sendKeyBatches(
-      ["a", "\r"],  // Toggle all, confirm
-      ["\r"],       // Accept strategy
-      ["\r"],       // Accept WIP
-      ["\r"],       // Confirm
+      ["\r"],        // Confirm all items (pre-checked)
+      ["\r"],        // Accept strategy
+      ["\r"],        // Accept WIP
+      ["\r"],        // Confirm
     );
 
     const result = await resultPromise;
@@ -771,6 +917,8 @@ describe("runSelectionScreen", () => {
     expect(result!.itemIds).toContain("A-1");
     expect(result!.itemIds).toContain("B-2");
     expect(result!.itemIds).toContain("C-3");
+    expect(result!.itemIds).not.toContain("__ALL__");
+    expect(result!.allSelected).toBe(true);
   });
 
   it("manual strategy + custom WIP limit", async () => {
@@ -779,7 +927,7 @@ describe("runSelectionScreen", () => {
 
     const resultPromise = runSelectionScreen(io, items, 4);
     sendKeyBatches(
-      [" ", "\r"],                                // Select item
+      ["\r"],                                      // Confirm all items (pre-checked)
       ["\x1B[B", "\r"],                           // Select manual strategy
       ["\x1B[A", "\x1B[A", "\x1B[A", "\r"],      // Increase WIP to 7
       ["\r"],                                      // Confirm
@@ -799,12 +947,14 @@ describe("runSelectionScreen", () => {
     ];
 
     const resultPromise = runSelectionScreen(io, items, 4);
-    sendKeyBatches(["a", "\r"], ["\r"], ["\r"], ["\r"]);
+    // All items pre-checked; just confirm each step
+    sendKeyBatches(["\r"], ["\r"], ["\r"], ["\r"]);
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
     const output = getOutput();
     expect(output).toContain("Select work items");
+    expect(output).toContain("Ninthwave");
   });
 
   it("renders correctly at 80x40 terminal", async () => {
@@ -815,12 +965,65 @@ describe("runSelectionScreen", () => {
     ];
 
     const resultPromise = runSelectionScreen(io, items, 4);
-    sendKeyBatches(["a", "\r"], ["\r"], ["\r"], ["\r"]);
+    // All items pre-checked; just confirm each step
+    sendKeyBatches(["\r"], ["\r"], ["\r"], ["\r"]);
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
     const output = getOutput();
     expect(output).toContain("Select work items");
+    expect(output).toContain("Ninthwave");
+  });
+
+  it("__ALL__ sentinel is filtered from returned itemIds", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+    const items = [makeWorkItem("A-1", "First task")];
+
+    const resultPromise = runSelectionScreen(io, items, 4);
+    // Confirm all pre-checked items
+    sendKeyBatches(["\r"], ["\r"], ["\r"], ["\r"]);
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.itemIds).not.toContain("__ALL__");
+    expect(result!.itemIds).toContain("A-1");
+  });
+
+  it("allSelected is true when __ALL__ is checked at confirmation", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+    const items = [makeWorkItem("A-1", "First task")];
+
+    const resultPromise = runSelectionScreen(io, items, 4);
+    // __ALL__ starts checked; confirm all
+    sendKeyBatches(["\r"], ["\r"], ["\r"], ["\r"]);
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.allSelected).toBe(true);
+  });
+
+  it("allSelected is false when __ALL__ is unchecked at confirmation", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+    const items = [
+      makeWorkItem("A-1", "First task"),
+      makeWorkItem("B-2", "Second task"),
+    ];
+
+    const resultPromise = runSelectionScreen(io, items, 4);
+    // Uncheck B-2 (index 2 in list: __ALL__, A-1, B-2), which auto-unchecks __ALL__
+    sendKeyBatches(
+      ["\x1B[B", "\x1B[B", " ", "\r"],  // Navigate to B-2, uncheck, confirm
+      ["\r"],                             // Accept strategy
+      ["\r"],                             // Accept WIP
+      ["\r"],                             // Confirm
+    );
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.allSelected).toBe(false);
+    expect(result!.itemIds).toContain("A-1");
+    expect(result!.itemIds).not.toContain("B-2");
+    expect(result!.itemIds).not.toContain("__ALL__");
   });
 });
 
@@ -842,19 +1045,24 @@ describe("runTuiSelectionFlow (via interactive.ts)", () => {
 
     const resultPromise = runInteractiveFlow(items, 4, { widgetIO: io });
 
-    // Complete the full flow with batches for widget transitions
+    // All items start checked. Just confirm each step.
     sendKeyBatches(
-      [" ", "\r"], // Select first item
-      ["\r"],      // Accept default strategy
-      ["\r"],      // Accept default WIP
-      ["\r"],      // Confirm
+      ["\r"], // Confirm all items (pre-checked)
+      ["\r"], // Accept default strategy
+      ["\r"], // Accept default WIP
+      ["\r"], // Confirm
     );
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(result!.itemIds).toEqual(["A-1"]);
+    expect(result!.itemIds).toContain("A-1");
+    expect(result!.itemIds).toContain("B-2");
+    expect(result!.itemIds).not.toContain("__ALL__");
+    expect(result!.allSelected).toBe(true);
     expect(result!.mergeStrategy).toBe("auto");
     expect(result!.wipLimit).toBe(4);
+    expect(result!.reviewMode).toBe("off");
+    expect(result!.crewAction).toBeNull();
   });
 
   it("runInteractiveFlow falls back to readline when useLegacyPrompts is true", async () => {

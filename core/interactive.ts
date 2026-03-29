@@ -9,6 +9,7 @@ import { BOLD, DIM, GREEN, YELLOW, CYAN, RESET } from "./output.ts";
 import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
+import type { CrewAction } from "./commands/crew.ts";
 import {
   runSelectionScreen,
   createProcessIO,
@@ -24,6 +25,9 @@ export interface InteractiveResult {
   itemIds: string[];
   mergeStrategy: MergeStrategy;
   wipLimit: number;
+  allSelected: boolean;
+  reviewMode: "all" | "mine" | "off";
+  crewAction: CrewAction | null;
 }
 
 export interface InteractiveDeps {
@@ -377,6 +381,9 @@ export async function runTuiSelectionFlow(
       itemIds: result.itemIds,
       mergeStrategy: result.mergeStrategy,
       wipLimit: result.wipLimit,
+      allSelected: result.allSelected,
+      reviewMode: "off",   // temp default until H-WJ-3
+      crewAction: null,    // temp default until H-WJ-3
     };
   } finally {
     // Restore terminal state
@@ -437,6 +444,9 @@ async function runReadlineFlow(
     itemIds,
     mergeStrategy,
     wipLimit,
+    allSelected: false,   // legacy readline path doesn't support __ALL__
+    reviewMode: "off",    // temp default until H-WJ-3
+    crewAction: null,     // temp default until H-WJ-3
   };
 
   const confirmed = await confirmSummary(result, todos, prompt);

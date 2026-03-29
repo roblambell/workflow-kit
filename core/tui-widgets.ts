@@ -43,6 +43,7 @@ export interface CheckboxItem {
 export interface CheckboxListResult {
   selectedIds: string[];
   cancelled: boolean;
+  allSelected: boolean;
 }
 
 export interface SingleSelectOption<T> {
@@ -65,6 +66,7 @@ export interface NumberPickerResult {
 /** Result of the full selection screen flow. */
 export interface SelectionScreenResult {
   itemIds: string[];
+  allSelected: boolean;
   mergeStrategy: MergeStrategy;
   wipLimit: number;
   cancelled: boolean;
@@ -75,15 +77,19 @@ export interface SelectionScreenResult {
 /**
  * Multi-select checkbox list. Arrow keys navigate, Space toggles, Enter confirms.
  * Escape cancels. Renders within the given viewport area.
+ *
+ * When `opts.linkAllId` is set, the item with that id acts as an __ALL__ sentinel:
+ * toggling it checks/unchecks all others, and unchecking any item auto-unchecks it
+ * while re-checking the last unchecked item re-checks it.
  */
 export function runCheckboxList(
   io: WidgetIO,
   items: CheckboxItem[],
-  opts: { title?: string; errorMessage?: string } = {},
+  opts: { title?: string; errorMessage?: string; linkAllId?: string } = {},
 ): Promise<CheckboxListResult> {
   return new Promise((resolve) => {
     if (items.length === 0) {
-      resolve({ selectedIds: [], cancelled: true });
+      resolve({ selectedIds: [], cancelled: true, allSelected: false });
       return;
     }
 
@@ -168,32 +174,59 @@ export function runCheckboxList(
         case "j":
           cursor = Math.min(items.length - 1, cursor + 1);
           break;
-        case " ": // Space -- toggle
-          items[cursor]!.checked = !items[cursor]!.checked;
+        case " ": { // Space -- toggle
+          const linkId = opts.linkAllId;
+          if (linkId) {
+            const item = items[cursor]!;
+            if (item.id === linkId) {
+              // Toggling __ALL__: set all items to match new state
+              const newState = !item.checked;
+              for (const i of items) i.checked = newState;
+            } else {
+              // Toggling a regular item
+              item.checked = !item.checked;
+              // Sync __ALL__: checked only when all regular items are checked
+              const allItem = items.find((i) => i.id === linkId);
+              if (allItem) {
+                const regularItems = items.filter((i) => i.id !== linkId);
+                allItem.checked = regularItems.every((i) => i.checked);
+              }
+            }
+          } else {
+            items[cursor]!.checked = !items[cursor]!.checked;
+          }
           break;
+        }
         case "a": { // Toggle all
           const allChecked = items.every((i) => i.checked);
           for (const item of items) item.checked = !allChecked;
           break;
         }
         case "\r": { // Enter -- confirm
-          const selected = items.filter((i) => i.checked).map((i) => i.id);
-          if (selected.length === 0) {
+          const linkId = opts.linkAllId;
+          const allItem = linkId ? items.find((i) => i.id === linkId) : null;
+          const regularItems = linkId ? items.filter((i) => i.id !== linkId) : items;
+          const regularSelected = regularItems.filter((i) => i.checked);
+          if (regularSelected.length === 0) {
             error = "Select at least one item";
             render();
             return;
           }
           io.offKey(handler);
-          resolve({ selectedIds: selected, cancelled: false });
+          resolve({
+            selectedIds: items.filter((i) => i.checked).map((i) => i.id),
+            cancelled: false,
+            allSelected: allItem?.checked ?? false,
+          });
           return;
         }
         case "\x1B": // Escape (single byte, not arrow sequence)
           io.offKey(handler);
-          resolve({ selectedIds: [], cancelled: true });
+          resolve({ selectedIds: [], cancelled: true, allSelected: false });
           return;
         case "\x03": // Ctrl+C
           io.offKey(handler);
-          resolve({ selectedIds: [], cancelled: true });
+          resolve({ selectedIds: [], cancelled: true, allSelected: false });
           return;
         default:
           return; // Unknown key -- no re-render
@@ -466,7 +499,7 @@ export function toCheckboxItems(items: WorkItem[]): CheckboxItem[] {
       id: t.id,
       label: `${CYAN}${t.id}${RESET}  ${t.title}`,
       detail: `${priorityColor}[${t.priority}]${RESET}${depInfo}`,
-      checked: false,
+      checked: true,
     };
   });
 }
@@ -481,6 +514,9 @@ export function toCheckboxItems(items: WorkItem[]): CheckboxItem[] {
  * Renders entirely in the alt-screen buffer using raw keypresses.
  * Returns null if cancelled at any step.
  */
+/** Sentinel id for the "select all" checkbox item. */
+const ALL_SENTINEL_ID = "__ALL__";
+
 export async function runSelectionScreen(
   io: WidgetIO,
   items: WorkItem[],
@@ -493,16 +529,28 @@ export async function runSelectionScreen(
   const sorted = sortWorkItems(items);
   const checkboxItems = toCheckboxItems(sorted);
 
+  // Prepend __ALL__ sentinel (checked by default)
+  const allSentinel: CheckboxItem = {
+    id: ALL_SENTINEL_ID,
+    label: "All \u2014 includes future items",
+    checked: true,
+  };
+  const checkboxItemsWithAll = [allSentinel, ...checkboxItems];
+
   // Step 1: Item selection
   io.write(CLEAR_SCREEN + HIDE_CURSOR);
-  const itemResult = await runCheckboxList(io, checkboxItems, {
-    title: `Select work items (${sorted.length} available)`,
+  const itemResult = await runCheckboxList(io, checkboxItemsWithAll, {
+    title: `Ninthwave \u00b7 Select work items (${sorted.length} available)`,
+    linkAllId: ALL_SENTINEL_ID,
   });
 
-  if (itemResult.cancelled || itemResult.selectedIds.length === 0) {
+  if (itemResult.cancelled) {
     io.write(SHOW_CURSOR);
     return null;
   }
+
+  // Filter __ALL__ sentinel from the selected ids
+  const selectedItemIds = itemResult.selectedIds.filter((id) => id !== ALL_SENTINEL_ID);
 
   // Step 2: Merge strategy
   io.write(CLEAR_SCREEN);
@@ -534,8 +582,8 @@ export async function runSelectionScreen(
   // Step 4: Confirmation summary
   io.write(CLEAR_SCREEN);
   const summaryLines = [
-    `${BOLD}Items (${itemResult.selectedIds.length}):${RESET}`,
-    ...itemResult.selectedIds.map((id) => {
+    `${BOLD}Items (${selectedItemIds.length}):${RESET}`,
+    ...selectedItemIds.map((id) => {
       const item = sorted.find((t) => t.id === id);
       return `  ${CYAN}${id}${RESET}  ${item?.title ?? ""}`;
     }),
@@ -556,7 +604,8 @@ export async function runSelectionScreen(
   }
 
   return {
-    itemIds: itemResult.selectedIds,
+    itemIds: selectedItemIds,
+    allSelected: itemResult.allSelected,
     mergeStrategy: strategyResult.value,
     wipLimit: wipResult.value,
     cancelled: false,
