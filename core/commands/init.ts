@@ -666,25 +666,6 @@ function scaffold(
   // --- .ninthwave/ directory ---
   mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
 
-  // Domains config (preserve existing)
-  const domainsPath = join(projectDir, ".ninthwave/domains.conf");
-  if (!existsSync(domainsPath)) {
-    writeFileSync(
-      domainsPath,
-      `# Domain mappings for ninthwave
-# Format: pattern=domain_key
-# Patterns are matched case-insensitively against todo file domain fields.
-# Lines starting with # are comments.
-#
-# Examples:
-# auth=auth
-# infrastructure=infra
-# frontend=frontend
-# database=db
-`,
-    );
-  }
-
   // --- Migrate .ninthwave/todos/ → .ninthwave/work/ (if legacy directory exists) ---
   const legacyTodosDir = join(projectDir, ".ninthwave", "todos");
   const workDir = join(projectDir, ".ninthwave", "work");
@@ -858,7 +839,6 @@ export function initProject(
 
   // 5. Run scaffolding (with agent selection)
   scaffold(projectDir, bundleDir, opts?.agentSelection);
-  console.log(`  .ninthwave/domains.conf`);
   console.log(`  .ninthwave/work/ ${DIM}(work items)${RESET}`);
   console.log(`  .ninthwave/friction/ ${DIM}(friction log)${RESET}`);
   console.log(`  .ninthwave/schedules/ ${DIM}(scheduled tasks)${RESET}`);

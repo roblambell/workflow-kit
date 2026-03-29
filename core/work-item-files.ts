@@ -42,28 +42,15 @@ export function splitIds(args: string[]): string[] {
 }
 
 /**
- * Normalize a section header into a domain slug.
- * Checks project-specific domain mappings first, then auto-slugifies.
+ * Normalize a section header into a domain slug via auto-slugification.
  */
-export function normalizeDomain(
-  section: string,
-  domainMappings?: Map<string, string>,
-): string {
+export function normalizeDomain(section: string): string {
   // Strip all parenthetical annotations before normalizing
   // e.g. "CLI Migration (TypeScript migration completion, 2026-03-23)" → "CLI Migration"
   const stripped = section.replace(/\s*\([^)]*\)/g, "").trim();
   const lower = stripped.toLowerCase();
 
-  // Check domain mappings if provided
-  if (domainMappings) {
-    for (const [pattern, domainKey] of domainMappings) {
-      if (lower.includes(pattern)) {
-        return domainKey;
-      }
-    }
-  }
-
-  // Default auto-slugify: lowercase, strip non-alphanum (keep spaces and hyphens),
+  // Auto-slugify: lowercase, strip non-alphanum (keep spaces and hyphens),
   // collapse spaces, spaces to hyphens, strip leading/trailing hyphens
   const slug = lower
     .replace(/[^a-z0-9 -]/g, "")

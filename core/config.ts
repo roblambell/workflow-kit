@@ -65,27 +65,3 @@ export function loadConfig(projectRoot: string): ProjectConfig {
   return config;
 }
 
-/**
- * Load domain mappings from .ninthwave/domains.conf.
- * Format: pattern=domain_key (one per line, comments with #).
- * Patterns are matched case-insensitively against section headers.
- */
-export function loadDomainMappings(projectRoot: string): Map<string, string> {
-  const mappings = new Map<string, string>();
-  const domainsPath = join(projectRoot, ".ninthwave", "domains.conf");
-  if (!existsSync(domainsPath)) return mappings;
-
-  const content = readFileSync(domainsPath, "utf-8");
-  for (const rawLine of content.split("\n")) {
-    const eqIdx = rawLine.indexOf("=");
-    if (eqIdx === -1) continue;
-
-    const pattern = rawLine.slice(0, eqIdx).trim();
-    if (!pattern || pattern.startsWith("#")) continue;
-
-    const domainKey = rawLine.slice(eqIdx + 1).trim();
-    mappings.set(pattern, domainKey);
-  }
-
-  return mappings;
-}

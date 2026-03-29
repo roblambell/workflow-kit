@@ -728,7 +728,6 @@ describe("initProject", () => {
     expect(existsSync(join(projectDir, ".ninthwave/config"))).toBe(true);
 
     // Scaffolding completed
-    expect(existsSync(join(projectDir, ".ninthwave/domains.conf"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/work/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".ninthwave/friction/.gitkeep"))).toBe(true);
     expect(existsSync(join(projectDir, ".gitignore"))).toBe(true);
@@ -801,31 +800,6 @@ describe("initProject", () => {
     // .gitkeep files are empty
     expect(readFileSync(join(projectDir, ".ninthwave/work/.gitkeep"), "utf-8")).toBe("");
     expect(readFileSync(join(projectDir, ".ninthwave/friction/.gitkeep"), "utf-8")).toBe("");
-  });
-
-  it("preserves existing .ninthwave/domains.conf", () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
-
-    // Pre-create domains config
-    mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
-    writeFileSync(
-      join(projectDir, ".ninthwave/domains.conf"),
-      "auth=auth\n",
-    );
-
-    const deps: InitDeps = {
-      commandExists: (() => false) as CommandChecker,
-      getEnv: () => undefined,
-    };
-
-    initProject(projectDir, bundleDir, deps);
-
-    const content = readFileSync(
-      join(projectDir, ".ninthwave/domains.conf"),
-      "utf-8",
-    );
-    expect(content).toBe("auth=auth\n");
   });
 
   it("overwrites .ninthwave/config with fresh detection (init is authoritative)", () => {
@@ -1957,7 +1931,7 @@ describe("initProject -- idempotency", () => {
 // --- Merged flow: preserves existing files ---
 
 describe("initProject -- preserves existing files", () => {
-  it("creates .ninthwave/ directory with config and domains.conf", () => {
+  it("creates .ninthwave/ directory with config", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -1970,14 +1944,6 @@ describe("initProject -- preserves existing files", () => {
 
     // .ninthwave/config exists
     expect(existsSync(join(projectDir, ".ninthwave/config"))).toBe(true);
-
-    // .ninthwave/domains.conf exists
-    expect(existsSync(join(projectDir, ".ninthwave/domains.conf"))).toBe(true);
-    const domainsContent = readFileSync(
-      join(projectDir, ".ninthwave/domains.conf"),
-      "utf-8",
-    );
-    expect(domainsContent).toContain("Domain mappings");
   });
 
   it("creates .ninthwave/work/ directory", () => {

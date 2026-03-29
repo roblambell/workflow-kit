@@ -3,6 +3,3 @@
 
 # File extensions for LOC counting in version-bump (space-separated glob patterns)
 # LOC_EXTENSIONS="*.ts *.tsx *.js *.jsx *.py *.go"
-
-# Path to domain mapping file (optional)
-# DOMAINS_FILE=.ninthwave/domains.conf

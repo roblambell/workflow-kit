@@ -3,7 +3,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { join } from "path";
 import { mkdirSync, writeFileSync } from "fs";
-import { loadConfig, loadDomainMappings, KNOWN_CONFIG_KEYS } from "../core/config.ts";
+import { loadConfig, KNOWN_CONFIG_KEYS } from "../core/config.ts";
 import { DEFAULT_LOC_EXTENSIONS } from "../core/types.ts";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 
@@ -217,54 +217,3 @@ describe("KNOWN_CONFIG_KEYS", () => {
   });
 });
 
-describe("loadDomainMappings", () => {
-  it("returns empty map when domains.conf is missing", () => {
-    const repo = setupTempRepo();
-    const mappings = loadDomainMappings(repo);
-    expect(mappings.size).toBe(0);
-  });
-
-  it("loads pattern=domain_key mappings", () => {
-    const repo = setupTempRepo();
-    const configDir = join(repo, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "domains.conf"),
-      "auth=auth\ninfrastructure=infra\n",
-    );
-
-    const mappings = loadDomainMappings(repo);
-    expect(mappings.get("auth")).toBe("auth");
-    expect(mappings.get("infrastructure")).toBe("infra");
-  });
-
-  it("skips comments and blank lines", () => {
-    const repo = setupTempRepo();
-    const configDir = join(repo, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "domains.conf"),
-      "# comment\n\nfoo=bar\n",
-    );
-
-    const mappings = loadDomainMappings(repo);
-    expect(mappings.size).toBe(1);
-    expect(mappings.get("foo")).toBe("bar");
-  });
-});
-
-describe("normalizeDomain with custom mappings", () => {
-  it("uses domain mapping when pattern matches", () => {
-    const { normalizeDomain } = require("../core/parser.ts");
-    const mappings = new Map([["infrastructure", "infra"]]);
-    expect(normalizeDomain("Cloud Infrastructure", mappings)).toBe("infra");
-  });
-
-  it("falls back to auto-slugify when no mapping matches", () => {
-    const { normalizeDomain } = require("../core/parser.ts");
-    const mappings = new Map([["auth", "auth"]]);
-    expect(normalizeDomain("User Onboarding", mappings)).toBe(
-      "user-onboarding",
-    );
-  });
-});

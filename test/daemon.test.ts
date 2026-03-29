@@ -631,14 +631,12 @@ describe("migrateRuntimeState", () => {
   it("preserves non-runtime files in .ninthwave/", () => {
     const oldDir = join(projectRoot, ".ninthwave");
     writeFileSync(join(oldDir, "config"), "# config content");
-    writeFileSync(join(oldDir, "domains.conf"), "# domains");
     writeFileSync(join(oldDir, "orchestrator.pid"), "999");
 
     migrateRuntimeState(projectRoot);
 
     // Non-runtime files should remain in .ninthwave/
     expect(existsSync(join(oldDir, "config"))).toBe(true);
-    expect(existsSync(join(oldDir, "domains.conf"))).toBe(true);
     // Runtime file should be migrated
     expect(existsSync(join(oldDir, "orchestrator.pid"))).toBe(false);
   });

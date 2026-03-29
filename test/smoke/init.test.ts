@@ -37,7 +37,6 @@ describe("smoke: nw init", () => {
     expect(existsSync(join(repo, ".ninthwave"))).toBe(true);
     expect(existsSync(join(repo, ".ninthwave", "work"))).toBe(true);
     expect(existsSync(join(repo, ".ninthwave", "config"))).toBe(true);
-    expect(existsSync(join(repo, ".ninthwave", "domains.conf"))).toBe(true);
     expect(existsSync(join(repo, ".ninthwave", "friction"))).toBe(true);
   });
 

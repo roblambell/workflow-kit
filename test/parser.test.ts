@@ -827,32 +827,10 @@ describe("normalizeDomain", () => {
     expect(result.length).toBe(40);
   });
 
-  it("custom domain mappings take priority over truncation", () => {
-    const mappings = new Map([["architecture design review", "arch-review"]]);
-
-    const long = "Architecture Design Review And Implementation Planning Session Notes";
-    const result = normalizeDomain(long, mappings);
-    expect(result).toBe("arch-review");
-  });
-
-  it("accepts a Map and matches patterns", () => {
-    const mappings = new Map([
-      ["infrastructure", "infra"],
-      ["auth", "auth"],
-    ]);
-    expect(normalizeDomain("Cloud Infrastructure", mappings)).toBe("infra");
-    expect(normalizeDomain("Authentication Service", mappings)).toBe("auth");
-    expect(normalizeDomain("User Onboarding", mappings)).toBe("user-onboarding");
-  });
-
-  it("returns auto-slug when Map is empty", () => {
-    const mappings = new Map<string, string>();
-    expect(normalizeDomain("Cloud Infrastructure", mappings)).toBe("cloud-infrastructure");
-  });
-
-  it("returns auto-slug when no Map is provided", () => {
+  it("returns auto-slug for all inputs (no custom mappings)", () => {
     expect(normalizeDomain("Cloud Infrastructure")).toBe("cloud-infrastructure");
-    expect(normalizeDomain("Cloud Infrastructure", undefined)).toBe("cloud-infrastructure");
+    expect(normalizeDomain("Authentication Service")).toBe("authentication-service");
+    expect(normalizeDomain("User Onboarding")).toBe("user-onboarding");
   });
 });
 
