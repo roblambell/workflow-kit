@@ -13,10 +13,6 @@ import {
   type DetectionLatencyStats,
 } from "../core/analytics.ts";
 import {
-  estimateCost,
-  MODEL_PRICING,
-} from "../core/types.ts";
-import {
   loadRuns,
   computeSummary,
   formatAnalytics,
@@ -1589,55 +1585,6 @@ describe("formatAnalytics with detection latency", () => {
   });
 });
 
-
-// ── estimateCost pricing lookup ─────────────────────────────────────
-
-describe("estimateCost", () => {
-  it("estimates cost for known model with both token types", () => {
-    const cost = estimateCost("claude-sonnet-4-20250514", 100_000, 10_000);
-    // input: 100k * 3/1M = 0.3, output: 10k * 15/1M = 0.15 → 0.45
-    expect(cost).toBe(0.45);
-  });
-
-  it("estimates cost with only input tokens", () => {
-    const cost = estimateCost("gpt-4o", 500_000, undefined);
-    // 500k * 2.5/1M = 1.25
-    expect(cost).toBe(1.25);
-  });
-
-  it("estimates cost with only output tokens", () => {
-    const cost = estimateCost("gpt-4o", undefined, 200_000);
-    // 200k * 10/1M = 2.0
-    expect(cost).toBe(2.0);
-  });
-
-  it("returns null for unknown model", () => {
-    expect(estimateCost("unknown-model", 10000, 5000)).toBeNull();
-  });
-
-  it("returns null when model is undefined", () => {
-    expect(estimateCost(undefined, 10000, 5000)).toBeNull();
-  });
-
-  it("returns null when both token counts are undefined", () => {
-    expect(estimateCost("gpt-4o", undefined, undefined)).toBeNull();
-  });
-
-  it("handles zero tokens", () => {
-    const cost = estimateCost("gpt-4o", 0, 0);
-    expect(cost).toBe(0);
-  });
-
-  it("pricing table has reasonable values for known models", () => {
-    // All prices should be positive
-    for (const [, pricing] of Object.entries(MODEL_PRICING)) {
-      expect(pricing.inputPerMillion).toBeGreaterThan(0);
-      expect(pricing.outputPerMillion).toBeGreaterThan(0);
-      // Output typically costs more than input
-      expect(pricing.outputPerMillion).toBeGreaterThanOrEqual(pricing.inputPerMillion);
-    }
-  });
-});
 
 // ── collectRunMetrics with input/output tokens and model ────────────
 

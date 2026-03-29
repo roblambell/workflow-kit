@@ -49,14 +49,6 @@ export interface WorktreeInfo {
   worktreePath: string;
 }
 
-export interface PRStatus {
-  number: number;
-  state: "open" | "closed" | "merged";
-  reviewDecision: string;
-  ciStatus: "pass" | "fail" | "pending" | "unknown";
-  isMergeable: boolean;
-}
-
 export interface WatchResult {
   id: string;
   prNumber: string;
@@ -97,64 +89,6 @@ export const WILDCARD_DEP_PATTERN = /[A-Z](?:[A-Za-z0-9]*-)*\*/g;
 export const DEFAULT_LOC_EXTENSIONS =
   "*.ex *.exs *.ts *.tsx *.js *.jsx *.py *.go *.rs *.rb *.java *.kt *.swift";
 
-// ── Worker cost tracking ───────────────────────────────────────────────
-
-/** Cost and token data from a worker session. */
-export interface WorkerCostData {
-  model?: string;       // e.g., "claude-sonnet-4-20250514", "gpt-4o"
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-  estimatedCostUsd?: number;
-  source: "heartbeat" | "exit-output" | "manual";
-}
-
-// ── Model pricing lookup ──────────────────────────────────────────────
-
-/** Per-million-token pricing for known models. */
-export interface ModelPricing {
-  inputPerMillion: number;
-  outputPerMillion: number;
-}
-
-/**
- * Pricing lookup table for common models (USD per million tokens).
- * These are approximate list prices; actual costs may vary by agreement.
- */
-export const MODEL_PRICING: Record<string, ModelPricing> = {
-  "claude-sonnet-4-20250514": { inputPerMillion: 3, outputPerMillion: 15 },
-  "claude-opus-4-20250514": { inputPerMillion: 15, outputPerMillion: 75 },
-  "claude-haiku-3.5": { inputPerMillion: 0.8, outputPerMillion: 4 },
-  "gpt-4o": { inputPerMillion: 2.5, outputPerMillion: 10 },
-  "gpt-4o-mini": { inputPerMillion: 0.15, outputPerMillion: 0.6 },
-  "o3": { inputPerMillion: 10, outputPerMillion: 40 },
-  "o4-mini": { inputPerMillion: 1.1, outputPerMillion: 4.4 },
-};
-
-/**
- * Estimate cost in USD from model name and token counts.
- * Returns null if the model is unknown or token counts are missing.
- */
-export function estimateCost(
-  model: string | undefined,
-  inputTokens: number | undefined,
-  outputTokens: number | undefined,
-): number | null {
-  if (!model || (inputTokens == null && outputTokens == null)) return null;
-
-  // Try exact match first, then prefix match for versioned model names
-  let pricing = MODEL_PRICING[model];
-  if (!pricing) {
-    const key = Object.keys(MODEL_PRICING).find((k) => model.startsWith(k));
-    if (key) pricing = MODEL_PRICING[key];
-  }
-  if (!pricing) return null;
-
-  const inCost = (inputTokens ?? 0) * pricing.inputPerMillion / 1_000_000;
-  const outCost = (outputTokens ?? 0) * pricing.outputPerMillion / 1_000_000;
-  return Math.round((inCost + outCost) * 10000) / 10000; // Round to 4 decimal places
-}
-
 // ── Scheduled tasks ──────────────────────────────────────────────────
 
 export interface ScheduledTask {
@@ -173,5 +107,3 @@ export interface ScheduledTask {
 // File extension patterns for path extraction
 export const CODE_EXTENSIONS =
   /\.(ex|exs|ts|tsx|js|jsx|md|yml|yaml|json|conf|sh|py|go|rs|rb|java|kt|swift)$/;
-export const CODE_EXTENSIONS_FOR_LINE =
-  /\.(ex|exs|ts|tsx|js|jsx|py|go|rs|rb|java|kt|swift)$/;
