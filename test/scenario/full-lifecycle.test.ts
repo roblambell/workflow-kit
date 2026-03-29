@@ -7,6 +7,7 @@ import { Orchestrator } from "../../core/orchestrator.ts";
 import { orchestrateLoop } from "../../core/commands/orchestrate.ts";
 import { FakeGitHub } from "../fakes/fake-github.ts";
 import { FakeMux } from "../fakes/fake-mux.ts";
+import { FakeWorker } from "../fakes/fake-worker.ts";
 import {
   makeWorkItem,
   defaultCtx,
@@ -35,25 +36,26 @@ describe("scenario: full lifecycle", () => {
     const actionDeps = buildActionDeps(fakeGh, fakeMux);
     const loopDeps = buildLoopDeps(fakeGh, fakeMux, actionDeps);
 
-    let cycle = 0;
-    loopDeps.sleep = async () => {
-      cycle++;
-
-      // Cycle 2: worker creates a PR with pending CI
-      if (cycle === 2) {
-        fakeGh.createPR("ninthwave/H-1", "Item H-1");
-        fakeGh.setCIStatus("ninthwave/H-1", "pending");
-        fakeGh.setMergeable("ninthwave/H-1", "MERGEABLE");
-      }
-
-      // Cycle 3: CI passes, review pre-approved (review lifecycle tested separately)
-      if (cycle === 3) {
-        fakeGh.setCIStatus("ninthwave/H-1", "pass");
-        fakeGh.setReviewDecision("ninthwave/H-1", "APPROVED");
-        const orchItem = orch.getItem("H-1");
-        if (orchItem) orchItem.reviewCompleted = true;
-      }
-    };
+    // Use FakeWorker to drive the simulation via a declarative script
+    const worker = new FakeWorker(fakeGh, fakeMux, orch, [
+      {
+        cycle: 2,
+        events: [
+          { type: "createPR", branch: "ninthwave/H-1", title: "Item H-1" },
+          { type: "setCIStatus", branch: "ninthwave/H-1", status: "pending" },
+          { type: "setMergeable", branch: "ninthwave/H-1", mergeable: "MERGEABLE" },
+        ],
+      },
+      {
+        cycle: 3,
+        events: [
+          { type: "setCIStatus", branch: "ninthwave/H-1", status: "pass" },
+          { type: "setReviewDecision", branch: "ninthwave/H-1", decision: "APPROVED" },
+          { type: "markReviewCompleted", itemId: "H-1" },
+        ],
+      },
+    ]);
+    loopDeps.sleep = worker.sleep;
 
     await orchestrateLoop(orch, defaultCtx, loopDeps, { maxIterations: 20 });
 
@@ -109,15 +111,18 @@ describe("scenario: full lifecycle", () => {
     const actionDeps = buildActionDeps(fakeGh, fakeMux);
     const loopDeps = buildLoopDeps(fakeGh, fakeMux, actionDeps);
 
-    let cycle = 0;
-    loopDeps.sleep = async () => {
-      cycle++;
-      if (cycle === 2) {
-        fakeGh.createPR("ninthwave/H-3", "Item H-3");
-        fakeGh.setCIStatus("ninthwave/H-3", "fail");
-        fakeGh.setMergeable("ninthwave/H-3", "MERGEABLE");
-      }
-    };
+    // Use FakeWorker: PR appears with failing CI at cycle 2
+    const worker = new FakeWorker(fakeGh, fakeMux, null, [
+      {
+        cycle: 2,
+        events: [
+          { type: "createPR", branch: "ninthwave/H-3", title: "Item H-3" },
+          { type: "setCIStatus", branch: "ninthwave/H-3", status: "fail" },
+          { type: "setMergeable", branch: "ninthwave/H-3", mergeable: "MERGEABLE" },
+        ],
+      },
+    ]);
+    loopDeps.sleep = worker.sleep;
 
     await orchestrateLoop(orch, defaultCtx, loopDeps, { maxIterations: 8 });
 
