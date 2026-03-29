@@ -62,10 +62,41 @@ export interface AgentFileTargetEntry {
 /** Full profile for a single AI tool. */
 export interface AiToolProfile {
   id: AiToolId;
+  /** Human-readable display name (e.g., "Claude Code", "OpenCode"). */
+  displayName: string;
+  /** Binary command name (e.g., "claude", "opencode", "copilot"). */
+  command: string;
+  /** Short description for onboarding UI. */
+  description: string;
+  /** Install command to suggest in onboarding UI. */
+  installCmd: string;
   /** Agent files target directory for this tool (relative to project root). */
   targetDir: string;
   /** Filename suffix for agent files (e.g. ".md", ".agent.md"). */
   suffix: string;
+  /**
+   * Filesystem paths (relative to project root) that indicate this tool is
+   * configured in the project. ANY matching path triggers detection.
+   * Used by detectProjectTools in setup.ts.
+   */
+  projectIndicators: string[];
+  /**
+   * Environment variable checks for detecting the running tool session.
+   * Each entry: { varName, value? } -- value means the env var must equal
+   * that value; no value means the env var must be set (truthy).
+   * Used by detectAiTool in run-items.ts.
+   */
+  envDetection?: Array<{ varName: string; value?: string }>;
+  /**
+   * Process name(s) to look for when walking the parent process tree.
+   * Used by detectAiTool in run-items.ts as a fallback.
+   */
+  processNames: string[];
+  /**
+   * Screen text indicators that this tool's input prompt is visible and ready.
+   * Combined with tool-agnostic defaults in worker-health.ts.
+   */
+  promptIndicators?: string[];
   /**
    * Build the multiplexer launch command and initial prompt for this tool.
    * Receives injectable deps so Copilot's temp-file creation is testable.
@@ -79,8 +110,25 @@ export interface AiToolProfile {
 export const AI_TOOL_PROFILES: AiToolProfile[] = [
   {
     id: "claude",
+    displayName: "Claude Code",
+    command: "claude",
+    description: "Anthropic's AI coding assistant",
+    installCmd: "curl -fsSL https://claude.ai/install.sh | bash",
     targetDir: ".claude/agents",
     suffix: ".md",
+    projectIndicators: [".claude"],
+    envDetection: [
+      { varName: "CLAUDE_CODE_SESSION" },
+      { varName: "CLAUDE_SESSION_ID" },
+    ],
+    processNames: ["claude"],
+    promptIndicators: [
+      "❯",                  // Claude Code prompt character
+      "Enter a prompt",     // Claude Code initial prompt state
+      "bypass permissions", // Claude Code permission mode indicator
+      "What can I help",    // Claude Code greeting
+      "How can I help",     // Claude Code greeting variant
+    ],
     buildLaunchCmd(opts, _deps): LaunchCmdResult {
       // Prompt is embedded as a positional arg via --append-system-prompt; no post-launch send.
       const cmd =
@@ -92,8 +140,15 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
   },
   {
     id: "opencode",
+    displayName: "OpenCode",
+    command: "opencode",
+    description: "Open-source AI coding tool",
+    installCmd: "curl -fsSL https://opencode.ai/install | bash",
     targetDir: ".opencode/agents",
     suffix: ".md",
+    projectIndicators: [".opencode", ".opencode.json"],
+    envDetection: [{ varName: "OPENCODE", value: "1" }],
+    processNames: ["opencode"],
     buildLaunchCmd(opts, deps): LaunchCmdResult {
       const cmd = `opencode --agent ${opts.agentName} --title '${opts.wsName}'`;
       const promptContent = deps.readFileSync(opts.promptFile, "utf-8");
@@ -103,8 +158,14 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
   },
   {
     id: "copilot",
+    displayName: "GitHub Copilot",
+    command: "copilot",
+    description: "GitHub's AI pair programmer",
+    installCmd: "npm install -g @github/copilot",
     targetDir: ".github/agents",
     suffix: ".agent.md",
+    projectIndicators: [".github/copilot-instructions.md", ".github/agents"],
+    processNames: ["copilot"],
     buildLaunchCmd(opts, deps): LaunchCmdResult {
       // Write a launcher script so the full prompt reaches copilot via -i without
       // any shell quoting issues from multiplexer pipelines.

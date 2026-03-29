@@ -288,9 +288,10 @@ describe("detectProjectTools", () => {
     expect(tools[0]!.tool).toBe("OpenCode");
   });
 
-  it("detects .github/ directory", () => {
+  it("detects .github/copilot-instructions.md", () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".github"), { recursive: true });
+    writeFileSync(join(projectDir, ".github", "copilot-instructions.md"), "# Copilot instructions\n");
 
     const tools = detectProjectTools(projectDir);
 
@@ -298,10 +299,30 @@ describe("detectProjectTools", () => {
     expect(tools[0]!.tool).toBe("GitHub Copilot");
   });
 
+  it("detects .github/agents/ directory", () => {
+    const projectDir = setupTempRepo();
+    mkdirSync(join(projectDir, ".github", "agents"), { recursive: true });
+
+    const tools = detectProjectTools(projectDir);
+
+    expect(tools).toHaveLength(1);
+    expect(tools[0]!.tool).toBe("GitHub Copilot");
+  });
+
+  it("does NOT detect bare .github/ directory as GitHub Copilot", () => {
+    const projectDir = setupTempRepo();
+    mkdirSync(join(projectDir, ".github"), { recursive: true });
+
+    const tools = detectProjectTools(projectDir);
+
+    expect(tools).toHaveLength(0);
+  });
+
   it("detects multiple tools", () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".claude"), { recursive: true });
     mkdirSync(join(projectDir, ".github"), { recursive: true });
+    writeFileSync(join(projectDir, ".github", "copilot-instructions.md"), "# Copilot\n");
 
     const tools = detectProjectTools(projectDir);
 

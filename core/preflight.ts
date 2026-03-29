@@ -7,6 +7,7 @@
 import { readFileSync } from "fs";
 import type { RunResult } from "./types.ts";
 import { run as defaultRun } from "./shell.ts";
+import { AI_TOOL_PROFILES } from "./ai-tools.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -63,7 +64,7 @@ export function checkGh(runner: ShellRunner): CheckResult {
 
 /** Check: at least one AI tool available (claude, opencode, copilot). */
 export function checkAiTool(runner: ShellRunner): CheckResult {
-  const tools = ["claude", "opencode", "copilot"];
+  const tools = AI_TOOL_PROFILES.map((p) => p.command);
   const found: string[] = [];
 
   for (const tool of tools) {
@@ -76,7 +77,7 @@ export function checkAiTool(runner: ShellRunner): CheckResult {
   if (found.length === 0) {
     return {
       status: "fail",
-      message: "No AI tool available (need claude, opencode, or copilot)",
+      message: `No AI tool available (need ${tools.join(", ")})`,
       detail: "Install: curl -fsSL https://claude.ai/install.sh | bash",
     };
   }
@@ -154,8 +155,9 @@ export function checkCopilotTrust(
   runner: ShellRunner,
   readFile: (path: string) => string = (p) => readFileSync(p, "utf-8"),
 ): CheckResult {
-  // Only relevant if copilot is available
-  if (runner("which", ["copilot"]).exitCode !== 0) {
+  // Only relevant if copilot is available -- derive the binary name from the profile
+  const copilotProfile = AI_TOOL_PROFILES.find((p) => p.id === "copilot");
+  if (!copilotProfile || runner("which", [copilotProfile.command]).exitCode !== 0) {
     return { status: "info", message: "Copilot not installed (skip trust check)" };
   }
 

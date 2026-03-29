@@ -5,6 +5,7 @@
 // (dependency injection) -- no vi.mock needed for testing.
 
 import type { Multiplexer } from "./mux.ts";
+import { AI_TOOL_PROFILES } from "./ai-tools.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -21,14 +22,15 @@ export type Sleeper = (ms: number) => void;
 
 // ── Indicator lists ──────────────────────────────────────────────────
 
+/** Tool-agnostic prompt indicators (apply regardless of which AI tool is in use). */
+const DEFAULT_PROMPT_INDICATORS = [
+  "> ",  // Generic prompt (trailing space avoids false positives)
+];
+
 /** Indicators that the AI tool's input prompt is visible and ready. */
 const PROMPT_INDICATORS = [
-  "❯",                 // Claude Code prompt character
-  "Enter a prompt",    // Claude Code initial prompt state
-  "bypass permissions", // Claude Code permission mode indicator
-  "What can I help",   // Claude Code greeting
-  "How can I help",    // Claude Code greeting variant
-  "> ",                // Generic prompt (must include trailing space to avoid false positives)
+  ...DEFAULT_PROMPT_INDICATORS,
+  ...AI_TOOL_PROFILES.flatMap((p) => p.promptIndicators ?? []),
 ];
 
 /** Indicators that the worker is actively processing. */

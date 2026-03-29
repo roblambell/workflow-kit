@@ -24,6 +24,7 @@ import {
   confirmPrompt as defaultConfirmPrompt,
 } from "../prompt.ts";
 import type { CheckboxChoice, CheckboxPromptFn, ConfirmPromptFn } from "../prompt.ts";
+import { AI_TOOL_PROFILES } from "../ai-tools.ts";
 
 /**
  * Resolve the absolute path to a command on PATH.
@@ -236,12 +237,12 @@ export const AGENT_DESCRIPTIONS: Record<string, string> = {
   "verifier.md": "post-merge CI failure diagnosis and fix-forward agent",
 };
 
-/** AI tool target directories where agent symlinks are created. */
-export const AGENT_TARGET_DIRS = [
-  { dir: ".claude/agents", suffix: ".md", tool: "Claude Code" },
-  { dir: ".opencode/agents", suffix: ".md", tool: "OpenCode" },
-  { dir: ".github/agents", suffix: ".agent.md", tool: "GitHub Copilot" },
-];
+/** AI tool target directories where agent symlinks are created -- derived from AI_TOOL_PROFILES. */
+export const AGENT_TARGET_DIRS = AI_TOOL_PROFILES.map((p) => ({
+  dir: p.targetDir,
+  suffix: p.suffix,
+  tool: p.displayName,
+}));
 
 /** Agent selection result: which agents to install and which tool directories to target. */
 export interface AgentSelection {
@@ -256,10 +257,8 @@ export interface AgentSelection {
 /**
  * Detect which AI tools are installed in the project directory.
  *
- * Checks for tool-specific directories and config files:
- * - Claude Code: `.claude/` directory
- * - OpenCode: `.opencode/` directory or `.opencode.json`
- * - GitHub Copilot: `.github/` directory
+ * Checks each tool's projectIndicators (from AI_TOOL_PROFILES) against the
+ * project directory. Any matching path triggers detection for that tool.
  *
  * Returns the matching AGENT_TARGET_DIRS entries.
  */
@@ -268,22 +267,13 @@ export function detectProjectTools(
 ): { dir: string; suffix: string; tool: string }[] {
   const detected: { dir: string; suffix: string; tool: string }[] = [];
 
-  // Claude Code: check for .claude/ directory
-  if (existsSync(join(projectDir, ".claude"))) {
-    detected.push(AGENT_TARGET_DIRS[0]!);
-  }
-
-  // OpenCode: check for .opencode/ directory or .opencode.json
-  if (
-    existsSync(join(projectDir, ".opencode")) ||
-    existsSync(join(projectDir, ".opencode.json"))
-  ) {
-    detected.push(AGENT_TARGET_DIRS[1]!);
-  }
-
-  // GitHub Copilot: check for .github/ directory
-  if (existsSync(join(projectDir, ".github"))) {
-    detected.push(AGENT_TARGET_DIRS[2]!);
+  for (const profile of AI_TOOL_PROFILES) {
+    const matched = profile.projectIndicators.some((indicator) =>
+      existsSync(join(projectDir, indicator)),
+    );
+    if (matched) {
+      detected.push({ dir: profile.targetDir, suffix: profile.suffix, tool: profile.displayName });
+    }
   }
 
   return detected;

@@ -16,7 +16,6 @@ import {
   shouldOnboard,
   onboard,
   cmdNoArgs,
-  AI_TOOLS,
   MUX_OPTIONS,
   type CommandChecker,
   type OnboardDeps,
@@ -60,7 +59,7 @@ describe("detectInstalledAITools", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]!.command).toBe("claude");
-    expect(result[0]!.name).toBe("Claude Code");
+    expect(result[0]!.displayName).toBe("Claude Code");
   });
 
   it("returns only opencode when opencode is installed", () => {

@@ -4,34 +4,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { run, GIT_TIMEOUT } from "./shell.ts";
 import { info as defaultInfo } from "./output.ts";
+import { agentFileTargets } from "./ai-tools.ts";
+import { AGENT_SOURCES } from "./commands/setup.ts";
 
-/** Agent files to seed into worktrees (matches setup.ts AGENT_SOURCES). */
-const AGENT_FILES: { source: string; targets: { dir: string; suffix: string }[] }[] = [
-  {
-    source: "implementer.md",
-    targets: [
-      { dir: ".claude/agents", suffix: ".md" },
-      { dir: ".opencode/agents", suffix: ".md" },
-      { dir: ".github/agents", suffix: ".agent.md" },
-    ],
-  },
-  {
-    source: "reviewer.md",
-    targets: [
-      { dir: ".claude/agents", suffix: ".md" },
-      { dir: ".opencode/agents", suffix: ".md" },
-      { dir: ".github/agents", suffix: ".agent.md" },
-    ],
-  },
-  {
-    source: "verifier.md",
-    targets: [
-      { dir: ".claude/agents", suffix: ".md" },
-      { dir: ".opencode/agents", suffix: ".md" },
-      { dir: ".github/agents", suffix: ".agent.md" },
-    ],
-  },
-];
+/** Agent files to seed into worktrees -- derived from AI_TOOL_PROFILES. */
+const AGENT_FILES = agentFileTargets(AGENT_SOURCES);
 
 /** Dependencies for seedAgentFiles, injectable for testing. */
 export interface SeedAgentFilesDeps {

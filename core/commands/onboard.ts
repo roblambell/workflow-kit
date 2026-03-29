@@ -29,36 +29,8 @@ import { promptItems, displayItemsSummary, promptMode, promptMergeStrategy, prom
 import type { Mode, InteractiveResult } from "../interactive.ts";
 import type { MergeStrategy } from "../orchestrator.ts";
 import { printHelp } from "../help.ts";
-
-// ── AI tool descriptors ─────────────────────────────────────────────
-
-export interface AITool {
-  name: string;
-  command: string;
-  description: string;
-  installCmd: string;
-}
-
-export const AI_TOOLS: AITool[] = [
-  {
-    name: "Claude Code",
-    command: "claude",
-    description: "Anthropic's AI coding assistant",
-    installCmd: "curl -fsSL https://claude.ai/install.sh | bash",
-  },
-  {
-    name: "OpenCode",
-    command: "opencode",
-    description: "Open-source AI coding tool",
-    installCmd: "curl -fsSL https://opencode.ai/install | bash",
-  },
-  {
-    name: "GitHub Copilot",
-    command: "copilot",
-    description: "GitHub's AI pair programmer",
-    installCmd: "npm install -g @github/copilot",
-  },
-];
+import { AI_TOOL_PROFILES } from "../ai-tools.ts";
+import type { AiToolProfile } from "../ai-tools.ts";
 
 // ── Multiplexer descriptors ─────────────────────────────────────────
 
@@ -149,12 +121,12 @@ export function detectInstalledMuxes(
 
 /**
  * Detect all installed AI coding tools.
- * Returns matching AITool entries in preference order (claude > opencode > copilot).
+ * Returns matching AiToolProfile entries in preference order (claude > opencode > copilot).
  */
 export function detectInstalledAITools(
   commandExists: CommandChecker = defaultCommandExists,
-): AITool[] {
-  return AI_TOOLS.filter((t) => commandExists(t.command));
+): AiToolProfile[] {
+  return AI_TOOL_PROFILES.filter((p) => commandExists(p.command));
 }
 
 // ── Interactive choice ──────────────────────────────────────────────
@@ -293,13 +265,13 @@ export async function onboard(
   // ── Step 3: Detect AI tool ──────────────────────────────────────
   console.log(`${DIM}Detecting AI coding tools...${RESET}`);
   const installedTools = detectInstalledAITools(commandExists);
-  let chosenTool: AITool;
+  let chosenTool: AiToolProfile;
 
   if (installedTools.length === 0) {
     console.log(`  ${YELLOW}No AI coding tool found.${RESET}`);
     console.log();
     console.log("  ninthwave works with AI coding assistants. Install one:");
-    for (const t of AI_TOOLS) {
+    for (const t of AI_TOOL_PROFILES) {
       console.log(
         `    ${BOLD}${t.installCmd}${RESET} ${DIM}(${t.description})${RESET}`,
       );
@@ -312,9 +284,9 @@ export async function onboard(
   } else if (installedTools.length === 1) {
     chosenTool = installedTools[0]!;
     console.log(
-      `  ${GREEN}✓${RESET} Found ${BOLD}${chosenTool.name}${RESET} ${DIM}(${chosenTool.description})${RESET}`,
+      `  ${GREEN}✓${RESET} Found ${BOLD}${chosenTool.displayName}${RESET} ${DIM}(${chosenTool.description})${RESET}`,
     );
-    const confirm = await prompt(`  Use ${chosenTool.name}? [Y/n]: `);
+    const confirm = await prompt(`  Use ${chosenTool.displayName}? [Y/n]: `);
     if (confirm.toLowerCase() === "n") {
       console.log(
         `  Install a different AI tool and re-run ${BOLD}ninthwave${RESET}.`,
@@ -325,7 +297,7 @@ export async function onboard(
     console.log("  Found multiple AI tools:");
     const idx = await promptChoice(
       installedTools,
-      (t) => `${t.name} ${DIM}(${t.description})${RESET}`,
+      (t) => `${t.displayName} ${DIM}(${t.description})${RESET}`,
       prompt,
     );
     chosenTool = installedTools[idx]!;
@@ -359,7 +331,7 @@ export async function onboard(
 
   // ── Step 5: Launch session ──────────────────────────────────────
   console.log(
-    `${DIM}Launching ${chosenTool.name} in ${chosenMux.name}...${RESET}`,
+    `${DIM}Launching ${chosenTool.displayName} in ${chosenMux.name}...${RESET}`,
   );
   const sessionRef = launchSession(
     chosenMux.type,
@@ -383,7 +355,7 @@ export async function onboard(
   // ── Step 6 & 7: Hand off ───────────────────────────────────────
   console.log(`${GREEN}You're all set!${RESET}`);
   console.log(
-    `${chosenTool.name} is running in ${chosenMux.name}.`,
+    `${chosenTool.displayName} is running in ${chosenMux.name}.`,
   );
   console.log();
 

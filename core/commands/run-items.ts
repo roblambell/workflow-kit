@@ -17,6 +17,8 @@ import { cmdConflicts } from "./conflicts.ts";
 import { applyGithubToken } from "../gh.ts";
 import { launchSingleItem } from "./launch.ts";
 import type { WorkItem } from "../types.ts";
+import { AI_TOOL_PROFILES, isAiToolId, allToolIds } from "../ai-tools.ts";
+import type { AiToolId } from "../ai-tools.ts";
 
 /**
  * CLI-level regex for detecting work item IDs as positional arguments.
@@ -28,33 +30,51 @@ export const WORK_ITEM_ID_CLI_PATTERN = /^[A-Z]+-[A-Z0-9]+-\d+[a-z]*$/;
 /**
  * Detect which AI coding tool is running the orchestrator session.
  * The same tool is used to launch worker sessions.
+ *
+ * Returns an AiToolId for known tools, or a plain string for custom overrides.
  */
-export function detectAiTool(): string {
+export function detectAiTool(): AiToolId | string {
   // 1. Explicit override via environment variable
   if (process.env.NINTHWAVE_AI_TOOL) {
-    return process.env.NINTHWAVE_AI_TOOL;
+    const envValue = process.env.NINTHWAVE_AI_TOOL;
+    if (!isAiToolId(envValue)) {
+      warn(`Unknown AI tool: "${envValue}". Known tools: ${allToolIds().join(", ")}. Proceeding anyway.`);
+    }
+    return envValue;
   }
 
-  // 2. OpenCode: sets OPENCODE=1
-  if (process.env.OPENCODE === "1") {
-    return "opencode";
+  // 2. Environment variable detection -- driven from profile.envDetection.
+  // Exact-value checks (e.g. OPENCODE=1) run before presence checks so that
+  // a specific tool signal always wins over a looser signal from another tool.
+
+  // Pass 1: exact-value matches
+  for (const profile of AI_TOOL_PROFILES) {
+    if (!profile.envDetection) continue;
+    for (const check of profile.envDetection) {
+      if (check.value === undefined) continue;
+      if (process.env[check.varName] === check.value) return profile.id;
+    }
   }
 
-  // 3. Claude Code: session env vars
-  if (process.env.CLAUDE_CODE_SESSION || process.env.CLAUDE_SESSION_ID) {
-    return "claude";
+  // Pass 2: presence matches
+  for (const profile of AI_TOOL_PROFILES) {
+    if (!profile.envDetection) continue;
+    for (const check of profile.envDetection) {
+      if (check.value !== undefined) continue;
+      if (process.env[check.varName]) return profile.id;
+    }
   }
 
-  // 4. Walk up the process tree
+  // 3. Walk up the process tree -- driven from profile.processNames
   let pid = process.pid;
   let depth = 0;
   while (pid > 1 && depth < 10) {
     const result = run("ps", ["-o", "comm=", "-p", String(pid)]);
     if (result.exitCode === 0 && result.stdout) {
       const cmdBase = basename(result.stdout.trim());
-      if (cmdBase === "opencode") return "opencode";
-      if (cmdBase === "claude") return "claude";
-      if (cmdBase === "copilot") return "copilot";
+      for (const profile of AI_TOOL_PROFILES) {
+        if (profile.processNames.includes(cmdBase)) return profile.id;
+      }
     }
     const ppidResult = run("ps", ["-o", "ppid=", "-p", String(pid)]);
     if (ppidResult.exitCode !== 0) break;
@@ -62,10 +82,10 @@ export function detectAiTool(): string {
     depth++;
   }
 
-  // 5. Fallback: check if any tool binary is available
-  if (run("which", ["claude"]).exitCode === 0) return "claude";
-  if (run("which", ["opencode"]).exitCode === 0) return "opencode";
-  if (run("which", ["copilot"]).exitCode === 0) return "copilot";
+  // 4. Fallback: check if any tool binary is available -- driven from profile.command
+  for (const profile of AI_TOOL_PROFILES) {
+    if (run("which", [profile.command]).exitCode === 0) return profile.id;
+  }
 
   return "unknown";
 }

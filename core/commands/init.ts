@@ -39,6 +39,7 @@ import {
   executeSymlinkPlan,
   AGENT_TARGET_DIRS,
 } from "./setup.ts";
+import { AI_TOOL_PROFILES } from "../ai-tools.ts";
 
 // --- Detection types ---
 
@@ -185,14 +186,10 @@ export function detectAITools(
   const fileExists = deps.fileExists ?? defaultFileExists;
   const tools: string[] = [];
 
-  if (fileExists(join(projectDir, ".claude"))) {
-    tools.push("claude");
-  }
-  if (fileExists(join(projectDir, ".opencode"))) {
-    tools.push("opencode");
-  }
-  if (fileExists(join(projectDir, ".github", "copilot-instructions.md"))) {
-    tools.push("copilot");
+  for (const profile of AI_TOOL_PROFILES) {
+    if (profile.projectIndicators.some((indicator) => fileExists(join(projectDir, indicator)))) {
+      tools.push(profile.id);
+    }
   }
 
   return tools;
@@ -555,7 +552,7 @@ export function generateConfig(detection: DetectionResult): string {
   if (detection.aiTools.length > 0) {
     lines.push(`AI_TOOLS=${detection.aiTools.join(",")}`);
   } else {
-    lines.push("# AI_TOOLS=claude,opencode,copilot");
+    lines.push(`# AI_TOOLS=${AI_TOOL_PROFILES.map((p) => p.command).join(",")}`);
   }
 
   lines.push("");
