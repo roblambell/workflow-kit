@@ -555,14 +555,14 @@ ${hubRepoNwoLine}`;
   return { workspaceRef };
 }
 
-/** Result of launching a verifier worker session. */
-export interface VerifierLaunchResult {
+/** Result of launching a forward-fixer worker session. */
+export interface ForwardFixerLaunchResult {
   worktreePath: string;
   workspaceRef: string;
 }
 
-/** Launch a verifier worker for post-merge CI failure diagnosis. */
-export function launchVerifierWorker(
+/** Launch a forward-fixer worker for post-merge CI failure diagnosis. */
+export function launchForwardFixerWorker(
   itemId: string,
   mergeCommitSha: string,
   repoRoot: string,
@@ -570,19 +570,19 @@ export function launchVerifierWorker(
   mux: Multiplexer = getMux(),
   options: { hubRepoNwo?: string } = {},
   deps: LaunchGitDeps = defaultLaunchGitDeps,
-): VerifierLaunchResult | null {
-  const worktreePath = join(repoRoot, ".worktrees", `ninthwave-verify-${itemId}`);
-  const branch = `ninthwave/verify-${itemId}`;
+): ForwardFixerLaunchResult | null {
+  const worktreePath = join(repoRoot, ".worktrees", `ninthwave-fix-forward-${itemId}`);
+  const branch = `ninthwave/fix-forward-${itemId}`;
 
   if (existsSync(worktreePath)) {
-    warn(`Verifier worktree already exists for ${itemId} at ${worktreePath}, reusing`);
+    warn(`Forward-fixer worktree already exists for ${itemId} at ${worktreePath}, reusing`);
   } else {
     mkdirSync(join(repoRoot, ".worktrees"), { recursive: true });
     ensureWorktreeExcluded(repoRoot);
 
-    info(`Fetching main in ${basename(repoRoot)} for verifier of ${itemId}`);
+    info(`Fetching main in ${basename(repoRoot)} for forward-fixer of ${itemId}`);
     try { deps.fetchOrigin(repoRoot, "main"); } catch (e) {
-      warn(`Failed to fetch origin/main for verifier of ${itemId}: ${e instanceof Error ? e.message : e}`);
+      warn(`Failed to fetch origin/main for forward-fixer of ${itemId}: ${e instanceof Error ? e.message : e}`);
       return null;
     }
 
@@ -596,11 +596,11 @@ export function launchVerifierWorker(
       }
     }
 
-    info(`Creating verifier worktree for ${itemId} on branch ${branch}`);
+    info(`Creating forward-fixer worktree for ${itemId} on branch ${branch}`);
     deps.createWorktree(repoRoot, worktreePath, branch, "origin/main");
   }
 
-  // Seed agent files into the verifier worktree
+  // Seed agent files into the forward-fixer worktree
   seedAgentFiles(worktreePath, repoRoot);
 
   const hubRepoNwoLine = options.hubRepoNwo ? `HUB_REPO_NWO: ${options.hubRepoNwo}\n` : "";
@@ -610,11 +610,11 @@ PROJECT_ROOT: ${repoRoot}
 REPO_ROOT: ${repoRoot}
 ${hubRepoNwoLine}`;
 
-  const safeTitle = sanitizeTitle(`Verify ${itemId}`);
-  info(`Launching ${aiTool} verifier session for ${itemId}: merge SHA ${mergeCommitSha.slice(0, 8)}`);
+  const safeTitle = sanitizeTitle(`Fix-forward ${itemId}`);
+  info(`Launching ${aiTool} forward-fixer session for ${itemId}: merge SHA ${mergeCommitSha.slice(0, 8)}`);
   const promptFile = join(worktreePath, ".nw-prompt");
   writeFileSync(promptFile, systemPrompt);
-  const workspaceRef = launchAiSession(aiTool, worktreePath, itemId, safeTitle, promptFile, mux, { projectRoot: repoRoot, agentName: "ninthwave-verifier" });
+  const workspaceRef = launchAiSession(aiTool, worktreePath, itemId, safeTitle, promptFile, mux, { projectRoot: repoRoot, agentName: "ninthwave-forward-fixer" });
   if (!workspaceRef) return null;
   return { worktreePath, workspaceRef };
 }

@@ -28,7 +28,7 @@ describe("scenario: CI failure recovery", () => {
       maxCiRetries: 3,
       maxRetries: 3,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("CF-1"));
@@ -104,7 +104,7 @@ describe("scenario: CI failure recovery", () => {
       maxCiRetries,
       maxRetries: 3,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("CF-2"));
@@ -171,7 +171,7 @@ describe("scenario: CI failure recovery", () => {
       maxCiRetries: 3,
       maxRetries: 3,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("CF-3"));
@@ -227,7 +227,7 @@ describe("scenario: CI failure recovery", () => {
       maxCiRetries: 10, // High limit so we don't hit stuck
       maxRetries: 3,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("CF-4"));
@@ -290,7 +290,7 @@ describe("scenario: CI failure recovery", () => {
       maxCiRetries: 3,
       maxRetries: 3,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("CF-5"));

@@ -103,7 +103,7 @@ export function buildSnapshot(
     if (orchItem.state === "done" || orchItem.state === "stuck") continue;
 
     // Post-merge verification: poll CI on the merge commit (no PR polling needed)
-    if ((orchItem.state === "verifying" || orchItem.state === "verify-failed") && orchItem.mergeCommitSha) {
+    if ((orchItem.state === "forward-fix-pending" || orchItem.state === "fix-forward-failed") && orchItem.mergeCommitSha) {
       const snap: ItemSnapshot = { id: orchItem.id };
       if (checkCommitCI) {
         const repoRoot = orchItem.resolvedRepoRoot ?? projectRoot;
@@ -209,10 +209,10 @@ export function buildSnapshot(
       );
     }
 
-    // Check verifier worker health for items in repairing-main state
-    if (orchItem.state === "repairing-main" && orchItem.verifyWorkspaceRef) {
+    // Check forward-fixer worker health for items in fixing-forward state
+    if (orchItem.state === "fixing-forward" && orchItem.fixForwardWorkspaceRef) {
       snap.workerAlive = isWorkerAliveWithCache(
-        { ...orchItem, workspaceRef: orchItem.verifyWorkspaceRef } as OrchestratorItem,
+        { ...orchItem, workspaceRef: orchItem.fixForwardWorkspaceRef } as OrchestratorItem,
         cachedWorkspaces,
       );
     }
@@ -297,7 +297,7 @@ export async function buildSnapshotAsync(
     if (orchItem.state === "done" || orchItem.state === "stuck") continue;
 
     // Post-merge verification
-    if ((orchItem.state === "verifying" || orchItem.state === "verify-failed") && orchItem.mergeCommitSha) {
+    if ((orchItem.state === "forward-fix-pending" || orchItem.state === "fix-forward-failed") && orchItem.mergeCommitSha) {
       const snap: ItemSnapshot = { id: orchItem.id };
       if (checkCommitCI) {
         const repoRoot = orchItem.resolvedRepoRoot ?? projectRoot;
@@ -393,10 +393,10 @@ export async function buildSnapshotAsync(
       );
     }
 
-    // Verifier worker health
-    if (orchItem.state === "repairing-main" && orchItem.verifyWorkspaceRef) {
+    // Forward-fixer worker health
+    if (orchItem.state === "fixing-forward" && orchItem.fixForwardWorkspaceRef) {
       snap.workerAlive = isWorkerAliveWithCache(
-        { ...orchItem, workspaceRef: orchItem.verifyWorkspaceRef } as OrchestratorItem,
+        { ...orchItem, workspaceRef: orchItem.fixForwardWorkspaceRef } as OrchestratorItem,
         cachedWorkspaces,
       );
     }

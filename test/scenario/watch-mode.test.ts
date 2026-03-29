@@ -20,7 +20,7 @@ function makeOrch(): Orchestrator {
     mergeStrategy: "auto",
     bypassEnabled: false,
     enableStacking: false,
-    verifyMain: false,
+    fixForward: false,
   });
 }
 

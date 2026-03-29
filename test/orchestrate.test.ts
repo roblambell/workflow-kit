@@ -4681,8 +4681,8 @@ function makeOrchestratorItem(id: string): OrchestratorItem {
     baseBranch: undefined,
     detectionLatencyMs: undefined,
     mergeCommitSha: undefined,
-    verifierWorktreePath: undefined,
-    verifierWorkspaceRef: undefined,
+    forwardFixerWorktreePath: undefined,
+    forwardFixerWorkspaceRef: undefined,
   } as OrchestratorItem;
 }
 

@@ -106,7 +106,7 @@ All PR comments from automated agents go through the same GitHub account. Always
 **[Repairer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/repairer.md)** <message>
 ```
 
-Ignore comments prefixed with other agent labels (`[Implementer]`, `[Reviewer]`, `[Verifier]`, `[Orchestrator]`) -- those are from other agents in the pipeline.
+Ignore comments prefixed with other agent labels (`[Implementer]`, `[Reviewer]`, `[Forward-Fixer]`, `[Orchestrator]`) -- those are from other agents in the pipeline.
 
 ## Constraints
 

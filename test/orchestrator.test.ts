@@ -2840,14 +2840,14 @@ describe("Orchestrator", () => {
       });
     });
 
-    // ── verifying ──────────────────────────────────────────────────
+    // ── forward-fix-pending ──────────────────────────────────────────────────
 
-    describe("verifying →", () => {
+    describe("forward-fix-pending →", () => {
       it("→ done when merge commit CI passes", () => {
-        orch = new Orchestrator({ verifyMain: true });
+        orch = new Orchestrator({ fixForward: true });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "verifying");
+        orch.setState("X-1-1", "forward-fix-pending");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", mergeCommitCIStatus: "pass" }]),
@@ -2856,98 +2856,98 @@ describe("Orchestrator", () => {
         expect(actions).toHaveLength(0);
       });
 
-      it("→ verify-failed when merge commit CI fails", () => {
-        orch = new Orchestrator({ verifyMain: true });
+      it("→ fix-forward-failed when merge commit CI fails", () => {
+        orch = new Orchestrator({ fixForward: true });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "verifying");
+        orch.setState("X-1-1", "forward-fix-pending");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
         orch.processTransitions(
           snapshotWith([{ id: "X-1-1", mergeCommitCIStatus: "fail" }]),
         );
-        expect(orch.getItem("X-1-1")!.state).toBe("verify-failed");
-        expect(orch.getItem("X-1-1")!.verifyFailCount).toBe(1);
-        expect(orch.getItem("X-1-1")!.failureReason).toContain("verify-failed");
+        expect(orch.getItem("X-1-1")!.state).toBe("fix-forward-failed");
+        expect(orch.getItem("X-1-1")!.fixForwardFailCount).toBe(1);
+        expect(orch.getItem("X-1-1")!.failureReason).toContain("fix-forward-failed");
       });
 
-      it("stays verifying when merge commit CI still pending", () => {
-        orch = new Orchestrator({ verifyMain: true });
+      it("stays forward-fix-pending when merge commit CI still pending", () => {
+        orch = new Orchestrator({ fixForward: true });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "verifying");
+        orch.setState("X-1-1", "forward-fix-pending");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", mergeCommitCIStatus: "pending" }]),
         );
-        expect(orch.getItem("X-1-1")!.state).toBe("verifying");
+        expect(orch.getItem("X-1-1")!.state).toBe("forward-fix-pending");
         expect(actions).toHaveLength(0);
       });
 
-      it("stays verifying when no merge commit CI status yet", () => {
-        orch = new Orchestrator({ verifyMain: true });
+      it("stays forward-fix-pending when no merge commit CI status yet", () => {
+        orch = new Orchestrator({ fixForward: true });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "verifying");
+        orch.setState("X-1-1", "forward-fix-pending");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1" }]),
         );
-        expect(orch.getItem("X-1-1")!.state).toBe("verifying");
+        expect(orch.getItem("X-1-1")!.state).toBe("forward-fix-pending");
         expect(actions).toHaveLength(0);
       });
 
-      it("increments verifyFailCount on each failure", () => {
-        orch = new Orchestrator({ verifyMain: true });
+      it("increments fixForwardFailCount on each failure", () => {
+        orch = new Orchestrator({ fixForward: true });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "verifying");
+        orch.setState("X-1-1", "forward-fix-pending");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
-        orch.getItem("X-1-1")!.verifyFailCount = 0;
+        orch.getItem("X-1-1")!.fixForwardFailCount = 0;
         orch.processTransitions(
           snapshotWith([{ id: "X-1-1", mergeCommitCIStatus: "fail" }]),
         );
-        expect(orch.getItem("X-1-1")!.verifyFailCount).toBe(1);
+        expect(orch.getItem("X-1-1")!.fixForwardFailCount).toBe(1);
       });
     });
 
-    // ── verify-failed ─────────────────────────────────────────────
+    // ── fix-forward-failed ─────────────────────────────────────────────
 
-    describe("verify-failed →", () => {
-      it("→ repairing-main when mergeCommitSha present (launches verifier)", () => {
-        orch = new Orchestrator({ verifyMain: true, maxVerifyRetries: 2 });
+    describe("fix-forward-failed →", () => {
+      it("→ fixing-forward when mergeCommitSha present (launches forward-fixer)", () => {
+        orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 2 });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "verify-failed");
+        orch.setState("X-1-1", "fix-forward-failed");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
-        orch.getItem("X-1-1")!.verifyFailCount = 1;
+        orch.getItem("X-1-1")!.fixForwardFailCount = 1;
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", mergeCommitCIStatus: "fail" }]),
         );
-        expect(orch.getItem("X-1-1")!.state).toBe("repairing-main");
-        expect(actions.some((a) => a.type === "launch-verifier" && a.itemId === "X-1-1")).toBe(true);
+        expect(orch.getItem("X-1-1")!.state).toBe("fixing-forward");
+        expect(actions.some((a) => a.type === "launch-forward-fixer" && a.itemId === "X-1-1")).toBe(true);
       });
 
-      it("→ stuck when max verify retries exhausted", () => {
-        orch = new Orchestrator({ verifyMain: true, maxVerifyRetries: 1 });
+      it("→ stuck when max fix-forward retries exhausted", () => {
+        orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 1 });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "verify-failed");
+        orch.setState("X-1-1", "fix-forward-failed");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
-        orch.getItem("X-1-1")!.verifyFailCount = 1; // equals maxVerifyRetries
+        orch.getItem("X-1-1")!.fixForwardFailCount = 1; // equals maxFixForwardRetries
         orch.processTransitions(
           snapshotWith([{ id: "X-1-1", mergeCommitCIStatus: "fail" }]),
         );
         expect(orch.getItem("X-1-1")!.state).toBe("stuck");
-        expect(orch.getItem("X-1-1")!.failureReason).toContain("exceeded max verify retries");
+        expect(orch.getItem("X-1-1")!.failureReason).toContain("exceeded max fix-forward retries");
       });
 
       it("→ done when merge commit CI recovers to pass", () => {
-        orch = new Orchestrator({ verifyMain: true, maxVerifyRetries: 2 });
+        orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 2 });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "verify-failed");
+        orch.setState("X-1-1", "fix-forward-failed");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
-        orch.getItem("X-1-1")!.verifyFailCount = 1;
+        orch.getItem("X-1-1")!.fixForwardFailCount = 1;
         orch.processTransitions(
           snapshotWith([{ id: "X-1-1", mergeCommitCIStatus: "pass" }]),
         );
@@ -2955,67 +2955,67 @@ describe("Orchestrator", () => {
       });
     });
 
-    // ── repairing-main ────────────────────────────────────────────
+    // ── fixing-forward ────────────────────────────────────────────
 
-    describe("repairing-main →", () => {
-      it("→ done when merge commit CI passes (verifier fix merged)", () => {
-        orch = new Orchestrator({ verifyMain: true });
+    describe("fixing-forward →", () => {
+      it("→ done when merge commit CI passes (forward-fixer fix merged)", () => {
+        orch = new Orchestrator({ fixForward: true });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing-main");
+        orch.setState("X-1-1", "fixing-forward");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
-        orch.getItem("X-1-1")!.verifyWorkspaceRef = "workspace:verifier-1";
+        orch.getItem("X-1-1")!.fixForwardWorkspaceRef = "workspace:forward-fixer-1";
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", mergeCommitCIStatus: "pass" }]),
         );
         expect(orch.getItem("X-1-1")!.state).toBe("done");
-        expect(actions.some((a) => a.type === "clean-verifier")).toBe(true);
+        expect(actions.some((a) => a.type === "clean-forward-fixer")).toBe(true);
       });
 
-      it("→ stuck when verifier worker dies (debounced)", () => {
-        orch = new Orchestrator({ verifyMain: true });
+      it("→ stuck when forward-fixer worker dies (debounced)", () => {
+        orch = new Orchestrator({ fixForward: true });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing-main");
+        orch.setState("X-1-1", "fixing-forward");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
-        orch.getItem("X-1-1")!.verifyWorkspaceRef = "workspace:verifier-1";
+        orch.getItem("X-1-1")!.fixForwardWorkspaceRef = "workspace:forward-fixer-1";
         // Debounce: NOT_ALIVE_THRESHOLD (5) consecutive not-alive checks required
         for (let i = 0; i < 4; i++) {
           orch.processTransitions(
             snapshotWith([{ id: "X-1-1", workerAlive: false }]),
           );
-          expect(orch.getItem("X-1-1")!.state).toBe("repairing-main");
+          expect(orch.getItem("X-1-1")!.state).toBe("fixing-forward");
         }
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", workerAlive: false }]),
         );
         expect(orch.getItem("X-1-1")!.state).toBe("stuck");
-        expect(orch.getItem("X-1-1")!.failureReason).toContain("verify-repair-failed");
-        expect(actions.some((a) => a.type === "clean-verifier")).toBe(true);
+        expect(orch.getItem("X-1-1")!.failureReason).toContain("fix-forward-failed");
+        expect(actions.some((a) => a.type === "clean-forward-fixer")).toBe(true);
       });
 
-      it("stays repairing-main when worker alive and CI not passing", () => {
-        orch = new Orchestrator({ verifyMain: true });
+      it("stays fixing-forward when worker alive and CI not passing", () => {
+        orch = new Orchestrator({ fixForward: true });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing-main");
+        orch.setState("X-1-1", "fixing-forward");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
-        orch.getItem("X-1-1")!.verifyWorkspaceRef = "workspace:verifier-1";
+        orch.getItem("X-1-1")!.fixForwardWorkspaceRef = "workspace:forward-fixer-1";
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", workerAlive: true }]),
         );
-        expect(orch.getItem("X-1-1")!.state).toBe("repairing-main");
+        expect(orch.getItem("X-1-1")!.state).toBe("fixing-forward");
         expect(actions).toHaveLength(0);
       });
 
-      it("stays repairing-main with no snapshot", () => {
-        orch = new Orchestrator({ verifyMain: true });
+      it("stays fixing-forward with no snapshot", () => {
+        orch = new Orchestrator({ fixForward: true });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing-main");
+        orch.setState("X-1-1", "fixing-forward");
         orch.getItem("X-1-1")!.mergeCommitSha = "abc123";
         const actions = orch.processTransitions(emptySnapshot());
-        expect(orch.getItem("X-1-1")!.state).toBe("repairing-main");
+        expect(orch.getItem("X-1-1")!.state).toBe("fixing-forward");
         expect(actions).toHaveLength(0);
       });
     });
@@ -6856,7 +6856,7 @@ describe("Orchestrator", () => {
       { label: "Orchestrator", body: "**[Orchestrator](https://github.com/org/repo/blob/main/agents/orchestrator.md)** status update" },
       { label: "Implementer", body: "**[Implementer](https://github.com/org/repo/blob/main/agents/implementer.md)** addressed feedback" },
       { label: "Reviewer", body: "**[Reviewer](https://github.com/org/repo/blob/main/agents/reviewer.md)** review complete" },
-      { label: "Verifier", body: "**[Verifier](https://github.com/org/repo/blob/main/agents/verifier.md)** CI is flaky" },
+      { label: "Verifier", body: "**[Forward-Fixer](https://github.com/org/repo/blob/main/agents/forward-fixer.md)** CI is flaky" },
       { label: "Repairer", body: "**[Repairer](https://github.com/org/repo/blob/main/agents/repairer.md)** rebase complete" },
     ];
 

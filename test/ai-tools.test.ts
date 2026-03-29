@@ -160,9 +160,9 @@ describe("agentFileTargets", () => {
   });
 
   it("returns entries for multiple sources", () => {
-    const entries = agentFileTargets(["implementer.md", "reviewer.md", "verifier.md"]);
+    const entries = agentFileTargets(["implementer.md", "reviewer.md", "forward-fixer.md"]);
     expect(entries).toHaveLength(3);
-    expect(entries.map((e) => e.source)).toEqual(["implementer.md", "reviewer.md", "verifier.md"]);
+    expect(entries.map((e) => e.source)).toEqual(["implementer.md", "reviewer.md", "forward-fixer.md"]);
   });
 
   it("all sources share the same targets array structure", () => {

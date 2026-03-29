@@ -55,12 +55,12 @@ export interface DaemonStateItem {
   ciFailureNotifiedAt?: string | null;
   /** cmux workspace reference for the repair worker session (rebase-only). */
   repairWorkspaceRef?: string;
-  /** SHA of the merge commit on main (for post-merge CI verification). */
+  /** SHA of the merge commit on main (for post-merge CI fix-forward). */
   mergeCommitSha?: string;
-  /** Number of times CI verification on main has failed. */
-  verifyFailCount?: number;
-  /** cmux workspace reference for the verifier worker session. */
-  verifyWorkspaceRef?: string;
+  /** Number of times CI fix-forward on main has failed. */
+  fixForwardFailCount?: number;
+  /** cmux workspace reference for the forward-fixer worker session. */
+  fixForwardWorkspaceRef?: string;
   /** Absolute path to the preserved worktree directory (set for stuck items). */
   worktreePath?: string;
   /** cmux workspace reference for the implementation worker session. */
@@ -587,8 +587,8 @@ export function serializeOrchestratorState(
       ...(item.ciFailureNotifiedAt ? { ciFailureNotifiedAt: item.ciFailureNotifiedAt } : {}),
       ...(item.repairWorkspaceRef ? { repairWorkspaceRef: item.repairWorkspaceRef } : {}),
       ...(item.mergeCommitSha ? { mergeCommitSha: item.mergeCommitSha } : {}),
-      ...(item.verifyFailCount ? { verifyFailCount: item.verifyFailCount } : {}),
-      ...(item.verifyWorkspaceRef ? { verifyWorkspaceRef: item.verifyWorkspaceRef } : {}),
+      ...(item.fixForwardFailCount ? { fixForwardFailCount: item.fixForwardFailCount } : {}),
+      ...(item.fixForwardWorkspaceRef ? { fixForwardWorkspaceRef: item.fixForwardWorkspaceRef } : {}),
       ...(item.worktreePath ? { worktreePath: item.worktreePath } : {}),
       ...(item.workspaceRef ? { workspaceRef: item.workspaceRef } : {}),
       ...(item.partition != null ? { partition: item.partition } : {}),

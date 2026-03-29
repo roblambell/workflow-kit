@@ -85,7 +85,7 @@ function createFakeBundle(dir: string): string {
     "# Reviewer Agent\n",
   );
   writeFileSync(
-    join(bundleDir, "agents", "verifier.md"),
+    join(bundleDir, "agents", "forward-fixer.md"),
     "# Verifier Agent\n",
   );
 

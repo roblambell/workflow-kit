@@ -82,7 +82,7 @@ describe("buildSnapshot contract", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
     fakeGh = new FakeGitHub();
     fakeMux = new FakeMux();
@@ -391,7 +391,7 @@ describe("buildSnapshot contract", () => {
   describe("verifying items", () => {
     it("populates mergeCommitCIStatus from checkCommitCI", () => {
       orch.addItem(makeWorkItem("F-1"));
-      orch.setState("F-1", "verifying");
+      orch.setState("F-1", "forward-fix-pending");
       const orchItem = orch.getItem("F-1")!;
       orchItem.mergeCommitSha = "abc123";
 
@@ -406,7 +406,7 @@ describe("buildSnapshot contract", () => {
 
     it("returns pending when checkCommitCI is not injected", () => {
       orch.addItem(makeWorkItem("F-2"));
-      orch.setState("F-2", "verifying");
+      orch.setState("F-2", "forward-fix-pending");
       const orchItem = orch.getItem("F-2")!;
       orchItem.mergeCommitSha = "def456";
 
@@ -420,7 +420,7 @@ describe("buildSnapshot contract", () => {
 
     it("reports fail from checkCommitCI", () => {
       orch.addItem(makeWorkItem("F-3"));
-      orch.setState("F-3", "verify-failed");
+      orch.setState("F-3", "fix-forward-failed");
       const orchItem = orch.getItem("F-3")!;
       orchItem.mergeCommitSha = "ghi789";
 
@@ -435,7 +435,7 @@ describe("buildSnapshot contract", () => {
 
     it("skips verifying items without mergeCommitSha", () => {
       orch.addItem(makeWorkItem("F-4"));
-      orch.setState("F-4", "verifying");
+      orch.setState("F-4", "forward-fix-pending");
       // No mergeCommitSha set
 
       const result = snap(orch, { checkCommitCI: fakeGh.checkCommitCI });
@@ -650,14 +650,14 @@ describe("buildSnapshot contract", () => {
     });
   });
 
-  // ── Repairing-main items ─────────────────────────────────────────
+  // ── Fixing-forward items ─────────────────────────────────────────
 
-  describe("repairing-main items", () => {
-    it("checks verifier worker alive via verifyWorkspaceRef", () => {
+  describe("fixing-forward items", () => {
+    it("checks forward-fixer worker alive via fixForwardWorkspaceRef", () => {
       orch.addItem(makeWorkItem("RM-1"));
-      orch.setState("RM-1", "repairing-main");
+      orch.setState("RM-1", "fixing-forward");
       const orchItem = orch.getItem("RM-1")!;
-      orchItem.verifyWorkspaceRef = fakeMux.launchWorkspace("/tmp/wt-verify", "claude", "RM-1")!;
+      orchItem.fixForwardWorkspaceRef = fakeMux.launchWorkspace("/tmp/wt-verify", "claude", "RM-1")!;
 
       const result = snap(orch, { mux: fakeMux });
 
@@ -795,7 +795,7 @@ describe("buildSnapshot contract", () => {
 
       orch.setState("M-4", "done");
 
-      orch.setState("M-5", "verifying");
+      orch.setState("M-5", "forward-fix-pending");
       orch.getItem("M-5")!.mergeCommitSha = "sha123";
       fakeGh.setMergeCommitCI("sha123", "pending");
 

@@ -26,9 +26,9 @@ export type OrchestratorItemState =
   | "reviewing"
   | "merging"
   | "merged"
-  | "verifying"
-  | "verify-failed"
-  | "repairing-main"
+  | "forward-fix-pending"
+  | "fix-forward-failed"
+  | "fixing-forward"
   | "done"
   | "stuck";
 
@@ -106,10 +106,10 @@ export interface OrchestratorItem {
   worktreePath?: string;
   /** SHA of the merge commit on main after PR is merged. Used to poll CI on main. */
   mergeCommitSha?: string;
-  /** Number of times CI verification on main has failed for this item. */
-  verifyFailCount?: number;
-  /** cmux workspace reference for the verifier worker session. */
-  verifyWorkspaceRef?: string;
+  /** Number of times CI fix-forward on main has failed for this item. */
+  fixForwardFailCount?: number;
+  /** cmux workspace reference for the forward-fixer worker session. */
+  fixForwardWorkspaceRef?: string;
 }
 
 export interface OrchestratorConfig {
@@ -137,10 +137,10 @@ export interface OrchestratorConfig {
   maxRepairAttempts: number;
   /** Max review rounds before marking stuck. Default: 3. */
   maxReviewRounds: number;
-  /** Whether to verify CI passes on main after merge before transitioning to done. Default: true. */
-  verifyMain: boolean;
-  /** Max CI verification failures on main before marking stuck. Default: 2. */
-  maxVerifyRetries: number;
+  /** Whether to check CI on main after merge and fix-forward if broken. Default: true. */
+  fixForward: boolean;
+  /** Max CI fix-forward failures on main before marking stuck. Default: 2. */
+  maxFixForwardRetries: number;
   /** Optional callback invoked on every state transition. Receives item ID, previous state, new state, detected timestamp, and detection latency in ms. */
   onTransition?: (itemId: string, from: string, to: string, timestamp: string, latencyMs: number) => void;
   /** Optional callback for structured events that don't result in state transitions (e.g., timeout suppression). */
@@ -204,8 +204,8 @@ export type ActionType =
   | "sync-stack-comments"
   | "launch-review"
   | "clean-review"
-  | "launch-verifier"
-  | "clean-verifier"
+  | "launch-forward-fixer"
+  | "clean-forward-fixer"
   | "send-message"
   | "set-commit-status"
   | "post-review";
@@ -356,15 +356,15 @@ export interface OrchestratorDeps {
    */
   checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending";
   /**
-   * Launch a verifier worker for post-merge CI failure diagnosis and fix-forward.
-   * Creates a worktree from main and launches the verifier agent.
+   * Launch a forward-fixer worker for post-merge CI failure diagnosis and fix-forward.
+   * Creates a worktree from main and launches the forward-fixer agent.
    * Returns a workspace reference and worktree path on success.
    */
-  launchVerifier?: (itemId: string, mergeCommitSha: string, repoRoot: string) => { worktreePath: string; workspaceRef: string } | null;
+  launchForwardFixer?: (itemId: string, mergeCommitSha: string, repoRoot: string) => { worktreePath: string; workspaceRef: string } | null;
   /**
-   * Clean up a verifier worker session and worktree.
+   * Clean up a forward-fixer worker session and worktree.
    */
-  cleanVerifier?: (itemId: string, verifyWorkspaceRef: string) => boolean;
+  cleanForwardFixer?: (itemId: string, fixForwardWorkspaceRef: string) => boolean;
   /**
    * Resolve a git ref (branch name, tag, SHA prefix) to its full commit SHA.
    * Used to pin branch SHAs before merge so restacking survives branch deletion.
@@ -393,8 +393,8 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   maxMergeRetries: 3,
   maxRepairAttempts: 3,
   maxReviewRounds: 3,
-  verifyMain: true,
-  maxVerifyRetries: 2,
+  fixForward: true,
+  maxFixForwardRetries: 2,
 };
 
 // ── Memory-aware WIP limit ──────────────────────────────────────────
@@ -494,12 +494,12 @@ export function statusDisplayForState(state: OrchestratorItemState, flags?: { re
       return { text: "In Review", icon: "eye.fill", color: "#7c3aed" };
     case "merging":
       return { text: "Merging", icon: "arrow.triangle.merge", color: "#22c55e" };
-    case "verifying":
-      return { text: "Verifying", icon: "clock.fill", color: "#06b6d4" };
-    case "verify-failed":
-      return { text: "Verify Failed", icon: "xmark.circle", color: "#ef4444" };
-    case "repairing-main":
-      return { text: "Repairing Main", icon: "wrench.fill", color: "#f59e0b" };
+    case "forward-fix-pending":
+      return { text: "Fix Pending", icon: "clock.fill", color: "#06b6d4" };
+    case "fix-forward-failed":
+      return { text: "Fix Failed", icon: "xmark.circle", color: "#ef4444" };
+    case "fixing-forward":
+      return { text: "Fixing Forward", icon: "wrench.fill", color: "#f59e0b" };
     case "done":
     case "merged":
       return { text: "Done", icon: "checkmark.seal.fill", color: "#22c55e" };
@@ -676,7 +676,7 @@ export class Orchestrator {
       item.ciFailureNotifiedAt = undefined;
     }
     // Clear failureReason when recovering from a failure state
-    if (state !== "ci-failed" && state !== "stuck" && state !== "verify-failed") {
+    if (state !== "ci-failed" && state !== "stuck" && state !== "fix-forward-failed") {
       item.failureReason = undefined;
     }
     // Telemetry: record startedAt when worker begins implementing
@@ -764,24 +764,24 @@ export class Orchestrator {
         break;
 
       case "merged":
-        if (this.config.verifyMain && item.mergeCommitSha) {
-          this.transition(item, "verifying");
+        if (this.config.fixForward && item.mergeCommitSha) {
+          this.transition(item, "forward-fix-pending");
         } else {
           this.transition(item, "done");
         }
         actions = [];
         break;
 
-      case "verifying":
-        actions = this.handleVerifying(item, snap);
+      case "forward-fix-pending":
+        actions = this.handleForwardFixPending(item, snap);
         break;
 
-      case "verify-failed":
-        actions = this.handleVerifyFailed(item, snap);
+      case "fix-forward-failed":
+        actions = this.handleFixForwardFailed(item, snap);
         break;
 
-      case "repairing-main":
-        actions = this.handleRepairingMain(item, snap);
+      case "fixing-forward":
+        actions = this.handleFixingForward(item, snap);
         break;
 
       case "done":
@@ -1318,10 +1318,10 @@ export class Orchestrator {
   }
 
   /**
-   * Handle "verifying" state: polling CI on the merge commit on main.
-   * Transitions to done when CI passes, verify-failed when CI fails.
+   * Handle "forward-fix-pending" state: polling CI on the merge commit on main.
+   * Transitions to done when CI passes, fix-forward-failed when CI fails.
    */
-  private handleVerifying(
+  private handleForwardFixPending(
     item: OrchestratorItem,
     snap: ItemSnapshot | undefined,
   ): Action[] {
@@ -1332,9 +1332,9 @@ export class Orchestrator {
         this.transition(item, "done");
         return [];
       case "fail":
-        item.verifyFailCount = (item.verifyFailCount ?? 0) + 1;
-        this.transition(item, "verify-failed");
-        item.failureReason = `verify-failed: CI failed on main for merge commit ${item.mergeCommitSha}`;
+        item.fixForwardFailCount = (item.fixForwardFailCount ?? 0) + 1;
+        this.transition(item, "fix-forward-failed");
+        item.failureReason = `fix-forward-failed: CI failed on main for merge commit ${item.mergeCommitSha}`;
         return [];
       case "pending":
         // Still waiting -- no transition
@@ -1343,18 +1343,18 @@ export class Orchestrator {
   }
 
   /**
-   * Handle "verify-failed" state: CI failed on main after merge.
+   * Handle "fix-forward-failed" state: CI failed on main after merge.
    * If max retries exceeded, transition to stuck.
-   * Otherwise, launch a verifier worker to diagnose and fix-forward.
+   * Otherwise, launch a forward-fixer worker to diagnose and fix-forward.
    */
-  private handleVerifyFailed(
+  private handleFixForwardFailed(
     item: OrchestratorItem,
     snap: ItemSnapshot | undefined,
   ): Action[] {
-    // Circuit breaker: exceeded max verify retries → stuck
-    if ((item.verifyFailCount ?? 0) >= this.config.maxVerifyRetries) {
+    // Circuit breaker: exceeded max fix-forward retries → stuck
+    if ((item.fixForwardFailCount ?? 0) >= this.config.maxFixForwardRetries) {
       this.transition(item, "stuck");
-      item.failureReason = `verify-failed: exceeded max verify retries (${this.config.maxVerifyRetries}) for merge commit ${item.mergeCommitSha}`;
+      item.failureReason = `fix-forward-failed: exceeded max fix-forward retries (${this.config.maxFixForwardRetries}) for merge commit ${item.mergeCommitSha}`;
       return [];
     }
 
@@ -1364,45 +1364,45 @@ export class Orchestrator {
       return [];
     }
 
-    // Launch verifier worker to diagnose and fix-forward
+    // Launch forward-fixer worker to diagnose and fix-forward
     if (item.mergeCommitSha) {
-      this.transition(item, "repairing-main");
-      return [{ type: "launch-verifier", itemId: item.id }];
+      this.transition(item, "fixing-forward");
+      return [{ type: "launch-forward-fixer", itemId: item.id }];
     }
 
     return [];
   }
 
   /**
-   * Handle "repairing-main" state: a verifier worker is diagnosing and fixing
+   * Handle "fixing-forward" state: a forward-fixer worker is diagnosing and fixing
    * the post-merge CI failure.
    *
-   * When the verifier creates a fix PR that merges and CI passes on main,
+   * When the forward-fixer creates a fix PR that merges and CI passes on main,
    * the merge commit CI will turn green. Re-poll CI to detect recovery.
-   * If the verifier worker dies without fixing, mark stuck.
+   * If the forward-fixer worker dies without fixing, mark stuck.
    */
-  private handleRepairingMain(
+  private handleFixingForward(
     item: OrchestratorItem,
     snap: ItemSnapshot | undefined,
   ): Action[] {
     const actions: Action[] = [];
 
-    // CI recovered on main (verifier's fix merged, or flaky test resolved)
+    // CI recovered on main (forward-fixer's fix merged, or flaky test resolved)
     if (snap?.mergeCommitCIStatus === "pass") {
       this.transition(item, "done");
-      if (item.verifyWorkspaceRef) {
-        actions.push({ type: "clean-verifier", itemId: item.id });
+      if (item.fixForwardWorkspaceRef) {
+        actions.push({ type: "clean-forward-fixer", itemId: item.id });
       }
       return actions;
     }
 
-    // Verifier worker died without fixing
-    if (snap?.workerAlive === false && item.verifyWorkspaceRef) {
+    // Forward-fixer worker died without fixing
+    if (snap?.workerAlive === false && item.fixForwardWorkspaceRef) {
       item.notAliveCount = (item.notAliveCount ?? 0) + 1;
       if (item.notAliveCount >= NOT_ALIVE_THRESHOLD) {
         this.transition(item, "stuck");
-        item.failureReason = `verify-repair-failed: verifier worker died without fixing CI for merge commit ${item.mergeCommitSha}`;
-        actions.push({ type: "clean-verifier", itemId: item.id });
+        item.failureReason = `fix-forward-failed: forward-fixer worker died without fixing CI for merge commit ${item.mergeCommitSha}`;
+        actions.push({ type: "clean-forward-fixer", itemId: item.id });
       }
     }
 
@@ -1447,8 +1447,8 @@ export class Orchestrator {
     );
 
     for (const comment of snap.newComments) {
-      // Skip comments from any ninthwave agent (Orchestrator, Implementer, Reviewer, Verifier, Repairer)
-      if (/\*\*\[(Orchestrator|Implementer|Reviewer|Verifier|Repairer)\]/.test(comment.body)) continue;
+      // Skip comments from any ninthwave agent (Orchestrator, Implementer, Reviewer, Forward-Fixer, Repairer)
+      if (/\*\*\[(Orchestrator|Implementer|Reviewer|Forward-Fixer|Repairer)\]/.test(comment.body)) continue;
       // Skip orchestrator HTML status markers
       if (comment.body.includes("<!-- ninthwave-orchestrator-status -->")) continue;
 
@@ -1616,10 +1616,10 @@ export class Orchestrator {
         return this.executeLaunchReview(item, action, ctx, deps);
       case "clean-review":
         return this.executeCleanReview(item, deps);
-      case "launch-verifier":
-        return this.executeLaunchVerifier(item, ctx, deps);
-      case "clean-verifier":
-        return this.executeCleanVerifier(item, deps);
+      case "launch-forward-fixer":
+        return this.executeLaunchForwardFixer(item, ctx, deps);
+      case "clean-forward-fixer":
+        return this.executeCleanForwardFixer(item, deps);
       case "send-message":
         return this.executeSendMessage(item, action, deps);
       case "set-commit-status":
@@ -1700,7 +1700,7 @@ export class Orchestrator {
     if (action.baseBranch) {
       const depId = action.baseBranch.replace(/^ninthwave\//, "");
       const dep = this.items.get(depId);
-      const DEP_DONE_STATES: ReadonlySet<string> = new Set(["done", "merged", "verifying", "verify-failed"]);
+      const DEP_DONE_STATES: ReadonlySet<string> = new Set(["done", "merged", "forward-fix-pending", "fix-forward-failed"]);
       if (!dep || DEP_DONE_STATES.has(dep.state)) {
         deps.warn?.(`Dependency ${depId} is now ${dep?.state ?? "unknown"} -- clearing baseBranch for ${item.id} to launch from main`);
         action.baseBranch = undefined;
@@ -1843,7 +1843,7 @@ export class Orchestrator {
     this.transition(item, "merged");
 
     // Capture merge commit SHA for post-merge CI verification
-    if (this.config.verifyMain && deps.getMergeCommitSha) {
+    if (this.config.fixForward && deps.getMergeCommitSha) {
       try {
         const sha = deps.getMergeCommitSha(repoRoot, prNum);
         if (sha) {
@@ -2387,7 +2387,7 @@ export class Orchestrator {
   }
 
   /**
-   * Shared cleanup for worker sessions (repair, review, verifier).
+   * Shared cleanup for worker sessions (repair, review, forward-fixer).
    * Closes the workspace via the provided clean function and clears the ref.
    */
   private cleanWorkerWorkspace(
@@ -2521,41 +2521,41 @@ export class Orchestrator {
     }
   }
 
-  /** Launch a verifier worker for post-merge CI failure diagnosis. */
-  private executeLaunchVerifier(
+  /** Launch a forward-fixer worker for post-merge CI failure diagnosis. */
+  private executeLaunchForwardFixer(
     item: OrchestratorItem,
     ctx: ExecutionContext,
     deps: OrchestratorDeps,
   ): ActionResult {
-    if (!deps.launchVerifier) {
-      return { success: false, error: `Verifier worker not available for ${item.id}` };
+    if (!deps.launchForwardFixer) {
+      return { success: false, error: `Forward-fixer worker not available for ${item.id}` };
     }
 
     if (!item.mergeCommitSha) {
-      return { success: false, error: `No merge commit SHA for verifier launch of ${item.id}` };
+      return { success: false, error: `No merge commit SHA for forward-fixer launch of ${item.id}` };
     }
 
     const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
     try {
-      const result = deps.launchVerifier(item.id, item.mergeCommitSha, repoRoot);
+      const result = deps.launchForwardFixer(item.id, item.mergeCommitSha, repoRoot);
       if (result) {
-        item.verifyWorkspaceRef = result.workspaceRef;
+        item.fixForwardWorkspaceRef = result.workspaceRef;
       }
       return { success: true };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return { success: false, error: `Verifier launch failed for ${item.id}: ${msg}` };
+      return { success: false, error: `Forward-fixer launch failed for ${item.id}: ${msg}` };
     }
   }
 
-  /** Clean up a verifier worker session and worktree. */
-  private executeCleanVerifier(
+  /** Clean up a forward-fixer worker session and worktree. */
+  private executeCleanForwardFixer(
     item: OrchestratorItem,
     deps: OrchestratorDeps,
   ): ActionResult {
     return this.cleanWorkerWorkspace(
-      "Verifier", item.id, item.verifyWorkspaceRef, deps.cleanVerifier,
-      () => { item.verifyWorkspaceRef = undefined; },
+      "Forward-Fixer", item.id, item.fixForwardWorkspaceRef, deps.cleanForwardFixer,
+      () => { item.fixForwardWorkspaceRef = undefined; },
     );
   }
 
@@ -2610,7 +2610,7 @@ export class Orchestrator {
       const dep = this.items.get(depId);
       if (!dep) return { canStack: false }; // unknown dep -- can't stack
 
-      if (dep.state === "done" || dep.state === "merged" || dep.state === "verifying" || dep.state === "verify-failed") {
+      if (dep.state === "done" || dep.state === "merged" || dep.state === "forward-fix-pending" || dep.state === "fix-forward-failed") {
         continue; // this dep is finished (code is on main)
       }
 
@@ -2674,7 +2674,7 @@ export class Orchestrator {
     }
 
     // Filter to active items with PRs (exclude merged/done/verifying -- their PRs are closed)
-    const POST_MERGE_STATES = new Set(["done", "merged", "verifying", "verify-failed", "repairing-main"]);
+    const POST_MERGE_STATES = new Set(["done", "merged", "forward-fix-pending", "fix-forward-failed", "fixing-forward"]);
     return chain
       .filter((i) => i.prNumber != null && !POST_MERGE_STATES.has(i.state))
       .map((i) => ({ id: i.id, prNumber: i.prNumber!, title: i.workItem.title }));

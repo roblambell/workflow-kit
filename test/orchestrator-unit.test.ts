@@ -2752,7 +2752,7 @@ describe("processComments (via processTransitions)", () => {
     expect(actions.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
   });
 
-  it("skips comments from other agents (reviewer, verifier, repairer)", () => {
+  it("skips comments from other agents (reviewer, forward-fixer, repairer)", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;

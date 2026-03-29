@@ -354,7 +354,7 @@ describe("buildSnapshotAsync", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-10-1"));
     orch.getItem("BA-10-1")!.reviewCompleted = true;
-    orch.setState("BA-10-1", "verifying");
+    orch.setState("BA-10-1", "forward-fix-pending");
     orch.getItem("BA-10-1")!.mergeCommitSha = "abc123";
 
     const asyncCheckPr = vi.fn(async () => null);

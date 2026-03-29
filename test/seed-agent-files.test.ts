@@ -194,7 +194,7 @@ describe("seedAgentFiles", () => {
     mkdirSync(join(hubRoot, "agents"), { recursive: true });
     writeFileSync(join(hubRoot, "agents", "implementer.md"), localContent);
     writeFileSync(join(hubRoot, "agents", "reviewer.md"), localContent);
-    writeFileSync(join(hubRoot, "agents", "verifier.md"), localContent);
+    writeFileSync(join(hubRoot, "agents", "forward-fixer.md"), localContent);
 
     const deps = createDeps({
       run: vi.fn(() => ({
@@ -254,7 +254,7 @@ describe("seedAgentFiles", () => {
 
     mkdirSync(join(hubRoot, "agents"), { recursive: true });
     writeFileSync(join(hubRoot, "agents", "implementer.md"), localContent);
-    // reviewer and verifier don't exist anywhere
+    // reviewer and forward-fixer don't exist anywhere
 
     // Git show fails for everything
     const deps = createDeps({
@@ -272,9 +272,9 @@ describe("seedAgentFiles", () => {
     expect(existsSync(claudeAgent)).toBe(true);
     expect(readFileSync(claudeAgent, "utf-8")).toBe(localContent);
 
-    // reviewer and verifier should not be seeded (not available from either source)
+    // reviewer and forward-fixer should not be seeded (not available from either source)
     expect(seeded.some((s) => s.includes("reviewer"))).toBe(false);
-    expect(seeded.some((s) => s.includes("verifier"))).toBe(false);
+    expect(seeded.some((s) => s.includes("forward-fixer"))).toBe(false);
 
     rmSync(hubRoot, { recursive: true, force: true });
     rmSync(worktree, { recursive: true, force: true });

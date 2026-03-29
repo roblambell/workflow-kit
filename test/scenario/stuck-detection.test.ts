@@ -29,7 +29,7 @@ describe("scenario: stuck detection", () => {
       bypassEnabled: false,
       maxRetries: 1,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("S-1"));
@@ -79,7 +79,7 @@ describe("scenario: stuck detection", () => {
       bypassEnabled: false,
       maxRetries: 1,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("S-2"));
@@ -119,7 +119,7 @@ describe("scenario: stuck detection", () => {
       bypassEnabled: false,
       maxRetries: 1,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("S-3"));
@@ -169,7 +169,7 @@ describe("scenario: stuck detection", () => {
       bypassEnabled: false,
       maxRetries: 0, // no retries -- would go straight to stuck if threshold hit
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("S-4"));
@@ -220,7 +220,7 @@ describe("scenario: stuck detection", () => {
       bypassEnabled: false,
       maxRetries: 0,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("S-5"));

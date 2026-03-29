@@ -27,7 +27,7 @@ describe("scenario: full lifecycle", () => {
       maxCiRetries: 3,
       maxRetries: 3,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("H-1"));
@@ -75,7 +75,7 @@ describe("scenario: full lifecycle", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("H-2"));
@@ -100,7 +100,7 @@ describe("scenario: full lifecycle", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("H-3"));

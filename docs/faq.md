@@ -49,7 +49,7 @@ This auto-detects your project structure (CI system, AI tools, monorepo layout) 
 
 - `.ninthwave/` directory with configuration
 - Skill symlinks for `/work`, `/decompose`, and `/ninthwave-upgrade`
-- Agent files (implementer, reviewer, verifier) copied to your AI tool directories
+- Agent files (implementer, reviewer, forward-fixer) copied to your AI tool directories
 
 No manual configuration is needed for the common case.
 

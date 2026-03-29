@@ -24,7 +24,7 @@ describe("scenario: dependency chain", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
     orch.addItem(makeWorkItem("A-1"));
     orch.addItem(makeWorkItem("B-1", ["A-1"]));
@@ -72,7 +72,7 @@ describe("scenario: dependency chain", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
     });
     orch.addItem(makeWorkItem("A-1", [], "critical"));
     orch.addItem(makeWorkItem("B-1", ["A-1"]));
@@ -118,7 +118,7 @@ describe("scenario: dependency chain", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
-      verifyMain: false,
+      fixForward: false,
       maxRetries: 0, // first failure = stuck
     });
     orch.addItem(makeWorkItem("A-1"));

@@ -158,7 +158,7 @@ flowchart TD
     C --> D{Tools found?}
     D -->|Yes| E["Use detected tools<br/>(e.g., Claude Code, OpenCode)"]
     D -->|No| F["Fall back to ALL tool dirs"]
-    E & F --> G["Checkbox: which agents?<br/>implementer ✓ reviewer ✓ verifier ✓<br/><i>all pre-selected</i>"]
+    E & F --> G["Checkbox: which agents?<br/>implementer ✓ reviewer ✓ forward-fixer ✓<br/><i>all pre-selected</i>"]
     G --> H["Preview symlinks to create"]
     H --> I{Confirm?}
     I -->|Yes| J["AgentSelection returned"]
@@ -233,13 +233,13 @@ Every file and directory created during onboarding:
 | `.claude/skills/ninthwave-upgrade` | Symlink | Always | Yes (recreated) | **No** (gitignored) | `/ninthwave-upgrade` skill |
 | `.claude/agents/implementer.md` | Symlink | If Claude Code selected | Yes (recreated) | **No** (gitignored) | Implementation agent prompt |
 | `.claude/agents/reviewer.md` | Symlink | If Claude Code selected | Yes (recreated) | **No** (gitignored) | PR review agent prompt |
-| `.claude/agents/verifier.md` | Symlink | If Claude Code selected | Yes (recreated) | **No** (gitignored) | CI fix-forward agent prompt |
+| `.claude/agents/forward-fixer.md` | Symlink | If Claude Code selected | Yes (recreated) | **No** (gitignored) | CI fix-forward agent prompt |
 | `.opencode/agents/implementer.md` | Symlink | If OpenCode selected | Yes (recreated) | **No** (gitignored) | Implementation agent prompt |
 | `.opencode/agents/reviewer.md` | Symlink | If OpenCode selected | Yes (recreated) | **No** (gitignored) | PR review agent prompt |
-| `.opencode/agents/verifier.md` | Symlink | If OpenCode selected | Yes (recreated) | **No** (gitignored) | CI fix-forward agent prompt |
+| `.opencode/agents/forward-fixer.md` | Symlink | If OpenCode selected | Yes (recreated) | **No** (gitignored) | CI fix-forward agent prompt |
 | `.github/agents/ninthwave-implementer.agent.md` | Symlink | If Copilot selected | Yes (recreated) | **No** (gitignored) | Implementation agent prompt |
 | `.github/agents/ninthwave-reviewer.agent.md` | Symlink | If Copilot selected | Yes (recreated) | **No** (gitignored) | PR review agent prompt |
-| `.github/agents/ninthwave-verifier.agent.md` | Symlink | If Copilot selected | Yes (recreated) | **No** (gitignored) | CI fix-forward agent prompt |
+| `.github/agents/ninthwave-forward-fixer.agent.md` | Symlink | If Copilot selected | Yes (recreated) | **No** (gitignored) | CI fix-forward agent prompt |
 
 ### Other project files
 
@@ -295,7 +295,7 @@ project-root/
 │   ├── agents/                          # ← symlinks, gitignored
 │   │   ├── implementer.md  → ../../ninthwave/agents/implementer.md
 │   │   ├── reviewer.md     → ../../ninthwave/agents/reviewer.md
-│   │   └── verifier.md     → ../../ninthwave/agents/verifier.md
+│   │   └── forward-fixer.md     → ../../ninthwave/agents/forward-fixer.md
 │   └── skills/                          # ← symlinks, gitignored
 │       ├── work             → ../../ninthwave/skills/work
 │       ├── decompose        → ../../ninthwave/skills/decompose
@@ -305,13 +305,13 @@ project-root/
 │   └── agents/                          # ← symlinks, gitignored
 │       ├── implementer.md  → ../../ninthwave/agents/implementer.md
 │       ├── reviewer.md     → ../../ninthwave/agents/reviewer.md
-│       └── verifier.md     → ../../ninthwave/agents/verifier.md
+│       └── forward-fixer.md     → ../../ninthwave/agents/forward-fixer.md
 │
 ├── .github/                             # gitignored agents/ subdir (if detected)
 │   └── agents/                          # ← symlinks, gitignored
 │       ├── ninthwave-implementer.agent.md → ...
 │       ├── ninthwave-reviewer.agent.md    → ...
-│       └── ninthwave-verifier.agent.md    → ...
+│       └── ninthwave-forward-fixer.agent.md    → ...
 │
 ├── .gitignore                           # appended with ninthwave entries
 └── .worktrees/                          # created later by orchestrator, gitignored

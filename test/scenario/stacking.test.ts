@@ -27,7 +27,7 @@ describe("scenario: stacking", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: true,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("A-1"));
@@ -88,7 +88,7 @@ describe("scenario: stacking", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: true,
-      verifyMain: false,
+      fixForward: false,
       maxCiRetries: 0,
     });
 
@@ -147,7 +147,7 @@ describe("scenario: stacking", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: true,
-      verifyMain: false,
+      fixForward: false,
       maxCiRetries: 5, // High limit so A doesn't go stuck
     });
 
@@ -206,7 +206,7 @@ describe("scenario: stacking", () => {
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: true,
-      verifyMain: false,
+      fixForward: false,
     });
 
     orch.addItem(makeWorkItem("A-1"));

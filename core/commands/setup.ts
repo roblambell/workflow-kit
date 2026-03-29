@@ -227,14 +227,14 @@ const SKILLS = ["work", "decompose", "ninthwave-upgrade"];
 export const AGENT_SOURCES = [
   "implementer.md",
   "reviewer.md",
-  "verifier.md",
+  "forward-fixer.md",
 ];
 
 /** Human-readable descriptions for each agent file. */
 export const AGENT_DESCRIPTIONS: Record<string, string> = {
   "implementer.md": "implementation agent for batch TODO processing",
   "reviewer.md": "PR code review agent",
-  "verifier.md": "post-merge CI failure diagnosis and fix-forward agent",
+  "forward-fixer.md": "post-merge CI failure diagnosis and fix-forward agent",
 };
 
 /** AI tool target directories where agent symlinks are created -- derived from AI_TOOL_PROFILES. */

@@ -37,9 +37,9 @@ Each TODO item moves through a state machine defined in [`core/orchestrator.ts`]
 | `reviewing` | Review worker active (tracked via separate `reviewWipLimit`) |
 | `merging` | Merge in progress |
 | `merged` | PR merged |
-| `verifying` | Post-merge verification running |
-| `verify-failed` | Post-merge verification failed; repairer being launched |
-| `repairing-main` | Repairer worker fixing a broken main branch |
+| `forward-fix-pending` | Post-merge CI check pending |
+| `fix-forward-failed` | Post-merge CI failed; forward-fixer being launched |
+| `fixing-forward` | Forward-fixer worker fixing a broken main branch |
 | `done` | Cleanup complete |
 | `stuck` | Max retries exhausted or unrecoverable failure |
 

@@ -30,9 +30,13 @@ export function reconstructState(
   daemonState?: DaemonState | null,
 ): void {
   // Build a lookup map from saved daemon state for restoring persisted counters and review fields
-  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; repairWorkspaceRef?: string; mergeCommitSha?: string; verifyFailCount?: number; verifyWorkspaceRef?: string }>();
+  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; repairWorkspaceRef?: string; mergeCommitSha?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
+      // Backward compat: map old field names to new names
+      const raw = si as Record<string, unknown>;
+      const fixForwardFailCount = si.fixForwardFailCount ?? (raw.verifyFailCount as number | undefined);
+      const fixForwardWorkspaceRef = si.fixForwardWorkspaceRef ?? (raw.verifyWorkspaceRef as string | undefined);
       savedItems.set(si.id, {
         ciFailCount: si.ciFailCount,
         retryCount: si.retryCount,
@@ -45,8 +49,8 @@ export function reconstructState(
         ciFailureNotifiedAt: si.ciFailureNotifiedAt,
         repairWorkspaceRef: si.repairWorkspaceRef,
         mergeCommitSha: si.mergeCommitSha,
-        verifyFailCount: si.verifyFailCount,
-        verifyWorkspaceRef: si.verifyWorkspaceRef,
+        fixForwardFailCount,
+        fixForwardWorkspaceRef,
       });
     }
   }
@@ -72,14 +76,18 @@ export function reconstructState(
       if (saved.ciFailureNotifiedAt) item.ciFailureNotifiedAt = saved.ciFailureNotifiedAt;
       if (saved.repairWorkspaceRef) item.repairWorkspaceRef = saved.repairWorkspaceRef;
       if (saved.mergeCommitSha) item.mergeCommitSha = saved.mergeCommitSha;
-      if (saved.verifyFailCount) item.verifyFailCount = saved.verifyFailCount;
-      if (saved.verifyWorkspaceRef) item.verifyWorkspaceRef = saved.verifyWorkspaceRef;
+      if (saved.fixForwardFailCount) item.fixForwardFailCount = saved.fixForwardFailCount;
+      if (saved.fixForwardWorkspaceRef) item.fixForwardWorkspaceRef = saved.fixForwardWorkspaceRef;
     }
 
-    // Restore post-merge verification states from daemon state (these items have no worktree)
+    // Restore post-merge fix-forward states from daemon state (these items have no worktree)
     if (saved && item.mergeCommitSha) {
-      const savedState = daemonState?.items.find((si) => si.id === item.id)?.state;
-      if (savedState === "verifying" || savedState === "verify-failed" || savedState === "repairing-main") {
+      let savedState = daemonState?.items.find((si) => si.id === item.id)?.state;
+      // Backward compat: map old state names to new names
+      if (savedState === "verifying") savedState = "forward-fix-pending";
+      if (savedState === "verify-failed") savedState = "fix-forward-failed";
+      if (savedState === "repairing-main") savedState = "fixing-forward";
+      if (savedState === "forward-fix-pending" || savedState === "fix-forward-failed" || savedState === "fixing-forward") {
         orch.setState(item.id, savedState as OrchestratorItemState);
         continue;
       }

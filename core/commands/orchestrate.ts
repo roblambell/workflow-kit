@@ -24,7 +24,7 @@ import {
 import { parseWorkItems } from "../parser.ts";
 import { resolveRepo, bootstrapRepo } from "../cross-repo.ts";
 import { scanExternalPRs } from "./pr-monitor.ts";
-import { launchSingleItem, launchReviewWorker, launchRepairWorker, launchVerifierWorker } from "./launch.ts";
+import { launchSingleItem, launchReviewWorker, launchRepairWorker, launchForwardFixerWorker } from "./launch.ts";
 import { cleanStaleBranchForReuse } from "../branch-cleanup.ts";
 import { detectAiTool } from "./run-items.ts";
 import { cleanSingleWorktree } from "./clean.ts";
@@ -1543,7 +1543,7 @@ export async function cmdOrchestrate(
     wipLimitOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, clickupListId, remoteFlag,
     reviewAutoFix, reviewExternal, reviewWipLimit,
-    verifyMain, noWatch, watchIntervalSecs,
+    fixForward, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewCreate, crewPort, crewName,
     bypassEnabled,
   } = parsed;
@@ -1714,7 +1714,7 @@ export async function cmdOrchestrate(
     wipLimit,
     mergeStrategy,
     bypassEnabled,
-    verifyMain,
+    fixForward,
     ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
   });
   for (const id of itemIds) {
@@ -1857,16 +1857,16 @@ export async function cmdOrchestrate(
     },
     getMergeCommitSha: (repoRoot, prNumber) => ghGetMergeCommitSha(repoRoot, prNumber),
     checkCommitCI: (repoRoot, sha) => ghCheckCommitCI(repoRoot, sha),
-    launchVerifier: (itemId, mergeCommitSha, repoRoot) => {
-      const result = launchVerifierWorker(itemId, mergeCommitSha, repoRoot, aiTool, mux, { hubRepoNwo });
+    launchForwardFixer: (itemId, mergeCommitSha, repoRoot) => {
+      const result = launchForwardFixerWorker(itemId, mergeCommitSha, repoRoot, aiTool, mux, { hubRepoNwo });
       if (!result) return null;
       return { worktreePath: result.worktreePath, workspaceRef: result.workspaceRef };
     },
-    cleanVerifier: (itemId, verifyWorkspaceRef) => {
-      try { mux.closeWorkspace(verifyWorkspaceRef); } catch { /* best-effort */ }
+    cleanForwardFixer: (itemId, fixForwardWorkspaceRef) => {
+      try { mux.closeWorkspace(fixForwardWorkspaceRef); } catch { /* best-effort */ }
       try {
-        cleanSingleWorktree(`ninthwave-verify-${itemId}`, join(projectRoot, ".worktrees"), projectRoot);
-      } catch { /* best-effort -- verifier worktree may already be cleaned */ }
+        cleanSingleWorktree(`ninthwave-fix-forward-${itemId}`, join(projectRoot, ".worktrees"), projectRoot);
+      } catch { /* best-effort -- forward-fixer worktree may already be cleaned */ }
       return true;
     },
   };

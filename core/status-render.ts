@@ -988,15 +988,15 @@ export function mapDaemonItemState(orchState: string, flags?: { rebaseRequested?
     case "launching":
       return "implementing";
     case "repairing":
-    case "repairing-main":
+    case "fixing-forward":
       return "rebasing";
     case "ci-failed":
     case "stuck":
-    case "verify-failed":
+    case "fix-forward-failed":
       return "ci-failed";
     case "ci-pending":
     case "merging":
-    case "verifying":
+    case "forward-fix-pending":
       return "ci-pending";
     case "review-pending":
     case "reviewing":
