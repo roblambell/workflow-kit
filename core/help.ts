@@ -21,7 +21,6 @@ import {
 import { cmdMarkDone, cmdMergedIds } from "./commands/mark-done.ts";
 import {
   cmdWatchReady,
-  cmdAutopilotWatch,
   cmdPrWatch,
   cmdPrActivity,
 } from "./commands/pr-monitor.ts";
@@ -499,20 +498,6 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
     handler: (ctx) => cmdWatchReady(ctx.worktreeDir, ctx.projectRoot),
     flags: {},
     examples: ["nw watch-ready"],
-  },
-  {
-    name: "autopilot-watch",
-    usage: "autopilot-watch [--interval N] [--state-file F]",
-    description: "Block until item status changes",
-    group: "advanced",
-    needsRoot: true,
-    needsWork: false,
-    handler: async (ctx) => { await cmdAutopilotWatch(ctx.args, ctx.worktreeDir, ctx.projectRoot); },
-    flags: {
-      "--interval": "Polling interval in seconds",
-      "--state-file": "Path to state file for persistence",
-    },
-    examples: ["nw autopilot-watch", "nw autopilot-watch --interval 30"],
   },
   {
     name: "pr-watch",

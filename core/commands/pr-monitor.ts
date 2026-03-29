@@ -1,6 +1,6 @@
-// Watch/polling commands: watch-ready, autopilot-watch, pr-watch, pr-activity, scanExternalPRs.
+// Watch/polling commands: watch-ready, pr-watch, pr-activity, scanExternalPRs.
 
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { die } from "../output.ts";
 import { prList, prView, prChecks, prListAsync, prViewAsync, prChecksAsync, getRepoOwner, apiGet, ghInRepo } from "../gh.ts";
@@ -302,91 +302,6 @@ export async function checkPrStatusAsync(id: string, repoRoot: string): Promise<
   }
 
   return `${id}\t${prNumber}\t${status}\t${isMergeable || "UNKNOWN"}\t${eventTime}`;
-}
-
-/**
- * Poll until item status changes.
- * Outputs transitions as tab-separated: ID\tPR_NUMBER\tFROM\tTO
- */
-export async function cmdAutopilotWatch(
-  args: string[],
-  worktreeDir: string,
-  projectRoot: string,
-): Promise<void> {
-  let interval = 120;
-  let stateFile = "";
-
-  // Parse args
-  let i = 0;
-  while (i < args.length) {
-    switch (args[i]) {
-      case "--interval":
-        interval = parseInt(args[i + 1] ?? "120", 10);
-        i += 2;
-        break;
-      case "--state-file":
-        stateFile = args[i + 1] ?? "";
-        i += 2;
-        break;
-      default:
-        die(`Unknown option: ${args[i]}`);
-    }
-  }
-
-  // Take initial snapshot (suppress console output by capturing)
-  let currentState = getWatchReadyState(worktreeDir, projectRoot);
-
-  // Load previous state
-  let prevState = "";
-  if (stateFile && existsSync(stateFile)) {
-    prevState = readFileSync(stateFile, "utf-8");
-  }
-
-  // Save current state
-  if (stateFile) {
-    writeFileSync(stateFile, currentState);
-  }
-
-  // Compare and report transitions
-  let transitions = findTransitions(currentState, prevState);
-
-  // Check for gone items
-  transitions += findGoneItems(currentState, prevState);
-
-  if (transitions) {
-    console.log(transitions.trim());
-    return;
-  }
-
-  // No transitions -- poll until something changes
-  let elapsed = 0;
-  while (elapsed < 3600) {
-    await new Promise((r) => setTimeout(r, interval * 1000));
-    elapsed += interval;
-
-    currentState = getWatchReadyState(worktreeDir, projectRoot);
-
-    // Compare against saved state
-    const savedState = stateFile && existsSync(stateFile)
-      ? readFileSync(stateFile, "utf-8")
-      : "";
-
-    transitions = findTransitions(currentState, savedState);
-    transitions += findGoneItems(currentState, savedState);
-
-    // Save current state
-    if (stateFile) {
-      writeFileSync(stateFile, currentState);
-    }
-
-    if (transitions) {
-      console.log(transitions.trim());
-      return;
-    }
-  }
-
-  console.log("Timeout: no status changes after 1 hour");
-  process.exit(1);
 }
 
 /** Get watch-ready state without printing to console. */

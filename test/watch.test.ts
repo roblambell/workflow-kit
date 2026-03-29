@@ -1,4 +1,4 @@
-// Tests for watch commands: cmdWatchReady, cmdAutopilotWatch, cmdPrWatch.
+// Tests for watch commands: cmdWatchReady, cmdPrWatch.
 
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { join } from "path";
@@ -21,7 +21,6 @@ import * as gh from "../core/gh.ts";
 // Import after mocks
 import {
   cmdWatchReady,
-  cmdAutopilotWatch,
   cmdPrWatch,
   cmdPrActivity,
   checkPrStatus,
@@ -243,43 +242,6 @@ describe("cmdWatchReady", () => {
 
     const result = cmdWatchReady(worktreeDir, repo);
     expect(result).toContain("pending");
-  });
-});
-
-describe("cmdAutopilotWatch", () => {
-  beforeEach(() => vi.clearAllMocks());
-  afterEach(() => cleanupTempRepos());
-
-  it("reports transitions immediately when state changes from previous", async () => {
-    const repo = setupTempRepo();
-    const worktreeDir = join(repo, ".worktrees");
-    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
-
-    const stateFile = join(repo, ".watch-state");
-
-    // Write a previous state with "pending"
-    writeFileSync(stateFile, "H-CI-2\t10\tpending");
-
-    // Now the current state is "merged"
-    (gh.prList as Mock).mockImplementation(
-      (_root: string, _branch: string, state: string) => {
-        if (state === "open") return [];
-        if (state === "merged") return [{ number: 10 }];
-        return [];
-      },
-    );
-
-    const output = await captureOutputAsync(() =>
-      cmdAutopilotWatch(
-        ["--state-file", stateFile, "--interval", "1"],
-        worktreeDir,
-        repo,
-      ),
-    );
-
-    expect(output).toContain("H-CI-2");
-    expect(output).toContain("pending");
-    expect(output).toContain("merged");
   });
 });
 
