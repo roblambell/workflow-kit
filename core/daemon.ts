@@ -53,8 +53,8 @@ export interface DaemonStateItem {
   ciFailureNotified?: boolean;
   /** The lastCommitTime when ciFailureNotified was set. */
   ciFailureNotifiedAt?: string | null;
-  /** cmux workspace reference for the repair worker session (rebase-only). */
-  repairWorkspaceRef?: string;
+  /** cmux workspace reference for the rebaser worker session (rebase-only). */
+  rebaserWorkspaceRef?: string;
   /** SHA of the merge commit on main (for post-merge CI fix-forward). */
   mergeCommitSha?: string;
   /** Number of times CI fix-forward on main has failed. */
@@ -585,7 +585,7 @@ export function serializeOrchestratorState(
       ...(item.rebaseRequested ? { rebaseRequested: item.rebaseRequested } : {}),
       ...(item.ciFailureNotified ? { ciFailureNotified: item.ciFailureNotified } : {}),
       ...(item.ciFailureNotifiedAt ? { ciFailureNotifiedAt: item.ciFailureNotifiedAt } : {}),
-      ...(item.repairWorkspaceRef ? { repairWorkspaceRef: item.repairWorkspaceRef } : {}),
+      ...(item.rebaserWorkspaceRef ? { rebaserWorkspaceRef: item.rebaserWorkspaceRef } : {}),
       ...(item.mergeCommitSha ? { mergeCommitSha: item.mergeCommitSha } : {}),
       ...(item.fixForwardFailCount ? { fixForwardFailCount: item.fixForwardFailCount } : {}),
       ...(item.fixForwardWorkspaceRef ? { fixForwardWorkspaceRef: item.fixForwardWorkspaceRef } : {}),

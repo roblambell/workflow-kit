@@ -24,7 +24,7 @@ import {
 import { parseWorkItems } from "../parser.ts";
 import { resolveRepo, bootstrapRepo } from "../cross-repo.ts";
 import { scanExternalPRs } from "./pr-monitor.ts";
-import { launchSingleItem, launchReviewWorker, launchRepairWorker, launchForwardFixerWorker } from "./launch.ts";
+import { launchSingleItem, launchReviewWorker, launchRebaserWorker, launchForwardFixerWorker } from "./launch.ts";
 import { cleanStaleBranchForReuse } from "../branch-cleanup.ts";
 import { detectAiTool } from "./run-items.ts";
 import { cleanSingleWorktree } from "./clean.ts";
@@ -1885,13 +1885,13 @@ export async function cmdOrchestrate(
       } catch { /* best-effort -- review worktree may not exist for off mode */ }
       return true;
     },
-    launchRepair: (itemId, prNumber, repoRoot) => {
-      const result = launchRepairWorker(prNumber, itemId, repoRoot, aiTool, mux, { hubRepoNwo });
+    launchRebaser: (itemId, prNumber, repoRoot) => {
+      const result = launchRebaserWorker(prNumber, itemId, repoRoot, aiTool, mux, { hubRepoNwo });
       if (!result) return null;
       return { workspaceRef: result.workspaceRef };
     },
-    cleanRepair: (itemId, repairWorkspaceRef) => {
-      try { mux.closeWorkspace(repairWorkspaceRef); } catch { /* best-effort */ }
+    cleanRebaser: (itemId, rebaserWorkspaceRef) => {
+      try { mux.closeWorkspace(rebaserWorkspaceRef); } catch { /* best-effort */ }
       return true;
     },
     setCommitStatus: (repoRoot, prNumber, state, context, description) => {

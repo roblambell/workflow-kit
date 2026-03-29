@@ -30,11 +30,12 @@ export function reconstructState(
   daemonState?: DaemonState | null,
 ): void {
   // Build a lookup map from saved daemon state for restoring persisted counters and review fields
-  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; repairWorkspaceRef?: string; mergeCommitSha?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string }>();
+  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; rebaserWorkspaceRef?: string; mergeCommitSha?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
       // Backward compat: map old field names to new names
       const raw = si as Record<string, unknown>;
+      const rebaserRef = (si as Record<string, unknown>).rebaserWorkspaceRef as string | undefined ?? (raw.repairWorkspaceRef as string | undefined);
       const fixForwardFailCount = si.fixForwardFailCount ?? (raw.verifyFailCount as number | undefined);
       const fixForwardWorkspaceRef = si.fixForwardWorkspaceRef ?? (raw.verifyWorkspaceRef as string | undefined);
       savedItems.set(si.id, {
@@ -47,7 +48,7 @@ export function reconstructState(
         rebaseRequested: si.rebaseRequested,
         ciFailureNotified: si.ciFailureNotified,
         ciFailureNotifiedAt: si.ciFailureNotifiedAt,
-        repairWorkspaceRef: si.repairWorkspaceRef,
+        rebaserWorkspaceRef: rebaserRef,
         mergeCommitSha: si.mergeCommitSha,
         fixForwardFailCount,
         fixForwardWorkspaceRef,
@@ -74,7 +75,7 @@ export function reconstructState(
       if (saved.rebaseRequested) item.rebaseRequested = saved.rebaseRequested;
       if (saved.ciFailureNotified) item.ciFailureNotified = saved.ciFailureNotified;
       if (saved.ciFailureNotifiedAt) item.ciFailureNotifiedAt = saved.ciFailureNotifiedAt;
-      if (saved.repairWorkspaceRef) item.repairWorkspaceRef = saved.repairWorkspaceRef;
+      if (saved.rebaserWorkspaceRef) item.rebaserWorkspaceRef = saved.rebaserWorkspaceRef;
       if (saved.mergeCommitSha) item.mergeCommitSha = saved.mergeCommitSha;
       if (saved.fixForwardFailCount) item.fixForwardFailCount = saved.fixForwardFailCount;
       if (saved.fixForwardWorkspaceRef) item.fixForwardWorkspaceRef = saved.fixForwardWorkspaceRef;

@@ -80,7 +80,7 @@ export function buildSnapshot(
   const heartbeatStates = new Set(["launching", "implementing", "ci-failed", "ci-pending", "ci-passed", "review-pending", "merging"]);
   let apiErrorCount = 0;
   /** States that require PR polling -- used to count API errors only for items that actually poll GitHub. */
-  const prPollStates = new Set(["implementing", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing", "repairing", "merging", "launching"]);
+  const prPollStates = new Set(["implementing", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing", "rebasing", "merging", "launching"]);
 
   // Cache workspace listing once for all isWorkerAlive checks in this snapshot
   const cachedWorkspaces = mux.listWorkspaces();
@@ -201,10 +201,10 @@ export function buildSnapshot(
       }
     }
 
-    // Check repair worker health for items in repairing state
-    if (orchItem.state === "repairing" && orchItem.repairWorkspaceRef) {
+    // Check rebaser worker health for items in rebasing state
+    if (orchItem.state === "rebasing" && orchItem.rebaserWorkspaceRef) {
       snap.workerAlive = isWorkerAliveWithCache(
-        { ...orchItem, workspaceRef: orchItem.repairWorkspaceRef } as OrchestratorItem,
+        { ...orchItem, workspaceRef: orchItem.rebaserWorkspaceRef } as OrchestratorItem,
         cachedWorkspaces,
       );
     }
@@ -275,7 +275,7 @@ export async function buildSnapshotAsync(
   const readyIds: string[] = [];
   const heartbeatStates = new Set(["launching", "implementing", "ci-failed", "ci-pending", "ci-passed", "review-pending", "merging"]);
   let apiErrorCount = 0;
-  const prPollStates = new Set(["implementing", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing", "repairing", "merging", "launching"]);
+  const prPollStates = new Set(["implementing", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing", "rebasing", "merging", "launching"]);
 
   // Cache workspace listing once for all isWorkerAlive checks in this snapshot
   const cachedWorkspaces = mux.listWorkspaces();
@@ -385,10 +385,10 @@ export async function buildSnapshotAsync(
       }
     }
 
-    // Repair worker health
-    if (orchItem.state === "repairing" && orchItem.repairWorkspaceRef) {
+    // Rebaser worker health
+    if (orchItem.state === "rebasing" && orchItem.rebaserWorkspaceRef) {
       snap.workerAlive = isWorkerAliveWithCache(
-        { ...orchItem, workspaceRef: orchItem.repairWorkspaceRef } as OrchestratorItem,
+        { ...orchItem, workspaceRef: orchItem.rebaserWorkspaceRef } as OrchestratorItem,
         cachedWorkspaces,
       );
     }

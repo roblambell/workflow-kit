@@ -1009,7 +1009,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     cr5.startedAt = "2026-03-25T06:00:00.000Z";
     cr5.exitCode = 0;
     cr5.worktreePath = "/tmp/worktrees/ninthwave-CR-5";
-    cr5.repairWorkspaceRef = "workspace:repair-5";
+    cr5.rebaserWorkspaceRef = "workspace:rebaser-5";
 
     // ── Step 2: Serialize and write ──
     const state = serializeOrchestratorState(
@@ -1087,7 +1087,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     expect(r4.lastCommentCheck).toBe("2026-03-25T09:15:00.000Z");
     expect(r4.dependencies).toEqual(["CR-3"]);
 
-    // Item 5: merging -- exitCode, repairWorkspaceRef, worktreePath
+    // Item 5: merging -- exitCode, rebaserWorkspaceRef, worktreePath
     const r5 = byId.get("CR-5")!;
     expect(r5).toBeDefined();
     expect(r5.state).toBe("merging");
@@ -1098,7 +1098,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     expect(r5.reviewCompleted).toBe(true);
     expect(r5.exitCode).toBe(0);
     expect(r5.worktreePath).toBe("/tmp/worktrees/ninthwave-CR-5");
-    expect(r5.repairWorkspaceRef).toBe("workspace:repair-5");
+    expect(r5.rebaserWorkspaceRef).toBe("workspace:rebaser-5");
     expect(r5.startedAt).toBe("2026-03-25T06:00:00.000Z");
 
     // ── Step 5: Simulate daemon restart -- create fresh Orchestrator and hydrate ──
@@ -1130,7 +1130,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
       if (savedItem.rebaseRequested) item.rebaseRequested = savedItem.rebaseRequested;
       if (savedItem.ciFailureNotified) item.ciFailureNotified = savedItem.ciFailureNotified;
       if (savedItem.ciFailureNotifiedAt) item.ciFailureNotifiedAt = savedItem.ciFailureNotifiedAt;
-      if (savedItem.repairWorkspaceRef) item.repairWorkspaceRef = savedItem.repairWorkspaceRef;
+      if (savedItem.rebaserWorkspaceRef) item.rebaserWorkspaceRef = savedItem.rebaserWorkspaceRef;
       if (savedItem.startedAt) item.startedAt = savedItem.startedAt;
       if (savedItem.exitCode != null) item.exitCode = savedItem.exitCode;
       if (savedItem.worktreePath) item.worktreePath = savedItem.worktreePath;
@@ -1183,7 +1183,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     expect(fresh5.state).toBe("merging");
     expect(fresh5.reviewCompleted).toBe(true);
     expect(fresh5.worktreePath).toBe("/tmp/worktrees/ninthwave-CR-5");
-    expect(fresh5.repairWorkspaceRef).toBe("workspace:repair-5");
+    expect(fresh5.rebaserWorkspaceRef).toBe("workspace:rebaser-5");
     expect(fresh5.exitCode).toBe(0);
     expect(fresh5.partition).toBe(5);
     expect(fresh5.resolvedRepoRoot).toBe("/repos/project-e");

@@ -633,14 +633,14 @@ describe("buildSnapshot contract", () => {
     });
   });
 
-  // ── Repairing items ──────────────────────────────────────────────
+  // ── Rebasing items ──────────────────────────────────────────────
 
-  describe("repairing items", () => {
-    it("checks repair worker alive via repairWorkspaceRef", () => {
+  describe("rebasing items", () => {
+    it("checks rebaser worker alive via rebaserWorkspaceRef", () => {
       orch.addItem(makeWorkItem("RP-1"));
-      orch.setState("RP-1", "repairing");
+      orch.setState("RP-1", "rebasing");
       const orchItem = orch.getItem("RP-1")!;
-      orchItem.repairWorkspaceRef = fakeMux.launchWorkspace("/tmp/wt-repair", "claude", "RP-1")!;
+      orchItem.rebaserWorkspaceRef = fakeMux.launchWorkspace("/tmp/wt-rebaser", "claude", "RP-1")!;
 
       const result = snap(orch, { mux: fakeMux });
 

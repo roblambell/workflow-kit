@@ -4677,7 +4677,7 @@ function makeOrchestratorItem(id: string): OrchestratorItem {
     stderrTail: undefined,
     reviewWorkspaceRef: undefined,
     reviewVerdictPath: undefined,
-    repairWorkspaceRef: undefined,
+    rebaserWorkspaceRef: undefined,
     baseBranch: undefined,
     detectionLatencyMs: undefined,
     mergeCommitSha: undefined,

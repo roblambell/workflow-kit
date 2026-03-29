@@ -519,38 +519,38 @@ ${baseBranchLine}${hubRepoNwoLine}${securityLine}`;
   return { worktreePath, workspaceRef, verdictPath };
 }
 
-/** Result of launching a repair worker session. */
-export interface RepairLaunchResult {
+/** Result of launching a rebaser worker session. */
+export interface RebaserLaunchResult {
   workspaceRef: string;
 }
 
-/** Launch a repair worker session for rebase-only conflict resolution. */
-export function launchRepairWorker(
+/** Launch a rebaser worker session for rebase-only conflict resolution. */
+export function launchRebaserWorker(
   prNumber: number,
   itemId: string,
   repoRoot: string,
   aiTool: string,
   mux: Multiplexer = getMux(),
   options: { hubRepoNwo?: string } = {},
-): RepairLaunchResult | null {
-  // The repair worker runs in the existing worktree for this item
+): RebaserLaunchResult | null {
+  // The rebaser worker runs in the existing worktree for this item
   const worktreePath = join(repoRoot, ".worktrees", `ninthwave-${itemId}`);
   if (!existsSync(worktreePath)) {
-    warn(`No worktree found for repair of ${itemId} at ${worktreePath}`);
+    warn(`No worktree found for rebaser of ${itemId} at ${worktreePath}`);
     return null;
   }
 
   const hubRepoNwoLine = options.hubRepoNwo ? `HUB_REPO_NWO: ${options.hubRepoNwo}\n` : "";
-  const systemPrompt = `YOUR_REPAIR_ITEM_ID: ${itemId}
-YOUR_REPAIR_PR: ${prNumber}
+  const systemPrompt = `YOUR_REBASE_ITEM_ID: ${itemId}
+YOUR_REBASE_PR: ${prNumber}
 PROJECT_ROOT: ${repoRoot}
 ${hubRepoNwoLine}`;
 
-  const safeTitle = sanitizeTitle(`Repair rebase for PR #${prNumber}`);
-  info(`Launching ${aiTool} repair session for ${itemId}: PR #${prNumber}`);
+  const safeTitle = sanitizeTitle(`Rebase PR #${prNumber}`);
+  info(`Launching ${aiTool} rebaser session for ${itemId}: PR #${prNumber}`);
   const promptFile = join(worktreePath, ".nw-prompt");
   writeFileSync(promptFile, systemPrompt);
-  const workspaceRef = launchAiSession(aiTool, worktreePath, itemId, safeTitle, promptFile, mux, { projectRoot: repoRoot, agentName: "ninthwave-repairer" });
+  const workspaceRef = launchAiSession(aiTool, worktreePath, itemId, safeTitle, promptFile, mux, { projectRoot: repoRoot, agentName: "ninthwave-rebaser" });
   if (!workspaceRef) return null;
   return { workspaceRef };
 }

@@ -977,7 +977,7 @@ export function mapDaemonItemState(orchState: string, flags?: { rebaseRequested?
     case "implementing":
     case "launching":
       return "implementing";
-    case "repairing":
+    case "rebasing":
     case "fixing-forward":
       return "rebasing";
     case "ci-failed":

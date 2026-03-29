@@ -2752,7 +2752,7 @@ describe("processComments (via processTransitions)", () => {
     expect(actions.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
   });
 
-  it("skips comments from other agents (reviewer, forward-fixer, repairer)", () => {
+  it("skips comments from other agents (reviewer, forward-fixer, rebaser)", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -3262,9 +3262,9 @@ describe("syncWorkerDisplay", () => {
   });
 });
 
-// ── Repair worker state transitions ──────────────────────────────────
+// ── Rebaser worker state transitions ──────────────────────────────────
 
-describe("repair worker state transitions", () => {
+describe("rebaser worker state transitions", () => {
   function makeMinimalDeps(overrides: Partial<OrchestratorDeps> = {}): OrchestratorDeps {
     return {
       launchSingleItem: () => ({ worktreePath: "/tmp/wt", workspaceRef: "workspace:1" }),
@@ -3286,7 +3286,7 @@ describe("repair worker state transitions", () => {
     aiTool: "claude",
   };
 
-  it("daemon-rebase failure launches repair worker and transitions to repairing", () => {
+  it("daemon-rebase failure launches rebaser worker and transitions to rebasing", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -3296,17 +3296,17 @@ describe("repair worker state transitions", () => {
 
     const deps = makeMinimalDeps({
       daemonRebase: () => false, // daemon rebase fails
-      launchRepair: () => ({ workspaceRef: "repair:1" }),
+      launchRebaser: () => ({ workspaceRef: "rebaser:1" }),
     });
 
     const result = orch.executeAction({ type: "daemon-rebase", itemId: "H-1-1" }, ctx, deps);
 
     expect(result.success).toBe(true);
-    expect(item.state).toBe("repairing");
-    expect(item.repairWorkspaceRef).toBe("repair:1");
+    expect(item.state).toBe("rebasing");
+    expect(item.rebaserWorkspaceRef).toBe("rebaser:1");
   });
 
-  it("daemon-rebase success transitions to ci-pending without repair worker", () => {
+  it("daemon-rebase success transitions to ci-pending without rebaser worker", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -3314,26 +3314,26 @@ describe("repair worker state transitions", () => {
     const item = orch.getItem("H-1-1")!;
     item.prNumber = 42;
 
-    const launchRepairCalled = { value: false };
+    const launchRebaserCalled = { value: false };
     const deps = makeMinimalDeps({
       daemonRebase: () => true, // daemon rebase succeeds
-      launchRepair: () => { launchRepairCalled.value = true; return null; },
+      launchRebaser: () => { launchRebaserCalled.value = true; return null; },
     });
 
     const result = orch.executeAction({ type: "daemon-rebase", itemId: "H-1-1" }, ctx, deps);
 
     expect(result.success).toBe(true);
     expect(item.state).toBe("ci-pending");
-    expect(launchRepairCalled.value).toBe(false);
+    expect(launchRebaserCalled.value).toBe(false);
   });
 
-  it("repairing transitions to ci-pending when CI restarts after push", () => {
+  it("rebasing transitions to ci-pending when CI restarts after push", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "repairing");
+    orch.setState("H-1-1", "rebasing");
     const item = orch.getItem("H-1-1")!;
-    item.repairWorkspaceRef = "repair:1";
+    item.rebaserWorkspaceRef = "rebaser:1";
     item.rebaseRequested = true;
 
     const snapshot: PollSnapshot = {
@@ -3345,16 +3345,16 @@ describe("repair worker state transitions", () => {
 
     expect(item.state).toBe("ci-pending");
     expect(item.rebaseRequested).toBe(false);
-    expect(actions.some(a => a.type === "clean-repair")).toBe(true);
+    expect(actions.some(a => a.type === "clean-rebaser")).toBe(true);
   });
 
-  it("repairing transitions to stuck when repair worker dies", () => {
+  it("rebasing transitions to stuck when rebaser worker dies", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "repairing");
+    orch.setState("H-1-1", "rebasing");
     const item = orch.getItem("H-1-1")!;
-    item.repairWorkspaceRef = "repair:1";
+    item.rebaserWorkspaceRef = "rebaser:1";
 
     // Simulate 5 consecutive not-alive polls (debounce)
     for (let i = 0; i < 5; i++) {
@@ -3366,26 +3366,26 @@ describe("repair worker state transitions", () => {
     }
 
     expect(item.state).toBe("stuck");
-    expect(item.failureReason).toContain("repair-failed");
+    expect(item.failureReason).toContain("rebase-failed");
   });
 
-  it("executeCleanRepair cleans up the repair workspace", () => {
+  it("executeCleanRebaser cleans up the rebaser workspace", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.setState("H-1-1", "ci-pending");
     const item = orch.getItem("H-1-1")!;
-    item.repairWorkspaceRef = "repair:1";
+    item.rebaserWorkspaceRef = "rebaser:1";
 
     const cleaned: string[] = [];
     const deps = makeMinimalDeps({
-      cleanRepair: (_id, ref) => { cleaned.push(ref); return true; },
+      cleanRebaser: (_id, ref) => { cleaned.push(ref); return true; },
     });
 
-    orch.executeAction({ type: "clean-repair", itemId: "H-1-1" }, ctx, deps);
+    orch.executeAction({ type: "clean-rebaser", itemId: "H-1-1" }, ctx, deps);
 
-    expect(cleaned).toEqual(["repair:1"]);
-    expect(item.repairWorkspaceRef).toBeUndefined();
+    expect(cleaned).toEqual(["rebaser:1"]);
+    expect(item.rebaserWorkspaceRef).toBeUndefined();
   });
 
   it("executeLaunch transitions to ci-pending when existingPrNumber is returned", () => {
@@ -3407,7 +3407,7 @@ describe("repair worker state transitions", () => {
     expect(item.workspaceRef).toBeUndefined();
   });
 
-  it("falls back to worker message when repair worker not available", () => {
+  it("falls back to worker message when rebaser worker not available", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -3419,7 +3419,7 @@ describe("repair worker state transitions", () => {
     const messages: string[] = [];
     const deps = makeMinimalDeps({
       daemonRebase: () => false,
-      // launchRepair intentionally omitted
+      // launchRebaser intentionally omitted
       sendMessage: (_ref, msg) => { messages.push(msg); return true; },
     });
 
@@ -3431,9 +3431,9 @@ describe("repair worker state transitions", () => {
   });
 });
 
-// ── Repair rebase circuit breaker + worker message priority ──────────
+// ── Rebase circuit breaker + worker message priority ──────────
 
-describe("repair rebase circuit breaker and worker message priority", () => {
+describe("rebase circuit breaker and worker message priority", () => {
   function makeMinimalDeps(overrides: Partial<OrchestratorDeps> = {}): OrchestratorDeps {
     return {
       launchSingleItem: () => ({ worktreePath: "/tmp/wt", workspaceRef: "workspace:1" }),
@@ -3455,31 +3455,31 @@ describe("repair rebase circuit breaker and worker message priority", () => {
     aiTool: "claude",
   };
 
-  it("circuit breaker marks stuck after maxRepairAttempts", () => {
-    const orch = new Orchestrator({ wipLimit: 1, maxRepairAttempts: 2 });
+  it("circuit breaker marks stuck after maxRebaseAttempts", () => {
+    const orch = new Orchestrator({ wipLimit: 1, maxRebaseAttempts: 2 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.setState("H-1-1", "ci-pending");
     const item = orch.getItem("H-1-1")!;
     item.prNumber = 42;
-    item.repairAttemptCount = 2; // already at limit
+    item.rebaseAttemptCount = 2; // already at limit
 
-    const launchRepairCalled = { value: false };
+    const launchRebaserCalled = { value: false };
     const deps = makeMinimalDeps({
       daemonRebase: () => false,
-      launchRepair: () => { launchRepairCalled.value = true; return { workspaceRef: "repair:1" }; },
+      launchRebaser: () => { launchRebaserCalled.value = true; return { workspaceRef: "rebaser:1" }; },
     });
 
     const result = orch.executeAction({ type: "daemon-rebase", itemId: "H-1-1" }, ctx, deps);
 
     expect(result.success).toBe(false);
     expect(item.state).toBe("stuck");
-    expect(item.failureReason).toContain("repair-loop");
-    expect(item.failureReason).toContain("max repair attempts");
-    expect(launchRepairCalled.value).toBe(false); // repair NOT launched
+    expect(item.failureReason).toContain("rebase-loop");
+    expect(item.failureReason).toContain("max rebase attempts");
+    expect(launchRebaserCalled.value).toBe(false); // rebaser NOT launched
   });
 
-  it("prefers worker message over repair when workspaceRef exists and sendMessage succeeds", () => {
+  it("prefers worker message over rebaser when workspaceRef exists and sendMessage succeeds", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -3488,23 +3488,23 @@ describe("repair rebase circuit breaker and worker message priority", () => {
     item.prNumber = 42;
     item.workspaceRef = "workspace:1";
 
-    const launchRepairCalled = { value: false };
+    const launchRebaserCalled = { value: false };
     const messagesSent: Array<{ ref: string; msg: string }> = [];
     const deps = makeMinimalDeps({
       daemonRebase: () => false,
-      launchRepair: () => { launchRepairCalled.value = true; return { workspaceRef: "repair:1" }; },
+      launchRebaser: () => { launchRebaserCalled.value = true; return { workspaceRef: "rebaser:1" }; },
       sendMessage: (ref, msg) => { messagesSent.push({ ref, msg }); return true; },
     });
 
     const result = orch.executeAction({ type: "daemon-rebase", itemId: "H-1-1" }, ctx, deps);
 
     expect(result.success).toBe(true);
-    expect(launchRepairCalled.value).toBe(false); // repair NOT launched
+    expect(launchRebaserCalled.value).toBe(false); // rebaser NOT launched
     expect(messagesSent.length).toBe(1);
     expect(messagesSent[0].ref).toBe("workspace:1");
   });
 
-  it("falls back to repair when worker message fails (sendMessage returns false)", () => {
+  it("falls back to rebaser when worker message fails (sendMessage returns false)", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -3516,25 +3516,25 @@ describe("repair rebase circuit breaker and worker message priority", () => {
     const deps = makeMinimalDeps({
       daemonRebase: () => false,
       sendMessage: () => false, // worker message fails
-      launchRepair: () => ({ workspaceRef: "repair:1" }),
+      launchRebaser: () => ({ workspaceRef: "rebaser:1" }),
     });
 
     const result = orch.executeAction({ type: "daemon-rebase", itemId: "H-1-1" }, ctx, deps);
 
     expect(result.success).toBe(true);
-    expect(item.state).toBe("repairing");
-    expect(item.repairWorkspaceRef).toBe("repair:1");
-    expect(item.repairAttemptCount).toBe(1);
+    expect(item.state).toBe("rebasing");
+    expect(item.rebaserWorkspaceRef).toBe("rebaser:1");
+    expect(item.rebaseAttemptCount).toBe(1);
   });
 
-  it("repairAttemptCount resets when conflicts resolve (isMergeable !== false)", () => {
+  it("rebaseAttemptCount resets when conflicts resolve (isMergeable !== false)", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.setState("H-1-1", "ci-pending");
     const item = orch.getItem("H-1-1")!;
     item.prNumber = 42;
-    item.repairAttemptCount = 2;
+    item.rebaseAttemptCount = 2;
 
     // Simulate CI passing with PR now mergeable
     const snapshot: PollSnapshot = {
@@ -3544,17 +3544,17 @@ describe("repair rebase circuit breaker and worker message priority", () => {
 
     orch.processTransitions(snapshot);
 
-    expect(item.repairAttemptCount).toBe(0);
+    expect(item.rebaseAttemptCount).toBe(0);
   });
 
-  it("repairAttemptCount preserves when conflicts persist (isMergeable === false)", () => {
+  it("rebaseAttemptCount preserves when conflicts persist (isMergeable === false)", () => {
     const orch = new Orchestrator({ wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.setState("H-1-1", "ci-pending");
     const item = orch.getItem("H-1-1")!;
     item.prNumber = 42;
-    item.repairAttemptCount = 2;
+    item.rebaseAttemptCount = 2;
 
     // Simulate PR still conflicting
     const snapshot: PollSnapshot = {
@@ -3564,32 +3564,32 @@ describe("repair rebase circuit breaker and worker message priority", () => {
 
     orch.processTransitions(snapshot);
 
-    expect(item.repairAttemptCount).toBe(2); // preserved, not reset
+    expect(item.rebaseAttemptCount).toBe(2); // preserved, not reset
   });
 
-  it("repairAttemptCount increments on each repair launch", () => {
-    const orch = new Orchestrator({ wipLimit: 1, maxRepairAttempts: 5 });
+  it("rebaseAttemptCount increments on each rebaser launch", () => {
+    const orch = new Orchestrator({ wipLimit: 1, maxRebaseAttempts: 5 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.setState("H-1-1", "ci-pending");
     const item = orch.getItem("H-1-1")!;
     item.prNumber = 42;
-    item.repairAttemptCount = 1; // already had one attempt
+    item.rebaseAttemptCount = 1; // already had one attempt
 
     const deps = makeMinimalDeps({
       daemonRebase: () => false,
-      launchRepair: () => ({ workspaceRef: "repair:2" }),
+      launchRebaser: () => ({ workspaceRef: "rebaser:2" }),
     });
 
     orch.executeAction({ type: "daemon-rebase", itemId: "H-1-1" }, ctx, deps);
 
-    expect(item.repairAttemptCount).toBe(2);
-    expect(item.state).toBe("repairing");
+    expect(item.rebaseAttemptCount).toBe(2);
+    expect(item.state).toBe("rebasing");
   });
 
-  it("full loop terminates after maxRepairAttempts (integration-style)", () => {
+  it("full loop terminates after maxRebaseAttempts (integration-style)", () => {
     const maxAttempts = 3;
-    const orch = new Orchestrator({ wipLimit: 1, maxRepairAttempts: maxAttempts });
+    const orch = new Orchestrator({ wipLimit: 1, maxRebaseAttempts: maxAttempts });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.setState("H-1-1", "ci-pending");
@@ -3598,10 +3598,10 @@ describe("repair rebase circuit breaker and worker message priority", () => {
 
     const deps = makeMinimalDeps({
       daemonRebase: () => false,
-      launchRepair: () => ({ workspaceRef: "repair:x" }),
+      launchRebaser: () => ({ workspaceRef: "rebaser:x" }),
     });
 
-    // Simulate the loop: detect conflict → daemon-rebase → repair → CI restarts → still conflicting
+    // Simulate the loop: detect conflict → daemon-rebase → rebaser → CI restarts → still conflicting
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       // 1. Detect conflict in ci-pending → triggers daemon-rebase
       const conflictSnap: PollSnapshot = {
@@ -3613,16 +3613,16 @@ describe("repair rebase circuit breaker and worker message priority", () => {
 
       if (!rebaseAction) break; // no more rebase actions = loop terminated
 
-      // 2. Execute daemon-rebase → launches repair (daemon rebase fails)
+      // 2. Execute daemon-rebase → launches rebaser (daemon rebase fails)
       orch.executeAction(rebaseAction, ctx, deps);
-      expect(item.state).toBe("repairing");
+      expect(item.state).toBe("rebasing");
 
-      // 3. Repair worker pushes → CI restarts
-      const repairDoneSnap: PollSnapshot = {
+      // 3. Rebaser worker pushes → CI restarts
+      const rebaserDoneSnap: PollSnapshot = {
         items: [{ id: "H-1-1", ciStatus: "pending", workerAlive: true }],
         readyIds: [],
       };
-      orch.processTransitions(repairDoneSnap);
+      orch.processTransitions(rebaserDoneSnap);
       expect(item.state).toBe("ci-pending");
       expect(item.rebaseRequested).toBe(false);
     }
@@ -3641,8 +3641,8 @@ describe("repair rebase circuit breaker and worker message priority", () => {
     }
 
     expect(item.state).toBe("stuck");
-    expect(item.failureReason).toContain("repair-loop");
-    expect(item.repairAttemptCount).toBe(maxAttempts);
+    expect(item.failureReason).toContain("rebase-loop");
+    expect(item.rebaseAttemptCount).toBe(maxAttempts);
   });
 });
 

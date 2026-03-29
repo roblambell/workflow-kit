@@ -393,7 +393,7 @@ All PR comments from automated agents go through the same GitHub account. Always
 **[Implementer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/implementer.md)** <message>
 ```
 
-Other agents use the same pattern: `**[Reviewer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/reviewer.md)**`, `**[Forward-Fixer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/forward-fixer.md)**`, `**[Repairer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/repairer.md)**`, `**[Orchestrator](https://github.com/${HUB_REPO_NWO}/blob/main/agents/orchestrator.md)**`.
+Other agents use the same pattern: `**[Reviewer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/reviewer.md)**`, `**[Forward-Fixer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/forward-fixer.md)**`, `**[Rebaser](https://github.com/${HUB_REPO_NWO}/blob/main/agents/rebaser.md)**`, `**[Orchestrator](https://github.com/${HUB_REPO_NWO}/blob/main/agents/orchestrator.md)**`.
 
 Ignore comments prefixed with `[Orchestrator]` -- these are audit trail entries written by the orchestrator daemon (linked with `https://github.com/${HUB_REPO_NWO}/blob/main/agents/orchestrator.md`).
 

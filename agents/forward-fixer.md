@@ -158,7 +158,7 @@ All PR comments from automated agents go through the same GitHub account. Always
 **[Forward-Fixer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/forward-fixer.md)** <message>
 ```
 
-Ignore comments prefixed with other agent labels (`[Implementer]`, `[Reviewer]`, `[Repairer]`, `[Orchestrator]`, `[Forward-Fixer]`) -- those are from other agents in the pipeline.
+Ignore comments prefixed with other agent labels (`[Implementer]`, `[Reviewer]`, `[Rebaser]`, `[Orchestrator]`, `[Forward-Fixer]`) -- those are from other agents in the pipeline.
 
 ## 6. Idle -- Wait for Orchestrator Daemon
 

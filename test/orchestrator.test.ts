@@ -2532,86 +2532,86 @@ describe("Orchestrator", () => {
       });
     });
 
-    // ── repairing ──────────────────────────────────────────────────
+    // ── rebasing ──────────────────────────────────────────────────
 
-    describe("repairing →", () => {
-      it("→ ci-pending when repair worker pushes fix (CI restarts with pending)", () => {
+    describe("rebasing →", () => {
+      it("→ ci-pending when rebaser worker pushes fix (CI restarts with pending)", () => {
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing");
-        orch.getItem("X-1-1")!.repairWorkspaceRef = "workspace:repair-1";
+        orch.setState("X-1-1", "rebasing");
+        orch.getItem("X-1-1")!.rebaserWorkspaceRef = "workspace:rebaser-1";
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", ciStatus: "pending", prState: "open" }]),
         );
         expect(orch.getItem("X-1-1")!.state).toBe("ci-pending");
         expect(orch.getItem("X-1-1")!.rebaseRequested).toBe(false);
-        expect(actions.some((a) => a.type === "clean-repair")).toBe(true);
+        expect(actions.some((a) => a.type === "clean-rebaser")).toBe(true);
       });
 
-      it("→ ci-pending when CI already passed after repair push", () => {
+      it("→ ci-pending when CI already passed after rebaser push", () => {
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing");
-        orch.getItem("X-1-1")!.repairWorkspaceRef = "workspace:repair-1";
+        orch.setState("X-1-1", "rebasing");
+        orch.getItem("X-1-1")!.rebaserWorkspaceRef = "workspace:rebaser-1";
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", ciStatus: "pass", prState: "open" }]),
         );
         // Even "pass" transitions to ci-pending first (re-evaluated on next tick)
         expect(orch.getItem("X-1-1")!.state).toBe("ci-pending");
-        expect(actions.some((a) => a.type === "clean-repair")).toBe(true);
+        expect(actions.some((a) => a.type === "clean-rebaser")).toBe(true);
       });
 
-      it("→ ci-pending when repair worker's fix still fails CI", () => {
+      it("→ ci-pending when rebaser worker's fix still fails CI", () => {
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing");
-        orch.getItem("X-1-1")!.repairWorkspaceRef = "workspace:repair-1";
+        orch.setState("X-1-1", "rebasing");
+        orch.getItem("X-1-1")!.rebaserWorkspaceRef = "workspace:rebaser-1";
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", ciStatus: "fail", prState: "open" }]),
         );
-        // Any CI status change means repair pushed -- transition to ci-pending for re-evaluation
+        // Any CI status change means rebaser pushed -- transition to ci-pending for re-evaluation
         expect(orch.getItem("X-1-1")!.state).toBe("ci-pending");
-        expect(actions.some((a) => a.type === "clean-repair")).toBe(true);
+        expect(actions.some((a) => a.type === "clean-rebaser")).toBe(true);
       });
 
-      it("→ stuck when repair worker dies without pushing (debounced)", () => {
+      it("→ stuck when rebaser worker dies without pushing (debounced)", () => {
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing");
-        orch.getItem("X-1-1")!.repairWorkspaceRef = "workspace:repair-1";
+        orch.setState("X-1-1", "rebasing");
+        orch.getItem("X-1-1")!.rebaserWorkspaceRef = "workspace:rebaser-1";
         // Debounce: NOT_ALIVE_THRESHOLD (5) consecutive not-alive checks required
         for (let i = 0; i < 4; i++) {
           orch.processTransitions(
             snapshotWith([{ id: "X-1-1", workerAlive: false }]),
           );
-          expect(orch.getItem("X-1-1")!.state).toBe("repairing");
+          expect(orch.getItem("X-1-1")!.state).toBe("rebasing");
         }
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", workerAlive: false }]),
         );
         expect(orch.getItem("X-1-1")!.state).toBe("stuck");
-        expect(orch.getItem("X-1-1")!.failureReason).toContain("repair-failed");
-        expect(actions.some((a) => a.type === "clean-repair")).toBe(true);
+        expect(orch.getItem("X-1-1")!.failureReason).toContain("rebase-failed");
+        expect(actions.some((a) => a.type === "clean-rebaser")).toBe(true);
       });
 
-      it("stays repairing when worker alive and no CI status change", () => {
+      it("stays rebasing when worker alive and no CI status change", () => {
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing");
-        orch.getItem("X-1-1")!.repairWorkspaceRef = "workspace:repair-1";
+        orch.setState("X-1-1", "rebasing");
+        orch.getItem("X-1-1")!.rebaserWorkspaceRef = "workspace:rebaser-1";
         const actions = orch.processTransitions(
           snapshotWith([{ id: "X-1-1", workerAlive: true }]),
         );
-        expect(orch.getItem("X-1-1")!.state).toBe("repairing");
+        expect(orch.getItem("X-1-1")!.state).toBe("rebasing");
         expect(actions).toHaveLength(0);
       });
 
-      it("stays repairing with no snapshot", () => {
+      it("stays rebasing with no snapshot", () => {
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "repairing");
+        orch.setState("X-1-1", "rebasing");
         const actions = orch.processTransitions(emptySnapshot());
-        expect(orch.getItem("X-1-1")!.state).toBe("repairing");
+        expect(orch.getItem("X-1-1")!.state).toBe("rebasing");
         expect(actions).toHaveLength(0);
       });
     });
@@ -6856,8 +6856,8 @@ describe("Orchestrator", () => {
       { label: "Orchestrator", body: "**[Orchestrator](https://github.com/org/repo/blob/main/agents/orchestrator.md)** status update" },
       { label: "Implementer", body: "**[Implementer](https://github.com/org/repo/blob/main/agents/implementer.md)** addressed feedback" },
       { label: "Reviewer", body: "**[Reviewer](https://github.com/org/repo/blob/main/agents/reviewer.md)** review complete" },
-      { label: "Verifier", body: "**[Forward-Fixer](https://github.com/org/repo/blob/main/agents/forward-fixer.md)** CI is flaky" },
-      { label: "Repairer", body: "**[Repairer](https://github.com/org/repo/blob/main/agents/repairer.md)** rebase complete" },
+      { label: "Forward-Fixer", body: "**[Forward-Fixer](https://github.com/org/repo/blob/main/agents/forward-fixer.md)** CI is flaky" },
+      { label: "Rebaser", body: "**[Rebaser](https://github.com/org/repo/blob/main/agents/rebaser.md)** rebase complete" },
     ];
 
     for (const { label, body } of agentPrefixes) {

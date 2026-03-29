@@ -21,7 +21,7 @@ export type OrchestratorItemState =
   | "ci-pending"
   | "ci-passed"
   | "ci-failed"
-  | "repairing"
+  | "rebasing"
   | "review-pending"
   | "reviewing"
   | "merging"
@@ -70,8 +70,8 @@ export interface OrchestratorItem {
   reviewWorkspaceRef?: string;
   /** Absolute path to the verdict file written by the review worker. */
   reviewVerdictPath?: string;
-  /** cmux workspace reference for the repair worker session (rebase-only). */
-  repairWorkspaceRef?: string;
+  /** cmux workspace reference for the rebaser worker session (rebase-only). */
+  rebaserWorkspaceRef?: string;
   /** Whether this item's review has been completed (approved). Resets on CI regression. */
   reviewCompleted?: boolean;
 /** Descriptive reason for why this item failed (e.g., "launch-failed: repo not found", "ci-failed: test timeout"). Set on ci-failed/stuck states, cleared on recovery. */
@@ -98,8 +98,8 @@ export interface OrchestratorItem {
   ciFailureNotifiedAt?: string | null;
   /** ISO timestamp of the last comment check for this item's PR. Used to avoid duplicate comment relay. */
   lastCommentCheck?: string;
-  /** Number of consecutive repair worker launches for rebase conflict resolution. Resets when conflicts resolve (isMergeable !== false). */
-  repairAttemptCount?: number;
+  /** Number of consecutive rebaser worker launches for rebase conflict resolution. Resets when conflicts resolve (isMergeable !== false). */
+  rebaseAttemptCount?: number;
   /** Set when a CI failure notification failed because no worker was running. Signals executeLaunch to force-launch a worker even when an existing PR is found. Cleared after launch. */
   needsCiFix?: boolean;
   /** Absolute path to the worktree directory. Preserved for stuck items so users can inspect partial work. */
@@ -113,7 +113,7 @@ export interface OrchestratorItem {
 }
 
 export interface OrchestratorConfig {
-  /** Max concurrent items in all WIP states (bootstrapping/launching/implementing/ci-pending/ci-passed/ci-failed/repairing/reviewing/review-pending/merging). */
+  /** Max concurrent items in all WIP states (bootstrapping/launching/implementing/ci-pending/ci-passed/ci-failed/rebasing/reviewing/review-pending/merging). */
   wipLimit: number;
   /** When to auto-merge: auto (CI pass, respects review gate + CHANGES_REQUESTED), manual (never auto-merge), bypass (admin override, skips branch protection human review). */
   mergeStrategy: MergeStrategy;
@@ -133,8 +133,8 @@ export interface OrchestratorConfig {
   reviewAutoFix: "off" | "direct" | "pr";
   /** Max merge failures before marking stuck. Default: 3. */
   maxMergeRetries: number;
-  /** Max consecutive repair worker launches before marking stuck. Default: 3. */
-  maxRepairAttempts: number;
+  /** Max consecutive rebaser worker launches before marking stuck. Default: 3. */
+  maxRebaseAttempts: number;
   /** Max review rounds before marking stuck. Default: 3. */
   maxReviewRounds: number;
   /** Whether to check CI on main after merge and fix-forward if broken. Default: true. */
@@ -198,8 +198,8 @@ export type ActionType =
   | "workspace-close"
   | "rebase"
   | "daemon-rebase"
-  | "launch-repair"
-  | "clean-repair"
+  | "launch-rebaser"
+  | "clean-rebaser"
   | "retry"
   | "sync-stack-comments"
   | "launch-review"
@@ -324,16 +324,16 @@ export interface OrchestratorDeps {
     eventLine: string,
   ) => boolean;
   /**
-   * Launch a repair worker for rebase-only conflict resolution.
-   * Called when daemon-rebase fails (conflicts). The repair worker gets
+   * Launch a rebaser worker for rebase-only conflict resolution.
+   * Called when daemon-rebase fails (conflicts). The rebaser worker gets
    * a focused prompt to resolve conflicts and push, not re-implement.
    * Returns a workspace reference on success.
    */
-  launchRepair?: (itemId: string, prNumber: number, repoRoot: string) => { workspaceRef: string } | null;
+  launchRebaser?: (itemId: string, prNumber: number, repoRoot: string) => { workspaceRef: string } | null;
   /**
-   * Clean up a repair worker session and workspace.
+   * Clean up a rebaser worker session and workspace.
    */
-  cleanRepair?: (itemId: string, repairWorkspaceRef: string) => boolean;
+  cleanRebaser?: (itemId: string, rebaserWorkspaceRef: string) => boolean;
   /**
    * Set a commit status on a PR's head SHA.
    * Used to post review results as GitHub commit statuses for branch protection integration.
@@ -391,7 +391,7 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   enableStacking: true,
   reviewAutoFix: "off",
   maxMergeRetries: 3,
-  maxRepairAttempts: 3,
+  maxRebaseAttempts: 3,
   maxReviewRounds: 3,
   fixForward: true,
   maxFixForwardRetries: 2,
@@ -439,7 +439,7 @@ const WIP_STATES: Set<OrchestratorItemState> = new Set([
   "ci-pending",
   "ci-passed",
   "ci-failed",
-  "repairing",
+  "rebasing",
   "reviewing",
   "review-pending",
   "merging",
@@ -747,8 +747,8 @@ export class Orchestrator {
         actions = this.handlePrLifecycle(item, snap);
         break;
 
-      case "repairing":
-        actions = this.handleRepairing(item, snap);
+      case "rebasing":
+        actions = this.handleRebasing(item, snap);
         break;
 
       case "reviewing":
@@ -968,9 +968,9 @@ export class Orchestrator {
       return actions;
     }
 
-    // Reset repair attempt counter when conflicts are resolved
-    if (snap?.isMergeable !== false && (item.repairAttemptCount ?? 0) > 0) {
-      item.repairAttemptCount = 0;
+    // Reset rebase attempt counter when conflicts are resolved
+    if (snap?.isMergeable !== false && (item.rebaseAttemptCount ?? 0) > 0) {
+      item.rebaseAttemptCount = 0;
     }
 
     // Resolve the effective CI status from the snapshot
@@ -1269,31 +1269,31 @@ export class Orchestrator {
 
   /** Handle merging state. */
   /**
-   * Handle "repairing" state: a repair worker is resolving rebase conflicts.
+   * Handle "rebasing" state: a rebaser worker is resolving rebase conflicts.
    * When CI restarts (worker pushed), transition back to ci-pending.
-   * If the repair worker dies or can't resolve conflicts, mark stuck.
+   * If the rebaser worker dies or can't resolve conflicts, mark stuck.
    */
-  private handleRepairing(
+  private handleRebasing(
     item: OrchestratorItem,
     snap: ItemSnapshot | undefined,
   ): Action[] {
     const actions: Action[] = [];
 
-    // Repair worker pushed -- CI re-triggered
+    // Rebaser worker pushed -- CI re-triggered
     if (snap?.ciStatus === "pending" || snap?.ciStatus === "pass" || snap?.ciStatus === "fail") {
       this.transition(item, "ci-pending");
       item.rebaseRequested = false;
-      actions.push({ type: "clean-repair", itemId: item.id });
+      actions.push({ type: "clean-rebaser", itemId: item.id });
       return actions;
     }
 
-    // Repair worker died without pushing
-    if (snap?.workerAlive === false && item.repairWorkspaceRef) {
+    // Rebaser worker died without pushing
+    if (snap?.workerAlive === false && item.rebaserWorkspaceRef) {
       item.notAliveCount = (item.notAliveCount ?? 0) + 1;
       if (item.notAliveCount >= NOT_ALIVE_THRESHOLD) {
         this.transition(item, "stuck");
-        item.failureReason = "repair-failed: repair worker could not resolve rebase conflicts";
-        actions.push({ type: "clean-repair", itemId: item.id });
+        item.failureReason = "rebase-failed: rebaser worker could not resolve rebase conflicts";
+        actions.push({ type: "clean-rebaser", itemId: item.id });
       }
     }
 
@@ -1447,8 +1447,8 @@ export class Orchestrator {
     );
 
     for (const comment of snap.newComments) {
-      // Skip comments from any ninthwave agent (Orchestrator, Implementer, Reviewer, Forward-Fixer, Repairer)
-      if (/\*\*\[(Orchestrator|Implementer|Reviewer|Forward-Fixer|Repairer)\]/.test(comment.body)) continue;
+      // Skip comments from any ninthwave agent (Orchestrator, Implementer, Reviewer, Forward-Fixer, Rebaser)
+      if (/\*\*\[(Orchestrator|Implementer|Reviewer|Forward-Fixer|Rebaser)\]/.test(comment.body)) continue;
       // Skip orchestrator HTML status markers
       if (comment.body.includes("<!-- ninthwave-orchestrator-status -->")) continue;
 
@@ -1608,10 +1608,10 @@ export class Orchestrator {
         return this.executeRetry(item, ctx, deps);
       case "sync-stack-comments":
         return this.executeSyncStackComments(item, deps);
-      case "launch-repair":
-        return this.executeLaunchRepair(item, ctx, deps);
-      case "clean-repair":
-        return this.executeCleanRepair(item, deps);
+      case "launch-rebaser":
+        return this.executeLaunchRebaser(item, ctx, deps);
+      case "clean-rebaser":
+        return this.executeCleanRebaser(item, deps);
       case "launch-review":
         return this.executeLaunchReview(item, action, ctx, deps);
       case "clean-review":
@@ -2254,7 +2254,7 @@ export class Orchestrator {
       }
     }
 
-    // Daemon rebase failed -- prefer sending message to live worker over launching repair.
+    // Daemon rebase failed -- prefer sending message to live worker over launching rebaser.
     // The original worker knows the code best and can resolve conflicts properly.
     const message = action.message || "Please rebase onto latest main.";
     if (item.workspaceRef) {
@@ -2262,41 +2262,41 @@ export class Orchestrator {
       if (sent) {
         return { success: true };
       }
-      // sendMessage failed -- worker may be unresponsive, fall through to repair
+      // sendMessage failed -- worker may be unresponsive, fall through to rebaser
     }
 
-    // Circuit breaker: stop launching repairs after maxRepairAttempts
-    const attemptCount = item.repairAttemptCount ?? 0;
-    if (attemptCount >= this.config.maxRepairAttempts) {
+    // Circuit breaker: stop launching rebasers after maxRebaseAttempts
+    const attemptCount = item.rebaseAttemptCount ?? 0;
+    if (attemptCount >= this.config.maxRebaseAttempts) {
       this.transition(item, "stuck");
-      item.failureReason = `repair-loop: exceeded max repair attempts (${this.config.maxRepairAttempts}) -- rebase conflicts could not be resolved`;
+      item.failureReason = `rebase-loop: exceeded max rebase attempts (${this.config.maxRebaseAttempts}) -- rebase conflicts could not be resolved`;
       deps.warn?.(
-        `[Orchestrator] ${item.id} stuck after ${attemptCount} repair attempts. Manual intervention needed.`,
+        `[Orchestrator] ${item.id} stuck after ${attemptCount} rebase attempts. Manual intervention needed.`,
       );
-      return { success: false, error: `Repair loop circuit breaker triggered for ${item.id} after ${attemptCount} attempts` };
+      return { success: false, error: `Rebase loop circuit breaker triggered for ${item.id} after ${attemptCount} attempts` };
     }
 
-    // Launch repair worker if available (focused rebase-only prompt)
-    if (deps.launchRepair && item.prNumber) {
+    // Launch rebaser worker if available (focused rebase-only prompt)
+    if (deps.launchRebaser && item.prNumber) {
       const repoRoot = deps.daemonRebase
         ? (getWorktreeInfo(item.id, join(ctx.worktreeDir, ".cross-repo-index"), ctx.worktreeDir)?.repoRoot ?? item.resolvedRepoRoot ?? ctx.projectRoot)
         : (item.resolvedRepoRoot ?? ctx.projectRoot);
       try {
-        const result = deps.launchRepair(item.id, item.prNumber, repoRoot);
+        const result = deps.launchRebaser(item.id, item.prNumber, repoRoot);
         if (result) {
-          item.repairWorkspaceRef = result.workspaceRef;
-          item.repairAttemptCount = attemptCount + 1;
-          this.transition(item, "repairing");
+          item.rebaserWorkspaceRef = result.workspaceRef;
+          item.rebaseAttemptCount = attemptCount + 1;
+          this.transition(item, "rebasing");
           return { success: true };
         }
       } catch (e: unknown) {
-        deps.warn?.(`[Orchestrator] Repair worker launch failed for ${item.id}: ${e instanceof Error ? e.message : e}`);
+        deps.warn?.(`[Orchestrator] Rebaser worker launch failed for ${item.id}: ${e instanceof Error ? e.message : e}`);
       }
     }
 
-    // No live worker, no repair -- log warning
+    // No live worker, no rebaser -- log warning
     deps.warn?.(
-      `[Orchestrator] PR for ${item.id} (branch ${branch}) has merge conflicts but daemon rebase failed and no worker/repair available. Manual rebase needed.`,
+      `[Orchestrator] PR for ${item.id} (branch ${branch}) has merge conflicts but daemon rebase failed and no worker/rebaser available. Manual rebase needed.`,
     );
     return { success: false, error: `Daemon rebase failed and no worker available for ${item.id}` };
   }
@@ -2358,36 +2358,36 @@ export class Orchestrator {
   }
 
   /** Launch a review worker for a PR. Stores reviewWorkspaceRef on success. */
-  /** Launch a repair worker for rebase-only conflict resolution. */
-  private executeLaunchRepair(
+  /** Launch a rebaser worker for rebase-only conflict resolution. */
+  private executeLaunchRebaser(
     item: OrchestratorItem,
     ctx: ExecutionContext,
     deps: OrchestratorDeps,
   ): ActionResult {
-    if (!deps.launchRepair) {
-      return { success: false, error: `Repair worker not available for ${item.id}` };
+    if (!deps.launchRebaser) {
+      return { success: false, error: `Rebaser worker not available for ${item.id}` };
     }
 
     const prNum = item.prNumber;
     if (!prNum) {
-      return { success: false, error: `No PR number for repair launch of ${item.id}` };
+      return { success: false, error: `No PR number for rebaser launch of ${item.id}` };
     }
 
     const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
     try {
-      const result = deps.launchRepair(item.id, prNum, repoRoot);
+      const result = deps.launchRebaser(item.id, prNum, repoRoot);
       if (result) {
-        item.repairWorkspaceRef = result.workspaceRef;
+        item.rebaserWorkspaceRef = result.workspaceRef;
       }
       return { success: true };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return { success: false, error: `Repair launch failed for ${item.id}: ${msg}` };
+      return { success: false, error: `Rebaser launch failed for ${item.id}: ${msg}` };
     }
   }
 
   /**
-   * Shared cleanup for worker sessions (repair, review, forward-fixer).
+   * Shared cleanup for worker sessions (rebaser, review, forward-fixer).
    * Closes the workspace via the provided clean function and clears the ref.
    */
   private cleanWorkerWorkspace(
@@ -2413,14 +2413,14 @@ export class Orchestrator {
     }
   }
 
-  /** Clean up a repair worker session. */
-  private executeCleanRepair(
+  /** Clean up a rebaser worker session. */
+  private executeCleanRebaser(
     item: OrchestratorItem,
     deps: OrchestratorDeps,
   ): ActionResult {
     return this.cleanWorkerWorkspace(
-      "Repair", item.id, item.repairWorkspaceRef, deps.cleanRepair,
-      () => { item.repairWorkspaceRef = undefined; },
+      "Rebaser", item.id, item.rebaserWorkspaceRef, deps.cleanRebaser,
+      () => { item.rebaserWorkspaceRef = undefined; },
     );
   }
 
