@@ -525,6 +525,9 @@ export function buildSnapshot(
   const readyIds: string[] = [];
   const heartbeatStates = new Set(["launching", "implementing", "ci-failed", "ci-pending", "ci-passed", "review-pending", "merging", "pr-open"]);
 
+  // Cache workspace listing once for all isWorkerAlive checks in this snapshot
+  const cachedWorkspaces = mux.listWorkspaces();
+
   for (const orchItem of orch.getAllItems()) {
     // Compute readyIds for queued items
     if (orchItem.state === "queued") {
@@ -626,9 +629,9 @@ export function buildSnapshot(
 
     // Check review worker health and verdict file for items in reviewing state
     if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {
-      snap.workerAlive = isWorkerAlive(
+      snap.workerAlive = isWorkerAliveWithCache(
         { ...orchItem, workspaceRef: orchItem.reviewWorkspaceRef } as OrchestratorItem,
-        mux,
+        cachedWorkspaces,
       );
       if (orchItem.reviewVerdictPath) {
         try {
@@ -639,23 +642,23 @@ export function buildSnapshot(
 
     // Check repair worker health for items in repairing state
     if (orchItem.state === "repairing" && orchItem.repairWorkspaceRef) {
-      snap.workerAlive = isWorkerAlive(
+      snap.workerAlive = isWorkerAliveWithCache(
         { ...orchItem, workspaceRef: orchItem.repairWorkspaceRef } as OrchestratorItem,
-        mux,
+        cachedWorkspaces,
       );
     }
 
     // Check verifier worker health for items in repairing-main state
     if (orchItem.state === "repairing-main" && orchItem.verifyWorkspaceRef) {
-      snap.workerAlive = isWorkerAlive(
+      snap.workerAlive = isWorkerAliveWithCache(
         { ...orchItem, workspaceRef: orchItem.verifyWorkspaceRef } as OrchestratorItem,
-        mux,
+        cachedWorkspaces,
       );
     }
 
     // Check worker alive and commit freshness for active items
     if (orchItem.state === "launching" || orchItem.state === "implementing" || orchItem.state === "ci-failed") {
-      snap.workerAlive = isWorkerAlive(orchItem, mux);
+      snap.workerAlive = isWorkerAliveWithCache(orchItem, cachedWorkspaces);
       const commitTime = getLastCommitTime(repoRoot, `ninthwave/${orchItem.id}`);
       snap.lastCommitTime = commitTime;
       orchItem.lastCommitTime = commitTime;
@@ -709,6 +712,9 @@ export async function buildSnapshotAsync(
   const items: ItemSnapshot[] = [];
   const readyIds: string[] = [];
   const heartbeatStates = new Set(["launching", "implementing", "ci-failed", "ci-pending", "ci-passed", "review-pending", "merging", "pr-open"]);
+
+  // Cache workspace listing once for all isWorkerAlive checks in this snapshot
+  const cachedWorkspaces = mux.listWorkspaces();
 
   for (const orchItem of orch.getAllItems()) {
     // Compute readyIds for queued items
@@ -800,9 +806,9 @@ export async function buildSnapshotAsync(
 
     // Review worker health
     if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {
-      snap.workerAlive = isWorkerAlive(
+      snap.workerAlive = isWorkerAliveWithCache(
         { ...orchItem, workspaceRef: orchItem.reviewWorkspaceRef } as OrchestratorItem,
-        mux,
+        cachedWorkspaces,
       );
       if (orchItem.reviewVerdictPath) {
         try {
@@ -813,23 +819,23 @@ export async function buildSnapshotAsync(
 
     // Repair worker health
     if (orchItem.state === "repairing" && orchItem.repairWorkspaceRef) {
-      snap.workerAlive = isWorkerAlive(
+      snap.workerAlive = isWorkerAliveWithCache(
         { ...orchItem, workspaceRef: orchItem.repairWorkspaceRef } as OrchestratorItem,
-        mux,
+        cachedWorkspaces,
       );
     }
 
     // Verifier worker health
     if (orchItem.state === "repairing-main" && orchItem.verifyWorkspaceRef) {
-      snap.workerAlive = isWorkerAlive(
+      snap.workerAlive = isWorkerAliveWithCache(
         { ...orchItem, workspaceRef: orchItem.verifyWorkspaceRef } as OrchestratorItem,
-        mux,
+        cachedWorkspaces,
       );
     }
 
     // Worker alive and commit freshness
     if (orchItem.state === "launching" || orchItem.state === "implementing" || orchItem.state === "ci-failed") {
-      snap.workerAlive = isWorkerAlive(orchItem, mux);
+      snap.workerAlive = isWorkerAliveWithCache(orchItem, cachedWorkspaces);
       const commitTime = getLastCommitTime(repoRoot, `ninthwave/${orchItem.id}`);
       snap.lastCommitTime = commitTime;
       orchItem.lastCommitTime = commitTime;
@@ -862,18 +868,26 @@ export async function buildSnapshotAsync(
   return { items, readyIds };
 }
 
-/** Check if a worker's cmux workspace is still running. */
-export function isWorkerAlive(item: OrchestratorItem, mux: Multiplexer): boolean {
+/**
+ * Check if a worker's cmux workspace is still running using a pre-fetched
+ * workspace listing. Use this inside snapshot builds where the listing has
+ * already been fetched once for all items.
+ */
+export function isWorkerAliveWithCache(item: OrchestratorItem, workspaceListing: string): boolean {
   if (!item.workspaceRef) return false;
-  const workspaces = mux.listWorkspaces();
-  if (!workspaces) return false;
+  if (!workspaceListing) return false;
   const escapedRef = item.workspaceRef.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const escapedId = item.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const refRe = new RegExp(`\\b${escapedRef}\\b`);
   const idRe = new RegExp(`\\b${escapedId}\\b`);
-  return workspaces.split("\n").some(
+  return workspaceListing.split("\n").some(
     (line) => refRe.test(line) || idRe.test(line),
   );
+}
+
+/** Check if a worker's cmux workspace is still running. Thin wrapper around isWorkerAliveWithCache for callers outside snapshot builds. */
+export function isWorkerAlive(item: OrchestratorItem, mux: Multiplexer): boolean {
+  return isWorkerAliveWithCache(item, mux.listWorkspaces());
 }
 
 // ── Sidebar display sync ──────────────────────────────────────────
