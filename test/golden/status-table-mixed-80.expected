@@ -1,0 +1,16 @@
+ninthwave status
+
+    ID          STATE            DURATION TITLE
+  ──────────────────────────────────────────────────────────────────────────────
+  ▸ H-CA-2      Implementing     7m       Database migration for users table
+  ◌ M-FE-1      CI Pending (#43) 2m       Login form component
+  ✗ M-FE-2      CI Failed (#44)  4m       Dashboard layout refactor (lint errors)
+  ● L-BF-1      In Review (#45)  1m       Fix tooltip positioning on narrow s...
+  ✓ H-CA-1      Merged (#42)     15m      Add authentication middleware
+
+  Queue (2 waiting)
+  ──────────────────────────────────────────────────────────────────────────────
+  · L-BF-2      Queued           -        Update README with new API docs
+  · L-BF-3      Queued           -        Add retry logic to webhook handler
+  ──────────────────────────────────────────────────────────────────────────────
+  ✓ 1 merged  ● 1 in review  ◌ 1 ci pending  ▸ 1 implementing  ✗ 1 ci failed  · 2 queued  7 items

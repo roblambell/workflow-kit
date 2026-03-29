@@ -1,0 +1,14 @@
+ninthwave status
+
+    ID          STATE          DURATION TITLE
+  ──────────────────────────────────────────────────────────────────────────────
+
+  Queue (5 waiting)
+  ──────────────────────────────────────────────────────────────────────────────
+  · H-CA-1      Queued         -        Add authentication middleware
+  · H-CA-2      Queued         -        Database migration for users table
+  · M-FE-1      Queued         -        Login form component
+  · M-FE-2      Queued         -        Dashboard layout refactor
+  · L-BF-1      Queued         -        Fix tooltip positioning on narrow scr...
+  ──────────────────────────────────────────────────────────────────────────────
+  · 5 queued                                                             5 items
