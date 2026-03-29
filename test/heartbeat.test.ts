@@ -37,6 +37,13 @@ function createMockIO(): DaemonIO & { files: Map<string, string> } {
     }),
     existsSync: vi.fn((path: string) => files.has(path)),
     mkdirSync: vi.fn(),
+    renameSync: vi.fn((from: string, to: string) => {
+      const content = files.get(from);
+      if (content !== undefined) {
+        files.set(to, content);
+        files.delete(from);
+      }
+    }),
   };
 }
 

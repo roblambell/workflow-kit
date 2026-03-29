@@ -65,6 +65,13 @@ function makeDaemonIO(store: Map<string, string> = new Map()): DaemonIO {
     unlinkSync: (path) => store.delete(String(path)),
     existsSync: (path) => store.has(String(path)),
     mkdirSync: () => {},
+    renameSync: (from, to) => {
+      const content = store.get(String(from));
+      if (content !== undefined) {
+        store.set(String(to), content);
+        store.delete(String(from));
+      }
+    },
   };
 }
 

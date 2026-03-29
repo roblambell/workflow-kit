@@ -90,7 +90,14 @@ function createMockIO(): DaemonIO & { files: Map<string, string> } {
   const files = new Map<string, string>();
   return {
     files,
-    writeFileSync: vi.fn((path: string, content: string) => {
+    writeFileSync: vi.fn((path: string, content: string, optionsOrEncoding?: any) => {
+      if (typeof optionsOrEncoding === "object" && optionsOrEncoding?.flag === "wx") {
+        if (files.has(path)) {
+          const err = new Error(`EEXIST: file already exists, open '${path}'`) as NodeJS.ErrnoException;
+          err.code = "EEXIST";
+          throw err;
+        }
+      }
       files.set(path, content);
     }),
     readFileSync: vi.fn((path: string) => {
@@ -103,6 +110,12 @@ function createMockIO(): DaemonIO & { files: Map<string, string> } {
     }),
     existsSync: vi.fn((path: string) => files.has(path)),
     mkdirSync: vi.fn(),
+    renameSync: vi.fn((from: string, to: string) => {
+      const content = files.get(from);
+      if (content === undefined) throw new Error(`ENOENT: ${from}`);
+      files.set(to, content);
+      files.delete(from);
+    }),
   };
 }
 

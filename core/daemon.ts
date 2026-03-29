@@ -60,6 +60,12 @@ export interface DaemonStateItem {
   verifyWorkspaceRef?: string;
   /** Absolute path to the preserved worktree directory (set for stuck items). */
   worktreePath?: string;
+  /** cmux workspace reference for the implementation worker session. */
+  workspaceRef?: string;
+  /** Test partition number assigned to this worker. */
+  partition?: number;
+  /** Absolute path to the repo where the PR lives (for cross-repo items). */
+  resolvedRepoRoot?: string;
 }
 
 export interface DaemonState {
@@ -153,6 +159,7 @@ export interface DaemonIO {
   unlinkSync: typeof unlinkSync;
   existsSync: typeof existsSync;
   mkdirSync: typeof mkdirSync;
+  renameSync: typeof renameSync;
 }
 
 const defaultIO: DaemonIO = {
@@ -161,10 +168,16 @@ const defaultIO: DaemonIO = {
   unlinkSync,
   existsSync,
   mkdirSync,
+  renameSync,
 };
 
 // ── PID file management ──────────────────────────────────────────────
 
+/**
+ * Write the daemon PID file with exclusive creation.
+ * Uses O_CREAT | O_EXCL (flag: 'wx') to prevent two concurrent daemons from
+ * both claiming the PID file. If the file already exists, throws EEXIST.
+ */
 export function writePidFile(
   projectRoot: string,
   pid: number,
@@ -175,7 +188,7 @@ export function writePidFile(
   if (!io.existsSync(dir)) {
     io.mkdirSync(dir, { recursive: true });
   }
-  io.writeFileSync(filePath, String(pid), "utf-8");
+  io.writeFileSync(filePath, String(pid), { flag: "wx" });
 }
 
 export function readPidFile(
@@ -242,19 +255,36 @@ export function isDaemonRunning(
 
 // ── State file management ────────────────────────────────────────────
 
+/**
+ * Write the daemon state file atomically.
+ * Writes to a `.tmp` file first, then renames to the target path.
+ * `renameSync` is atomic on POSIX -- the file either has old content or new
+ * content, never partial JSON.
+ */
 export function writeStateFile(
   projectRoot: string,
   state: DaemonState,
   io: DaemonIO = defaultIO,
 ): void {
   const filePath = stateFilePath(projectRoot);
+  const tmpPath = filePath + ".tmp";
   const dir = dirname(filePath);
   if (!io.existsSync(dir)) {
     io.mkdirSync(dir, { recursive: true });
   }
-  io.writeFileSync(filePath, JSON.stringify(state, null, 2), "utf-8");
+  io.writeFileSync(tmpPath, JSON.stringify(state, null, 2), "utf-8");
+  io.renameSync(tmpPath, filePath);
 }
 
+/**
+ * Read and validate the daemon state file.
+ * Returns null (same as corrupt file) if the JSON fails shape validation:
+ * - `items` must be an array
+ * - Each item must have `id` (string) and `state` (string)
+ *
+ * This catches partially-written or schema-migrated state files before they
+ * cause runtime errors.
+ */
 export function readStateFile(
   projectRoot: string,
   io: DaemonIO = defaultIO,
@@ -263,10 +293,30 @@ export function readStateFile(
   if (!io.existsSync(filePath)) return null;
   try {
     const content = io.readFileSync(filePath, "utf-8");
-    return JSON.parse(content) as DaemonState;
+    const parsed = JSON.parse(content);
+    if (!validateDaemonState(parsed)) {
+      return null;
+    }
+    return parsed as DaemonState;
   } catch {
     return null;
   }
+}
+
+/**
+ * Lightweight shape validator for DaemonState.
+ * Checks that `items` is an array and each item has `id` (string) and `state` (string).
+ */
+function validateDaemonState(obj: unknown): boolean {
+  if (obj === null || typeof obj !== "object") return false;
+  const record = obj as Record<string, unknown>;
+  if (!Array.isArray(record.items)) return false;
+  for (const item of record.items) {
+    if (item === null || typeof item !== "object") return false;
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.id !== "string" || typeof entry.state !== "string") return false;
+  }
+  return true;
 }
 
 export function cleanStateFile(
@@ -537,6 +587,9 @@ export function serializeOrchestratorState(
       ...(item.verifyFailCount ? { verifyFailCount: item.verifyFailCount } : {}),
       ...(item.verifyWorkspaceRef ? { verifyWorkspaceRef: item.verifyWorkspaceRef } : {}),
       ...(item.worktreePath ? { worktreePath: item.worktreePath } : {}),
+      ...(item.workspaceRef ? { workspaceRef: item.workspaceRef } : {}),
+      ...(item.partition != null ? { partition: item.partition } : {}),
+      ...(item.resolvedRepoRoot ? { resolvedRepoRoot: item.resolvedRepoRoot } : {}),
     })),
   };
 }

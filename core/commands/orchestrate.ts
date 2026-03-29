@@ -3,7 +3,7 @@
 // emits structured JSON logs, and handles graceful SIGINT/SIGTERM shutdown.
 // Supports daemon mode (--daemon) for background operation with state persistence.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, appendFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, appendFileSync, renameSync } from "fs";
 import { join, basename } from "path";
 import { totalmem, freemem, platform } from "os";
 import { execSync } from "node:child_process";
@@ -2836,7 +2836,7 @@ export function forkDaemon(
   projectRoot: string,
   spawnFn: typeof nodeSpawn = nodeSpawn,
   openFn: typeof openSync = openSync,
-  daemonIO: DaemonIO = { writeFileSync, readFileSync: () => "" as any, unlinkSync: () => {}, existsSync, mkdirSync },
+  daemonIO: DaemonIO = { writeFileSync, readFileSync: () => "" as any, unlinkSync: () => {}, existsSync, mkdirSync, renameSync },
 ): { pid: number; logPath: string } {
   const stateDir = userStateDir(projectRoot);
   if (!daemonIO.existsSync(stateDir)) {

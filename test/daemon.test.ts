@@ -67,7 +67,15 @@ function createMockIO(): DaemonIO & { files: Map<string, string> } {
   const files = new Map<string, string>();
   return {
     files,
-    writeFileSync: vi.fn((path: string, content: string) => {
+    writeFileSync: vi.fn((path: string, content: string, optionsOrEncoding?: any) => {
+      // Simulate exclusive create (flag: 'wx') -- throws EEXIST if file exists
+      if (typeof optionsOrEncoding === "object" && optionsOrEncoding?.flag === "wx") {
+        if (files.has(path)) {
+          const err = new Error(`EEXIST: file already exists, open '${path}'`) as NodeJS.ErrnoException;
+          err.code = "EEXIST";
+          throw err;
+        }
+      }
       files.set(path, content);
     }),
     readFileSync: vi.fn((path: string) => {
@@ -80,6 +88,12 @@ function createMockIO(): DaemonIO & { files: Map<string, string> } {
     }),
     existsSync: vi.fn((path: string) => files.has(path)),
     mkdirSync: vi.fn(),
+    renameSync: vi.fn((from: string, to: string) => {
+      const content = files.get(from);
+      if (content === undefined) throw new Error(`ENOENT: ${from}`);
+      files.set(to, content);
+      files.delete(from);
+    }),
   };
 }
 
@@ -771,5 +785,242 @@ describe("rotateLogs", () => {
     expect(result).toBe(true);
     expect(files.has("/log")).toBe(false);
     expect(files.get("/log.1")).toBe("x".repeat(200));
+  });
+});
+
+// ── Atomic state file writes ────────────────────────────────────────
+
+describe("writeStateFile atomic write", () => {
+  let io: ReturnType<typeof createMockIO>;
+
+  beforeEach(() => {
+    io = createMockIO();
+  });
+
+  it("writes to .tmp file then renames to target path", () => {
+    const state: DaemonState = {
+      pid: 123,
+      startedAt: "2026-03-24T10:00:00.000Z",
+      updatedAt: "2026-03-24T10:01:00.000Z",
+      items: [],
+    };
+    writeStateFile("/project", state, io);
+
+    // renameSync should have been called with the tmp path and the target path
+    const targetPath = stateFilePath("/project");
+    const tmpPath = targetPath + ".tmp";
+    expect(io.renameSync).toHaveBeenCalledWith(tmpPath, targetPath);
+
+    // writeFileSync should have written to the tmp path (not the target)
+    expect(io.writeFileSync).toHaveBeenCalledWith(
+      tmpPath,
+      expect.any(String),
+      "utf-8",
+    );
+
+    // The final file should contain valid JSON at the target path
+    const raw = io.files.get(targetPath)!;
+    expect(JSON.parse(raw)).toEqual(state);
+
+    // The tmp file should be cleaned up (renamed away)
+    expect(io.files.has(tmpPath)).toBe(false);
+  });
+});
+
+// ── Crash recovery field serialization ──────────────────────────────
+
+describe("crash recovery fields serialization", () => {
+  it("includes workspaceRef, partition, and resolvedRepoRoot when present", () => {
+    const item = makeOrchestratorItem("CR-1-1", "implementing", 10);
+    item.workspaceRef = "workspace:3";
+    item.partition = 5;
+    item.resolvedRepoRoot = "/Users/rob/code/target-repo";
+
+    const state = serializeOrchestratorState(
+      [item],
+      42,
+      "2026-03-29T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.workspaceRef).toBe("workspace:3");
+    expect(state.items[0]!.partition).toBe(5);
+    expect(state.items[0]!.resolvedRepoRoot).toBe("/Users/rob/code/target-repo");
+  });
+
+  it("omits workspaceRef, partition, and resolvedRepoRoot when absent", () => {
+    const item = makeOrchestratorItem("CR-1-2", "queued");
+
+    const state = serializeOrchestratorState(
+      [item],
+      42,
+      "2026-03-29T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.workspaceRef).toBeUndefined();
+    expect(state.items[0]!.partition).toBeUndefined();
+    expect(state.items[0]!.resolvedRepoRoot).toBeUndefined();
+  });
+
+  it("roundtrips workspaceRef, partition, and resolvedRepoRoot through write/read", () => {
+    const io = createMockIO();
+    const item = makeOrchestratorItem("CR-1-3", "implementing", 55);
+    item.workspaceRef = "workspace:7";
+    item.partition = 3;
+    item.resolvedRepoRoot = "/home/user/repos/target";
+
+    const state = serializeOrchestratorState(
+      [item],
+      99,
+      "2026-03-29T00:00:00.000Z",
+    );
+
+    writeStateFile("/project", state, io);
+    const restored = readStateFile("/project", io);
+
+    expect(restored).not.toBeNull();
+    expect(restored!.items[0]!.workspaceRef).toBe("workspace:7");
+    expect(restored!.items[0]!.partition).toBe(3);
+    expect(restored!.items[0]!.resolvedRepoRoot).toBe("/home/user/repos/target");
+  });
+
+  it("serializes partition=0 (falsy but valid)", () => {
+    const item = makeOrchestratorItem("CR-1-4", "implementing");
+    item.partition = 0;
+
+    const state = serializeOrchestratorState(
+      [item],
+      42,
+      "2026-03-29T00:00:00.000Z",
+    );
+
+    // partition=0 should be included since we use `!= null` check
+    expect(state.items[0]!.partition).toBe(0);
+  });
+});
+
+// ── PID file locking ────────────────────────────────────────────────
+
+describe("PID file exclusive locking", () => {
+  let io: ReturnType<typeof createMockIO>;
+
+  beforeEach(() => {
+    io = createMockIO();
+  });
+
+  it("writes PID file with exclusive flag when file does not exist", () => {
+    writePidFile("/project", 12345, io);
+    expect(io.files.get(pidFilePath("/project"))).toBe("12345");
+    // Verify 'wx' flag was used
+    expect(io.writeFileSync).toHaveBeenCalledWith(
+      pidFilePath("/project"),
+      "12345",
+      { flag: "wx" },
+    );
+  });
+
+  it("throws EEXIST when PID file already exists", () => {
+    // First write succeeds
+    writePidFile("/project", 111, io);
+
+    // Second write should throw EEXIST
+    expect(() => writePidFile("/project", 222, io)).toThrow(/EEXIST/);
+
+    // Original PID should be preserved
+    expect(io.files.get(pidFilePath("/project"))).toBe("111");
+  });
+
+  it("EEXIST error has code property", () => {
+    writePidFile("/project", 111, io);
+
+    try {
+      writePidFile("/project", 222, io);
+      expect.unreachable("should have thrown");
+    } catch (e: any) {
+      expect(e.code).toBe("EEXIST");
+    }
+  });
+});
+
+// ── State file validation ───────────────────────────────────────────
+
+describe("readStateFile validation", () => {
+  let io: ReturnType<typeof createMockIO>;
+
+  beforeEach(() => {
+    io = createMockIO();
+  });
+
+  it("returns null for JSON without items array", () => {
+    io.files.set(stateFilePath("/project"), JSON.stringify({ pid: 1 }));
+    expect(readStateFile("/project", io)).toBeNull();
+  });
+
+  it("returns null for JSON where items is not an array", () => {
+    io.files.set(stateFilePath("/project"), JSON.stringify({ items: "not-array" }));
+    expect(readStateFile("/project", io)).toBeNull();
+  });
+
+  it("returns null for items with missing id field", () => {
+    io.files.set(
+      stateFilePath("/project"),
+      JSON.stringify({ pid: 1, items: [{ state: "queued" }] }),
+    );
+    expect(readStateFile("/project", io)).toBeNull();
+  });
+
+  it("returns null for items with missing state field", () => {
+    io.files.set(
+      stateFilePath("/project"),
+      JSON.stringify({ pid: 1, items: [{ id: "T-1" }] }),
+    );
+    expect(readStateFile("/project", io)).toBeNull();
+  });
+
+  it("returns null for items with non-string id", () => {
+    io.files.set(
+      stateFilePath("/project"),
+      JSON.stringify({ pid: 1, items: [{ id: 123, state: "queued" }] }),
+    );
+    expect(readStateFile("/project", io)).toBeNull();
+  });
+
+  it("returns null for items with non-string state", () => {
+    io.files.set(
+      stateFilePath("/project"),
+      JSON.stringify({ pid: 1, items: [{ id: "T-1", state: 42 }] }),
+    );
+    expect(readStateFile("/project", io)).toBeNull();
+  });
+
+  it("returns null for null item in items array", () => {
+    io.files.set(
+      stateFilePath("/project"),
+      JSON.stringify({ pid: 1, items: [null] }),
+    );
+    expect(readStateFile("/project", io)).toBeNull();
+  });
+
+  it("accepts valid state with empty items array", () => {
+    const state = { pid: 1, startedAt: "now", updatedAt: "now", items: [] };
+    io.files.set(stateFilePath("/project"), JSON.stringify(state));
+    expect(readStateFile("/project", io)).toEqual(state);
+  });
+
+  it("accepts valid state with well-formed items", () => {
+    const state = {
+      pid: 1,
+      startedAt: "now",
+      updatedAt: "now",
+      items: [{ id: "T-1", state: "implementing", prNumber: null, title: "Test", lastTransition: "now", ciFailCount: 0, retryCount: 0 }],
+    };
+    io.files.set(stateFilePath("/project"), JSON.stringify(state));
+    const result = readStateFile("/project", io);
+    expect(result).not.toBeNull();
+    expect(result!.items[0]!.id).toBe("T-1");
+  });
+
+  it("still returns null for invalid JSON (parse error)", () => {
+    io.files.set(stateFilePath("/project"), "not valid json");
+    expect(readStateFile("/project", io)).toBeNull();
   });
 });
