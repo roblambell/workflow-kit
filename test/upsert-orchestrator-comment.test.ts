@@ -39,7 +39,7 @@ describe("upsertOrchestratorComment", () => {
     expect(body).toContain("| Time | Event |");
     expect(body).toContain("|------|-------|");
     expect(body).toContain("CI failure detected. Worker notified.");
-    expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.dev)*");
+    expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
   });
 
   it("finds existing marker comment and inserts row before footer", () => {
@@ -52,7 +52,7 @@ describe("upsertOrchestratorComment", () => {
       "| 14:02 | CI failure detected. Worker notified. |",
       "",
       "---",
-      "*Powered by [Ninthwave](https://ninthwave.dev)*",
+      "*Powered by [Ninthwave](https://ninthwave.sh)*",
     ].join("\n");
 
     (client.listComments as ReturnType<typeof vi.fn>).mockReturnValue([
@@ -79,7 +79,7 @@ describe("upsertOrchestratorComment", () => {
     // Should have the new row inserted before footer
     expect(updatedBody).toContain("Rebase succeeded. CI re-running.");
     // Footer should still be at the end
-    expect(updatedBody).toContain("*Powered by [Ninthwave](https://ninthwave.dev)*");
+    expect(updatedBody).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
     // New row should appear before the footer
     const newRowIdx = updatedBody.indexOf("Rebase succeeded");
     const footerIdx = updatedBody.indexOf("*Powered by");
@@ -162,7 +162,7 @@ describe("upsertOrchestratorComment", () => {
     expect(client.createComment).toHaveBeenCalledTimes(1);
 
     // Footer should still be present at the end
-    expect(currentBody).toContain("*Powered by [Ninthwave](https://ninthwave.dev)*");
+    expect(currentBody).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
     // All event rows should appear before the footer
     const lastEventIdx = currentBody.indexOf("CI passed. Auto-merged.");
     const footerIdx = currentBody.indexOf("*Powered by");

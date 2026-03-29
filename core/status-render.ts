@@ -2024,7 +2024,7 @@ export function renderHelpOverlay(
   // Credits section
   sections.push([
     `${DIM}ninthwave -- parallel AI coding orchestration${RESET}`,
-    `${DIM}Apache-2.0 -- ninthwave.dev${RESET}`,
+    `${DIM}Apache-2.0 -- ninthwave.sh${RESET}`,
   ]);
 
   // ── Flatten sections with blank separators ─────────────────────────

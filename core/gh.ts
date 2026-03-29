@@ -2,6 +2,14 @@ import { run, runAsync } from "./shell.ts";
 import type { RunResult } from "./types.ts";
 import { loadConfig } from "./config.ts";
 
+// ── Branding constants ──────────────────────────────────────────────
+/** Markdown footer appended to PR comments. */
+export const NINTHWAVE_FOOTER = "*Powered by [Ninthwave](https://ninthwave.sh)*";
+
+/** Link to the orchestrator state-machine docs. */
+export const ORCHESTRATOR_LINK =
+  "https://github.com/ninthwave-sh/ninthwave/blob/main/ARCHITECTURE.md#orchestrator-state-machine";
+
 /** Run a gh command in the context of a specific repo directory. */
 export function ghInRepo(repoRoot: string, args: string[]): RunResult {
   return run("gh", args, { cwd: repoRoot });
@@ -579,7 +587,7 @@ export function upsertOrchestratorComment(
     // Insert new row before the branding footer (if present), otherwise append.
     // The footer in the created body is: "\n\n---\n*Powered by...*"
     // (blank line before --- to avoid setext heading interpretation).
-    const footerMarker = "\n\n---\n*Powered by [Ninthwave](https://ninthwave.dev)*";
+    const footerMarker = `\n\n---\n${NINTHWAVE_FOOTER}`;
     let updatedBody: string;
     if (existing.body.includes(footerMarker)) {
       updatedBody = existing.body.replace(footerMarker, "\n" + newRow + footerMarker);
@@ -599,7 +607,7 @@ export function upsertOrchestratorComment(
     newRow,
     "",
     "---",
-    "*Powered by [Ninthwave](https://ninthwave.dev)*",
+    NINTHWAVE_FOOTER,
   ].join("\n");
 
   return client.createComment(repoRoot, prNumber, body);

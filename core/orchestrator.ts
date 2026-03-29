@@ -7,6 +7,7 @@ import { existsSync, unlinkSync } from "fs";
 import type { WorkItem, Priority, WorktreeInfo } from "./types.ts";
 import { getWorktreeInfo, listCrossRepoEntries } from "./cross-repo.ts";
 import { heartbeatFilePath, writeHeartbeat } from "./daemon.ts";
+import { NINTHWAVE_FOOTER } from "./gh.ts";
 
 // ── Priority rank for merge queue ordering (lower = higher priority) ─
 
@@ -2438,7 +2439,7 @@ export class Orchestrator {
       "</details>",
       "",
       "---",
-      "*Powered by [Ninthwave](https://ninthwave.dev)*",
+      NINTHWAVE_FOOTER,
     ].join("\n");
 
     const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;

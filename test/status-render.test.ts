@@ -2397,7 +2397,7 @@ describe("renderHelpOverlay", () => {
     expect(text).toContain("Shift+Tab");
     expect(text).toContain("ninthwave");
     expect(text).toContain("Apache-2.0");
-    expect(text).toContain("ninthwave.dev");
+    expect(text).toContain("ninthwave.sh");
   });
 
   it("strategy section uses strategyIndicator icons", () => {

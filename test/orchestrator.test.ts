@@ -6344,7 +6344,7 @@ describe("Orchestrator", () => {
       expect(result.success).toBe(true);
       const body = prComment.mock.calls[0]![2] as string;
       expect(body).toContain("**[Reviewer](agents/reviewer.md)**");
-      expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.dev)*");
+      expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
       expect(body).toContain("Approved");
       expect(body).toContain("0 blockers, 1 nits");
     });
@@ -6366,7 +6366,7 @@ describe("Orchestrator", () => {
       expect(result.success).toBe(true);
       const body = prComment.mock.calls[0]![2] as string;
       expect(body).toContain("**[Reviewer](agents/reviewer.md)**");
-      expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.dev)*");
+      expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
       expect(body).toContain("Changes Requested");
       expect(body).toContain("3 blockers, 2 nits");
     });
