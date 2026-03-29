@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import * as shell from "../core/shell.ts";
-import { prMerge, prComment, getRepoOwner, resolveGithubToken, applyGithubToken, setCommitStatus, prHeadSha } from "../core/gh.ts";
+import { prMerge, prComment, getRepoOwner, resolveGithubToken, applyGithubToken, setCommitStatus, prHeadSha, ensureDomainLabels } from "../core/gh.ts";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 
 const runSpy = vi.spyOn(shell, "run");
@@ -317,6 +317,39 @@ describe("applyGithubToken", () => {
     applyGithubToken(repo);
 
     expect(process.env.GH_TOKEN).toBe("ghp_existing");
+  });
+});
+
+// ── ensureDomainLabels ─────────────────────────────────────────────
+
+describe("ensureDomainLabels", () => {
+  it("creates one label per unique domain", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "", exitCode: 0 });
+
+    ensureDomainLabels("/repo", ["core", "tui", "core"]); // "core" duplicated
+
+    expect(runSpy).toHaveBeenCalledTimes(2); // deduplicated
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      ["label", "create", "domain:core", "--color", "0E8A16", "--force"],
+      { cwd: "/repo" },
+    );
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      ["label", "create", "domain:tui", "--color", "0E8A16", "--force"],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("does not throw when label creation fails", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "error", exitCode: 1 });
+
+    expect(() => ensureDomainLabels("/repo", ["bad"])).not.toThrow();
+  });
+
+  it("handles empty domain list", () => {
+    ensureDomainLabels("/repo", []);
+    expect(runSpy).not.toHaveBeenCalled();
   });
 });
 

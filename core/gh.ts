@@ -615,6 +615,24 @@ export async function fetchTrustedPrCommentsAsync(
   return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+// ── Domain labels ──────────────────────────────────────────────────
+
+const DOMAIN_LABEL_COLOR = "0E8A16";
+
+/**
+ * Pre-create domain labels so workers don't need to.
+ * Deduplicates domains and ignores failures (label creation should never block work).
+ */
+export function ensureDomainLabels(repoRoot: string, domains: string[]): void {
+  const unique = [...new Set(domains)];
+  for (const domain of unique) {
+    ghInRepo(repoRoot, [
+      "label", "create", `domain:${domain}`,
+      "--color", DOMAIN_LABEL_COLOR, "--force",
+    ]);
+  }
+}
+
 /**
  * Apply the resolved GitHub token to process.env.GH_TOKEN.
  * This makes all gh CLI invocations (daemon + workers) use the custom identity.

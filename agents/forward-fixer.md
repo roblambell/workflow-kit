@@ -105,7 +105,6 @@ If the root cause is clear and fixable:
 5. Push and create a PR:
    ```bash
    git push -u origin ninthwave/fix-forward-YOUR_VERIFY_ITEM_ID
-   gh label create "domain:verify" --color 0E8A16 --force || true
    gh pr create --label "domain:verify" --title "fix: repair CI after YOUR_VERIFY_ITEM_ID merge" --body "$(cat <<'EOF'
    ## Summary
    Fixes post-merge CI failure caused by YOUR_VERIFY_ITEM_ID.

@@ -28,7 +28,7 @@ import { launchSingleItem, launchReviewWorker, launchRebaserWorker, launchForwar
 import { cleanStaleBranchForReuse } from "../branch-cleanup.ts";
 import { detectAiTool } from "./run-items.ts";
 import { cleanSingleWorktree } from "./clean.ts";
-import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrCommentsAsync, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI, checkCommitCIAsync as ghCheckCommitCIAsync } from "../gh.ts";
+import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrCommentsAsync, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI, checkCommitCIAsync as ghCheckCommitCIAsync, ensureDomainLabels } from "../gh.ts";
 import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush, daemonRebase } from "../git.ts";
 import { run } from "../shell.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
@@ -1767,6 +1767,11 @@ export async function cmdOrchestrate(
     orch.addItem(workItemMap.get(id)!);
   }
 
+  // Pre-create domain labels so workers don't need to (one API call per unique domain)
+  const domainSet = new Set(itemIds.map(id => workItemMap.get(id)!.domain));
+  if (fixForward) domainSet.add("verify");
+  ensureDomainLabels(projectRoot, [...domainSet]);
+
   // Populate resolvedRepoRoot for cross-repo items
   for (const item of orch.getAllItems()) {
     const alias = item.workItem.repoAlias;
@@ -2308,12 +2313,15 @@ export async function cmdOrchestrate(
         // Add newly selected items to the orchestrator
         const freshMap = new Map<string, WorkItem>();
         for (const item of freshItems) freshMap.set(item.id, item);
+        const newDomains = new Set<string>();
         for (const id of interactiveResult.itemIds) {
           const wi = freshMap.get(id);
           if (wi && !orch.getItem(id)) {
             orch.addItem(wi);
+            newDomains.add(wi.domain);
           }
         }
+        if (newDomains.size > 0) ensureDomainLabels(projectRoot, [...newDomains]);
         wipLimit = interactiveResult.wipLimit;
         mergeStrategy = interactiveResult.mergeStrategy;
         orch.setMergeStrategy(mergeStrategy);

@@ -131,7 +131,6 @@ Sometimes a work item requires no code change. Valid reasons include:
 The no-op PR template (replace the standard Phase 9 template):
 
 ```bash
-gh label create "domain:YOUR_DOMAIN" --color 0E8A16 --force || true
 gh pr create --label "domain:YOUR_DOMAIN" --title "chore: close YOUR_TODO_ID -- no code change needed" --body "$(cat <<'EOF'
 ## Summary
 Closes YOUR_TODO_ID: <title>
@@ -257,16 +256,6 @@ gh pr create --base $BASE_BRANCH --title "..." --body "..."
 This gives reviewers a clean diff showing only your changes, not the dependency's changes. When the dependency merges, GitHub will automatically retarget your PR to main.
 
 If `BASE_BRANCH` is **not** set in your system prompt, create the PR normally (no `--base` flag needed -- it defaults to main).
-
-### Create labels
-
-Before creating the PR, ensure the domain label exists. Use `--force` so it doesn't error if the label already exists, and `|| true` so PR creation proceeds even if label creation fails:
-
-```bash
-gh label create "domain:YOUR_DOMAIN" --color 0E8A16 --force || true
-```
-
-Replace `YOUR_DOMAIN` with the domain field from the work item file (e.g., `tui-status`, `core`, `ci`).
 
 ### PR body template
 
