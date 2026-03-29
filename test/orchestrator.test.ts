@@ -1148,6 +1148,59 @@ describe("Orchestrator", () => {
       expect(orch.getItem("H-1-1")!.state).toBe("merged");
     });
 
+    it("merge: transitions to merged even if getMergeCommitSha throws", () => {
+      const deps = mockDeps({
+        getMergeCommitSha: vi.fn(() => { throw new Error("API error"); }),
+      });
+      orch.addItem(makeWorkItem("H-1-1"));
+      orch.getItem("H-1-1")!.reviewCompleted = true;
+      orch.setState("H-1-1", "merging");
+      orch.getItem("H-1-1")!.prNumber = 42;
+
+      const result = orch.executeAction(
+        { type: "merge", itemId: "H-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      // Item should be merged even though getMergeCommitSha threw
+      expect(orch.getItem("H-1-1")!.state).toBe("merged");
+    });
+
+    it("merge: uses resolved SHA (not branch name) for stacked rebaseOnto", () => {
+      const resolveRef = vi.fn(() => "abc123deadbeef");
+      const rebaseOnto = vi.fn(() => true);
+      const forcePush = vi.fn(() => true);
+      const deps = mockDeps({ resolveRef, rebaseOnto, forcePush });
+
+      orch.addItem(makeWorkItem("A-1-1"));
+      orch.getItem("A-1-1")!.reviewCompleted = true;
+      orch.addItem(makeWorkItem("A-1-2", ["A-1-1"]));
+      orch.setState("A-1-1", "merging");
+      orch.getItem("A-1-1")!.prNumber = 42;
+      orch.setState("A-1-2", "ci-pending");
+      orch.getItem("A-1-2")!.prNumber = 43;
+      orch.getItem("A-1-2")!.workspaceRef = "workspace:2";
+      orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
+
+      orch.executeAction(
+        { type: "merge", itemId: "A-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      // resolveRef should have been called before merge to pin the SHA
+      expect(resolveRef).toHaveBeenCalledWith(defaultCtx.projectRoot, "ninthwave/A-1-1");
+      // rebaseOnto should use the resolved SHA, not the branch name
+      expect(rebaseOnto).toHaveBeenCalledWith(
+        expect.any(String),
+        "main",
+        "abc123deadbeef", // SHA, not "ninthwave/A-1-1"
+        "ninthwave/A-1-2",
+      );
+    });
+
     // ── post-merge daemon-rebase-all ─────────────────────────
 
     it("merge: daemon-rebases all in-flight sibling PRs after merge", () => {

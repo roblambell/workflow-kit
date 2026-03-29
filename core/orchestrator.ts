@@ -374,6 +374,11 @@ export interface OrchestratorDeps {
    * Clean up a verifier worker session and worktree.
    */
   cleanVerifier?: (itemId: string, verifyWorkspaceRef: string) => boolean;
+  /**
+   * Resolve a git ref (branch name, tag, SHA prefix) to its full commit SHA.
+   * Used to pin branch SHAs before merge so restacking survives branch deletion.
+   */
+  resolveRef?: (repoRoot: string, ref: string) => string | null;
 }
 
 /** Result of executing a single action. */
@@ -431,6 +436,9 @@ export const HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 /** Number of consecutive workerAlive=false polls required before declaring a worker dead. */
 export const NOT_ALIVE_THRESHOLD = 5;
+
+/** Timeout (ms) for items in launching state with no workerAlive signal. Default: 5 minutes. */
+export const LAUNCHING_TIMEOUT_MS = 5 * 60 * 1000;
 
 // ── WIP states: states that count toward the WIP limit ───────────────
 
@@ -737,7 +745,14 @@ export class Orchestrator {
             actions = [];
           }
         } else {
-          actions = [];
+          // workerAlive is undefined -- session may not have registered yet.
+          // Check for launching timeout to prevent indefinite stall.
+          const sinceTransition = now.getTime() - new Date(item.lastTransition).getTime();
+          if (sinceTransition > LAUNCHING_TIMEOUT_MS) {
+            actions = this.stuckOrRetry(item, "launch-timeout: worker never registered within timeout");
+          } else {
+            actions = [];
+          }
         }
         break;
 
@@ -947,6 +962,7 @@ export class Orchestrator {
       // Reset liveness tracking for the new attempt
       item.lastAliveAt = undefined;
       item.notAliveCount = 0;
+      item.lastCommitTime = undefined;
       this.transition(item, "ready");
       return [{ type: "retry", itemId: item.id }];
     }
@@ -1294,6 +1310,9 @@ export class Orchestrator {
     if (snap?.prState === "merged") {
       this.transition(item, "merged", snap?.eventTime);
       actions.push({ type: "clean", itemId: item.id });
+    } else if (snap?.prState === "closed") {
+      this.transition(item, "stuck");
+      item.failureReason = "merge-aborted: PR was closed without merging";
     }
 
     return actions;
@@ -1739,6 +1758,21 @@ export class Orchestrator {
     }
 
     const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
+
+    // Resolve the dependency branch SHA before merge. After merge, GitHub may
+    // auto-delete the branch, making the ref unresolvable. The SHA is used as
+    // oldBase in rebaseOnto for stacked dependents.
+    const depBranch = `ninthwave/${item.id}`;
+    let depBranchRef: string = depBranch;
+    if (deps.resolveRef) {
+      try {
+        const sha = deps.resolveRef(repoRoot, depBranch);
+        if (sha) depBranchRef = sha;
+      } catch {
+        // Fall back to branch name
+      }
+    }
+
     const merged = deps.prMerge(repoRoot, prNum, { admin: action.admin });
     if (!merged) {
       // Check if the failure is due to merge conflicts (another PR merged to main while CI ran).
@@ -1789,6 +1823,11 @@ export class Orchestrator {
     // Reset merge failure counter on success
     item.mergeFailCount = 0;
 
+    // Transition to merged immediately after successful merge.
+    // This ensures the item reflects reality even if subsequent steps
+    // (getMergeCommitSha, audit trail) throw.
+    this.transition(item, "merged");
+
     // Capture merge commit SHA for post-merge CI verification
     if (this.config.verifyMain && deps.getMergeCommitSha) {
       try {
@@ -1807,9 +1846,6 @@ export class Orchestrator {
     } else {
       deps.prComment(repoRoot, prNum, `**[Orchestrator](${ORCHESTRATOR_LINK})** Auto-merged PR #${prNum} for ${item.id}.`);
     }
-
-    // Merge was initiated by us, so eventTime is now
-    this.transition(item, "merged");
 
     // Pull latest main in the target repo (where the PR was merged)
     try {
@@ -1832,9 +1868,10 @@ export class Orchestrator {
     // Restack stacked dependents using rebaseOnto (squash-merge safe).
     // These items had baseBranch set to the merged dep's branch -- replay only
     // their unique commits onto main, avoiding duplicate commits from squash merge.
+    // Use depBranchRef (SHA resolved before merge) as oldBase so restacking
+    // survives GitHub auto-deleting the merged branch.
     const restackedIds = new Set<string>();
     const successfulRestacks = new Set<string>();
-    const depBranch = `ninthwave/${item.id}`;
 
     // Cache cross-repo index for worktree lookups in sibling loops
     const crossRepoIndex = join(ctx.worktreeDir, ".cross-repo-index");
@@ -1865,7 +1902,7 @@ export class Orchestrator {
       }
 
       try {
-        const success = deps.rebaseOnto(otherWorktreePath, "main", depBranch, otherBranch);
+        const success = deps.rebaseOnto(otherWorktreePath, "main", depBranchRef, otherBranch);
         if (success) {
           deps.forcePush(otherWorktreePath);
           other.baseBranch = undefined; // no longer stacked

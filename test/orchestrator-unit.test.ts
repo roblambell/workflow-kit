@@ -1367,6 +1367,102 @@ describe("stuck dep notification for stacked items", () => {
   });
 });
 
+// ── stuckOrRetry resets (H-ER-4) ────────────────────────────────────
+
+describe("stuckOrRetry resets", () => {
+  it("retried item does NOT inherit stale lastCommitTime from previous attempt", () => {
+    // activityTimeoutMs set high so the stale commit doesn't trigger activity timeout
+    // before the NOT_ALIVE_THRESHOLD (5) is reached for crash detection.
+    const orch = new Orchestrator({ maxRetries: 2, activityTimeoutMs: 10 * 60 * 1000 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.setState("H-1-1", "implementing");
+    // Simulate a stale commit from the previous attempt (2 min ago, within activity timeout)
+    orch.getItem("H-1-1")!.lastCommitTime = new Date(Date.now() - 120_000).toISOString();
+
+    // Worker dies -- trigger stuckOrRetry via 5 consecutive not-alive checks
+    for (let i = 0; i < 5; i++) {
+      orch.processTransitions(
+        snapshotWith([{ id: "H-1-1", workerAlive: false }]),
+      );
+    }
+
+    // After 5 not-alive checks, stuckOrRetry fires → ready, then launchReadyItems
+    // promotes it to launching in the same cycle. Key check: lastCommitTime is cleared
+    // so the new worker starts with fresh timeout baselines.
+    const item = orch.getItem("H-1-1")!;
+    expect(item.state).toBe("launching");
+    expect(item.retryCount).toBe(1);
+    // lastCommitTime should be cleared so the new worker starts fresh
+    expect(item.lastCommitTime).toBeUndefined();
+    // lastAliveAt and notAliveCount should also be reset
+    expect(item.lastAliveAt).toBeUndefined();
+    expect(item.notAliveCount).toBe(0);
+  });
+});
+
+// ── Launching state timeout (H-ER-4) ───────────────────────────────
+
+describe("launching state timeout", () => {
+  it("transitions to stuck/retry when worker never registers within timeout", () => {
+    const orch = new Orchestrator({ maxRetries: 0 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.setState("H-1-1", "launching");
+
+    // Advance past the 5-minute launching timeout
+    const futureTime = new Date(Date.now() + 6 * 60 * 1000);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1" }]), // workerAlive is undefined
+      futureTime,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("stuck");
+    expect(orch.getItem("H-1-1")!.failureReason).toContain("launch-timeout");
+    expect(actions.some((a) => a.type === "workspace-close")).toBe(true);
+  });
+
+  it("retries when launching timeout fires and retries remain", () => {
+    const orch = new Orchestrator({ maxRetries: 1 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.setState("H-1-1", "launching");
+
+    // Advance past the 5-minute launching timeout
+    const futureTime = new Date(Date.now() + 6 * 60 * 1000);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1" }]), // workerAlive is undefined
+      futureTime,
+    );
+
+    // stuckOrRetry transitions to ready, then launchReadyItems promotes to launching
+    // in the same cycle. Key check: retryCount incremented and retry action emitted.
+    expect(orch.getItem("H-1-1")!.retryCount).toBe(1);
+    expect(actions.some((a) => a.type === "retry")).toBe(true);
+    expect(actions.some((a) => a.type === "launch")).toBe(true);
+  });
+
+  it("does NOT timeout when within the launching timeout window", () => {
+    const orch = new Orchestrator({ maxRetries: 0 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.setState("H-1-1", "launching");
+
+    // Only 2 minutes in -- well within the 5-minute timeout
+    const futureTime = new Date(Date.now() + 2 * 60 * 1000);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1" }]), // workerAlive is undefined
+      futureTime,
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("launching");
+    expect(actions).toHaveLength(0);
+  });
+});
+
 // ── Merging state ────────────────────────────────────────────────────
 
 describe("handleMerging", () => {
@@ -1401,6 +1497,23 @@ describe("handleMerging", () => {
     );
 
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
+  });
+
+  it("transitions to stuck when PR is closed without merging", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.setState("H-1-1", "merging");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "closed" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("stuck");
+    expect(orch.getItem("H-1-1")!.failureReason).toBe(
+      "merge-aborted: PR was closed without merging",
+    );
   });
 });
 
