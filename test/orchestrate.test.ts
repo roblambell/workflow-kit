@@ -12,6 +12,7 @@ import {
   buildSnapshot,
   setupKeyboardShortcuts,
   isWorkerAlive,
+  isWorkerAliveWithCache,
   forkDaemon,
   cleanOrphanedWorktrees,
   parseWatchArgs,
@@ -2854,6 +2855,60 @@ describe("isWorkerAlive", () => {
     const mux = mockMux("nw-M-CI-2-1");
     const item = makeItem("H-WRK-1", "nw-H-WRK-1-1");
     expect(isWorkerAlive(item, mux)).toBe(false);
+  });
+});
+
+// ── isWorkerAliveWithCache (H-TP-2) ──────────────────────────────
+
+describe("isWorkerAliveWithCache", () => {
+  function makeItem(id: string, workspaceRef?: string): OrchestratorItem {
+    return {
+      id,
+      workItem: makeWorkItem(id),
+      state: "implementing",
+      workspaceRef,
+      lastTransition: new Date().toISOString(),
+      ciFailCount: 0,
+      retryCount: 0,
+    };
+  }
+
+  it("returns true when workspace ref matches in listing", () => {
+    const item = makeItem("T-1-1", "workspace:1");
+    expect(isWorkerAliveWithCache(item, "  workspace:1  ✳ T-1-1: some task")).toBe(true);
+  });
+
+  it("returns true when matching by item ID", () => {
+    const item = makeItem("T-2-1", "workspace:5");
+    expect(isWorkerAliveWithCache(item, "  workspace:5  ✳ T-2-1: another task")).toBe(true);
+  });
+
+  it("returns false when no match in listing", () => {
+    const item = makeItem("T-99-1", "workspace:99");
+    expect(isWorkerAliveWithCache(item, "  workspace:1  ✳ T-1-1: some task")).toBe(false);
+  });
+
+  it("returns false when listing is empty string", () => {
+    const item = makeItem("T-1-1", "workspace:1");
+    expect(isWorkerAliveWithCache(item, "")).toBe(false);
+  });
+
+  it("returns false when workspaceRef is undefined", () => {
+    const item = makeItem("T-1-1", undefined);
+    expect(isWorkerAliveWithCache(item, "  workspace:1  ✳ T-1-1: some task")).toBe(false);
+  });
+
+  it("matches correctly in a multi-line listing", () => {
+    const listing = [
+      "  workspace:10  ✳ T-10-1: task ten",
+      "  workspace:1  ✳ T-1-1: task one",
+    ].join("\n");
+
+    const item1 = makeItem("T-1-1", "workspace:1");
+    expect(isWorkerAliveWithCache(item1, listing)).toBe(true);
+
+    const itemMissing = makeItem("T-99-1", "workspace:99");
+    expect(isWorkerAliveWithCache(itemMissing, listing)).toBe(false);
   });
 });
 
