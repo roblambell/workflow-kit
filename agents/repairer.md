@@ -20,6 +20,7 @@ Read the following variables from your system prompt (written to `.nw-prompt` in
 - **YOUR_REPAIR_ITEM_ID**: The TODO item identifier (e.g., `H-NTF-1`)
 - **YOUR_REPAIR_PR**: The PR number with conflicts (e.g., `271`)
 - **PROJECT_ROOT**: Absolute path to the project repository
+- **HUB_REPO_NWO**: The GitHub `owner/repo` slug for the hub repository (e.g., `ninthwave-sh/ninthwave`). Used for absolute links in PR comments.
 
 Then read the project instruction files:
 
@@ -75,7 +76,7 @@ If you genuinely cannot resolve the conflicts (e.g., the feature's approach is f
 git rebase --abort
 ```
 
-Post a PR comment explaining what conflicts exist and why they need human/worker attention, then exit. The orchestrator will mark the item stuck.
+Post a PR comment (prefixed with `**[Repairer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/repairer.md)**`) explaining what conflicts exist and why they need human/worker attention, then exit. The orchestrator will mark the item stuck.
 
 ## 4. Verify
 
@@ -96,6 +97,16 @@ nw heartbeat --progress 0.9 --label "Pushing"
 git push --force-with-lease origin ninthwave/YOUR_REPAIR_ITEM_ID
 nw heartbeat --progress 1.0 --label "Rebase complete"
 ```
+
+## 6. PR Comment Conventions
+
+All PR comments from automated agents go through the same GitHub account. Always prefix PR comments with an agent link tag:
+
+```
+**[Repairer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/repairer.md)** <message>
+```
+
+Ignore comments prefixed with other agent labels (`[Implementer]`, `[Reviewer]`, `[Verifier]`, `[Orchestrator]`) -- those are from other agents in the pipeline.
 
 ## Constraints
 

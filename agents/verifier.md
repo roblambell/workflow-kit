@@ -21,6 +21,7 @@ Read the following variables from your system prompt (written to `.nw-prompt` in
 - **YOUR_VERIFY_MERGE_SHA**: The merge commit SHA on main that is failing CI
 - **PROJECT_ROOT**: Absolute path to the project repository
 - **REPO_ROOT**: Repository root (may differ from PROJECT_ROOT in monorepos)
+- **HUB_REPO_NWO**: The GitHub `owner/repo` slug for the hub repository (e.g., `ninthwave-sh/ninthwave`). Used for absolute links in PR comments.
 
 ## 2. Read Before You Act
 
@@ -149,6 +150,16 @@ Then stop. The orchestrator will transition to stuck with your diagnostic output
 - **Branch from main** -- your worktree is already on main, not the original item's branch
 - **One fix per verification** -- if multiple things broke, fix the most critical one
 
-## 5. Idle -- Wait for Orchestrator Daemon
+## 5. PR Comment Conventions
+
+All PR comments from automated agents go through the same GitHub account. Always prefix PR comments with an agent link tag:
+
+```
+**[Verifier](https://github.com/${HUB_REPO_NWO}/blob/main/agents/verifier.md)** <message>
+```
+
+Ignore comments prefixed with other agent labels (`[Implementer]`, `[Reviewer]`, `[Repairer]`, `[Orchestrator]`) -- those are from other agents in the pipeline.
+
+## 6. Idle -- Wait for Orchestrator Daemon
 
 After creating the fix PR (or re-running CI for flaky failures), stop and wait. The orchestrator daemon handles the post-PR lifecycle automatically. Do NOT poll or watch the PR.

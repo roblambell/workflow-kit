@@ -17,10 +17,11 @@ You are a focused implementation agent. You receive a single work item and your 
 
 ## 1. Understand the Work Item
 
-Look for `YOUR_TODO_ID`, `YOUR_PARTITION`, and `HUB_ROOT` in your system prompt (written to `.nw-prompt` in your working directory by the orchestrator). These tell you:
+Look for `YOUR_TODO_ID`, `YOUR_PARTITION`, `HUB_ROOT`, and `HUB_REPO_NWO` in your system prompt (written to `.nw-prompt` in your working directory by the orchestrator). These tell you:
 - **YOUR_TODO_ID**: The work item identifier (e.g., `C-2-1`, `H-3-4`)
 - **YOUR_PARTITION**: The test partition number for database and port isolation
 - **HUB_ROOT**: Absolute path to the hub repo where `.ninthwave/` lives (including `.ninthwave/work/`). For hub-local items, this equals `PROJECT_ROOT`. For cross-repo items, `PROJECT_ROOT` is the target repo while `HUB_ROOT` points back to the orchestrator's repo.
+- **HUB_REPO_NWO**: The GitHub `owner/repo` slug for the hub repository (e.g., `ninthwave-sh/ninthwave`). Used for absolute links in PR comments.
 
 Read the full work item details from your system prompt, including: title, description, **acceptance criteria**, priority, source, domain, and affected files.
 
@@ -369,7 +370,7 @@ When you receive a message, it will be one of these categories:
 3. Address the feedback
 4. Run tests
 5. Commit and push
-6. Post a reply on the PR summarizing changes (prefix with `**[Worker: YOUR_TODO_ID]**`): `nw heartbeat --progress 1.0 --label "PR created"`
+6. Post a reply on the PR summarizing changes (prefix with `**[Implementer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/implementer.md)**`): `nw heartbeat --progress 1.0 --label "PR created"`
 
 #### Rebase Request
 
@@ -389,12 +390,12 @@ Clean up and exit: `ninthwave clean-single YOUR_TODO_ID`
 All PR comments from automated agents go through the same GitHub account. Always prefix PR comments with an agent link tag:
 
 ```
-**[Worker: YOUR_TODO_ID](agents/implementer.md)** <message>
+**[Implementer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/implementer.md)** <message>
 ```
 
-Other agents use the same pattern: `**[Reviewer](agents/reviewer.md)**`, `**[Verifier](agents/verifier.md)**`.
+Other agents use the same pattern: `**[Reviewer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/reviewer.md)**`, `**[Verifier](https://github.com/${HUB_REPO_NWO}/blob/main/agents/verifier.md)**`, `**[Repairer](https://github.com/${HUB_REPO_NWO}/blob/main/agents/repairer.md)**`, `**[Orchestrator](https://github.com/${HUB_REPO_NWO}/blob/main/agents/orchestrator.md)**`.
 
-Ignore comments prefixed with `[Orchestrator]` -- these are audit trail entries written by the orchestrator daemon.
+Ignore comments prefixed with `[Orchestrator]` -- these are audit trail entries written by the orchestrator daemon (linked with `https://github.com/${HUB_REPO_NWO}/blob/main/agents/orchestrator.md`).
 
 ## Constraints (CRITICAL)
 

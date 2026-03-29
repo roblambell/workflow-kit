@@ -6512,4 +6512,98 @@ describe("Orchestrator", () => {
     });
   });
 
+  // ── Comment filter: all agent prefixes are skipped ──────────────
+
+  describe("processComments skips agent-prefixed comments", () => {
+    const agentPrefixes = [
+      { label: "Orchestrator", body: "**[Orchestrator](https://github.com/org/repo/blob/main/agents/orchestrator.md)** status update" },
+      { label: "Implementer", body: "**[Implementer](https://github.com/org/repo/blob/main/agents/implementer.md)** addressed feedback" },
+      { label: "Reviewer", body: "**[Reviewer](https://github.com/org/repo/blob/main/agents/reviewer.md)** review complete" },
+      { label: "Verifier", body: "**[Verifier](https://github.com/org/repo/blob/main/agents/verifier.md)** CI is flaky" },
+      { label: "Repairer", body: "**[Repairer](https://github.com/org/repo/blob/main/agents/repairer.md)** rebase complete" },
+    ];
+
+    for (const { label, body } of agentPrefixes) {
+      it(`skips comments with [${label}] prefix`, () => {
+        orch = new Orchestrator({ wipLimit: 5 });
+        orch.addItem(makeWorkItem("H-CF-1"));
+        orch.getItem("H-CF-1")!.reviewCompleted = true;
+        orch.setState("H-CF-1", "ci-pending");
+        const item = orch.getItem("H-CF-1")!;
+        item.prNumber = 42;
+        item.workspaceRef = "workspace:cf1";
+
+        const actions = orch.processTransitions(
+          snapshotWith(
+            [{
+              id: "H-CF-1",
+              workerAlive: true,
+              ciStatus: "pending",
+              prState: "open",
+              newComments: [{ body, author: "bot", createdAt: "2026-03-29T00:00:00Z" }],
+            }],
+          ),
+        );
+
+        // No send-message or daemon-rebase actions should be emitted for agent comments
+        const commentActions = actions.filter(
+          (a) => a.type === "send-message" || a.type === "daemon-rebase",
+        );
+        expect(commentActions).toHaveLength(0);
+      });
+    }
+
+    it("still relays non-agent comments to the worker", () => {
+      orch = new Orchestrator({ wipLimit: 5 });
+      orch.addItem(makeWorkItem("H-CF-2"));
+      orch.getItem("H-CF-2")!.reviewCompleted = true;
+      orch.setState("H-CF-2", "ci-pending");
+      const item = orch.getItem("H-CF-2")!;
+      item.prNumber = 43;
+      item.workspaceRef = "workspace:cf2";
+
+      const actions = orch.processTransitions(
+        snapshotWith(
+          [{
+            id: "H-CF-2",
+            workerAlive: true,
+            ciStatus: "pending",
+            prState: "open",
+            newComments: [{ body: "Please fix the typo on line 5", author: "reviewer", createdAt: "2026-03-29T00:01:00Z" }],
+          }],
+        ),
+      );
+
+      const sendActions = actions.filter((a) => a.type === "send-message");
+      expect(sendActions).toHaveLength(1);
+    });
+
+    it("still skips orchestrator HTML status markers", () => {
+      orch = new Orchestrator({ wipLimit: 5 });
+      orch.addItem(makeWorkItem("H-CF-3"));
+      orch.getItem("H-CF-3")!.reviewCompleted = true;
+      orch.setState("H-CF-3", "ci-pending");
+      const item = orch.getItem("H-CF-3")!;
+      item.prNumber = 44;
+      item.workspaceRef = "workspace:cf3";
+
+      const actions = orch.processTransitions(
+        snapshotWith(
+          [{
+            id: "H-CF-3",
+            workerAlive: true,
+            ciStatus: "pending",
+            prState: "open",
+            newComments: [{ body: "<!-- ninthwave-orchestrator-status -->\nCI status table", author: "bot", createdAt: "2026-03-29T00:02:00Z" }],
+          }],
+        ),
+      );
+
+      const commentActions = actions.filter(
+        (a) => a.type === "send-message" || a.type === "daemon-rebase",
+      );
+      expect(commentActions).toHaveLength(0);
+    });
+  });
+
 });

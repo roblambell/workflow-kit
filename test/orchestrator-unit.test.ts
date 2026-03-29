@@ -2435,7 +2435,7 @@ describe("processComments (via processTransitions)", () => {
     expect(actions.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
   });
 
-  it("skips worker self-comments", () => {
+  it("skips implementer self-comments", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -2449,7 +2449,7 @@ describe("processComments (via processTransitions)", () => {
         ciStatus: "pending",
         prState: "open",
         newComments: [
-          { body: "**[Worker: H-1-1](agents/implementer.md)** Addressed feedback: fixed error handling.", author: "bot", createdAt: "2026-01-15T12:01:00Z" },
+          { body: "**[Implementer](https://github.com/org/repo/blob/main/agents/implementer.md)** Addressed feedback: fixed error handling.", author: "bot", createdAt: "2026-01-15T12:01:00Z" },
         ],
       }]),
     );
@@ -2458,7 +2458,7 @@ describe("processComments (via processTransitions)", () => {
     expect(actions.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
   });
 
-  it("skips comments from other workers too", () => {
+  it("skips comments from other agents (reviewer, verifier, repairer)", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -2472,7 +2472,7 @@ describe("processComments (via processTransitions)", () => {
         ciStatus: "pending",
         prState: "open",
         newComments: [
-          { body: "**[Worker: H-2-3](agents/implementer.md)** Some cross-reference comment.", author: "bot", createdAt: "2026-01-15T12:01:00Z" },
+          { body: "**[Reviewer](https://github.com/org/repo/blob/main/agents/reviewer.md)** Review complete.", author: "bot", createdAt: "2026-01-15T12:01:00Z" },
         ],
       }]),
     );
@@ -2481,7 +2481,7 @@ describe("processComments (via processTransitions)", () => {
     expect(actions.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
   });
 
-  it("relays human reviewer comments while filtering bot comments", () => {
+  it("relays human reviewer comments while filtering agent comments", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -2495,9 +2495,9 @@ describe("processComments (via processTransitions)", () => {
         ciStatus: "pending",
         prState: "open",
         newComments: [
-          { body: "**[Orchestrator]** Status for H-1-1: CI pending", author: "bot", createdAt: "2026-01-15T12:01:00Z" },
+          { body: "**[Orchestrator](https://github.com/org/repo/blob/main/agents/orchestrator.md)** Status for H-1-1: CI pending", author: "bot", createdAt: "2026-01-15T12:01:00Z" },
           { body: "<!-- ninthwave-orchestrator-status -->\n| Status |", author: "bot", createdAt: "2026-01-15T12:02:00Z" },
-          { body: "**[Worker: H-1-1](agents/implementer.md)** Fixed the issue.", author: "bot", createdAt: "2026-01-15T12:03:00Z" },
+          { body: "**[Implementer](https://github.com/org/repo/blob/main/agents/implementer.md)** Fixed the issue.", author: "bot", createdAt: "2026-01-15T12:03:00Z" },
           { body: "Great work, but please add error handling for the edge case.", author: "reviewer", createdAt: "2026-01-15T12:04:00Z" },
         ],
       }]),
