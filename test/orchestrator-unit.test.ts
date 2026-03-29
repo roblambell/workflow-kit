@@ -23,7 +23,7 @@ import {
 import {
   cleanStaleBranchForReuse,
   type StaleBranchCleanupDeps,
-} from "../core/commands/launch.ts";
+} from "../core/branch-cleanup.ts";
 import type { WorkItem, Priority } from "../core/types.ts";
 import {
   writeHeartbeat,

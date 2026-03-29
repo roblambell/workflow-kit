@@ -26,7 +26,9 @@ import {
 import { parseWorkItems } from "../parser.ts";
 import { resolveRepo, getWorktreeInfo, bootstrapRepo } from "../cross-repo.ts";
 import { checkPrStatus, checkPrStatusAsync, scanExternalPRs } from "./pr-monitor.ts";
-import { launchSingleItem, launchReviewWorker, launchRepairWorker, launchVerifierWorker, detectAiTool, cleanStaleBranchForReuse } from "./launch.ts";
+import { launchSingleItem, launchReviewWorker, launchRepairWorker, launchVerifierWorker } from "./launch.ts";
+import { cleanStaleBranchForReuse } from "../branch-cleanup.ts";
+import { detectAiTool } from "./run-items.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI } from "../gh.ts";
 import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush, daemonRebase } from "../git.ts";

@@ -7,7 +7,7 @@ import { die } from "./output.ts";
 import { run } from "./shell.ts";
 import { lookupCommand, printHelp, printHelpAll, printCommandHelp } from "./help.ts";
 import { cmdNoArgs } from "./commands/onboard.ts";
-import { WORK_ITEM_ID_CLI_PATTERN, cmdRunItems } from "./commands/launch.ts";
+import { WORK_ITEM_ID_CLI_PATTERN, cmdRunItems } from "./commands/run-items.ts";
 import { ensureMuxOrAutoLaunch } from "./mux.ts";
 
 /** Commands that require a multiplexer and should auto-launch cmux. */

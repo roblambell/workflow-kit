@@ -1,45 +1,19 @@
-// start command: launch parallel AI coding sessions for work items.
+// Launch functions: create worktrees and start AI coding sessions for work items.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "fs";
-import { join, basename, dirname } from "path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { join, basename } from "path";
 import { tmpdir } from "os";
-import { getAvailableMemory } from "../memory.ts";
-import { parseWorkItems } from "../parser.ts";
-import { die, warn, info, GREEN, BOLD, DIM, RESET } from "../output.ts";
-import { splitIds, readWorkItem, prTitleMatchesWorkItem } from "../work-item-files.ts";
-import { computeBatches, CircularDependencyError } from "./batch-order.ts";
-import { calculateMemoryWipLimit } from "../orchestrator.ts";
-import { computeDefaultWipLimit } from "./orchestrate.ts";
-import { run, GIT_TIMEOUT } from "../shell.ts";
-import {
-  fetchOrigin,
-  ffMerge,
-  branchExists,
-  deleteBranch,
-  deleteRemoteBranch,
-  createWorktree,
-  attachWorktree,
-  removeWorktree,
-  findWorktreeForBranch,
-} from "../git.ts";
+import { run } from "../shell.ts";
+import { die, warn, info } from "../output.ts";
+import { fetchOrigin, ffMerge, branchExists, deleteBranch, createWorktree, attachWorktree, removeWorktree, findWorktreeForBranch } from "../git.ts";
 import { type Multiplexer, getMux, waitForReady } from "../mux.ts";
 import { sendWithReadyWait } from "../worker-health.ts";
-import {
-  allocatePartition,
-  getPartitionFor,
-  releasePartition,
-  cleanupStalePartitions,
-} from "../partitions.ts";
-import {
-  resolveRepo,
-  getWorktreeInfo,
-  writeCrossRepoIndex,
-  removeCrossRepoIndex,
-  ensureWorktreeExcluded,
-} from "../cross-repo.ts";
-import { cmdConflicts } from "./conflicts.ts";
-import { applyGithubToken, prList } from "../gh.ts";
-import { run as defaultRun } from "../shell.ts";
+import { allocatePartition, getPartitionFor, releasePartition } from "../partitions.ts";
+import { resolveRepo, writeCrossRepoIndex, removeCrossRepoIndex, ensureWorktreeExcluded } from "../cross-repo.ts";
+import { readWorkItem } from "../work-item-files.ts";
+import { prList } from "../gh.ts";
+import { seedAgentFiles } from "../agent-files.ts";
+import { cleanStaleBranchForReuse } from "../branch-cleanup.ts";
 import type { WorkItem } from "../types.ts";
 
 /**
@@ -50,23 +24,6 @@ export function sanitizeTitle(title: string): string {
   return title.replace(/[^a-zA-Z0-9 _-]/g, "_");
 }
 
-/**
- * Replace non-ASCII characters that break `printf %q` / `$'...'` shell quoting
- * when sent through multiplexers. Converts common Unicode
- * punctuation to ASCII equivalents and strips anything else non-ASCII.
- */
-export function sanitizeForShellQuoting(text: string): string {
-  return text
-    .replace(/[\u2014\u2015]/g, "--")  // em dash
-    .replace(/[\u2013]/g, "-")         // en dash
-    .replace(/[\u2018\u2019]/g, "'")   // smart single quotes
-    .replace(/[\u201C\u201D]/g, '"')   // smart double quotes
-    .replace(/[\u2026]/g, "...")        // ellipsis
-    .replace(/[\u2022]/g, "*")         // bullet
-    .replace(/[\u00A0]/g, " ")         // non-breaking space
-    .replace(/[^\x00-\x7F]/g, "");     // strip remaining non-ASCII
-}
-
 /** Result of launching a single work item. */
 export interface LaunchResult {
   worktreePath: string;
@@ -75,162 +32,6 @@ export interface LaunchResult {
    *  to ci-pending and let the daemon handle rebase/CI instead of launching
    *  a full implementation worker. */
   existingPrNumber?: number;
-}
-
-/** Agent files to seed into worktrees (matches setup.ts AGENT_SOURCES). */
-const AGENT_FILES: { source: string; targets: { dir: string; suffix: string }[] }[] = [
-  {
-    source: "implementer.md",
-    targets: [
-      { dir: ".claude/agents", suffix: ".md" },
-      { dir: ".opencode/agents", suffix: ".md" },
-      { dir: ".github/agents", suffix: ".agent.md" },
-    ],
-  },
-  {
-    source: "reviewer.md",
-    targets: [
-      { dir: ".claude/agents", suffix: ".md" },
-      { dir: ".opencode/agents", suffix: ".md" },
-      { dir: ".github/agents", suffix: ".agent.md" },
-    ],
-  },
-  {
-    source: "verifier.md",
-    targets: [
-      { dir: ".claude/agents", suffix: ".md" },
-      { dir: ".opencode/agents", suffix: ".md" },
-      { dir: ".github/agents", suffix: ".agent.md" },
-    ],
-  },
-];
-
-/** Dependencies for seedAgentFiles, injectable for testing. */
-export interface SeedAgentFilesDeps {
-  run: typeof run;
-  readFileSync: typeof readFileSync;
-  existsSync: typeof existsSync;
-  mkdirSync: typeof mkdirSync;
-  writeFileSync: typeof writeFileSync;
-  info: typeof info;
-}
-
-const defaultSeedDeps: SeedAgentFilesDeps = {
-  run,
-  readFileSync,
-  existsSync,
-  mkdirSync,
-  writeFileSync,
-  info,
-};
-
-/**
- * Read an agent file's content, preferring origin/main over local filesystem.
- * Returns the file content or null if unavailable from both sources.
- */
-export function readAgentFileContent(
-  hubRoot: string,
-  filename: string,
-  deps: Pick<SeedAgentFilesDeps, "run" | "readFileSync" | "existsSync"> = defaultSeedDeps,
-): string | null {
-  // Try reading from origin/main first for consistency with remote state
-  const gitResult = deps.run("git", ["show", `origin/main:agents/${filename}`], {
-    cwd: hubRoot,
-    timeout: GIT_TIMEOUT,
-  });
-  if (gitResult.exitCode === 0 && gitResult.stdout.length > 0) {
-    return gitResult.stdout;
-  }
-
-  // Fallback to local filesystem
-  const localPath = join(hubRoot, "agents", filename);
-  if (deps.existsSync(localPath)) {
-    return deps.readFileSync(localPath, "utf-8");
-  }
-
-  return null;
-}
-
-/**
- * Seed agent files into a worktree if they don't already exist.
- * Reads agent content from origin/main for consistency with remote state,
- * falling back to the hub repo's local agents/ directory. Returns the list
- * of relative paths that were seeded (so the worker can commit them).
- */
-export function seedAgentFiles(
-  worktreePath: string,
-  hubRoot: string,
-  deps: SeedAgentFilesDeps = defaultSeedDeps,
-): string[] {
-  const seeded: string[] = [];
-
-  for (const agent of AGENT_FILES) {
-    const sourceContent = readAgentFileContent(hubRoot, agent.source, deps);
-    if (!sourceContent) continue;
-    const baseName = agent.source.replace(/\.md$/, "");
-
-    for (const target of agent.targets) {
-      const filename = target.suffix === ".agent.md" ? `ninthwave-${baseName}.agent.md` : agent.source;
-      const destPath = join(worktreePath, target.dir, filename);
-
-      if (deps.existsSync(destPath)) continue;
-
-      deps.mkdirSync(dirname(destPath), { recursive: true });
-      deps.writeFileSync(destPath, sourceContent);
-      seeded.push(join(target.dir, filename));
-    }
-  }
-
-  if (seeded.length > 0) {
-    deps.info(`Seeded agent files into worktree: ${seeded.join(", ")}`);
-  }
-
-  return seeded;
-}
-
-/**
- * Detect which AI coding tool is running the orchestrator session.
- * The same tool is used to launch worker sessions.
- */
-export function detectAiTool(): string {
-  // 1. Explicit override via environment variable
-  if (process.env.NINTHWAVE_AI_TOOL) {
-    return process.env.NINTHWAVE_AI_TOOL;
-  }
-
-  // 2. OpenCode: sets OPENCODE=1
-  if (process.env.OPENCODE === "1") {
-    return "opencode";
-  }
-
-  // 3. Claude Code: session env vars
-  if (process.env.CLAUDE_CODE_SESSION || process.env.CLAUDE_SESSION_ID) {
-    return "claude";
-  }
-
-  // 4. Walk up the process tree
-  let pid = process.pid;
-  let depth = 0;
-  while (pid > 1 && depth < 10) {
-    const result = run("ps", ["-o", "comm=", "-p", String(pid)]);
-    if (result.exitCode === 0 && result.stdout) {
-      const cmdBase = basename(result.stdout.trim());
-      if (cmdBase === "opencode") return "opencode";
-      if (cmdBase === "claude") return "claude";
-      if (cmdBase === "copilot") return "copilot";
-    }
-    const ppidResult = run("ps", ["-o", "ppid=", "-p", String(pid)]);
-    if (ppidResult.exitCode !== 0) break;
-    pid = parseInt(ppidResult.stdout.trim(), 10) || 1;
-    depth++;
-  }
-
-  // 5. Fallback: check if any tool binary is available
-  if (run("which", ["claude"]).exitCode === 0) return "claude";
-  if (run("which", ["opencode"]).exitCode === 0) return "opencode";
-  if (run("which", ["copilot"]).exitCode === 0) return "copilot";
-
-  return "unknown";
 }
 
 /**
@@ -324,94 +125,6 @@ export function launchAiSession(
   return wsRef;
 }
 
-// ── Stale branch cleanup for reused work item IDs ───────────────────
-
-/** Dependencies for stale branch cleanup, injectable for testing. */
-export interface StaleBranchCleanupDeps {
-  prList: (repoRoot: string, branch: string, state: string) => import("../gh.ts").GhResult<Array<{ number: number; title: string }>>;
-  branchExists: (repoRoot: string, branch: string) => boolean;
-  deleteBranch: (repoRoot: string, branch: string) => void;
-  deleteRemoteBranch: (repoRoot: string, branch: string) => void;
-  warn: (msg: string) => void;
-  info: (msg: string) => void;
-}
-
-const defaultStaleBranchDeps: StaleBranchCleanupDeps = {
-  prList,
-  branchExists,
-  deleteBranch,
-  deleteRemoteBranch,
-  warn,
-  info,
-};
-
-/**
- * Clean up stale branches when a work item ID is reused with different work.
- *
- * When a work item ID is reused (same ID, different title), the old `ninthwave/*` branch
- * may still exist with a merged PR. Workers launched on this branch detect the
- * existing merged PR and immediately exit, falsely marking the item as "done".
- *
- * This function checks if merged PRs exist for the branch with titles that
- * don't match the current work item title. If so, it deletes both local and remote
- * branches so the worker starts fresh with a new branch and PR.
- *
- * @returns true if stale branches were cleaned, false if no cleanup needed
- */
-export function cleanStaleBranchForReuse(
-  itemId: string,
-  itemTitle: string,
-  targetRepo: string,
-  deps: StaleBranchCleanupDeps = defaultStaleBranchDeps,
-): boolean {
-  const branchName = `ninthwave/${itemId}`;
-
-  // Check for merged PRs on this branch
-  const mergedResult = deps.prList(targetRepo, branchName, "merged");
-  if (!mergedResult.ok || mergedResult.data.length === 0) {
-    return false; // No merged PRs or API error -- nothing to clean
-  }
-  const mergedPrs = mergedResult.data;
-
-  // Check if any merged PR title matches the current work item title
-  const hasMatchingTitle = mergedPrs.some((pr) =>
-    prTitleMatchesWorkItem(pr.title, itemTitle),
-  );
-  if (hasMatchingTitle) {
-    return false; // Title matches -- same work, normal flow
-  }
-
-  // Title mismatch -- stale branch from a previous cycle with different work
-  deps.warn(
-    `Stale branch detected: ${branchName} has ${mergedPrs.length} merged PR(s) from a previous cycle. ` +
-    `Old PR: "${mergedPrs[0]!.title}", new item: "${itemTitle}". Deleting stale branches.`,
-  );
-
-  // Delete local branch if it exists
-  if (deps.branchExists(targetRepo, branchName)) {
-    try {
-      deps.deleteBranch(targetRepo, branchName);
-      deps.info(`Deleted local branch ${branchName}`);
-    } catch (e) {
-      deps.warn(
-        `Failed to delete local branch ${branchName}: ${e instanceof Error ? e.message : e}`,
-      );
-    }
-  }
-
-  // Delete remote branch (deleteRemoteBranch treats "already gone" as success)
-  try {
-    deps.deleteRemoteBranch(targetRepo, branchName);
-    deps.info(`Deleted remote branch ${branchName}`);
-  } catch (e) {
-    deps.warn(
-      `Failed to delete remote branch ${branchName}: ${e instanceof Error ? e.message : e}`,
-    );
-  }
-
-  return true;
-}
-
 /**
  * Extract full work item text from its individual file.
  * Looks for a file matching `*--{targetId}.md` in workDir.
@@ -420,6 +133,123 @@ export function extractItemText(workDir: string, targetId: string): string {
   const item = readWorkItem(workDir, targetId);
   if (!item) return "";
   return item.rawText;
+}
+
+// ── Branch and worktree management ──────────────────────────────────
+
+/** Result of ensuring a worktree and branch are ready for a work item. */
+export interface EnsureWorktreeResult {
+  action: "launch" | "skip-with-pr";
+  existingPrNumber?: number;
+}
+
+/**
+ * Ensure a worktree and branch are ready for launching a work item.
+ * Handles all 9 branch/collision/PR-detection/retry code paths.
+ */
+export function ensureWorktreeAndBranch(
+  item: WorkItem,
+  targetRepo: string,
+  projectRoot: string,
+  worktreePath: string,
+  branchName: string,
+  baseBranch?: string,
+  forceWorkerLaunch?: boolean,
+): EnsureWorktreeResult {
+  // Worktree already exists on disk -- reuse it
+  if (existsSync(worktreePath)) {
+    warn(`Worktree already exists for ${item.id} at ${worktreePath}, reusing`);
+    return { action: "launch" };
+  }
+
+  // Ensure target worktree dir exists for cross-repo items
+  if (targetRepo !== projectRoot) {
+    mkdirSync(join(targetRepo, ".worktrees"), { recursive: true });
+    ensureWorktreeExcluded(targetRepo);
+  }
+
+  // Fetch the appropriate base (dependency branch or main)
+  if (baseBranch) {
+    info(`Fetching dependency branch ${baseBranch} in ${basename(targetRepo)} for stacked launch of ${item.id}`);
+    try { fetchOrigin(targetRepo, baseBranch); } catch (e) {
+      warn(`Failed to fetch origin/${baseBranch} for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree may be outdated.`);
+    }
+  } else {
+    info(`Fetching latest main in ${basename(targetRepo)} before creating worktree for ${item.id}`);
+    try { fetchOrigin(targetRepo, "main"); } catch (e) {
+      warn(`Failed to fetch origin/main for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree may be outdated.`);
+    }
+    try { ffMerge(targetRepo, "main"); } catch (e) {
+      warn(`Failed to fast-forward main for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree may be outdated.`);
+    }
+  }
+
+  // Handle branch collision -- the branch may already exist from a prior session
+  // or be checked out in an external worktree.
+  let reuseExistingBranch = false;
+  if (branchExists(targetRepo, branchName)) {
+    warn(`Branch ${branchName} already exists in ${basename(targetRepo)}. Checking for existing work.`);
+
+    // Clean up external worktrees that have this branch checked out
+    const externalWt = findWorktreeForBranch(targetRepo, branchName);
+    if (externalWt && externalWt !== worktreePath) {
+      warn(`Branch ${branchName} is checked out in external worktree: ${externalWt}. Removing it.`);
+      try { removeWorktree(targetRepo, externalWt, /* force */ true); } catch (e) {
+        warn(`Failed to remove external worktree ${externalWt}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+
+    // Check for open PRs on this branch
+    const openPrResult = prList(targetRepo, branchName, "open");
+    const openPrs = openPrResult.ok ? openPrResult.data : [];
+    if (openPrs.length > 0 && !forceWorkerLaunch) {
+      const existingPr = openPrs[0]!;
+      info(`Open PR #${existingPr.number} found for ${branchName}. Skipping worker launch, daemon will handle.`);
+      // Attach worktree for daemon to use for rebase operations
+      if (!findWorktreeForBranch(targetRepo, branchName)) {
+        attachWorktree(targetRepo, worktreePath, branchName);
+      }
+      return { action: "skip-with-pr", existingPrNumber: existingPr.number };
+    } else if (openPrs.length > 0 && forceWorkerLaunch) {
+      info(`Open PR #${openPrs[0]!.number} found for ${branchName}. Launching worker to fix CI.`);
+      reuseExistingBranch = true;
+    } else if (existsSync(worktreePath)) {
+      info(`Existing worktree found for ${branchName} (no open PR). Reusing for retry.`);
+      reuseExistingBranch = true;
+    } else {
+      try {
+        deleteBranch(targetRepo, branchName);
+      } catch (e) {
+        // Retry: find the blocking worktree, remove it, and try again
+        const blockingWt = findWorktreeForBranch(targetRepo, branchName);
+        if (blockingWt && blockingWt !== worktreePath) {
+          warn(`Branch ${branchName} still checked out in worktree: ${blockingWt}. Removing and retrying.`);
+          try {
+            removeWorktree(targetRepo, blockingWt, /* force */ true);
+            deleteBranch(targetRepo, branchName);
+          } catch (retryErr) {
+            throw new Error(`Failed to delete branch ${branchName} after worktree removal: ${retryErr instanceof Error ? retryErr.message : retryErr}`);
+          }
+        } else {
+          throw new Error(`Failed to delete branch ${branchName}: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+    }
+  }
+
+  // Create, attach, or reuse the worktree
+  if (reuseExistingBranch && existsSync(worktreePath)) {
+    info(`Reusing existing worktree for ${item.id} in ${basename(targetRepo)}`);
+  } else if (reuseExistingBranch) {
+    info(`Attaching worktree for ${item.id} to existing branch ${branchName} in ${basename(targetRepo)}`);
+    attachWorktree(targetRepo, worktreePath, branchName);
+  } else {
+    info(`Creating worktree for ${item.id} on branch ${branchName} in ${basename(targetRepo)}`);
+    const startPoint = baseBranch ? `origin/${baseBranch}` : "HEAD";
+    createWorktree(targetRepo, worktreePath, branchName, startPoint);
+  }
+
+  return { action: "launch" };
 }
 
 /**
@@ -444,10 +274,7 @@ export function launchSingleItem(
   }
   const branchName = `ninthwave/${item.id}`;
 
-  // Stale branch cleanup: if the orchestrator didn't already clean it (e.g.,
-  // called from `ninthwave start` directly), clean up stale branches now.
-  // This is a safety net -- the orchestrator calls cleanStaleBranch before
-  // launching, but direct `ninthwave start` callers bypass executeLaunch.
+  // Stale branch cleanup (safety net for direct `ninthwave start` callers)
   cleanStaleBranchForReuse(item.id, item.title, targetRepo);
 
   // Ensure worktree directory exists
@@ -461,164 +288,19 @@ export function launchSingleItem(
     worktreePath = join(targetRepo, ".worktrees", `ninthwave-${item.id}`);
   }
 
-  // Create worktree
-  if (existsSync(worktreePath)) {
-    warn(`Worktree already exists for ${item.id} at ${worktreePath}, reusing`);
-  } else {
-    // Ensure target worktree dir exists for cross-repo items
-    if (targetRepo !== projectRoot) {
-      mkdirSync(join(targetRepo, ".worktrees"), { recursive: true });
-      ensureWorktreeExcluded(targetRepo);
-    }
-
-    // When stacking, fetch the dependency branch instead of main
-    const baseBranch = options.baseBranch;
-    if (baseBranch) {
-      info(
-        `Fetching dependency branch ${baseBranch} in ${basename(targetRepo)} for stacked launch of ${item.id}`,
-      );
-      try {
-        fetchOrigin(targetRepo, baseBranch);
-      } catch (e) {
-        warn(
-          `Failed to fetch origin/${baseBranch} in ${basename(targetRepo)} for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree will be based on local branch (may be outdated).`,
-        );
-      }
-    } else {
-      info(
-        `Fetching latest main in ${basename(targetRepo)} before creating worktree for ${item.id}`,
-      );
-      try {
-        fetchOrigin(targetRepo, "main");
-      } catch (e) {
-        warn(
-          `Failed to fetch origin/main in ${basename(targetRepo)} for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree will be based on local main (may be outdated).`,
-        );
-      }
-      try {
-        ffMerge(targetRepo, "main");
-      } catch (e) {
-        warn(
-          `Failed to fast-forward main in ${basename(targetRepo)} for ${item.id}: ${e instanceof Error ? e.message : e}. Worktree may be based on outdated code.`,
-        );
-      }
-    }
-
-    // Handle branch collision -- the branch may be checked out in an external
-    // worktree (e.g., .claude/worktrees/ from a prior agent session). git branch -D
-    // refuses to delete branches checked out in any worktree, so we must remove
-    // the external worktree first.
-    let reuseExistingBranch = false;
-    if (branchExists(targetRepo, branchName)) {
-      warn(
-        `Branch ${branchName} already exists in ${basename(targetRepo)}. Checking for existing work.`,
-      );
-
-      // Check if the branch is checked out in a worktree outside our control
-      const externalWt = findWorktreeForBranch(targetRepo, branchName);
-      if (externalWt && externalWt !== worktreePath) {
-        warn(
-          `Branch ${branchName} is checked out in external worktree: ${externalWt}. Removing it.`,
-        );
-        try {
-          removeWorktree(targetRepo, externalWt, /* force */ true);
-        } catch (e) {
-          warn(
-            `Failed to remove external worktree ${externalWt}: ${e instanceof Error ? e.message : e}. Attempting branch deletion anyway.`,
-          );
-        }
-      }
-
-      // Check if there's an open PR for this branch -- if so, a prior session
-      // already did the work. Reuse the branch to preserve the PR and its commits.
-      const openPrResult = prList(targetRepo, branchName, "open");
-      const openPrs = openPrResult.ok ? openPrResult.data : [];
-      if (openPrs.length > 0 && !options.forceWorkerLaunch) {
-        const existingPr = openPrs[0]!;
-        info(
-          `Open PR #${existingPr.number} found for ${branchName}. Reusing existing branch -- skipping worker launch, daemon will handle rebase/CI.`,
-        );
-
-        // Attach worktree for daemon to use for rebase operations
-        const externalWt2 = findWorktreeForBranch(targetRepo, branchName);
-        if (!externalWt2) {
-          attachWorktree(targetRepo, worktreePath, branchName);
-        }
-
-        // Return with existingPrNumber signal -- orchestrator transitions to
-        // ci-pending instead of launching a full implementation worker.
-        return { worktreePath, workspaceRef: "", existingPrNumber: existingPr.number };
-      } else if (openPrs.length > 0 && options.forceWorkerLaunch) {
-        // CI is failing -- reuse existing branch but launch a worker to fix it (H-WR-1).
-        info(
-          `Open PR #${openPrs[0]!.number} found for ${branchName}. Launching worker to fix CI.`,
-        );
-        reuseExistingBranch = true;
-      } else if (existsSync(worktreePath)) {
-        // Worktree exists with branch but no PR -- retry scenario.
-        // Reuse the worktree to preserve uncommitted edits and local commits.
-        info(
-          `Existing worktree found for ${branchName} (no open PR). Reusing for retry.`,
-        );
-        reuseExistingBranch = true;
-      } else {
-        try {
-          deleteBranch(targetRepo, branchName);
-        } catch (e) {
-          // Branch deletion failed -- likely still checked out in a worktree.
-          // This can happen if the external worktree removal above failed, or
-          // if the worktree appeared between the earlier check and now (race).
-          // Retry: find the blocking worktree, remove it, and try again.
-          const blockingWt = findWorktreeForBranch(targetRepo, branchName);
-          if (blockingWt && blockingWt !== worktreePath) {
-            warn(
-              `Branch ${branchName} still checked out in worktree: ${blockingWt}. Removing and retrying.`,
-            );
-            try {
-              removeWorktree(targetRepo, blockingWt, /* force */ true);
-              deleteBranch(targetRepo, branchName);
-            } catch (retryErr) {
-              throw new Error(
-                `Failed to delete branch ${branchName} after removing external worktree ${blockingWt}: ${retryErr instanceof Error ? retryErr.message : retryErr}`,
-              );
-            }
-          } else {
-            // No external worktree found -- the branch deletion failure was for
-            // another reason. Propagate the error instead of silently continuing
-            // (which would cause createWorktree to fail with a cryptic message).
-            throw new Error(
-              `Failed to delete branch ${branchName}: ${e instanceof Error ? e.message : e}`,
-            );
-          }
-        }
-      }
-    }
-
-    if (reuseExistingBranch && existsSync(worktreePath)) {
-      // Worktree already exists on disk -- skip attach/create, just launch into it
-      info(
-        `Reusing existing worktree for ${item.id} in ${basename(targetRepo)}`,
-      );
-    } else if (reuseExistingBranch) {
-      info(
-        `Attaching worktree for ${item.id} to existing branch ${branchName} in ${basename(targetRepo)}`,
-      );
-      attachWorktree(targetRepo, worktreePath, branchName);
-    } else {
-      info(
-        `Creating worktree for ${item.id} on branch ${branchName} in ${basename(targetRepo)}`,
-      );
-      // When stacking, create worktree from the dependency branch; otherwise from HEAD (default)
-      const startPoint = baseBranch ? `origin/${baseBranch}` : "HEAD";
-      createWorktree(targetRepo, worktreePath, branchName, startPoint);
-    }
+  // Ensure worktree and branch are ready (handles all branch collision/PR detection)
+  const branchResult = ensureWorktreeAndBranch(
+    item, targetRepo, projectRoot, worktreePath, branchName,
+    options.baseBranch, options.forceWorkerLaunch,
+  );
+  if (branchResult.action === "skip-with-pr") {
+    return { worktreePath, workspaceRef: "", existingPrNumber: branchResult.existingPrNumber };
   }
 
   // Track resources created after worktree for cleanup on failure
   let wroteIndex = false;
   const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
   const partitionDir = join(worktreeDir, ".partitions");
-  let partitionAllocated = false;
 
   try {
     // Track cross-repo items in the index
@@ -634,7 +316,6 @@ export function launchSingleItem(
     let partition = getPartitionFor(partitionDir, item.id);
     if (partition === null) {
       partition = allocatePartition(partitionDir, item.id);
-      partitionAllocated = true;
     }
 
     // Sanitize title for shell safety (allowlist: only keep safe characters)
@@ -676,35 +357,19 @@ ${itemText}`;
     }
     return { worktreePath, workspaceRef };
   } catch (err) {
-    // Clean up partially-created resources in reverse order.
-    // Each step is individually wrapped since cleanup itself may fail.
-    warn(
-      `Launch failed for ${item.id}, cleaning up resources: ${err instanceof Error ? err.message : err}`,
-    );
-
-    // 1. Release partition
-    try {
-      releasePartition(partitionDir, item.id);
-    } catch (e) {
+    // Clean up partially-created resources in reverse order
+    warn(`Launch failed for ${item.id}, cleaning up: ${err instanceof Error ? err.message : err}`);
+    try { releasePartition(partitionDir, item.id); } catch (e) {
       warn(`Failed to release partition for ${item.id}: ${e instanceof Error ? e.message : e}`);
     }
-
-    // 2. Remove cross-repo index entry
     if (wroteIndex) {
-      try {
-        removeCrossRepoIndex(crossRepoIndex, item.id);
-      } catch (e) {
+      try { removeCrossRepoIndex(crossRepoIndex, item.id); } catch (e) {
         warn(`Failed to remove cross-repo index for ${item.id}: ${e instanceof Error ? e.message : e}`);
       }
     }
-
-    // 3. Remove worktree (best-effort)
-    try {
-      removeWorktree(targetRepo, worktreePath, /* force */ true);
-    } catch (e) {
+    try { removeWorktree(targetRepo, worktreePath, /* force */ true); } catch (e) {
       warn(`Failed to remove worktree for ${item.id}: ${e instanceof Error ? e.message : e}`);
     }
-
     return null;
   }
 }
@@ -716,17 +381,7 @@ export interface ReviewLaunchResult {
   verdictPath: string;
 }
 
-/**
- * Launch a review worker session for a specific PR.
- *
- * Behavior varies by autoFixMode:
- * - "off": No worktree needed. Review worker reads diff via `gh pr diff` and posts
- *   comments. Runs in a temp directory (read-only, lighter, faster).
- * - "direct" / "pr": Creates a worktree named `review-{id}` from the existing
- *   `ninthwave/{id}` branch. The review worker needs the worktree to push fix commits.
- *
- * No partition allocation -- review workers don't need isolated ports/DBs.
- */
+/** Launch a review worker session for a specific PR. */
 export function launchReviewWorker(
   prNumber: number,
   itemId: string,
@@ -816,11 +471,7 @@ VERDICT_FILE: ${verdictPath}
 ${baseBranchLine}${hubRepoNwoLine}${securityLine}`;
 
   const safeTitle = sanitizeTitle(`Review PR #${prNumber}`);
-  info(
-    `Launching ${aiTool} review session for ${itemId}: PR #${prNumber} (${autoFixMode} mode)`,
-  );
-
-  // Write system prompt into the workspace (gitignored .nw-prompt)
+  info(`Launching ${aiTool} review session for ${itemId}: PR #${prNumber} (${autoFixMode} mode)`);
   const promptFile = join(workDir, ".nw-prompt");
   writeFileSync(promptFile, systemPrompt);
 
@@ -842,15 +493,7 @@ export interface RepairLaunchResult {
   workspaceRef: string;
 }
 
-/**
- * Launch a repair worker session for rebase-only conflict resolution.
- *
- * The repair worker runs in the item's existing worktree (where the PR branch
- * is checked out). It gets a focused prompt to rebase and resolve conflicts,
- * not re-implement the feature.
- *
- * No partition allocation -- repair workers don't need isolated ports/DBs.
- */
+/** Launch a repair worker session for rebase-only conflict resolution. */
 export function launchRepairWorker(
   prNumber: number,
   itemId: string,
@@ -873,22 +516,10 @@ PROJECT_ROOT: ${repoRoot}
 ${hubRepoNwoLine}`;
 
   const safeTitle = sanitizeTitle(`Repair rebase for PR #${prNumber}`);
-  info(
-    `Launching ${aiTool} repair session for ${itemId}: PR #${prNumber}`,
-  );
-
+  info(`Launching ${aiTool} repair session for ${itemId}: PR #${prNumber}`);
   const promptFile = join(worktreePath, ".nw-prompt");
   writeFileSync(promptFile, systemPrompt);
-
-  const workspaceRef = launchAiSession(
-    aiTool,
-    worktreePath,
-    itemId,
-    safeTitle,
-    promptFile,
-    mux,
-    { projectRoot: repoRoot, agentName: "ninthwave-repairer" },
-  );
+  const workspaceRef = launchAiSession(aiTool, worktreePath, itemId, safeTitle, promptFile, mux, { projectRoot: repoRoot, agentName: "ninthwave-repairer" });
   if (!workspaceRef) return null;
   return { workspaceRef };
 }
@@ -899,14 +530,7 @@ export interface VerifierLaunchResult {
   workspaceRef: string;
 }
 
-/**
- * Launch a verifier worker session for post-merge CI failure diagnosis.
- *
- * The verifier runs in a fresh worktree from main (not the original item's branch,
- * which is already merged). It diagnoses why CI failed and creates a fix-forward PR.
- *
- * Worktree path: .worktrees/ninthwave-verify-{id}
- */
+/** Launch a verifier worker for post-merge CI failure diagnosis. */
 export function launchVerifierWorker(
   itemId: string,
   mergeCommitSha: string,
@@ -925,12 +549,8 @@ export function launchVerifierWorker(
     ensureWorktreeExcluded(repoRoot);
 
     info(`Fetching main in ${basename(repoRoot)} for verifier of ${itemId}`);
-    try {
-      fetchOrigin(repoRoot, "main");
-    } catch (e) {
-      warn(
-        `Failed to fetch origin/main in ${basename(repoRoot)} for verifier of ${itemId}: ${e instanceof Error ? e.message : e}`,
-      );
+    try { fetchOrigin(repoRoot, "main"); } catch (e) {
+      warn(`Failed to fetch origin/main for verifier of ${itemId}: ${e instanceof Error ? e.message : e}`);
       return null;
     }
 
@@ -959,358 +579,10 @@ REPO_ROOT: ${repoRoot}
 ${hubRepoNwoLine}`;
 
   const safeTitle = sanitizeTitle(`Verify ${itemId}`);
-  info(
-    `Launching ${aiTool} verifier session for ${itemId}: merge SHA ${mergeCommitSha.slice(0, 8)}`,
-  );
-
+  info(`Launching ${aiTool} verifier session for ${itemId}: merge SHA ${mergeCommitSha.slice(0, 8)}`);
   const promptFile = join(worktreePath, ".nw-prompt");
   writeFileSync(promptFile, systemPrompt);
-
-  const workspaceRef = launchAiSession(
-    aiTool,
-    worktreePath,
-    itemId,
-    safeTitle,
-    promptFile,
-    mux,
-    { projectRoot: repoRoot, agentName: "ninthwave-verifier" },
-  );
+  const workspaceRef = launchAiSession(aiTool, worktreePath, itemId, safeTitle, promptFile, mux, { projectRoot: repoRoot, agentName: "ninthwave-verifier" });
   if (!workspaceRef) return null;
   return { worktreePath, workspaceRef };
 }
-
-/**
- * CLI-level regex for detecting work item IDs as positional arguments.
- * Matches uppercase IDs like H-RR-1, M-SF-1, L-VIS-15, H-CP-7a.
- * Does NOT match lowercase variants or regular command names.
- */
-export const WORK_ITEM_ID_CLI_PATTERN = /^[A-Z]+-[A-Z0-9]+-\d+[a-z]*$/;
-
-/**
- * Launch work items by ID with topological dependency ordering.
- *
- * This is the handler for `nw <ID> [ID2...]` -- the primary way to launch items.
- * It validates IDs, checks dependencies, computes batch order, and launches
- * items layer by layer.
- */
-export async function cmdRunItems(
-  ids: string[],
-  workDir: string,
-  worktreeDir: string,
-  projectRoot: string,
-  muxOverride?: Multiplexer,
-  wipLimitOverride?: number,
-): Promise<void> {
-  // Pre-flight: fail fast if the mux backend is not usable (binary missing
-  // or no active session). Without this, workers create worktrees first and
-  // then fail with misleading errors.
-  const muxEarly = muxOverride ?? getMux();
-  if (!muxEarly.isAvailable()) {
-    die(muxEarly.diagnoseUnavailable());
-  }
-
-  const items = parseWorkItems(workDir, worktreeDir, projectRoot);
-  const itemMap = new Map<string, WorkItem>();
-  for (const item of items) {
-    itemMap.set(item.id, item);
-  }
-
-  // Validate all IDs exist
-  for (const id of ids) {
-    if (!itemMap.has(id)) {
-      die(`Work item ${id} not found. Run 'nw list' to see available items.`);
-    }
-  }
-
-  const selectedSet = new Set(ids);
-
-  // Check dependencies: each dep must be either in the selected set or already completed
-  for (const id of ids) {
-    const item = itemMap.get(id)!;
-    for (const depId of item.dependencies) {
-      if (selectedSet.has(depId)) continue; // will be launched in correct order
-      if (!itemMap.has(depId)) continue; // already completed (work item file removed)
-      // Dep exists in work item list but not in selected set -- not ready
-      die(
-        `Cannot launch ${id}: depends on ${depId} which is neither completed nor included.\n` +
-        `  Either include ${depId} in the launch: nw ${[...ids, depId].join(" ")}\n` +
-        `  Or complete ${depId} first.`,
-      );
-    }
-  }
-
-  // Compute topological batch order
-  let batchAssignments: Map<string, number>;
-  let batchCount: number;
-  try {
-    const result = computeBatches(items, ids);
-    batchAssignments = result.assignments;
-    batchCount = result.batchCount;
-  } catch (e) {
-    if (e instanceof CircularDependencyError) {
-      die(
-        `Circular dependency detected among: ${e.circularItems.join(", ")}.\n` +
-        `  Resolve the dependency cycle before launching.`,
-      );
-    }
-    throw e;
-  }
-
-  // Log the computed batch plan
-  console.log(`${BOLD}Launch plan:${RESET} ${ids.length} item(s) in ${batchCount} batch(es)`);
-  for (let b = 1; b <= batchCount; b++) {
-    const batchItems = ids.filter((id) => batchAssignments.get(id) === b);
-    const labels = batchItems.map((id) => {
-      const item = itemMap.get(id)!;
-      const titleSnippet = item.title.length > 40
-        ? item.title.slice(0, 37) + "..."
-        : item.title;
-      return `${id} ${DIM}(${titleSnippet})${RESET}`;
-    });
-    console.log(`  Batch ${b}: ${labels.join(", ")}`);
-  }
-  // Compute WIP limit: explicit override honored directly, otherwise RAM-calculated
-  let effectiveWipLimit: number;
-  if (wipLimitOverride !== undefined) {
-    effectiveWipLimit = wipLimitOverride;
-    info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (explicit override)`);
-  } else {
-    const configuredLimit = computeDefaultWipLimit();
-    effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, getAvailableMemory());
-    const freeGB = Math.round(getAvailableMemory() / (1024 ** 3));
-    info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (${freeGB}GB free)`);
-  }
-  console.log();
-
-  info("Only items pushed to origin/main will be processed.");
-
-  // Apply custom GitHub token so workers inherit it via environment
-  applyGithubToken(projectRoot);
-
-  // Detect AI tool
-  const aiTool = detectAiTool();
-  if (aiTool === "unknown") {
-    die(
-      "Could not detect AI tool. Ensure claude, opencode, or copilot is in your PATH.",
-    );
-  }
-  info(`Detected AI tool: ${aiTool}`);
-
-  // Ensure worktree directory exists
-  mkdirSync(worktreeDir, { recursive: true });
-
-  // Clean stale partition locks before allocating
-  const partitionDir = join(worktreeDir, ".partitions");
-  const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
-  cleanupStalePartitions(partitionDir, worktreeDir, (itemId) =>
-    getWorktreeInfo(itemId, crossRepoIndex, worktreeDir),
-  );
-
-  const mux = muxEarly;
-  const launched: string[] = [];
-  const skipped: string[] = [];
-  let wipReached = false;
-
-  // Launch batch by batch, respecting WIP limit
-  for (let b = 1; b <= batchCount && !wipReached; b++) {
-    const batchItems = ids.filter((id) => batchAssignments.get(id) === b);
-
-    for (const id of batchItems) {
-      if (launched.length >= effectiveWipLimit) {
-        wipReached = true;
-        // Collect all remaining items as skipped
-        const remainingInBatch = batchItems.slice(batchItems.indexOf(id));
-        skipped.push(...remainingInBatch);
-        for (let rb = b + 1; rb <= batchCount; rb++) {
-          skipped.push(...ids.filter((sid) => batchAssignments.get(sid) === rb));
-        }
-        break;
-      }
-
-      const item = itemMap.get(id)!;
-      const result = launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux);
-      if (!result) {
-        die(`Failed to launch ${id}. Aborting remaining items.`);
-      }
-      launched.push(id);
-    }
-  }
-
-  console.log();
-  console.log(
-    `${GREEN}Launched ${launched.length} session(s) via ${aiTool}:${RESET}`,
-  );
-  for (const id of launched) {
-    const item = itemMap.get(id)!;
-    console.log(`  - ${id}: ${item.title}`);
-  }
-
-  if (skipped.length > 0) {
-    console.log();
-    warn(
-      `WIP limit reached (${effectiveWipLimit}). ${skipped.length} item(s) skipped:`,
-    );
-    for (const id of skipped) {
-      const item = itemMap.get(id)!;
-      console.log(`  ${DIM}- ${id}: ${item.title}${RESET}`);
-    }
-    console.log();
-    info(`Use 'nw watch' to process all items with automatic queue management.`);
-  }
-}
-
-export async function cmdStart(
-  args: string[],
-  workDir: string,
-  worktreeDir: string,
-  projectRoot: string,
-  muxOverride?: Multiplexer,
-): Promise<void> {
-  // Pre-flight: fail fast if the mux backend is not usable (binary missing
-  // or no active session). Without this, workers create worktrees first and
-  // then fail with misleading errors.
-  const muxEarly = muxOverride ?? getMux();
-  if (!muxEarly.isAvailable()) {
-    die(muxEarly.diagnoseUnavailable());
-  }
-
-  const ids = splitIds(args);
-
-  if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...]");
-  const items = parseWorkItems(workDir, worktreeDir, projectRoot);
-  const itemMap = new Map<string, WorkItem>();
-  for (const item of items) {
-    itemMap.set(item.id, item);
-  }
-  const allIds = new Set(items.map((it) => it.id));
-
-  info("Only items pushed to origin/main will be processed.");
-
-  // Apply custom GitHub token so workers inherit it via environment
-  applyGithubToken(projectRoot);
-
-  // Detect AI tool
-  const aiTool = detectAiTool();
-  if (aiTool === "unknown") {
-    die(
-      "Could not detect AI tool. Ensure claude, opencode, or copilot is in your PATH.",
-    );
-  }
-  info(`Detected AI tool: ${aiTool}`);
-
-  // Validate all items exist and check dependencies
-  for (const id of ids) {
-    const item = itemMap.get(id);
-    if (!item) die(`Item ${id} not found`);
-
-    for (const depId of item.dependencies) {
-      if (allIds.has(depId)) {
-        die(`Item ${id} depends on ${depId} which is not completed`);
-      }
-    }
-  }
-
-  // Resolve ALL repos before launching any workers
-  const resolvedRepos = new Map<string, string>();
-  for (const id of ids) {
-    const item = itemMap.get(id)!;
-    try {
-      const targetRepo = resolveRepo(item.repoAlias, projectRoot);
-      resolvedRepos.set(id, targetRepo);
-    } catch (err) {
-      die(`Failed to resolve repo for ${id}: ${(err as Error).message}`);
-    }
-  }
-
-  // Check for file-level conflicts between selected items (warn only)
-  if (ids.length > 1) {
-    info("Checking for file-level conflicts...");
-    // Reuse the conflicts command logic inline -- just check, don't die
-    const conflictItems = ids.map((id) => itemMap.get(id)!);
-    let hasConflicts = false;
-    for (let i = 0; i < conflictItems.length; i++) {
-      for (let j = i + 1; j < conflictItems.length; j++) {
-        const a = conflictItems[i]!;
-        const b = conflictItems[j]!;
-        const normA = normalizeRepoAlias(a.repoAlias);
-        const normB = normalizeRepoAlias(b.repoAlias);
-        if (normA !== normB) continue;
-
-        const filesA = new Set(a.filePaths);
-        const common = b.filePaths.filter((f) => filesA.has(f));
-        if (common.length > 0 || a.domain === b.domain) {
-          hasConflicts = true;
-        }
-      }
-    }
-    if (hasConflicts) {
-      cmdConflicts(ids, workDir, worktreeDir);
-      console.log();
-      warn("Conflicts detected between selected items. Proceeding anyway.");
-      console.log();
-    }
-  }
-
-  // Ensure worktree directory exists
-  mkdirSync(worktreeDir, { recursive: true });
-
-  // Clean stale partition locks before allocating
-  const partitionDir = join(worktreeDir, ".partitions");
-  const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
-  cleanupStalePartitions(partitionDir, worktreeDir, (itemId) =>
-    getWorktreeInfo(itemId, crossRepoIndex, worktreeDir),
-  );
-
-  // Compute WIP limit from RAM
-  const configuredLimit = computeDefaultWipLimit();
-  const effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, getAvailableMemory());
-  const freeGB = Math.round(getAvailableMemory() / (1024 ** 3));
-  info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (${freeGB}GB free)`);
-
-  const mux = muxEarly;
-  const launched: string[] = [];
-  const skipped: string[] = [];
-
-  for (const id of ids) {
-    if (launched.length >= effectiveWipLimit) {
-      skipped.push(...ids.slice(ids.indexOf(id)));
-      break;
-    }
-    const item = itemMap.get(id)!;
-    launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux);
-    launched.push(id);
-  }
-
-  console.log();
-  console.log(
-    `${GREEN}Launched ${launched.length} session(s) via ${aiTool}:${RESET}`,
-  );
-  for (const id of launched) {
-    const item = itemMap.get(id)!;
-    const targetRepo = resolvedRepos.get(id)!;
-    if (targetRepo === projectRoot) {
-      console.log(`  - ${id}: ${item.title}`);
-    } else {
-      console.log(`  - ${id}: ${item.title} [${basename(targetRepo)}]`);
-    }
-  }
-
-  if (skipped.length > 0) {
-    console.log();
-    warn(
-      `WIP limit reached (${effectiveWipLimit}). ${skipped.length} item(s) skipped:`,
-    );
-    for (const id of skipped) {
-      const item = itemMap.get(id)!;
-      console.log(`  ${DIM}- ${id}: ${item.title}${RESET}`);
-    }
-    console.log();
-    info(`Use 'nw watch' to process all items with automatic queue management.`);
-  }
-}
-
-function normalizeRepoAlias(alias: string): string {
-  if (!alias || alias === "self" || alias === "hub") return "hub";
-  return alias;
-}
-

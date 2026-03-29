@@ -11,7 +11,7 @@ import { cmdConflicts } from "./commands/conflicts.ts";
 import { cmdBatchOrder } from "./commands/batch-order.ts";
 import { cmdRepos } from "./commands/repos.ts";
 import { cmdStatus, cmdStatusWatch, cmdPartitions } from "./commands/status.ts";
-import { cmdStart } from "./commands/launch.ts";
+import { cmdStart } from "./commands/run-items.ts";
 import {
   cmdCloseWorkspaces,
   cmdCloseWorkspace,

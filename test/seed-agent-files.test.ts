@@ -5,8 +5,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { join } from "path";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import type { SeedAgentFilesDeps } from "../core/commands/launch.ts";
-import { readAgentFileContent, seedAgentFiles } from "../core/commands/launch.ts";
+import type { SeedAgentFilesDeps } from "../core/agent-files.ts";
+import { readAgentFileContent, seedAgentFiles } from "../core/agent-files.ts";
 import type { RunResult } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────

@@ -31,7 +31,9 @@ vi.mock("../core/git.ts", () => ({
 // functions to this mock, update the comment in git.test.ts lines 5-11.
 
 
-import { detectAiTool, cmdStart, cmdRunItems, launchSingleItem, launchAiSession, launchReviewWorker, sanitizeTitle, extractItemText, cleanStaleBranchForReuse, WORK_ITEM_ID_CLI_PATTERN } from "../core/commands/launch.ts";
+import { launchSingleItem, launchAiSession, launchReviewWorker, sanitizeTitle, extractItemText } from "../core/commands/launch.ts";
+import { detectAiTool, cmdStart, cmdRunItems, WORK_ITEM_ID_CLI_PATTERN } from "../core/commands/run-items.ts";
+import { cleanStaleBranchForReuse } from "../core/branch-cleanup.ts";
 import { parseWorkItems } from "../core/parser.ts";
 import { fetchOrigin, ffMerge, createWorktree, branchExists, deleteBranch, findWorktreeForBranch, removeWorktree } from "../core/git.ts";
 
@@ -339,7 +341,7 @@ describe("launchSingleItem", () => {
 
     expect(result).toContain("cmux launch failed");
     // Cleanup should run after launch failure
-    expect(result).toContain("Launch failed for M-CI-1, cleaning up resources");
+    expect(result).toContain("Launch failed for M-CI-1, cleaning up");
     expect(removeWorktree).toHaveBeenCalledWith(
       repo,
       join(worktreeDir, "ninthwave-M-CI-1"),
@@ -424,7 +426,7 @@ describe("launchSingleItem", () => {
 
     expect(output).toContain("Failed to fast-forward main");
     expect(output).toContain("not a fast-forward");
-    expect(output).toContain("may be based on outdated code");
+    expect(output).toContain("may be outdated");
     expect(mockMux.launchWorkspace).toHaveBeenCalled();
   });
 
@@ -672,7 +674,7 @@ describe("launchSingleItem external worktree handling", () => {
 
     expect(thrownError).not.toBeNull();
     expect(thrownError!.message).toContain("Failed to delete branch");
-    expect(thrownError!.message).toContain("after removing external worktree");
+    expect(thrownError!.message).toContain("after worktree removal");
     // createWorktree should NOT have been called (error propagated)
     expect(createWorktree).not.toHaveBeenCalled();
   });
@@ -775,7 +777,7 @@ describe("launchSingleItem resource cleanup on failure", () => {
     });
 
     // Cleanup should have been attempted
-    expect(output).toContain("Launch failed for M-CI-1, cleaning up resources");
+    expect(output).toContain("Launch failed for M-CI-1, cleaning up");
     // removeWorktree should be called for cleanup
     expect(removeWorktree).toHaveBeenCalledWith(
       repo,
@@ -817,7 +819,7 @@ describe("launchSingleItem resource cleanup on failure", () => {
     });
 
     // Cleanup should have been attempted
-    expect(output).toContain("Launch failed for M-CI-1, cleaning up resources");
+    expect(output).toContain("Launch failed for M-CI-1, cleaning up");
     // removeWorktree called for cleanup
     expect(removeWorktree).toHaveBeenCalledWith(
       repo,

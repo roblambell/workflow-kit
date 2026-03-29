@@ -1,0 +1,399 @@
+// CLI commands for launching work items: `nw <ID>...` and `nw start <ID>...`.
+
+import { mkdirSync } from "fs";
+import { join, basename } from "path";
+import { getAvailableMemory } from "../memory.ts";
+import { parseWorkItems } from "../parser.ts";
+import { die, warn, info, GREEN, BOLD, DIM, RESET } from "../output.ts";
+import { splitIds } from "../work-item-files.ts";
+import { computeBatches, CircularDependencyError } from "./batch-order.ts";
+import { calculateMemoryWipLimit } from "../orchestrator.ts";
+import { computeDefaultWipLimit } from "./orchestrate.ts";
+import { run } from "../shell.ts";
+import { type Multiplexer, getMux } from "../mux.ts";
+import { cleanupStalePartitions } from "../partitions.ts";
+import { resolveRepo, getWorktreeInfo } from "../cross-repo.ts";
+import { cmdConflicts } from "./conflicts.ts";
+import { applyGithubToken } from "../gh.ts";
+import { launchSingleItem } from "./launch.ts";
+import type { WorkItem } from "../types.ts";
+
+/**
+ * CLI-level regex for detecting work item IDs as positional arguments.
+ * Matches uppercase IDs like H-RR-1, M-SF-1, L-VIS-15, H-CP-7a.
+ * Does NOT match lowercase variants or regular command names.
+ */
+export const WORK_ITEM_ID_CLI_PATTERN = /^[A-Z]+-[A-Z0-9]+-\d+[a-z]*$/;
+
+/**
+ * Detect which AI coding tool is running the orchestrator session.
+ * The same tool is used to launch worker sessions.
+ */
+export function detectAiTool(): string {
+  // 1. Explicit override via environment variable
+  if (process.env.NINTHWAVE_AI_TOOL) {
+    return process.env.NINTHWAVE_AI_TOOL;
+  }
+
+  // 2. OpenCode: sets OPENCODE=1
+  if (process.env.OPENCODE === "1") {
+    return "opencode";
+  }
+
+  // 3. Claude Code: session env vars
+  if (process.env.CLAUDE_CODE_SESSION || process.env.CLAUDE_SESSION_ID) {
+    return "claude";
+  }
+
+  // 4. Walk up the process tree
+  let pid = process.pid;
+  let depth = 0;
+  while (pid > 1 && depth < 10) {
+    const result = run("ps", ["-o", "comm=", "-p", String(pid)]);
+    if (result.exitCode === 0 && result.stdout) {
+      const cmdBase = basename(result.stdout.trim());
+      if (cmdBase === "opencode") return "opencode";
+      if (cmdBase === "claude") return "claude";
+      if (cmdBase === "copilot") return "copilot";
+    }
+    const ppidResult = run("ps", ["-o", "ppid=", "-p", String(pid)]);
+    if (ppidResult.exitCode !== 0) break;
+    pid = parseInt(ppidResult.stdout.trim(), 10) || 1;
+    depth++;
+  }
+
+  // 5. Fallback: check if any tool binary is available
+  if (run("which", ["claude"]).exitCode === 0) return "claude";
+  if (run("which", ["opencode"]).exitCode === 0) return "opencode";
+  if (run("which", ["copilot"]).exitCode === 0) return "copilot";
+
+  return "unknown";
+}
+
+/**
+ * Launch work items by ID with topological dependency ordering.
+ *
+ * This is the handler for `nw <ID> [ID2...]` -- the primary way to launch items.
+ * It validates IDs, checks dependencies, computes batch order, and launches
+ * items layer by layer.
+ */
+export async function cmdRunItems(
+  ids: string[],
+  workDir: string,
+  worktreeDir: string,
+  projectRoot: string,
+  muxOverride?: Multiplexer,
+  wipLimitOverride?: number,
+): Promise<void> {
+  // Pre-flight: fail fast if the mux backend is not usable (binary missing
+  // or no active session). Without this, workers create worktrees first and
+  // then fail with misleading errors.
+  const muxEarly = muxOverride ?? getMux();
+  if (!muxEarly.isAvailable()) {
+    die(muxEarly.diagnoseUnavailable());
+  }
+
+  const items = parseWorkItems(workDir, worktreeDir, projectRoot);
+  const itemMap = new Map<string, WorkItem>();
+  for (const item of items) {
+    itemMap.set(item.id, item);
+  }
+
+  // Validate all IDs exist
+  for (const id of ids) {
+    if (!itemMap.has(id)) {
+      die(`Work item ${id} not found. Run 'nw list' to see available items.`);
+    }
+  }
+
+  const selectedSet = new Set(ids);
+
+  // Check dependencies: each dep must be either in the selected set or already completed
+  for (const id of ids) {
+    const item = itemMap.get(id)!;
+    for (const depId of item.dependencies) {
+      if (selectedSet.has(depId)) continue; // will be launched in correct order
+      if (!itemMap.has(depId)) continue; // already completed (work item file removed)
+      // Dep exists in work item list but not in selected set -- not ready
+      die(
+        `Cannot launch ${id}: depends on ${depId} which is neither completed nor included.\n` +
+        `  Either include ${depId} in the launch: nw ${[...ids, depId].join(" ")}\n` +
+        `  Or complete ${depId} first.`,
+      );
+    }
+  }
+
+  // Compute topological batch order
+  let batchAssignments: Map<string, number>;
+  let batchCount: number;
+  try {
+    const result = computeBatches(items, ids);
+    batchAssignments = result.assignments;
+    batchCount = result.batchCount;
+  } catch (e) {
+    if (e instanceof CircularDependencyError) {
+      die(
+        `Circular dependency detected among: ${e.circularItems.join(", ")}.\n` +
+        `  Resolve the dependency cycle before launching.`,
+      );
+    }
+    throw e;
+  }
+
+  // Log the computed batch plan
+  console.log(`${BOLD}Launch plan:${RESET} ${ids.length} item(s) in ${batchCount} batch(es)`);
+  for (let b = 1; b <= batchCount; b++) {
+    const batchItems = ids.filter((id) => batchAssignments.get(id) === b);
+    const labels = batchItems.map((id) => {
+      const item = itemMap.get(id)!;
+      const titleSnippet = item.title.length > 40
+        ? item.title.slice(0, 37) + "..."
+        : item.title;
+      return `${id} ${DIM}(${titleSnippet})${RESET}`;
+    });
+    console.log(`  Batch ${b}: ${labels.join(", ")}`);
+  }
+  // Compute WIP limit: explicit override honored directly, otherwise RAM-calculated
+  let effectiveWipLimit: number;
+  if (wipLimitOverride !== undefined) {
+    effectiveWipLimit = wipLimitOverride;
+    info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (explicit override)`);
+  } else {
+    const configuredLimit = computeDefaultWipLimit();
+    effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, getAvailableMemory());
+    const freeGB = Math.round(getAvailableMemory() / (1024 ** 3));
+    info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (${freeGB}GB free)`);
+  }
+  console.log();
+
+  info("Only items pushed to origin/main will be processed.");
+
+  // Apply custom GitHub token so workers inherit it via environment
+  applyGithubToken(projectRoot);
+
+  // Detect AI tool
+  const aiTool = detectAiTool();
+  if (aiTool === "unknown") {
+    die(
+      "Could not detect AI tool. Ensure claude, opencode, or copilot is in your PATH.",
+    );
+  }
+  info(`Detected AI tool: ${aiTool}`);
+
+  // Ensure worktree directory exists
+  mkdirSync(worktreeDir, { recursive: true });
+
+  // Clean stale partition locks before allocating
+  const partitionDir = join(worktreeDir, ".partitions");
+  const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
+  cleanupStalePartitions(partitionDir, worktreeDir, (itemId) =>
+    getWorktreeInfo(itemId, crossRepoIndex, worktreeDir),
+  );
+
+  const mux = muxEarly;
+  const launched: string[] = [];
+  const skipped: string[] = [];
+  let wipReached = false;
+
+  // Launch batch by batch, respecting WIP limit
+  for (let b = 1; b <= batchCount && !wipReached; b++) {
+    const batchItems = ids.filter((id) => batchAssignments.get(id) === b);
+
+    for (const id of batchItems) {
+      if (launched.length >= effectiveWipLimit) {
+        wipReached = true;
+        // Collect all remaining items as skipped
+        const remainingInBatch = batchItems.slice(batchItems.indexOf(id));
+        skipped.push(...remainingInBatch);
+        for (let rb = b + 1; rb <= batchCount; rb++) {
+          skipped.push(...ids.filter((sid) => batchAssignments.get(sid) === rb));
+        }
+        break;
+      }
+
+      const item = itemMap.get(id)!;
+      const result = launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux);
+      if (!result) {
+        die(`Failed to launch ${id}. Aborting remaining items.`);
+      }
+      launched.push(id);
+    }
+  }
+
+  console.log();
+  console.log(
+    `${GREEN}Launched ${launched.length} session(s) via ${aiTool}:${RESET}`,
+  );
+  for (const id of launched) {
+    const item = itemMap.get(id)!;
+    console.log(`  - ${id}: ${item.title}`);
+  }
+
+  if (skipped.length > 0) {
+    console.log();
+    warn(
+      `WIP limit reached (${effectiveWipLimit}). ${skipped.length} item(s) skipped:`,
+    );
+    for (const id of skipped) {
+      const item = itemMap.get(id)!;
+      console.log(`  ${DIM}- ${id}: ${item.title}${RESET}`);
+    }
+    console.log();
+    info(`Use 'nw watch' to process all items with automatic queue management.`);
+  }
+}
+
+export async function cmdStart(
+  args: string[],
+  workDir: string,
+  worktreeDir: string,
+  projectRoot: string,
+  muxOverride?: Multiplexer,
+): Promise<void> {
+  // Pre-flight: fail fast if the mux backend is not usable (binary missing
+  // or no active session). Without this, workers create worktrees first and
+  // then fail with misleading errors.
+  const muxEarly = muxOverride ?? getMux();
+  if (!muxEarly.isAvailable()) {
+    die(muxEarly.diagnoseUnavailable());
+  }
+
+  const ids = splitIds(args);
+
+  if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...]");
+  const items = parseWorkItems(workDir, worktreeDir, projectRoot);
+  const itemMap = new Map<string, WorkItem>();
+  for (const item of items) {
+    itemMap.set(item.id, item);
+  }
+  const allIds = new Set(items.map((it) => it.id));
+
+  info("Only items pushed to origin/main will be processed.");
+
+  // Apply custom GitHub token so workers inherit it via environment
+  applyGithubToken(projectRoot);
+
+  // Detect AI tool
+  const aiTool = detectAiTool();
+  if (aiTool === "unknown") {
+    die(
+      "Could not detect AI tool. Ensure claude, opencode, or copilot is in your PATH.",
+    );
+  }
+  info(`Detected AI tool: ${aiTool}`);
+
+  // Validate all items exist and check dependencies
+  for (const id of ids) {
+    const item = itemMap.get(id);
+    if (!item) die(`Item ${id} not found`);
+
+    for (const depId of item.dependencies) {
+      if (allIds.has(depId)) {
+        die(`Item ${id} depends on ${depId} which is not completed`);
+      }
+    }
+  }
+
+  // Resolve ALL repos before launching any workers
+  const resolvedRepos = new Map<string, string>();
+  for (const id of ids) {
+    const item = itemMap.get(id)!;
+    try {
+      const targetRepo = resolveRepo(item.repoAlias, projectRoot);
+      resolvedRepos.set(id, targetRepo);
+    } catch (err) {
+      die(`Failed to resolve repo for ${id}: ${(err as Error).message}`);
+    }
+  }
+
+  // Check for file-level conflicts between selected items (warn only)
+  if (ids.length > 1) {
+    info("Checking for file-level conflicts...");
+    // Reuse the conflicts command logic inline -- just check, don't die
+    const conflictItems = ids.map((id) => itemMap.get(id)!);
+    let hasConflicts = false;
+    for (let i = 0; i < conflictItems.length; i++) {
+      for (let j = i + 1; j < conflictItems.length; j++) {
+        const a = conflictItems[i]!;
+        const b = conflictItems[j]!;
+        const normA = normalizeRepoAlias(a.repoAlias);
+        const normB = normalizeRepoAlias(b.repoAlias);
+        if (normA !== normB) continue;
+
+        const filesA = new Set(a.filePaths);
+        const common = b.filePaths.filter((f) => filesA.has(f));
+        if (common.length > 0 || a.domain === b.domain) {
+          hasConflicts = true;
+        }
+      }
+    }
+    if (hasConflicts) {
+      cmdConflicts(ids, workDir, worktreeDir);
+      console.log();
+      warn("Conflicts detected between selected items. Proceeding anyway.");
+      console.log();
+    }
+  }
+
+  // Ensure worktree directory exists
+  mkdirSync(worktreeDir, { recursive: true });
+
+  // Clean stale partition locks before allocating
+  const partitionDir = join(worktreeDir, ".partitions");
+  const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
+  cleanupStalePartitions(partitionDir, worktreeDir, (itemId) =>
+    getWorktreeInfo(itemId, crossRepoIndex, worktreeDir),
+  );
+
+  // Compute WIP limit from RAM
+  const configuredLimit = computeDefaultWipLimit();
+  const effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, getAvailableMemory());
+  const freeGB = Math.round(getAvailableMemory() / (1024 ** 3));
+  info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (${freeGB}GB free)`);
+
+  const mux = muxEarly;
+  const launched: string[] = [];
+  const skipped: string[] = [];
+
+  for (const id of ids) {
+    if (launched.length >= effectiveWipLimit) {
+      skipped.push(...ids.slice(ids.indexOf(id)));
+      break;
+    }
+    const item = itemMap.get(id)!;
+    launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux);
+    launched.push(id);
+  }
+
+  console.log();
+  console.log(
+    `${GREEN}Launched ${launched.length} session(s) via ${aiTool}:${RESET}`,
+  );
+  for (const id of launched) {
+    const item = itemMap.get(id)!;
+    const targetRepo = resolvedRepos.get(id)!;
+    if (targetRepo === projectRoot) {
+      console.log(`  - ${id}: ${item.title}`);
+    } else {
+      console.log(`  - ${id}: ${item.title} [${basename(targetRepo)}]`);
+    }
+  }
+
+  if (skipped.length > 0) {
+    console.log();
+    warn(
+      `WIP limit reached (${effectiveWipLimit}). ${skipped.length} item(s) skipped:`,
+    );
+    for (const id of skipped) {
+      const item = itemMap.get(id)!;
+      console.log(`  ${DIM}- ${id}: ${item.title}${RESET}`);
+    }
+    console.log();
+    info(`Use 'nw watch' to process all items with automatic queue management.`);
+  }
+}
+
+function normalizeRepoAlias(alias: string): string {
+  if (!alias || alias === "self" || alias === "hub") return "hub";
+  return alias;
+}
