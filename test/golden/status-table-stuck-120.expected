@@ -1,0 +1,15 @@
+ninthwave status
+
+    ID          STATE           DURATION   TITLE
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ✗ H-CA-1      CI Failed (#42) 12m        Add authentication middleware (test timeout) (exit: 1, stderr: Error: Test suite exceeded 30s timeout)
+  ✗ H-CA-2      CI Failed (#43) 7m         Database migration for users table (type errors) (exit: 2, stderr: src/db.ts(14,5): error TS2322: Type 'string' is not assig...)
+  ▸ M-FE-1      Implementing    2m       ⧗ Login form component
+                                         └ H-CA-1
+
+  Queue (1 waiting)
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  · M-FE-2      Queued          -        ⧗ Dashboard layout refactor
+                                         └ H-CA-1, H-CA-2
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ▸ 1 implementing  ✗ 2 ci failed  · 1 queued                                                                    4 items

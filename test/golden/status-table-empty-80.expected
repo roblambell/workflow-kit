@@ -1,0 +1,7 @@
+ninthwave status
+
+  No active items
+
+  To get started:
+    ninthwave list --ready     Show available TODOs
+    ninthwave start <ID>       Start working on an item

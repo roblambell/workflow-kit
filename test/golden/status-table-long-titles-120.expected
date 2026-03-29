@@ -1,0 +1,13 @@
+ninthwave status
+
+    ID          STATE             DURATION   TITLE
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ▸ H-LONGID-1  Implementing      12m        This is a very long title that should be truncated when the terminal wid...
+  ◌ M-LONGID-2  CI Pending (#100) 7m         Another extremely verbose title describing a complex refactoring of the ...
+
+  Queue (1 waiting)
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  · L-LONGID-3  Queued            -        ⧗ Short title
+                                           └ H-LONGID-1, M-LONGID-2
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ◌ 1 ci pending  ▸ 1 implementing  · 1 queued                                                                   3 items
