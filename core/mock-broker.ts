@@ -89,6 +89,7 @@ export interface CrewStatusUpdate {
   claimedCount: number;
   completedCount: number;
   daemonNames: string[];
+  claimedItems: Array<{ id: string; daemonId: string }>;
 }
 
 // ── Message types ───────────────────────────────────────────────────
@@ -270,7 +271,7 @@ export class MockBroker {
   }
 
   private generateCode(): string {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let code: string;
     do {
       const part1 = Array.from({ length: 3 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
@@ -344,6 +345,9 @@ export class MockBroker {
         released: false,
       });
     }
+
+    // Broadcast crew status to all connected daemons (including the new one)
+    this.broadcastCrewUpdate(crew);
   }
 
   private handleDaemonDisconnect(crewCode: string, daemonId: string): void {
@@ -570,6 +574,11 @@ export class MockBroker {
     const connectedDaemons = Array.from(crew.daemons.values()).filter((d) => d.ws !== null);
     const daemonNames = connectedDaemons.map((d) => d.name);
 
+    // Build claimed items list for cross-daemon visibility
+    const claimedItems = todos
+      .filter((t) => t.claimedBy !== null && t.completedBy === null)
+      .map((t) => ({ id: t.path, daemonId: t.claimedBy! }));
+
     const update: CrewStatusUpdate = {
       type: "crew_update",
       crewCode: crew.code,
@@ -578,6 +587,7 @@ export class MockBroker {
       claimedCount,
       completedCount,
       daemonNames,
+      claimedItems,
     };
 
     for (const daemon of connectedDaemons) {

@@ -241,9 +241,9 @@ describe("scenario: crew coordination", () => {
     expect(broker.completes).toContain("C-2");
   });
 
-  // ── Scenario 3: Claim returns different item -- denied launches roll back ──
+  // ── Scenario 3: Broker decides which item to launch ──
 
-  it("claim returns different item than requested -- denied launches roll back to ready", async () => {
+  it("broker-assigned item is launched even when different from processTransitions choice", async () => {
     const broker = new StubCrewBroker();
 
     const orch = new Orchestrator({
@@ -278,23 +278,20 @@ describe("scenario: crew coordination", () => {
 
     await orchestrateLoop(orch, defaultCtx, loopDeps, { maxIterations: 25 });
 
-    // C-4 should complete (it was granted by claim)
+    // C-4 should complete (broker assigned it, daemon launched it)
     const c4 = orch.getItem("C-4")!;
     expect(c4.state).toBe("done");
 
-    // C-3 should be rolled back to ready (denied by broker since claim
-    // only ever returned C-4 but processTransitions may try to launch C-3 too)
+    // C-3 should remain queued/ready (never assigned by broker)
     const c3 = orch.getItem("C-3")!;
-    // C-3 stays ready or gets repeatedly rolled back -- it should never reach done
     expect(c3.state).not.toBe("done");
-    // It should be in ready state (rolled back from launching)
     expect(["ready", "queued"]).toContain(c3.state);
 
-    // Assert: denied launches were logged
-    const filteredLogs = loopDeps.__logs.filter(
-      (l) => (l as Record<string, unknown>).event === "crew_launches_filtered",
+    // Assert: crew launches were resolved
+    const resolvedLogs = loopDeps.__logs.filter(
+      (l) => (l as Record<string, unknown>).event === "crew_launches_resolved",
     );
-    expect(filteredLogs.length).toBeGreaterThanOrEqual(1);
+    expect(resolvedLogs.length).toBeGreaterThanOrEqual(1);
 
     // Assert: complete notification sent for C-4
     expect(broker.completes).toContain("C-4");

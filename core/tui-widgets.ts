@@ -8,7 +8,7 @@ import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
 import type { CrewAction } from "./commands/crew.ts";
-import { CREW_CODE_PATTERN } from "./commands/crew.ts";
+import { CREW_CODE_PATTERN, normalizeCrewCode } from "./commands/crew.ts";
 
 // ── ANSI escape helpers ─────────────────────────────────────────────
 
@@ -419,6 +419,8 @@ export function runTextInput(
     title?: string;
     hint?: string;
     validate?: (value: string) => string | null;
+    /** Transform input after each keypress (e.g. auto-uppercase, insert hyphen). */
+    transform?: (value: string) => string;
   } = {},
 ): Promise<TextInputResult> {
   return new Promise((resolve) => {
@@ -479,6 +481,7 @@ export function runTextInput(
       if (key === "\x7f" || key === "\x08") {
         // Backspace / DEL
         value = value.slice(0, -1);
+        if (opts.transform) value = opts.transform(value);
         error = "";
         render();
         return;
@@ -487,6 +490,7 @@ export function runTextInput(
       // Printable character (single byte, code >= 32)
       if (key.length === 1 && key.charCodeAt(0) >= 32) {
         value += key;
+        if (opts.transform) value = opts.transform(value);
         error = "";
         render();
         return;
@@ -766,11 +770,21 @@ export async function runSelectionScreen(
       io.write(CLEAR_SCREEN);
       const textResult = await runTextInput(io, {
         title: "Ninthwave \u00b7 Join crew",
-        hint: "Format: XXX-XXX (e.g. xK2-9fB)",
+        hint: "e.g. K2F 9AB",
         validate: (v) =>
           CREW_CODE_PATTERN.test(v)
             ? null
-            : "Invalid format. Expected XXX-XXX (e.g. xK2-9fB)",
+            : "Invalid code. Expected 6 characters (e.g. K2F-9AB)",
+        transform: (v) => {
+          // Auto-uppercase and auto-insert hyphen
+          let s = v.toUpperCase().replace(/[^A-Z0-9-]/g, "");
+          // Insert hyphen after 3 chars if user typed 4+ without one
+          if (s.length >= 4 && !s.includes("-")) {
+            s = s.slice(0, 3) + "-" + s.slice(3);
+          }
+          // Cap at 7 chars (XXX-XXX)
+          return s.slice(0, 7);
+        },
       });
       io.write(HIDE_CURSOR);
 
@@ -779,7 +793,7 @@ export async function runSelectionScreen(
         return null;
       }
 
-      crewAction = { type: "join", code: textResult.value };
+      crewAction = { type: "join", code: normalizeCrewCode(textResult.value) };
     }
     // "solo" => crewAction remains null
   }

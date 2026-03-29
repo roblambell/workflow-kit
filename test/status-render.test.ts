@@ -2292,11 +2292,11 @@ describe("crew mode TUI rendering", () => {
       connected: true,
     });
     const text = stripAnsi(output);
-    expect(text).toContain("Crew: A7K-M2P");
-    expect(text).toContain("Daemons: 2");
-    expect(text).toContain("Avail: 3");
-    expect(text).toContain("Claimed: 5");
-    expect(text).toContain("Done: 2");
+    expect(text).toContain("Crew A7K-M2P");
+    expect(text).toContain("2 daemons");
+    expect(text).toContain("3 avail");
+    expect(text).toContain("5 claimed");
+    expect(text).toContain("2 done");
   });
 
   it("formatCrewStatusPanel shows OFFLINE when disconnected", () => {
@@ -2313,9 +2313,9 @@ describe("crew mode TUI rendering", () => {
     expect(text).toContain("reconnecting");
   });
 
-  it("formatStatusTable includes crew status panel when crewStatus is set", () => {
+  it("formatStatusTable includes crew status bar when crewStatus is set", () => {
     const items: StatusItem[] = [
-      { ...makeStatusItem(), daemonName: "laptop" },
+      { ...makeStatusItem(), remote: false },
     ];
     const output = formatStatusTable(items, 120, undefined, false, {
       crewStatus: {
@@ -2328,15 +2328,15 @@ describe("crew mode TUI rendering", () => {
       },
     });
     const text = stripAnsi(output);
-    expect(text).toContain("Crew: X1Y-Z2W");
-    expect(text).toContain("DAEMON");
-    expect(text).toContain("laptop");
+    expect(text).toContain("Crew X1Y-Z2W");
+    // No DAEMON column in new design
+    expect(text).not.toContain("DAEMON");
   });
 
-  it("formatStatusTable shows DAEMON column with correct values", () => {
+  it("formatStatusTable shows remote dot for items claimed by other daemons", () => {
     const items: StatusItem[] = [
-      { ...makeStatusItem({ id: "T-1", state: "implementing" }), daemonName: "mac-1" },
-      { ...makeStatusItem({ id: "T-2", state: "queued" }), daemonName: "--" },
+      { ...makeStatusItem({ id: "T-1", state: "implementing" }), remote: false },
+      { ...makeStatusItem({ id: "T-2", state: "implementing" }), remote: true },
     ];
     const output = formatStatusTable(items, 120, 5, false, {
       crewStatus: {
@@ -2349,8 +2349,8 @@ describe("crew mode TUI rendering", () => {
       },
     });
     const text = stripAnsi(output);
-    expect(text).toContain("mac-1");
-    expect(text).toContain("--");
+    // Remote items get a dot indicator (● in raw text)
+    expect(text).toContain("\u25CF");
   });
 
   it("buildStatusLayout includes crew status in header", () => {
@@ -2366,8 +2366,9 @@ describe("crew mode TUI rendering", () => {
       },
     });
     const headerText = stripAnsi(layout.headerLines.join("\n"));
-    expect(headerText).toContain("Crew: ABC-DEF");
-    expect(headerText).toContain("DAEMON");
+    expect(headerText).toContain("Crew ABC-DEF");
+    // DAEMON column removed in favor of remote dot indicator
+    expect(headerText).not.toContain("DAEMON");
   });
 });
 

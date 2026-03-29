@@ -13,8 +13,8 @@ import { die } from "../output.ts";
 
 // ── Types ──────────────────────────────────────────────────────────
 
-/** Crew code pattern: exactly 3 alphanumeric chars, hyphen, 3 alphanumeric chars (e.g. xK2-9fB). */
-export const CREW_CODE_PATTERN = /^[A-Za-z0-9]{3}-[A-Za-z0-9]{3}$/;
+/** Crew code pattern: 3 alphanumeric chars, optional hyphen, 3 alphanumeric chars (case-insensitive). */
+export const CREW_CODE_PATTERN = /^[A-Z0-9]{3}-?[A-Z0-9]{3}$/i;
 
 export type CrewAction =
   | { type: "join"; code: string }
@@ -32,6 +32,13 @@ export interface CrewDeps {
 
 export function isCrewCode(value: string): boolean {
   return CREW_CODE_PATTERN.test(value);
+}
+
+/** Normalize a crew code to uppercase with hyphen (e.g. "k2f9ab" -> "K2F-9AB"). */
+export function normalizeCrewCode(value: string): string {
+  const upper = value.toUpperCase().replace(/-/g, "");
+  if (upper.length === 6) return `${upper.slice(0, 3)}-${upper.slice(3)}`;
+  return value.toUpperCase();
 }
 
 // ── Argument parsing ───────────────────────────────────────────────

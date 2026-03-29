@@ -126,6 +126,8 @@ export interface CrewStatus {
   claimedCount: number;
   completedCount: number;
   daemonNames: string[];
+  /** Item IDs claimed by other daemons (not this one). */
+  claimedItems: string[];
 }
 
 // ── CrewBroker interface ────────────────────────────────────────────
@@ -533,7 +535,15 @@ export class WebSocketCrewBroker implements CrewBroker {
           claimedCount: data.claimedCount ?? 0,
           completedCount: data.completedCount ?? 0,
           daemonNames: data.daemonNames ?? [],
+          claimedItems: (data.claimedItems ?? [])
+            .filter((c: { daemonId?: string }) => c.daemonId !== this.daemonId)
+            .map((c: { id: string }) => c.id),
         };
+        // Resolve connect promise -- crew_update is the first message for new daemons
+        if (this.connectPromise) {
+          this.connectPromise.resolve();
+          this.connectPromise = null;
+        }
         break;
 
       case "error":

@@ -30,6 +30,7 @@ import { detectAiTool } from "./run-items.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrCommentsAsync, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI, checkCommitCIAsync as ghCheckCommitCIAsync } from "../gh.ts";
 import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush, daemonRebase } from "../git.ts";
+import { run } from "../shell.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
 import { die, warn, info, ALT_SCREEN_ON, ALT_SCREEN_OFF } from "../output.ts";
@@ -86,7 +87,6 @@ import {
 } from "../status-render.ts";
 import type { CrewBroker, CrewStatus, SyncItem } from "../crew.ts";
 import { WebSocketCrewBroker, resolveOperatorId } from "../crew.ts";
-import { MockBroker } from "../mock-broker.ts";
 import { AuthorCache } from "../git-author.ts";
 import {
   readScheduleState,
@@ -150,12 +150,11 @@ export function detectTuiMode(isDaemonChild: boolean, jsonFlag: boolean, isTTY: 
 
 /**
  * Convert OrchestratorItem[] to StatusItem[] for TUI rendering.
- * Mirrors the logic in daemonStateToStatusItems but works directly from live orchestrator state.
- * When crewDaemonName is provided, sets daemonName on items ("local" for self, daemon name for claimed, "--" for unclaimed).
+ * When remoteItemIds is provided, marks items claimed by other crew members as remote.
  */
 export function orchestratorItemsToStatusItems(
   items: OrchestratorItem[],
-  crewDaemonName?: string,
+  remoteItemIds?: Set<string>,
 ): StatusItem[] {
   return items.map((item) => ({
     id: item.id,
@@ -170,10 +169,7 @@ export function orchestratorItemsToStatusItems(
     endedAt: item.endedAt,
     exitCode: item.exitCode,
     stderrTail: item.stderrTail,
-    ...(crewDaemonName !== undefined ? {
-      daemonName: crewDaemonName === "local" ? "local" :
-        (item.workspaceRef ? crewDaemonName : "--"),
-    } : {}),
+    remote: remoteItemIds?.has(item.id) ?? false,
   }));
 }
 
@@ -192,9 +188,9 @@ export function renderTuiFrame(
   write: (s: string) => void = (s) => process.stdout.write(s),
   viewOptions?: ViewOptions,
   scrollOffset: number = 0,
-  crewDaemonName?: string,
+  remoteItemIds?: Set<string>,
 ): void {
-  const statusItems = orchestratorItemsToStatusItems(items, crewDaemonName);
+  const statusItems = orchestratorItemsToStatusItems(items, remoteItemIds);
   const termWidth = getTerminalWidth();
   const termRows = getTerminalHeight();
 
@@ -229,9 +225,9 @@ export function renderTuiPanelFrame(
   wipLimit: number | undefined,
   tuiState: TuiState,
   write: (s: string) => void = (s) => process.stdout.write(s),
-  crewDaemonName?: string,
+  remoteItemIds?: Set<string>,
 ): void {
-  const statusItems = orchestratorItemsToStatusItems(items, crewDaemonName);
+  const statusItems = orchestratorItemsToStatusItems(items, remoteItemIds);
   const termWidth = getTerminalWidth();
   const termRows = getTerminalHeight();
 
@@ -1399,7 +1395,9 @@ export async function orchestrateLoop(
             blockedCount: launchActions.length,
           });
         } else {
-          // Claim from broker for each launch action
+          // Crew mode: let the broker decide what to work on.
+          // Claim once per available launch slot, then replace the
+          // processTransitions launch actions with broker-assigned items.
           const claimedIds = new Set<string>();
           for (const _action of launchActions) {
             try {
@@ -1407,20 +1405,32 @@ export async function orchestrateLoop(
               if (claimed) claimedIds.add(claimed);
             } catch { /* claim failure = not assigned */ }
           }
-          // Filter: only keep launch actions for items we claimed
-          const denied = launchActions.filter((a) => !claimedIds.has(a.itemId));
-          for (const action of denied) {
+
+          // Put all original launch actions back to ready
+          for (const action of launchActions) {
             orch.setState(action.itemId, "ready");
           }
-          actions = actions.filter((a) => a.type !== "launch" || claimedIds.has(a.itemId));
-          if (denied.length > 0) {
+          // Remove original launch actions
+          actions = actions.filter((a) => a.type !== "launch");
+
+          // Add launch actions for broker-claimed items that are still launchable
+          const LAUNCHABLE: ReadonlySet<string> = new Set(["queued", "ready", "launching"]);
+          for (const claimedId of claimedIds) {
+            const orchItem = orch.getItem(claimedId);
+            if (orchItem && LAUNCHABLE.has(orchItem.state)) {
+              orch.setState(claimedId, "launching");
+              actions.push({ type: "launch", itemId: claimedId });
+            }
+          }
+
+          if (claimedIds.size > 0 || launchActions.length > 0) {
             log({
               ts: new Date().toISOString(),
               level: "info",
-              event: "crew_launches_filtered",
+              event: "crew_launches_resolved",
+              requestedCount: launchActions.length,
               claimedCount: claimedIds.size,
-              deniedCount: denied.length,
-              deniedIds: denied.map((a) => a.itemId),
+              claimedIds: Array.from(claimedIds),
             });
           }
         }
@@ -1439,6 +1449,26 @@ export async function orchestrateLoop(
     }
 
     if (__hadTransition) __lastTransitionIter = __iterations;
+
+    // Crew mode: suppress write actions for items claimed by other daemons.
+    // Remote items are tracked via GitHub polling but only the owning daemon acts.
+    if (deps.crewBroker) {
+      const crewStatus = deps.crewBroker.getCrewStatus();
+      const remoteIds = crewStatus?.claimedItems?.length
+        ? new Set(crewStatus.claimedItems)
+        : undefined;
+      if (remoteIds && remoteIds.size > 0) {
+        const WRITE_ACTIONS: ReadonlySet<string> = new Set([
+          "merge", "clean", "retry", "rebase", "daemon-rebase",
+          "launch-repair", "clean-repair", "launch-review", "clean-review",
+          "launch-verifier", "clean-verifier", "workspace-close",
+        ]);
+        actions = actions.filter((a) => {
+          if (WRITE_ACTIONS.has(a.type) && remoteIds.has(a.itemId)) return false;
+          return true;
+        });
+      }
+    }
 
     // Execute actions
     for (const action of actions) {
@@ -1544,12 +1574,13 @@ export async function cmdOrchestrate(
     daemonMode, isDaemonChild, clickupListId, remoteFlag,
     reviewAutoFix, reviewExternal, reviewWipLimit,
     fixForward, noWatch, watchIntervalSecs,
-    jsonFlag, skipPreflight, crewCreate, crewPort, crewName,
+    jsonFlag, skipPreflight, crewName,
     bypassEnabled,
   } = parsed;
   let watchMode = parsed.watchMode;
   let crewCode = parsed.crewCode;
   let crewUrl = parsed.crewUrl;
+  let crewCreate = parsed.crewCreate;
 
   // ── Pre-flight environment validation ────────────────────────────────
   if (!skipPreflight) {
@@ -1677,6 +1708,13 @@ export async function cmdOrchestrate(
     itemIds = result.itemIds;
     mergeStrategy = result.mergeStrategy;
     wipLimit = result.wipLimit;
+    if (result.crewAction) {
+      if (result.crewAction.type === "create") {
+        crewCreate = true;
+      } else if (result.crewAction.type === "join") {
+        crewCode = result.crewAction.code;
+      }
+    }
   }
 
   log({
@@ -1762,6 +1800,12 @@ export async function cmdOrchestrate(
   if (!mux.isAvailable()) {
     die(mux.diagnoseUnavailable());
   }
+
+  // Prune stale git worktree registry entries (e.g., from copied repos or
+  // crashed sessions). Safe no-op when nothing is stale.
+  try {
+    run("git", ["-C", projectRoot, "worktree", "prune"]);
+  } catch { /* best-effort */ }
 
   // Clean orphaned worktrees before state reconstruction so stale worktrees
   // from previous runs don't confuse reconstructState or count toward WIP.
@@ -1873,7 +1917,6 @@ export async function cmdOrchestrate(
 
   // ── Crew mode setup ──────────────────────────────────────────────
   let crewBroker: CrewBroker | undefined;
-  let mockBrokerInstance: MockBroker | undefined;
 
   // Resolve git remote URL for crew repo verification
   let crewRepoUrl = "";
@@ -1885,36 +1928,32 @@ export async function cmdOrchestrate(
   }
 
   if (crewCreate) {
-    // Start mock broker in-process
-    mockBrokerInstance = new MockBroker({ port: crewPort || 0 });
-    const brokerPort = mockBrokerInstance.start();
-
-    // Create a crew
-    const res = await fetch(`http://localhost:${brokerPort}/api/crews`, {
+    info("Creating crew...");
+    const brokerBaseUrl = crewUrl ?? "https://ninthwave.sh";
+    const httpUrl = brokerBaseUrl.replace(/^wss?:\/\//, "https://");
+    const res = await fetch(`${httpUrl}/api/crews`, {
       method: "POST",
       body: JSON.stringify({ repoUrl: crewRepoUrl }),
       headers: { "Content-Type": "application/json" },
     });
+    if (!res.ok) {
+      const body = await res.text();
+      die(`Failed to create crew: ${res.status} ${body}`);
+    }
     const body = (await res.json()) as { code: string };
     crewCode = body.code;
-    crewUrl = `ws://localhost:${brokerPort}`;
-
+    if (!crewUrl) crewUrl = "wss://ninthwave.sh";
     info(`Crew created: ${crewCode}`);
-    info(`  Port: ${brokerPort}`);
-    info(`  Join: ninthwave orchestrate --crew ${crewCode} --crew-url ws://localhost:${brokerPort} ...`);
+    info(`  Join: nw watch --crew ${crewCode}`);
   }
 
   let resolvedCrewName: string | undefined;
   if (crewCode) {
-    // Resolve the crew URL: --crew-url takes priority, then --crew-port, then default cloud
     if (!crewUrl) {
-      if (crewPort) {
-        crewUrl = `ws://localhost:${crewPort}`;
-      } else {
-        crewUrl = "wss://ninthwave.sh";
-      }
+      crewUrl = "wss://ninthwave.sh";
     }
     resolvedCrewName = crewName ?? (await import("os")).hostname();
+    info(`Connecting to crew ${crewCode}...`);
     const broker = new WebSocketCrewBroker(projectRoot, crewUrl, crewCode, crewRepoUrl, {
       log: (level, msg) => log({ ts: new Date().toISOString(), level, event: "crew_client", message: msg }),
     }, resolvedCrewName);
@@ -1926,6 +1965,14 @@ export async function cmdOrchestrate(
       die(`Failed to connect to crew server: ${(err as Error).message}`);
     }
     crewBroker = broker;
+  }
+
+  /** Get IDs of items claimed by other crew members (for remote indicator in TUI). */
+  function getRemoteItemIds(): Set<string> | undefined {
+    if (!crewBroker) return undefined;
+    const status = crewBroker.getCrewStatus();
+    if (!status?.claimedItems?.length) return undefined;
+    return new Set(status.claimedItems);
   }
 
   // Graceful SIGINT handling
@@ -1998,12 +2045,12 @@ export async function cmdOrchestrate(
     detailItemId: null,
     savedLogScrollOffset: 0,
     getSelectedItemId: (index: number) => {
-      const items = orchestratorItemsToStatusItems(lastTuiItems, resolvedCrewName);
+      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemIds());
       const nonQueued = items.filter((i) => i.state !== "queued");
       return nonQueued[index]?.id;
     },
     getItemCount: () => {
-      const items = orchestratorItemsToStatusItems(lastTuiItems, resolvedCrewName);
+      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemIds());
       return items.filter((i) => i.state !== "queued").length;
     },
     onStrategyChange: (strategy) => {
@@ -2016,7 +2063,7 @@ export async function cmdOrchestrate(
     onUpdate: () => {
       if (tuiMode) {
         try {
-          renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, resolvedCrewName);
+          renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, getRemoteItemIds());
         } catch {
           // Non-fatal
         }
@@ -2063,7 +2110,7 @@ export async function cmdOrchestrate(
         }
       }
       try {
-        renderTuiPanelFrame(items, wipLimit, tuiState, undefined, resolvedCrewName);
+        renderTuiPanelFrame(items, wipLimit, tuiState, undefined, getRemoteItemIds());
       } catch {
         // Non-fatal -- TUI render failure shouldn't block the orchestrator
       }
@@ -2164,7 +2211,7 @@ export async function cmdOrchestrate(
         const write = (s: string) => process.stdout.write(s);
         write("\x1B[H"); // cursor home
         // Re-render the current TUI frame first (to show final state)
-        renderTuiPanelFrame(allItems, wipLimit, tuiState, write, resolvedCrewName);
+        renderTuiPanelFrame(allItems, wipLimit, tuiState, write, getRemoteItemIds());
         // Overlay the banner at the bottom
         const termRows = getTerminalHeight();
         const startRow = Math.max(1, termRows - bannerLines.length);
@@ -2328,12 +2375,9 @@ export async function cmdOrchestrate(
     // Restore terminal state (disable raw mode)
     cleanupKeyboard();
 
-    // Clean up crew broker and mock broker
+    // Clean up crew broker
     if (crewBroker) {
       try { crewBroker.disconnect(); } catch { /* best-effort */ }
-    }
-    if (mockBrokerInstance) {
-      try { mockBrokerInstance.stop(); } catch { /* best-effort */ }
     }
 
     // Always clean up state file on exit (written in both daemon and interactive mode)

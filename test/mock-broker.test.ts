@@ -1095,7 +1095,7 @@ describe("mock-broker", () => {
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       ws.send("not json at all");
-      const err = await waitForMessage<{ type: string; message: string }>(ws);
+      const err = await waitForMessageByType<{ type: string; message: string }>(ws, "error");
       expect(err.type).toBe("error");
       expect(err.message).toBe("Invalid JSON");
 

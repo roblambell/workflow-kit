@@ -58,8 +58,9 @@ describe("isCrewCode", () => {
     expect(isCrewCode("a-b")).toBe(false);       // too short (1+1)
   });
 
-  it("rejects codes without hyphen", () => {
-    expect(isCrewCode("abcxyz")).toBe(false);
+  it("accepts codes without hyphen (6 chars)", () => {
+    expect(isCrewCode("abcxyz")).toBe(true);
+    expect(isCrewCode("ABC123")).toBe(true);
   });
 
   it("rejects codes with trailing or leading hyphen", () => {

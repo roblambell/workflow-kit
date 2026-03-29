@@ -37,7 +37,7 @@ export interface ViewOptions {
   sessionStartedAt?: string;
   /** Base repository URL for PR hyperlinks (e.g., "https://github.com/org/repo"). */
   repoUrl?: string;
-  /** Crew mode status info. When present, renders crew status panel and DAEMON column. */
+  /** Crew mode status info. When present, renders crew bar above title. */
   crewStatus?: CrewStatusInfo;
   /** Current merge strategy -- used for footer indicator in TUI mode. */
   mergeStrategy?: MergeStrategy;
@@ -107,8 +107,8 @@ export interface StatusItem {
   exitCode?: number | null;
   /** Last lines of stderr captured from the worker on failure. */
   stderrTail?: string;
-  /** Daemon name that owns this item in crew mode. "local" when not in crew mode. */
-  daemonName?: string;
+  /** True when this item is being worked on by another crew member. */
+  remote?: boolean;
   /** Absolute path to preserved worktree directory (set for stuck items). */
   worktreePath?: string;
 }
@@ -261,7 +261,7 @@ export function blockerIcon(blockerCount: number): string {
  * The entire line is wrapped in DIM regardless of queued state.
  *
  * @param blockerColOffset - Column position of the ⧗ blocker icon in the parent row
- *   (typically 26 + stateColWidth + daemonColWidth). The └ indicator is padded to
+ *   (typically 26 + stateColWidth). The └ indicator is padded to
  *   this position so it aligns directly under the ⧗ icon.
  */
 export function formatBlockerSubline(
@@ -453,7 +453,7 @@ export function formatTelemetrySuffix(item: StatusItem): string {
  * indicator before the title (e.g., color-coded ⧗ + space, or 2 spaces).
  * stateColWidth controls the state+PR column width (default 14).
  * repoUrl enables OSC 8 hyperlinks on PR numbers.
- * daemonCol is the optional DAEMON column string (8 chars wide, pre-padded).
+ * Remote items (worked on by other crew members) show a cyan dot after the state.
  */
 export function formatItemRow(
   item: StatusItem,
@@ -461,21 +461,20 @@ export function formatItemRow(
   depIndicator?: string,
   stateColWidth: number = 14,
   repoUrl?: string,
-  daemonCol?: string,
 ): string {
   const icon = stateIcon(item.state);
   const id = pad(item.id, 12);
   const color = stateColor(item.state);
   const stateCell = formatStateLabelWithPr(item.state, item.prNumber, stateColWidth, repoUrl);
+  const remoteDot = item.remote ? ` ${CREW_REMOTE_DOT}` : "";
   const duration = pad(formatDuration(item), 8);
-  const daemon = daemonCol ?? "";
   const depCol = depIndicator ?? "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` ${DIM}[${item.repoLabel}]${RESET}` : "";
   const reason = item.failureReason ? ` ${DIM}(${item.failureReason})${RESET}` : "";
   const telemetry = formatTelemetrySuffix(item);
 
-  return `  ${color}${icon}${RESET} ${id}${color}${stateCell}${RESET} ${duration} ${daemon}${depCol}${title}${repo}${reason}${telemetry}`;
+  return `  ${color}${icon}${RESET} ${id}${color}${stateCell}${RESET}${remoteDot} ${duration} ${depCol}${title}${repo}${reason}${telemetry}`;
 }
 
 /**
@@ -538,25 +537,22 @@ export function formatSummary(items: StatusItem[]): string {
  * Returns a string with DIM applied to the entire row.
  * depIndicator is the optional 2-char inline blocker indicator before the title.
  * stateColWidth controls the state column width (default 14).
- * daemonCol is the optional DAEMON column string (8 chars wide, pre-padded).
  */
 export function formatQueuedItemRow(
   item: StatusItem,
   titleWidth: number,
   depIndicator?: string,
   stateColWidth: number = 14,
-  daemonCol?: string,
 ): string {
   const icon = stateIcon(item.state);
   const id = pad(item.id, 12);
   const stateCell = formatStateLabelWithPr(item.state, item.prNumber, stateColWidth);
   const duration = pad(formatDuration(item), 8);
-  const daemon = daemonCol ?? "";
   const depCol = depIndicator ?? "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` [${item.repoLabel}]` : "";
 
-  return `  ${DIM}${icon} ${id}${stateCell} ${duration} ${daemon}${depCol}${title}${repo}${RESET}`;
+  return `  ${DIM}${icon} ${id}${stateCell} ${duration} ${depCol}${title}${repo}${RESET}`;
 }
 
 // ─── Dependency tree building ─────────────────────────────────────────────────
@@ -770,16 +766,23 @@ export function computeSessionMetrics(
   };
 }
 
+/** Cyan background + black text for crew bar and remote indicators. */
+const CREW_BG = "\x1b[46m\x1b[30m"; // cyan bg, black text
+/** Cyan dot used as remote indicator on items worked on by other crew members. */
+export const CREW_REMOTE_DOT = `${CYAN}\u25CF${RESET}`; // ● in cyan
+
 /**
- * Format crew status panel line for display above the item table.
- * Shows crew code, daemon count, available/claimed/done counts.
+ * Format crew status bar for display above the title line.
+ * Uses cyan background spanning the full terminal width.
  * When disconnected, shows OFFLINE indicator.
  */
-export function formatCrewStatusPanel(status: CrewStatusInfo): string {
+export function formatCrewStatusPanel(status: CrewStatusInfo, termWidth: number = 80): string {
   if (!status.connected) {
-    return `  ${BOLD}Crew: ${status.crewCode}${RESET} ${RED}| OFFLINE -- reconnecting...${RESET}`;
+    const text = ` Crew ${status.crewCode} | OFFLINE -- reconnecting...`;
+    return `${CREW_BG}${text}${" ".repeat(Math.max(0, termWidth - text.length))}${RESET}`;
   }
-  return `  ${BOLD}Crew: ${status.crewCode}${RESET} | Daemons: ${status.daemonCount} | Avail: ${status.availableCount} | Claimed: ${status.claimedCount} | Done: ${status.completedCount}`;
+  const text = ` Crew ${status.crewCode}  |  ${status.daemonCount} daemons  |  ${status.availableCount} avail  |  ${status.claimedCount} claimed  |  ${status.completedCount} done`;
+  return `${CREW_BG}${text}${" ".repeat(Math.max(0, termWidth - text.length))}${RESET}`;
 }
 
 /**
@@ -820,10 +823,9 @@ export function formatStatusTable(
   const repoUrl = opts.repoUrl;
   const crewActive = opts.crewStatus != null;
 
-  // Crew status panel (above item table)
+  // Crew status bar (above title line)
   if (opts.crewStatus) {
-    lines.push(formatCrewStatusPanel(opts.crewStatus));
-    lines.push("");
+    lines.push(formatCrewStatusPanel(opts.crewStatus, termWidth));
   }
 
   // Check if any items have dependency relationships
@@ -835,26 +837,15 @@ export function formatStatusTable(
   // Inline dep indicator: 2-char slot (icon + space) before title when deps exist
   const depIndicatorWidth = hasDeps ? 2 : 0;
 
-  // DAEMON column: 9 chars wide (8 + space), only in crew mode
-  const daemonColWidth = crewActive ? 9 : 0;
-
   // Dynamic state column width: 14ch when no items have PRs, up to ~24ch with PRs
   const stateColWidth = computeStateColWidth(items);
 
   // Column widths
-  // Base: 2 indent + 2 icon+space + 12 ID + stateColWidth state + 1 space + 8 duration + 1 space = 26 + stateColWidth
-  const fixedWidth = 26 + stateColWidth + daemonColWidth + depIndicatorWidth;
+  const fixedWidth = 26 + stateColWidth + depIndicatorWidth;
   const titleWidth = Math.max(10, termWidth - fixedWidth);
 
-  // Column offset where the ⧗ blocker icon sits (for aligning sub-lines)
-  const blockerColOffset = 26 + stateColWidth + daemonColWidth;
-
-  /** Format daemon column for an item. */
-  function daemonStr(item: StatusItem): string {
-    if (!crewActive) return "";
-    const name = item.daemonName ?? "--";
-    return pad(name, daemonColWidth);
-  }
+  // Column offset where the blocker icon sits (for aligning sub-lines)
+  const blockerColOffset = 26 + stateColWidth;
 
   /** Build the 2-char dep indicator for an item. */
   function depIndicator(itemId: string): string {
@@ -863,10 +854,9 @@ export function formatStatusTable(
     return blockerIcon(blockers.length) + " ";
   }
 
-  // Header (no DEPS column -- indicator is inline before TITLE)
-  const daemonHeader = crewActive ? pad("DAEMON", daemonColWidth) : "";
+  // Header
   const depPad = hasDeps ? "  " : "";
-  const header = `  ${DIM}  ${pad("ID", 12)}${pad("STATE", stateColWidth)} ${pad("DURATION", 8)} ${daemonHeader}${depPad}TITLE${RESET}`;
+  const header = `  ${DIM}  ${pad("ID", 12)}${pad("STATE", stateColWidth)} ${pad("DURATION", 8)} ${depPad}TITLE${RESET}`;
   lines.push(header);
 
   // Separator
@@ -882,14 +872,14 @@ export function formatStatusTable(
     const queuedItems = sorted.filter((i) => i.state === "queued");
 
     for (const item of activeItems) {
-      lines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
+      lines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
         lines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
       }
     }
     for (const item of mergedItems) {
-      lines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
+      lines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
         lines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
@@ -912,7 +902,7 @@ export function formatStatusTable(
       lines.push(sep);
 
       for (const item of queuedItems) {
-        lines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, daemonStr(item)));
+        lines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth));
         const blockers = blockedBy!.get(item.id) ?? [];
         if (opts.showBlockerDetail && blockers.length > 0) {
           lines.push(formatBlockerSubline(blockers, titleWidth, true, blockerColOffset));
@@ -926,10 +916,10 @@ export function formatStatusTable(
     const mergedItems = items.filter((i) => i.state === "merged");
 
     for (const item of activeItems) {
-      lines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, daemonStr(item)));
+      lines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl));
     }
     for (const item of mergedItems) {
-      lines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, daemonStr(item)));
+      lines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl));
     }
 
     // Queue section with header
@@ -946,7 +936,7 @@ export function formatStatusTable(
       lines.push(sep);
 
       for (const item of queuedItems) {
-        lines.push(formatQueuedItemRow(item, titleWidth, undefined, stateColWidth, daemonStr(item)));
+        lines.push(formatQueuedItemRow(item, titleWidth, undefined, stateColWidth));
       }
     }
   }
@@ -1242,20 +1232,12 @@ export function buildStatusLayout(
   // Inline dep indicator: 2-char slot (icon + space) before title when deps exist
   const depIndicatorWidth = hasDeps ? 2 : 0;
 
-  const daemonColWidth = crewActive ? 9 : 0;
   const stateColWidth = computeStateColWidth(items);
-  const fixedWidth = 26 + stateColWidth + daemonColWidth + depIndicatorWidth;
+  const fixedWidth = 26 + stateColWidth + depIndicatorWidth;
   const titleWidth = Math.max(10, termWidth - fixedWidth);
 
-  // Column offset where the ⧗ blocker icon sits (for aligning sub-lines)
-  const blockerColOffset = 26 + stateColWidth + daemonColWidth;
-
-  /** Format daemon column for an item. */
-  function daemonStr(item: StatusItem): string {
-    if (!crewActive) return "";
-    const name = item.daemonName ?? "--";
-    return pad(name, daemonColWidth);
-  }
+  // Column offset where the blocker icon sits (for aligning sub-lines)
+  const blockerColOffset = 26 + stateColWidth;
 
   /** Build the 2-char dep indicator for an item. */
   function depIndicator(itemId: string): string {
@@ -1264,17 +1246,14 @@ export function buildStatusLayout(
     return blockerIcon(blockers.length) + " ";
   }
 
-  // Header: title (with right-aligned metrics when available) + column headers + separator
+  // Header: crew bar (above title), then title (with right-aligned metrics)
+  if (opts.crewStatus) {
+    headerLines.push(formatCrewStatusPanel(opts.crewStatus, termWidth));
+  }
   headerLines.push(formatTitleMetrics(items, termWidth, opts.sessionStartedAt));
   headerLines.push("");
-  // Crew status panel (above item table)
-  if (opts.crewStatus) {
-    headerLines.push(formatCrewStatusPanel(opts.crewStatus));
-    headerLines.push("");
-  }
-  const daemonHeader = crewActive ? pad("DAEMON", daemonColWidth) : "";
   const depPad = hasDeps ? "  " : "";
-  headerLines.push(`  ${DIM}  ${pad("ID", 12)}${pad("STATE", stateColWidth)} ${pad("DURATION", 8)} ${daemonHeader}${depPad}TITLE${RESET}`);
+  headerLines.push(`  ${DIM}  ${pad("ID", 12)}${pad("STATE", stateColWidth)} ${pad("DURATION", 8)} ${depPad}TITLE${RESET}`);
   const sep = `  ${DIM}${"─".repeat(Math.min(termWidth - 2, fixedWidth + titleWidth))}${RESET}`;
   headerLines.push(sep);
 
@@ -1288,14 +1267,14 @@ export function buildStatusLayout(
     const queuedItems = sorted.filter((i) => i.state === "queued");
 
     for (const item of activeItems) {
-      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
+      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
         itemLines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
       }
     }
     for (const item of mergedItems) {
-      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, daemonStr(item)));
+      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
         itemLines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
@@ -1310,7 +1289,7 @@ export function buildStatusLayout(
       itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
       itemLines.push(sep);
       for (const item of queuedItems) {
-        itemLines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, daemonStr(item)));
+        itemLines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth));
         const blockers = blockedBy!.get(item.id) ?? [];
         if (opts.showBlockerDetail && blockers.length > 0) {
           itemLines.push(formatBlockerSubline(blockers, titleWidth, true, blockerColOffset));
@@ -1323,10 +1302,10 @@ export function buildStatusLayout(
     const mergedItems = items.filter((i) => i.state === "merged");
 
     for (const item of activeItems) {
-      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, daemonStr(item)));
+      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl));
     }
     for (const item of mergedItems) {
-      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, daemonStr(item)));
+      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl));
     }
     if (queuedItems.length > 0) {
       const activeCount = activeItems.length;
@@ -1337,7 +1316,7 @@ export function buildStatusLayout(
       itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
       itemLines.push(sep);
       for (const item of queuedItems) {
-        itemLines.push(formatQueuedItemRow(item, titleWidth, undefined, stateColWidth, daemonStr(item)));
+        itemLines.push(formatQueuedItemRow(item, titleWidth, undefined, stateColWidth));
       }
     }
   }
