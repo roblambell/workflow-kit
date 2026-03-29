@@ -13,8 +13,8 @@ import { die } from "../output.ts";
 
 // ── Types ──────────────────────────────────────────────────────────
 
-/** Crew code pattern: lowercase-alpha segments separated by a single hyphen (e.g. abc-xyz). */
-export const CREW_CODE_PATTERN = /^[a-z]+-[a-z]+$/;
+/** Crew code pattern: exactly 3 alphanumeric chars, hyphen, 3 alphanumeric chars (e.g. xK2-9fB). */
+export const CREW_CODE_PATTERN = /^[A-Za-z0-9]{3}-[A-Za-z0-9]{3}$/;
 
 export type CrewAction =
   | { type: "join"; code: string }
@@ -57,7 +57,7 @@ export function parseCrewArgs(args: string[]): CrewAction | null {
       throw new Error("Usage: nw crew join <crew-code>");
     }
     if (!isCrewCode(code)) {
-      throw new Error(`Invalid crew code: ${code}. Expected format: xxx-yyy (e.g. abc-xyz)`);
+      throw new Error(`Invalid crew code: ${code}. Expected format: XXX-XXX (e.g. xK2-9fB)`);
     }
     return { type: "join", code };
   }
@@ -112,7 +112,7 @@ export async function promptCrewAction(
       return { type: "join", code: answer };
     }
 
-    console.log(`  ${YELLOW}Invalid crew code.${RESET} Expected format: ${BOLD}xxx-yyy${RESET} (e.g. abc-xyz), or type ${CYAN}create${RESET}.`);
+    console.log(`  ${YELLOW}Invalid crew code.${RESET} Expected format: ${BOLD}XXX-XXX${RESET} (e.g. xK2-9fB), or type ${CYAN}create${RESET}.`);
   }
 }
 
@@ -127,9 +127,9 @@ export function printCrewUsage(): void {
   console.log("  nw crew join <crew-code> Join a crew (explicit)");
   console.log();
   console.log("Examples:");
-  console.log("  nw crew abc-xyz");
+  console.log("  nw crew xK2-9fB");
   console.log("  nw crew create");
-  console.log("  nw crew join abc-xyz");
+  console.log("  nw crew join xK2-9fB");
 }
 
 // ── Command handler ────────────────────────────────────────────────

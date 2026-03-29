@@ -42,16 +42,20 @@ async function captureLog(fn: () => Promise<void> | void): Promise<string[]> {
 // ── isCrewCode ─────────────────────────────────────────────────────
 
 describe("isCrewCode", () => {
-  it("accepts valid crew codes", () => {
+  it("accepts valid codes: mixed case and digits", () => {
+    expect(isCrewCode("xK2-9fB")).toBe(true);
+    expect(isCrewCode("ABC-XYZ")).toBe(true);
+    expect(isCrewCode("a1B-c2D")).toBe(true);
     expect(isCrewCode("abc-xyz")).toBe(true);
     expect(isCrewCode("foo-bar")).toBe(true);
-    expect(isCrewCode("alpha-beta")).toBe(true);
-    expect(isCrewCode("a-b")).toBe(true);
+    expect(isCrewCode("123-456")).toBe(true);
   });
 
-  it("rejects uppercase crew codes", () => {
-    expect(isCrewCode("ABC-XYZ")).toBe(false);
-    expect(isCrewCode("Abc-Xyz")).toBe(false);
+  it("rejects codes with wrong segment length", () => {
+    expect(isCrewCode("abcd-efgh")).toBe(false); // too long (4+4)
+    expect(isCrewCode("ab-cd")).toBe(false);     // too short (2+2)
+    expect(isCrewCode("ABC-XY1Z")).toBe(false);  // second segment has 4 chars
+    expect(isCrewCode("a-b")).toBe(false);       // too short (1+1)
   });
 
   it("rejects codes without hyphen", () => {
@@ -63,21 +67,12 @@ describe("isCrewCode", () => {
     expect(isCrewCode("-xyz")).toBe(false);
   });
 
-  it("rejects numeric-only segments", () => {
-    expect(isCrewCode("123-456")).toBe(false);
-  });
-
   it("rejects codes with multiple hyphens", () => {
     expect(isCrewCode("abc-xyz-def")).toBe(false);
   });
 
   it("rejects empty string", () => {
     expect(isCrewCode("")).toBe(false);
-  });
-
-  it("rejects codes with digits", () => {
-    expect(isCrewCode("abc-123")).toBe(false);
-    expect(isCrewCode("a1b-xyz")).toBe(false);
   });
 });
 
@@ -115,8 +110,8 @@ describe("parseCrewArgs", () => {
     expect(() => parseCrewArgs(["join", "INVALID"])).toThrow("Invalid crew code: INVALID");
   });
 
-  it("throws on join with numeric code", () => {
-    expect(() => parseCrewArgs(["join", "123-456"])).toThrow("Invalid crew code: 123-456");
+  it("throws on join with wrong-length code", () => {
+    expect(() => parseCrewArgs(["join", "abcd-efgh"])).toThrow("Invalid crew code: abcd-efgh");
   });
 
   it("direct join shorthand routes code-shaped arg to join (not treated as subcommand)", () => {
@@ -249,12 +244,12 @@ describe("cmdCrew", () => {
     const watchArgs: string[][] = [];
     const deps: CrewDeps = {
       isTTY: true,
-      prompt: mockPrompt(["test-crew"]),
+      prompt: mockPrompt(["xK2-9fB"]),
       runWatch: async (args) => { watchArgs.push(args); },
     };
 
     await cmdCrew([], workDir, worktreeDir, projectRoot, deps);
-    expect(watchArgs).toEqual([["--crew", "test-crew"]]);
+    expect(watchArgs).toEqual([["--crew", "xK2-9fB"]]);
   });
 
   it("interactive mode with TTY prompts and creates on 'create' input", async () => {
