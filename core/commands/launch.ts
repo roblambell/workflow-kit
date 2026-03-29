@@ -26,12 +26,14 @@ import { sendWithReadyWait } from "../worker-health.ts";
 import {
   allocatePartition,
   getPartitionFor,
+  releasePartition,
   cleanupStalePartitions,
 } from "../partitions.ts";
 import {
   resolveRepo,
   getWorktreeInfo,
   writeCrossRepoIndex,
+  removeCrossRepoIndex,
   ensureWorktreeExcluded,
 } from "../cross-repo.ts";
 import { cmdConflicts } from "./conflicts.ts";
@@ -611,57 +613,99 @@ export function launchSingleItem(
     }
   }
 
-  // Track cross-repo items in the index
-  if (targetRepo !== projectRoot) {
-    const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
-    writeCrossRepoIndex(crossRepoIndex, item.id, targetRepo, worktreePath);
-  }
-
-  // Seed agent files into worktree if missing (cross-repo or first-time setup)
-  const seededAgents = seedAgentFiles(worktreePath, projectRoot);
-
-  // Allocate partition
+  // Track resources created after worktree for cleanup on failure
+  let wroteIndex = false;
+  const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
   const partitionDir = join(worktreeDir, ".partitions");
-  let partition = getPartitionFor(partitionDir, item.id);
-  if (partition === null) {
-    partition = allocatePartition(partitionDir, item.id);
-  }
+  let partitionAllocated = false;
 
-  // Sanitize title for shell safety (allowlist: only keep safe characters)
-  const safeTitle = sanitizeTitle(item.title);
-  info(
-    `Launching ${aiTool} session for ${item.id}: ${safeTitle} (partition ${partition})`,
-  );
+  try {
+    // Track cross-repo items in the index
+    if (targetRepo !== projectRoot) {
+      writeCrossRepoIndex(crossRepoIndex, item.id, targetRepo, worktreePath);
+      wroteIndex = true;
+    }
 
-  // Build system prompt
-  const itemText = extractItemText(workDir, item.id);
-  const baseBranchLine = options.baseBranch ? `BASE_BRANCH: ${options.baseBranch}\n` : "";
-  const hubRepoNwoLine = options.hubRepoNwo ? `HUB_REPO_NWO: ${options.hubRepoNwo}\n` : "";
-  const seededAgentsLine = seededAgents.length > 0
-    ? `\nNOTE: The following files were seeded into this worktree by ninthwave and should be included in your first commit: ${seededAgents.join(", ")}\n`
-    : "";
-  const systemPrompt = `YOUR_TODO_ID: ${item.id}
+    // Seed agent files into worktree if missing (cross-repo or first-time setup)
+    const seededAgents = seedAgentFiles(worktreePath, projectRoot);
+
+    // Allocate partition
+    let partition = getPartitionFor(partitionDir, item.id);
+    if (partition === null) {
+      partition = allocatePartition(partitionDir, item.id);
+      partitionAllocated = true;
+    }
+
+    // Sanitize title for shell safety (allowlist: only keep safe characters)
+    const safeTitle = sanitizeTitle(item.title);
+    info(
+      `Launching ${aiTool} session for ${item.id}: ${safeTitle} (partition ${partition})`,
+    );
+
+    // Build system prompt
+    const itemText = extractItemText(workDir, item.id);
+    const baseBranchLine = options.baseBranch ? `BASE_BRANCH: ${options.baseBranch}\n` : "";
+    const hubRepoNwoLine = options.hubRepoNwo ? `HUB_REPO_NWO: ${options.hubRepoNwo}\n` : "";
+    const seededAgentsLine = seededAgents.length > 0
+      ? `\nNOTE: The following files were seeded into this worktree by ninthwave and should be included in your first commit: ${seededAgents.join(", ")}\n`
+      : "";
+    const systemPrompt = `YOUR_TODO_ID: ${item.id}
 YOUR_PARTITION: ${partition}
 PROJECT_ROOT: ${targetRepo}
 HUB_ROOT: ${projectRoot}
 ${baseBranchLine}${hubRepoNwoLine}${seededAgentsLine}
 ${itemText}`;
 
-  // Write system prompt into the workspace (gitignored .nw-prompt)
-  const promptFile = join(worktreePath, ".nw-prompt");
-  writeFileSync(promptFile, systemPrompt);
+    // Write system prompt into the workspace (gitignored .nw-prompt)
+    const promptFile = join(worktreePath, ".nw-prompt");
+    writeFileSync(promptFile, systemPrompt);
 
-  const workspaceRef = launchAiSession(
-    aiTool,
-    worktreePath,
-    item.id,
-    safeTitle,
-    promptFile,
-    mux,
-    { projectRoot },
-  );
-  if (!workspaceRef) return null;
-  return { worktreePath, workspaceRef };
+    const workspaceRef = launchAiSession(
+      aiTool,
+      worktreePath,
+      item.id,
+      safeTitle,
+      promptFile,
+      mux,
+      { projectRoot },
+    );
+    if (!workspaceRef) {
+      // launchAiSession returned null -- clean up and propagate
+      throw new Error(`AI session launch failed for ${item.id}`);
+    }
+    return { worktreePath, workspaceRef };
+  } catch (err) {
+    // Clean up partially-created resources in reverse order.
+    // Each step is individually wrapped since cleanup itself may fail.
+    warn(
+      `Launch failed for ${item.id}, cleaning up resources: ${err instanceof Error ? err.message : err}`,
+    );
+
+    // 1. Release partition
+    try {
+      releasePartition(partitionDir, item.id);
+    } catch (e) {
+      warn(`Failed to release partition for ${item.id}: ${e instanceof Error ? e.message : e}`);
+    }
+
+    // 2. Remove cross-repo index entry
+    if (wroteIndex) {
+      try {
+        removeCrossRepoIndex(crossRepoIndex, item.id);
+      } catch (e) {
+        warn(`Failed to remove cross-repo index for ${item.id}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+
+    // 3. Remove worktree (best-effort)
+    try {
+      removeWorktree(targetRepo, worktreePath, /* force */ true);
+    } catch (e) {
+      warn(`Failed to remove worktree for ${item.id}: ${e instanceof Error ? e.message : e}`);
+    }
+
+    return null;
+  }
 }
 
 /** Result of launching a review worker session. */

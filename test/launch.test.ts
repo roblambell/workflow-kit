@@ -343,7 +343,7 @@ describe("launchSingleItem", () => {
     expect(result).toContain("Creating worktree for M-CI-1");
   });
 
-  it("returns null when mux launch fails", async () => {
+  it("returns null and cleans up when mux launch fails", async () => {
     const mockMux = createMockMux();
     mockMux.launchWorkspace.mockReturnValueOnce(null);
 
@@ -359,6 +359,13 @@ describe("launchSingleItem", () => {
     });
 
     expect(result).toContain("cmux launch failed");
+    // Cleanup should run after launch failure
+    expect(result).toContain("Launch failed for M-CI-1, cleaning up resources");
+    expect(removeWorktree).toHaveBeenCalledWith(
+      repo,
+      join(worktreeDir, "ninthwave-M-CI-1"),
+      true,
+    );
   });
 
   it("allocates a partition for the item", async () => {
@@ -756,6 +763,124 @@ describe("launchSingleItem external worktree handling", () => {
     // Should propagate error since no external worktree to remove
     expect(thrownError).not.toBeNull();
     expect(thrownError!.message).toContain("Failed to delete branch");
+  });
+});
+
+describe("launchSingleItem resource cleanup on failure", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINTHWAVE_AI_TOOL = "claude";
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    cleanupTempRepos();
+  });
+
+  it("cleans up partition and worktree when launchAiSession returns null", async () => {
+    const mockMux = createMockMux();
+    // launchAiSession returns null when mux.launchWorkspace fails
+    mockMux.launchWorkspace.mockReturnValueOnce(null);
+
+    const repo = setupTempRepo();
+    const workDir = setupWorkItemsDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseWorkItems(workDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    const output = await captureOutput(() => {
+      const res = launchSingleItem(item, workDir, worktreeDir, repo, "claude", mockMux);
+      expect(res).toBeNull();
+    });
+
+    // Cleanup should have been attempted
+    expect(output).toContain("Launch failed for M-CI-1, cleaning up resources");
+    // removeWorktree should be called for cleanup
+    expect(removeWorktree).toHaveBeenCalledWith(
+      repo,
+      join(worktreeDir, "ninthwave-M-CI-1"),
+      true,
+    );
+    // Partition should have been released (file should not exist)
+    const { existsSync, readdirSync, readFileSync: readFs } = require("fs");
+    const partitionDir = join(worktreeDir, ".partitions");
+    if (existsSync(partitionDir)) {
+      const files = readdirSync(partitionDir);
+      for (const f of files) {
+        const content = readFs(join(partitionDir, f), "utf-8").trim();
+        expect(content).not.toBe("M-CI-1");
+      }
+    }
+  });
+
+  it("cleans up partition and worktree when prompt file write throws", async () => {
+    const mockMux = createMockMux();
+
+    const repo = setupTempRepo();
+    const workDir = setupWorkItemsDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseWorkItems(workDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    // Make the worktree path a file instead of directory so writeFileSync on .nw-prompt throws
+    // First, prevent createWorktree from creating the dir (we need it to fail at prompt write)
+    (createWorktree as Mock).mockImplementationOnce((_repo: string, wtPath: string) => {
+      // Create worktree dir, but make .nw-prompt a directory so writeFileSync fails
+      mkdirSync(wtPath, { recursive: true });
+      mkdirSync(join(wtPath, ".nw-prompt"), { recursive: true });
+    });
+
+    const output = await captureOutput(() => {
+      const res = launchSingleItem(item, workDir, worktreeDir, repo, "claude", mockMux);
+      expect(res).toBeNull();
+    });
+
+    // Cleanup should have been attempted
+    expect(output).toContain("Launch failed for M-CI-1, cleaning up resources");
+    // removeWorktree called for cleanup
+    expect(removeWorktree).toHaveBeenCalledWith(
+      repo,
+      join(worktreeDir, "ninthwave-M-CI-1"),
+      true,
+    );
+    // Partition should have been released
+    const { existsSync, readdirSync, readFileSync: readFs } = require("fs");
+    const partitionDir = join(worktreeDir, ".partitions");
+    if (existsSync(partitionDir)) {
+      const files = readdirSync(partitionDir);
+      for (const f of files) {
+        const content = readFs(join(partitionDir, f), "utf-8").trim();
+        expect(content).not.toBe("M-CI-1");
+      }
+    }
+  });
+
+  it("cleanup continues even when individual cleanup steps fail", async () => {
+    const mockMux = createMockMux();
+    mockMux.launchWorkspace.mockReturnValueOnce(null);
+
+    const repo = setupTempRepo();
+    const workDir = setupWorkItemsDir(repo);
+    const worktreeDir = join(repo, ".worktrees");
+    const items = parseWorkItems(workDir, worktreeDir);
+    const item = items.find((i) => i.id === "M-CI-1")!;
+
+    // Make removeWorktree throw to verify cleanup continues
+    (removeWorktree as Mock).mockImplementationOnce(() => {
+      throw new Error("worktree removal failed");
+    });
+
+    const output = await captureOutput(() => {
+      const res = launchSingleItem(item, workDir, worktreeDir, repo, "claude", mockMux);
+      // Should still return null (not throw)
+      expect(res).toBeNull();
+    });
+
+    // Should warn about failed cleanup
+    expect(output).toContain("Failed to remove worktree for M-CI-1");
+    expect(output).toContain("worktree removal failed");
   });
 });
 
