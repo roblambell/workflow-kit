@@ -21,7 +21,6 @@ function makeOrch(): Orchestrator {
     bypassEnabled: false,
     enableStacking: false,
     verifyMain: false,
-    reviewWipLimit: 0,
   });
 }
 

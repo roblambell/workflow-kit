@@ -15,7 +15,6 @@ export interface ParsedWatchArgs {
   isDaemonChild: boolean;
   clickupListId?: string;
   remoteFlag: boolean;
-  reviewWipLimit?: number;
   reviewAutoFix?: "off" | "direct" | "pr";
   reviewExternal: boolean;
   verifyMain: boolean;
@@ -42,7 +41,6 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   let isDaemonChild = false;
   let clickupListId: string | undefined;
   let remoteFlag = false;
-  let reviewWipLimit: number | undefined;
   let reviewAutoFix: "off" | "direct" | "pr" | undefined;
   let reviewExternal = false;
   let verifyMain = true;
@@ -109,10 +107,6 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         break;
       case "--clickup-list":
         clickupListId = args[i + 1];
-        i += 2;
-        break;
-      case "--review-wip-limit":
-        reviewWipLimit = parseInt(args[i + 1] ?? "2", 10);
         i += 2;
         break;
       case "--review-auto-fix": {
@@ -195,7 +189,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   return {
     itemIds, mergeStrategy, wipLimitOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, clickupListId, remoteFlag,
-    reviewWipLimit, reviewAutoFix, reviewExternal,
+    reviewAutoFix, reviewExternal,
     verifyMain, watchMode, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewCode, crewCreate, crewPort, crewUrl, crewName,
     bypassEnabled,

@@ -83,7 +83,6 @@ describe("buildSnapshot contract", () => {
       bypassEnabled: false,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
     fakeGh = new FakeGitHub();
     fakeMux = new FakeMux();

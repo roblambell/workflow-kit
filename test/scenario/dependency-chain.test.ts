@@ -25,7 +25,6 @@ describe("scenario: dependency chain", () => {
       bypassEnabled: false,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
     orch.addItem(makeWorkItem("A-1"));
     orch.addItem(makeWorkItem("B-1", ["A-1"]));
@@ -74,7 +73,6 @@ describe("scenario: dependency chain", () => {
       bypassEnabled: false,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
     orch.addItem(makeWorkItem("A-1", [], "critical"));
     orch.addItem(makeWorkItem("B-1", ["A-1"]));
@@ -121,7 +119,6 @@ describe("scenario: dependency chain", () => {
       bypassEnabled: false,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
       maxRetries: 0, // first failure = stuck
     });
     orch.addItem(makeWorkItem("A-1"));

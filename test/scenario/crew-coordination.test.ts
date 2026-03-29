@@ -137,7 +137,6 @@ describe("scenario: crew coordination", () => {
       bypassEnabled: false,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("C-1"));
@@ -189,7 +188,6 @@ describe("scenario: crew coordination", () => {
       bypassEnabled: false,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("C-2"));
@@ -254,7 +252,6 @@ describe("scenario: crew coordination", () => {
       bypassEnabled: false,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     // Add two items; the broker will only grant claims for C-4
@@ -316,7 +313,6 @@ describe("scenario: crew coordination", () => {
       bypassEnabled: false,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     const item = makeWorkItem("C-5", ["DEP-1"], "medium");
@@ -349,7 +345,6 @@ describe("scenario: crew coordination", () => {
       bypassEnabled: false,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("C-6"));

@@ -28,7 +28,6 @@ describe("scenario: stacking", () => {
       bypassEnabled: false,
       enableStacking: true,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("A-1"));
@@ -90,7 +89,6 @@ describe("scenario: stacking", () => {
       bypassEnabled: false,
       enableStacking: true,
       verifyMain: false,
-      reviewWipLimit: 0,
       maxCiRetries: 0,
     });
 
@@ -150,7 +148,6 @@ describe("scenario: stacking", () => {
       bypassEnabled: false,
       enableStacking: true,
       verifyMain: false,
-      reviewWipLimit: 0,
       maxCiRetries: 5, // High limit so A doesn't go stuck
     });
 
@@ -210,7 +207,6 @@ describe("scenario: stacking", () => {
       bypassEnabled: false,
       enableStacking: true,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("A-1"));

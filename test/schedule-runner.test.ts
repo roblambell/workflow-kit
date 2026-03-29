@@ -341,7 +341,6 @@ describe("processScheduledTasks", () => {
       wipLimit: 5,
       maxRetries: 0,
       mergeStrategy: "sequential",
-      reviewWipLimit: 0,
       reviewAutoFix: false,
     });
     // Simulate active work items

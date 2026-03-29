@@ -121,7 +121,7 @@ export interface OrchestratorItem {
 }
 
 export interface OrchestratorConfig {
-  /** Max concurrent items in launching/implementing/ci-pending/ci-passed/ci-failed/review-pending states. */
+  /** Max concurrent items in all WIP states (bootstrapping/launching/implementing/ci-pending/ci-passed/ci-failed/repairing/reviewing/review-pending/merging). */
   wipLimit: number;
   /** When to auto-merge: auto (CI pass, respects review gate + CHANGES_REQUESTED), manual (never auto-merge), bypass (admin override, skips branch protection human review). */
   mergeStrategy: MergeStrategy;
@@ -137,8 +137,6 @@ export interface OrchestratorConfig {
   activityTimeoutMs: number;
   /** Enable stacked branch launches. When true, items with a single in-flight dep in a stackable state can launch early. Default: true. */
   enableStacking: boolean;
-  /** Max concurrent review workers. Tracked independently from main wipLimit. Default: 2. */
-  reviewWipLimit: number;
   /** How the review worker handles requested fixes: off (report only), direct (push fixes), pr (open fix PR). Default: "off". */
   reviewAutoFix: "off" | "direct" | "pr";
   /** Max merge failures before marking stuck. Default: 3. */
@@ -399,7 +397,6 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   launchTimeoutMs: 30 * 60 * 1000,   // 30 minutes
   activityTimeoutMs: 60 * 60 * 1000, // 60 minutes
   enableStacking: true,
-  reviewWipLimit: 2,
   reviewAutoFix: "off",
   maxMergeRetries: 3,
   maxRepairAttempts: 3,
@@ -451,6 +448,7 @@ const WIP_STATES: Set<OrchestratorItemState> = new Set([
   "ci-passed",
   "ci-failed",
   "repairing",
+  "reviewing",
   "review-pending",
   "merging",
 ]);
@@ -459,6 +457,7 @@ const WIP_STATES: Set<OrchestratorItemState> = new Set([
 
 export const STACKABLE_STATES: Set<OrchestratorItemState> = new Set([
   "ci-passed",
+  "reviewing",
   "review-pending",
   "merging",
 ]);
@@ -602,16 +601,6 @@ export class Orchestrator {
   /** How many more items can be launched without exceeding the effective WIP limit. */
   get wipSlots(): number {
     return Math.max(0, this.effectiveWipLimit - this.wipCount);
-  }
-
-  /** Count of items currently in the reviewing state (tracked independently from main WIP). */
-  get reviewWipCount(): number {
-    return this.getItemsByState("reviewing").length;
-  }
-
-  /** How many more review workers can be launched without exceeding reviewWipLimit. */
-  get reviewWipSlots(): number {
-    return Math.max(0, this.config.reviewWipLimit - this.reviewWipCount);
   }
 
   /**
@@ -1493,28 +1482,29 @@ export class Orchestrator {
           item.failureReason = `review-stuck: exceeded max review rounds (${this.config.maxReviewRounds})`;
           return actions;
         }
-        if (this.reviewWipSlots > 0) {
-          item.reviewRound = currentRound;
-          this.config.onEvent?.(item.id, "review-round", { reviewRound: currentRound });
-          this.transition(item, "reviewing", eventTime);
-          actions.push({
-            type: "launch-review",
-            itemId: item.id,
-            prNumber: item.prNumber,
-          });
-          // Set pending commit status when entering review
-          const description = currentRound > 1
-            ? `Re-review in progress (round ${currentRound})`
-            : "Review in progress";
-          actions.push({
-            type: "set-commit-status",
-            itemId: item.id,
-            prNumber: item.prNumber,
-            statusState: "pending",
-            statusDescription: description,
-          });
-        }
-        // else: no review slots available, stay in ci-passed until a slot opens
+        // reviewing is in WIP_STATES, so ci-passed→reviewing is an in-place transition
+        // (same WIP slot, different state). Reviews for in-pipeline items are always
+        // prioritized: transitionItem runs before launchReadyItems, so the review
+        // occupies its WIP slot first, leaving fewer slots for new launches.
+        item.reviewRound = currentRound;
+        this.config.onEvent?.(item.id, "review-round", { reviewRound: currentRound });
+        this.transition(item, "reviewing", eventTime);
+        actions.push({
+          type: "launch-review",
+          itemId: item.id,
+          prNumber: item.prNumber,
+        });
+        // Set pending commit status when entering review
+        const description = currentRound > 1
+          ? `Re-review in progress (round ${currentRound})`
+          : "Review in progress";
+        actions.push({
+          type: "set-commit-status",
+          itemId: item.id,
+          prNumber: item.prNumber,
+          statusState: "pending",
+          statusDescription: description,
+        });
       }
       return actions;
     }

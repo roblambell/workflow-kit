@@ -248,7 +248,7 @@ describe("processExternalReviews", () => {
     const prs = [makeExternalPR({ prNumber: 10, headSha: "sha1" })];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    const result = processExternalReviews("/tmp/repo", [], 2, 0, deps);
+    const result = processExternalReviews("/tmp/repo", [], 2, deps);
 
     expect(result).toHaveLength(1);
     expect(result[0]!.prNumber).toBe(10);
@@ -261,7 +261,7 @@ describe("processExternalReviews", () => {
     const prs = [makeExternalPR({ prNumber: 10, isDraft: true })];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    const result = processExternalReviews("/tmp/repo", [], 2, 0, deps);
+    const result = processExternalReviews("/tmp/repo", [], 2, deps);
 
     // Draft PR is filtered out -- not tracked at all
     expect(result).toHaveLength(0);
@@ -272,7 +272,7 @@ describe("processExternalReviews", () => {
     const prs = [makeExternalPR({ prNumber: 10, labels: ["ninthwave: skip-review"] })];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    const result = processExternalReviews("/tmp/repo", [], 2, 0, deps);
+    const result = processExternalReviews("/tmp/repo", [], 2, deps);
 
     expect(result).toHaveLength(0);
     expect(launched).toEqual([]);
@@ -286,7 +286,7 @@ describe("processExternalReviews", () => {
     ];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    const result = processExternalReviews("/tmp/repo", [], 5, 0, deps);
+    const result = processExternalReviews("/tmp/repo", [], 5, deps);
 
     expect(result).toHaveLength(0);
     expect(launched).toEqual([]);
@@ -300,7 +300,7 @@ describe("processExternalReviews", () => {
     ];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    const result = processExternalReviews("/tmp/repo", [], 5, 0, deps);
+    const result = processExternalReviews("/tmp/repo", [], 5, deps);
 
     expect(result).toHaveLength(3);
     expect(launched).toEqual([10, 11, 12]);
@@ -317,7 +317,7 @@ describe("processExternalReviews", () => {
     ];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    const result = processExternalReviews("/tmp/repo", existing, 2, 0, deps);
+    const result = processExternalReviews("/tmp/repo", existing, 2, deps);
 
     // Still tracked, but not re-launched
     expect(result).toHaveLength(1);
@@ -336,7 +336,7 @@ describe("processExternalReviews", () => {
     ];
     const { deps, launched, logs } = makeExternalReviewDeps(prs);
 
-    const result = processExternalReviews("/tmp/repo", existing, 2, 0, deps);
+    const result = processExternalReviews("/tmp/repo", existing, 2, deps);
 
     // Re-detected and relaunched
     expect(result).toHaveLength(1);
@@ -349,7 +349,7 @@ describe("processExternalReviews", () => {
     expect(headChangedLog!.prNumber).toBe(10);
   });
 
-  it("respects reviewWipLimit (shared with item reviews)", () => {
+  it("respects unified WIP limit (1 internal reviewing reduces available slots)", () => {
     const prs = [
       makeExternalPR({ prNumber: 10, headSha: "a" }),
       makeExternalPR({ prNumber: 11, headSha: "b" }),
@@ -357,9 +357,9 @@ describe("processExternalReviews", () => {
     ];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    // reviewWipLimit=2, currentReviewWipCount=1 (1 item review in progress)
+    // availableWipSlots=1 (1 slot left after internal reviewing item occupies one)
     // → only 1 slot available for external reviews
-    const result = processExternalReviews("/tmp/repo", [], 2, 1, deps);
+    const result = processExternalReviews("/tmp/repo", [], 1, deps);
 
     expect(launched).toHaveLength(1);
     expect(launched).toEqual([10]);
@@ -367,7 +367,7 @@ describe("processExternalReviews", () => {
     expect(result.filter((r) => r.state === "detected")).toHaveLength(2);
   });
 
-  it("respects reviewWipLimit when external reviews are already in progress", () => {
+  it("respects unified WIP limit when external reviews are already in progress", () => {
     const prs = [
       makeExternalPR({ prNumber: 10, headSha: "a" }),
       makeExternalPR({ prNumber: 11, headSha: "b" }),
@@ -381,9 +381,8 @@ describe("processExternalReviews", () => {
     ];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    // reviewWipLimit=2, currentReviewWipCount=0 (no item reviews)
-    // but 1 external review already reviewing → 1 slot left
-    const result = processExternalReviews("/tmp/repo", existing, 2, 0, deps);
+    // availableWipSlots=2, but 1 external review already reviewing → 1 slot left
+    const result = processExternalReviews("/tmp/repo", existing, 2, deps);
 
     // PR 10 already reviewing, PR 11 is new and should launch
     expect(launched).toEqual([11]);
@@ -412,7 +411,7 @@ describe("processExternalReviews", () => {
       },
     });
 
-    const result = processExternalReviews("/tmp/repo", existing, 2, 0, deps);
+    const result = processExternalReviews("/tmp/repo", existing, 2, deps);
 
     // Both items removed since their PRs are no longer open
     expect(result).toHaveLength(0);
@@ -429,7 +428,7 @@ describe("processExternalReviews", () => {
       launchReview: () => null, // launch fails
     });
 
-    const result = processExternalReviews("/tmp/repo", [], 2, 0, deps);
+    const result = processExternalReviews("/tmp/repo", [], 2, deps);
 
     // Item stays in detected state
     expect(result).toHaveLength(1);
@@ -448,7 +447,7 @@ describe("processExternalReviews", () => {
     ];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    const result = processExternalReviews("/tmp/repo", existing, 2, 0, deps);
+    const result = processExternalReviews("/tmp/repo", existing, 2, deps);
 
     // Should not re-launch -- already reviewing
     expect(launched).toEqual([]);

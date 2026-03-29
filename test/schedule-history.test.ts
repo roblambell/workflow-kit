@@ -286,7 +286,6 @@ describe("structured log events", () => {
       wipLimit: 5,
       maxRetries: 0,
       mergeStrategy: "sequential",
-      reviewWipLimit: 0,
       reviewAutoFix: false,
     });
     for (let i = 0; i < activeCount; i++) {

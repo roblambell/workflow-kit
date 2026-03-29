@@ -39,8 +39,7 @@ export interface ExternalReviewDeps {
 export function processExternalReviews(
   repoRoot: string,
   externalReviews: ExternalReviewItem[],
-  reviewWipLimit: number,
-  currentReviewWipCount: number,
+  availableWipSlots: number,
   deps: ExternalReviewDeps,
 ): ExternalReviewItem[] {
   // 1. Scan for external PRs
@@ -106,9 +105,11 @@ export function processExternalReviews(
     });
   }
 
-  // 4. Launch review workers for detected PRs, respecting shared WIP limit
+  // 4. Launch review workers for detected PRs, respecting the unified WIP limit.
+  // availableWipSlots already accounts for internal reviewing items. Subtract
+  // external reviews that are already running to get net available slots.
   const reviewingCount = updatedReviews.filter((r) => r.state === "reviewing").length;
-  let availableSlots = reviewWipLimit - currentReviewWipCount - reviewingCount;
+  let availableSlots = availableWipSlots - reviewingCount;
 
   for (const review of updatedReviews) {
     if (review.state !== "detected") continue;

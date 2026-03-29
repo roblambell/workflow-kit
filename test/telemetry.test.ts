@@ -503,7 +503,6 @@ describe("collectRunMetrics includes telemetry fields", () => {
       launchTimeoutMs: 30 * 60 * 1000,
       activityTimeoutMs: 60 * 60 * 1000,
       enableStacking: true,
-      reviewWipLimit: 2,
       reviewAutoFix: "off",
     };
 
@@ -540,7 +539,6 @@ describe("collectRunMetrics includes telemetry fields", () => {
       launchTimeoutMs: 30 * 60 * 1000,
       activityTimeoutMs: 60 * 60 * 1000,
       enableStacking: true,
-      reviewWipLimit: 2,
       reviewAutoFix: "off",
     };
 

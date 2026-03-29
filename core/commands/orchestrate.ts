@@ -1478,8 +1478,7 @@ export async function orchestrateLoop(
         externalReviews = processExternalReviews(
           ctx.projectRoot,
           externalReviews,
-          orch.config.reviewWipLimit,
-          orch.reviewWipCount,
+          orch.wipSlots,
           deps.externalReviewDeps,
         );
         // Persist external review state
@@ -1543,7 +1542,7 @@ export async function cmdOrchestrate(
   const {
     wipLimitOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, clickupListId, remoteFlag,
-    reviewWipLimit, reviewAutoFix, reviewExternal,
+    reviewAutoFix, reviewExternal,
     verifyMain, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewCreate, crewPort, crewName,
     bypassEnabled,
@@ -1716,7 +1715,6 @@ export async function cmdOrchestrate(
     mergeStrategy,
     bypassEnabled,
     verifyMain,
-    ...(reviewWipLimit !== undefined ? { reviewWipLimit } : {}),
     ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
   });
   for (const id of itemIds) {

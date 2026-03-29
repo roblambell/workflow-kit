@@ -2963,17 +2963,17 @@ describe("Orchestrator", () => {
     });
 
     it("all WIP states count toward limit", () => {
-      orch = new Orchestrator({ wipLimit: 7 });
+      orch = new Orchestrator({ wipLimit: 8 });
       const wipStates: OrchestratorItemState[] = [
         "launching", "implementing", "ci-pending",
-        "ci-passed", "ci-failed", "review-pending", "merging",
+        "ci-passed", "ci-failed", "reviewing", "review-pending", "merging",
       ];
       wipStates.forEach((state, i) => {
         orch.addItem(makeWorkItem(`W-1-${i + 1}`));
         orch.setState(`W-1-${i + 1}`, state);
       });
 
-      expect(orch.wipCount).toBe(7);
+      expect(orch.wipCount).toBe(8);
       expect(orch.wipSlots).toBe(0);
     });
 
@@ -5543,7 +5543,6 @@ describe("Orchestrator", () => {
     });
 
     it("DEFAULT_CONFIG has review defaults", () => {
-      expect(DEFAULT_CONFIG.reviewWipLimit).toBe(2);
       expect(DEFAULT_CONFIG.reviewAutoFix).toBe("off");
     });
 
@@ -5692,13 +5691,15 @@ describe("Orchestrator", () => {
       expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
     });
 
-    // ── reviewWipLimit ───────────────────────────────────────────────
+    // ── reviewing counts toward unified WIP ─────────────────────────
 
-    it("reviewing respects reviewWipLimit (no launch when slots full)", () => {
-      orch = new Orchestrator({ mergeStrategy: "auto", reviewWipLimit: 1 });
+    it("reviewing is counted in unified WIP (both can review when slots available)", () => {
+      // Both items in the pipeline; since reviewing is in WIP_STATES and ci-passed→reviewing
+      // is in-place (same WIP slot), both can enter reviewing without deadlock.
+      orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("R-7-1"));
       orch.addItem(makeWorkItem("R-7-2"));
-      orch.setState("R-7-1", "reviewing"); // occupies 1 review slot
+      orch.setState("R-7-1", "reviewing"); // occupies a WIP slot
       orch.getItem("R-7-1")!.prNumber = 42;
       orch.setState("R-7-2", "ci-pending");
       orch.getItem("R-7-2")!.prNumber = 43;
@@ -5710,13 +5711,14 @@ describe("Orchestrator", () => {
         ]),
       );
 
-      // R-7-2 should stay in ci-passed (not reviewing) because review slots are full
-      expect(orch.getItem("R-7-2")!.state).toBe("ci-passed");
-      expect(actions.filter((a) => a.type === "launch-review")).toHaveLength(0);
+      // R-7-2 enters reviewing via in-place transition (ci-pending→ci-passed→reviewing)
+      // No separate review slot limit blocks it -- reviewing shares the unified WIP pool.
+      expect(orch.getItem("R-7-2")!.state).toBe("reviewing");
+      expect(actions.filter((a) => a.type === "launch-review" && a.itemId === "R-7-2")).toHaveLength(1);
     });
 
-    it("reviewing WIP slot frees up when review completes", () => {
-      orch = new Orchestrator({ mergeStrategy: "auto", reviewWipLimit: 1 });
+    it("reviewing WIP slot is reused when review completes", () => {
+      orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("R-7-3"));
       orch.addItem(makeWorkItem("R-7-4"));
 
@@ -5739,23 +5741,21 @@ describe("Orchestrator", () => {
 
       // R-7-3 should chain through: reviewing → ci-passed → merging (reviewCompleted=true)
       expect(orch.getItem("R-7-3")!.state).toBe("merging");
-      // R-7-4: items are processed sequentially, R-7-3 freed its slot...
-      // but R-7-4 is processed in transitionItem as ci-passed (the handlePrLifecycle)
-      // which calls evaluateMerge which checks reviewWipSlots
-      // At this point R-7-3 is no longer in reviewing state, so reviewWipCount=0
+      // R-7-4 was in ci-passed; reviewing is an in-place transition (same WIP slot).
+      // R-7-3's WIP slot was freed (it is now merging) and R-7-4 reuses its own slot.
       expect(orch.getItem("R-7-4")!.state).toBe("reviewing");
       expect(actions.some((a) => a.type === "launch-review" && a.itemId === "R-7-4")).toBe(true);
     });
 
-    // ── reviewing does NOT count toward normal WIP limit ─────────────
+    // ── reviewing counts toward unified WIP limit (blocks new launches) ──
 
-    it("reviewing does NOT count toward normal WIP limit", () => {
+    it("reviewing counts toward unified WIP limit (blocks new launches)", () => {
       orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("R-8-1"));
       orch.addItem(makeWorkItem("R-8-2"));
       orch.addItem(makeWorkItem("R-8-3"));
 
-      orch.setState("R-8-1", "reviewing"); // should NOT count toward wipLimit
+      orch.setState("R-8-1", "reviewing"); // counts toward wipLimit (unified pool)
       orch.getItem("R-8-1")!.prNumber = 42;
       orch.setState("R-8-2", "implementing"); // counts as 1 WIP
       orch.setState("R-8-3", "ready");
@@ -5767,20 +5767,19 @@ describe("Orchestrator", () => {
         ]),
       );
 
-      // R-8-3 should be launched -- only 1 main WIP item, limit is 2
-      expect(orch.getItem("R-8-3")!.state).toBe("launching");
-      expect(actions.some((a) => a.type === "launch" && a.itemId === "R-8-3")).toBe(true);
+      // R-8-3 should NOT be launched -- wipCount=2 (reviewing + implementing), limit=2
+      expect(orch.getItem("R-8-3")!.state).toBe("ready");
+      expect(actions.some((a) => a.type === "launch" && a.itemId === "R-8-3")).toBe(false);
     });
 
-    it("wipCount does not include reviewing items", () => {
+    it("wipCount includes reviewing items", () => {
       orch = new Orchestrator({ wipLimit: 5 });
       orch.addItem(makeWorkItem("R-8-4"));
       orch.addItem(makeWorkItem("R-8-5"));
       orch.setState("R-8-4", "implementing");
       orch.setState("R-8-5", "reviewing");
 
-      expect(orch.wipCount).toBe(1); // only implementing counts
-      expect(orch.reviewWipCount).toBe(1); // reviewing is tracked separately
+      expect(orch.wipCount).toBe(2); // both implementing and reviewing count
     });
 
     // ── reviewCompleted resets on CI regression ──────────────────────
@@ -5862,10 +5861,10 @@ describe("Orchestrator", () => {
       expect(actions2.some((a) => a.type === "merge")).toBe(true);
     });
 
-    // ── review WIP tracking independence ─────────────────────────────
+    // ── reviewing counts in unified wipCount ─────────────────────────
 
-    it("reviewWipCount and reviewWipSlots track independently from main WIP", () => {
-      orch = new Orchestrator({ wipLimit: 3, reviewWipLimit: 2 });
+    it("reviewing counts in unified wipCount", () => {
+      orch = new Orchestrator({ wipLimit: 5 });
       orch.addItem(makeWorkItem("R-11-1"));
       orch.addItem(makeWorkItem("R-11-2"));
       orch.addItem(makeWorkItem("R-11-3"));
@@ -5878,10 +5877,8 @@ describe("Orchestrator", () => {
       orch.setState("R-11-4", "reviewing");
       orch.setState("R-11-5", "ready");
 
-      expect(orch.wipCount).toBe(2); // implementing + ci-pending
-      expect(orch.wipSlots).toBe(1); // 3 - 2
-      expect(orch.reviewWipCount).toBe(2); // 2 reviewing
-      expect(orch.reviewWipSlots).toBe(0); // 2 - 2
+      expect(orch.wipCount).toBe(4); // implementing + ci-pending + 2 reviewing
+      expect(orch.wipSlots).toBe(1); // 5 - 4
     });
 
     // ── reviewing stays reviewing when no outcome yet ────────────────
@@ -6142,7 +6139,7 @@ describe("Orchestrator", () => {
       }).not.toThrow();
     });
 
-    it("all WIP states still count correctly (reviewing excluded)", () => {
+    it("reviewing is now included in WIP states", () => {
       orch = new Orchestrator({ wipLimit: 10 });
       const wipStates: OrchestratorItemState[] = [
         "launching", "implementing", "ci-pending",
@@ -6152,12 +6149,11 @@ describe("Orchestrator", () => {
         orch.addItem(makeWorkItem(`WR-${i + 1}`));
         orch.setState(`WR-${i + 1}`, state);
       });
-      // Add reviewing item -- should NOT count
+      // Add reviewing item -- should count toward unified WIP
       orch.addItem(makeWorkItem("WR-8"));
       orch.setState("WR-8", "reviewing");
 
-      expect(orch.wipCount).toBe(7);
-      expect(orch.reviewWipCount).toBe(1);
+      expect(orch.wipCount).toBe(8); // reviewing is now included
     });
 
     // ── Commit status actions ─────────────────────────────────────────

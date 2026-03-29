@@ -378,11 +378,13 @@ describe("evaluateMerge", () => {
     expect(actions.some((a) => a.type === "merge")).toBe(false);
   });
 
-  it("review gate: respects reviewWipLimit", () => {
-    const orch = new Orchestrator({ mergeStrategy: "auto", reviewWipLimit: 1 });
+  it("review gate: ci-passed always transitions to reviewing (no separate review WIP limit)", () => {
+    // reviewing is in WIP_STATES; ci-passed→reviewing is an in-place transition
+    // (same WIP slot). No separate reviewWipLimit blocks it.
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.addItem(makeWorkItem("H-1-2"));
-    orch.setState("H-1-1", "reviewing"); // occupies 1 review slot
+    orch.setState("H-1-1", "reviewing"); // occupies a WIP slot
     orch.getItem("H-1-1")!.prNumber = 10;
     orch.setState("H-1-2", "ci-passed");
     orch.getItem("H-1-2")!.prNumber = 20;
@@ -394,9 +396,9 @@ describe("evaluateMerge", () => {
       ]),
     );
 
-    // H-1-2 should stay in ci-passed because review WIP is full
-    expect(orch.getItem("H-1-2")!.state).toBe("ci-passed");
-    expect(actions.filter((a) => a.type === "launch-review")).toHaveLength(0);
+    // H-1-2 should enter reviewing (in-place transition, no slot check needed)
+    expect(orch.getItem("H-1-2")!.state).toBe("reviewing");
+    expect(actions.filter((a) => a.type === "launch-review" && a.itemId === "H-1-2")).toHaveLength(1);
   });
 });
 

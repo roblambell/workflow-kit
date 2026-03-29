@@ -30,7 +30,6 @@ describe("scenario: stuck detection", () => {
       maxRetries: 1,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("S-1"));
@@ -81,7 +80,6 @@ describe("scenario: stuck detection", () => {
       maxRetries: 1,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("S-2"));
@@ -122,7 +120,6 @@ describe("scenario: stuck detection", () => {
       maxRetries: 1,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("S-3"));
@@ -173,7 +170,6 @@ describe("scenario: stuck detection", () => {
       maxRetries: 0, // no retries -- would go straight to stuck if threshold hit
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("S-4"));
@@ -225,7 +221,6 @@ describe("scenario: stuck detection", () => {
       maxRetries: 0,
       enableStacking: false,
       verifyMain: false,
-      reviewWipLimit: 0,
     });
 
     orch.addItem(makeWorkItem("S-5"));
