@@ -223,49 +223,81 @@ describe("claude profile buildLaunchCmd", () => {
 // ── buildLaunchCmd: opencode ──────────────────────────────────────────────────
 
 describe("opencode profile buildLaunchCmd", () => {
-  it("returns a cmd containing 'opencode'", () => {
+  it("returns a cmd pointing to a /tmp launcher script", () => {
+    const profile = getToolProfile("opencode");
+    const result = profile.buildLaunchCmd(stubOpts({ id: "H-X-1" }), stubDeps());
+    expect(result.cmd).toMatch(/^\/tmp\/nw-launch-H-X-1-\d+\.sh$/);
+  });
+
+  it("returns empty initialPrompt (prompt is embedded via --prompt)", () => {
     const profile = getToolProfile("opencode");
     const result = profile.buildLaunchCmd(stubOpts(), stubDeps());
-    expect(result.cmd).toContain("opencode");
+    expect(result.initialPrompt).toBe("");
   });
 
-  it("returns a cmd containing the agent name", () => {
+  it("reads the promptFile to embed in the launcher script", () => {
     const profile = getToolProfile("opencode");
-    const result = profile.buildLaunchCmd(stubOpts({ agentName: "ninthwave-reviewer" }), stubDeps());
-    expect(result.cmd).toContain("ninthwave-reviewer");
-  });
-
-  it("returns a cmd containing the workspace name via --title", () => {
-    const profile = getToolProfile("opencode");
-    const result = profile.buildLaunchCmd(stubOpts({ wsName: "My Title" }), stubDeps());
-    expect(result.cmd).toContain("--title");
-    expect(result.cmd).toContain("My Title");
-  });
-
-  it("reads the promptFile to build the initialPrompt", () => {
-    const profile = getToolProfile("opencode");
-    const deps = stubDeps("MY SYSTEM PROMPT");
+    const deps = stubDeps("OPENCODE PROMPT");
     const opts = stubOpts({ promptFile: "/some/.nw-prompt" });
     profile.buildLaunchCmd(opts, deps);
     expect(deps.readFileSync).toHaveBeenCalledWith("/some/.nw-prompt", "utf-8");
   });
 
-  it("includes prompt content in initialPrompt", () => {
+  it("writes the prompt data file with start instruction appended", () => {
     const profile = getToolProfile("opencode");
-    const result = profile.buildLaunchCmd(stubOpts(), stubDeps("HELLO PROMPT"));
-    expect(result.initialPrompt).toContain("HELLO PROMPT");
+    const deps = stubDeps("MY PROMPT");
+    profile.buildLaunchCmd(stubOpts({ id: "H-X-2" }), deps);
+
+    const calls = (deps.writeFileSync as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![0]).toMatch(/^\/tmp\/nw-prompt-H-X-2-\d+$/);
+    expect(calls[0]![1]).toContain("MY PROMPT");
+    expect(calls[0]![1]).toContain("Start implementing this work item now.");
   });
 
-  it("appends the start instruction to initialPrompt", () => {
+  it("writes the launcher script with correct opencode command", () => {
     const profile = getToolProfile("opencode");
-    const result = profile.buildLaunchCmd(stubOpts(), stubDeps("content"));
-    expect(result.initialPrompt).toContain("Start implementing this work item now.");
+    const deps = stubDeps();
+    profile.buildLaunchCmd(stubOpts({ id: "H-X-3", agentName: "ninthwave-implementer", wsName: "H-X-3 My Title" }), deps);
+
+    const calls = (deps.writeFileSync as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[1]![0]).toMatch(/^\/tmp\/nw-launch-H-X-3-\d+\.sh$/);
+    const script = calls[1]![1] as string;
+    expect(script).toContain("opencode --agent ninthwave-implementer --title 'H-X-3 My Title' --prompt");
+    expect(script).toContain("OPENCODE_PERMISSION");
   });
 
-  it("returns non-empty initialPrompt (prompt is sent post-launch)", () => {
+  it("sets OPENCODE_PERMISSION for auto-approval in launcher script", () => {
     const profile = getToolProfile("opencode");
-    const result = profile.buildLaunchCmd(stubOpts(), stubDeps());
-    expect(result.initialPrompt).not.toBe("");
+    const deps = stubDeps();
+    profile.buildLaunchCmd(stubOpts({ id: "H-X-5" }), deps);
+
+    const calls = (deps.writeFileSync as ReturnType<typeof vi.fn>).mock.calls;
+    const script = calls[1]![1] as string;
+    expect(script).toContain('"permission":"allow"');
+  });
+
+  it("calls chmod +x on the launcher script", () => {
+    const profile = getToolProfile("opencode");
+    const deps = stubDeps();
+    profile.buildLaunchCmd(stubOpts({ id: "H-X-4" }), deps);
+
+    const runCalls = (deps.run as ReturnType<typeof vi.fn>).mock.calls;
+    expect(runCalls[0]![0]).toBe("chmod");
+    expect(runCalls[0]![1]).toContain("+x");
+  });
+
+  it("launcher script path uses the work item id", () => {
+    const profile = getToolProfile("opencode");
+    const deps = stubDeps();
+    const result = profile.buildLaunchCmd(stubOpts({ id: "UNIQUE-ID" }), deps);
+    expect(result.cmd).toContain("UNIQUE-ID");
+  });
+
+  it("writes exactly 2 files (prompt data + launcher script)", () => {
+    const profile = getToolProfile("opencode");
+    const deps = stubDeps();
+    profile.buildLaunchCmd(stubOpts(), deps);
+    expect((deps.writeFileSync as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
   });
 });
 

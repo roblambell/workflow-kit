@@ -529,14 +529,14 @@ describe("launchSingleItem", () => {
     const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
-    // Use opencode so the full system prompt is sent via sendMessage (not --append-system-prompt)
+    // Use a custom tool so the full system prompt is sent via sendMessage (not embedded in cmd)
     await captureOutput(() => {
-      launchSingleItem(item, workDir, worktreeDir, repo, "opencode", mockMux, {
+      launchSingleItem(item, workDir, worktreeDir, repo, "my-custom-tool", mockMux, {
         baseBranch: "ninthwave/H-1-1",
       }, deps);
     });
 
-    // For opencode, the system prompt is included in the initial message sent via sendMessage
+    // For custom tools, the system prompt is included in the initial message sent via sendMessage
     const sendCall = mockMux.sendMessage.mock.calls[0];
     expect(sendCall).toBeDefined();
     const sentPrompt = sendCall[1] as string;
@@ -552,9 +552,9 @@ describe("launchSingleItem", () => {
     const items = parseWorkItems(workDir, worktreeDir);
     const item = items.find((i) => i.id === "M-CI-1")!;
 
-    // Use opencode so the full system prompt is sent via sendMessage
+    // Use a custom tool so the full system prompt is sent via sendMessage
     await captureOutput(() => {
-      launchSingleItem(item, workDir, worktreeDir, repo, "opencode", mockMux, {}, deps);
+      launchSingleItem(item, workDir, worktreeDir, repo, "my-custom-tool", mockMux, {}, deps);
     });
 
     // The system prompt should NOT contain BASE_BRANCH
@@ -1251,7 +1251,11 @@ describe("launchAiSession agentName", () => {
     const launchCall = mockMux.launchWorkspace.mock.calls[0];
     expect(launchCall).toBeDefined();
     const cmd = launchCall[1] as string;
-    expect(cmd).toContain("--agent ninthwave-reviewer");
+    // cmd is a launcher script path in /tmp
+    expect(cmd).toMatch(/^\/tmp\/nw-launch-.*\.sh$/);
+    const script = readFileSync(cmd, "utf-8");
+    expect(script).toContain("--agent ninthwave-reviewer");
+    expect(script).toContain("--prompt");
   });
 
   it("passes custom agentName to copilot command", () => {
@@ -1309,10 +1313,8 @@ describe("launchAiSession agentName", () => {
     expect(mockMux.sendMessage.mock.calls.length).toBe(0);
   });
 
-  it("opencode still uses sendMessage for post-launch prompt delivery", () => {
+  it("opencode embeds prompt via --prompt in launcher script (no post-launch send)", () => {
     const mockMux = createMockMux();
-    // Return processing indicators so sendWithReadyWait succeeds
-    mockMux.readScreen = vi.fn(() => "⠋ Thinking...\nLine2\nLine3\nLine4");
     const repo = setupTempRepo();
     const promptFile = join(repo, "prompt.txt");
     writeFileSync(promptFile, "implement the work item");
@@ -1320,12 +1322,15 @@ describe("launchAiSession agentName", () => {
     const wsRef = launchAiSession("opencode", repo, "T-1", "Test", promptFile, mockMux);
 
     expect(wsRef).not.toBeNull();
-    // OpenCode command should NOT include -- Start
+    // No message should be sent after launch -- prompt is embedded via --prompt
+    expect(mockMux.sendMessage.mock.calls.length).toBe(0);
+    // Launcher script should exist and contain --prompt
     const launchCall = mockMux.launchWorkspace.mock.calls[0];
     const cmd = launchCall[1] as string;
-    expect(cmd).not.toContain("-- Start");
-    // OpenCode should use sendMessage for post-launch delivery
-    expect(mockMux.sendMessage.mock.calls.length).toBeGreaterThan(0);
+    expect(cmd).toMatch(/^\/tmp\/nw-launch-.*\.sh$/);
+    const script = readFileSync(cmd, "utf-8");
+    expect(script).toContain("--prompt");
+    expect(script).toContain("OPENCODE_PERMISSION");
   });
 
   it("custom/unknown tool falls back to raw command launch with post-launch send", () => {
@@ -1471,9 +1476,9 @@ describe("launchReviewWorker", () => {
     const deps = createMockLaunchDeps();
     const repo = setupTempRepo();
 
-    // Use opencode so the system prompt is sent via sendMessage
+    // Use a custom tool so the system prompt is sent via sendMessage
     await captureOutput(() => {
-      launchReviewWorker(99, "H-RVW-2", "direct", repo, "opencode", mockMux, {}, deps);
+      launchReviewWorker(99, "H-RVW-2", "direct", repo, "my-custom-tool", mockMux, {}, deps);
     });
 
     const sendCall = mockMux.sendMessage.mock.calls[0];
@@ -1492,7 +1497,7 @@ describe("launchReviewWorker", () => {
     const repo = setupTempRepo();
 
     await captureOutput(() => {
-      launchReviewWorker(50, "H-RVW-3", "off", repo, "opencode", mockMux, {}, deps);
+      launchReviewWorker(50, "H-RVW-3", "off", repo, "my-custom-tool", mockMux, {}, deps);
     });
 
     const sendCall = mockMux.sendMessage.mock.calls[0];
@@ -1508,7 +1513,7 @@ describe("launchReviewWorker", () => {
     const repo = setupTempRepo();
 
     await captureOutput(() => {
-      launchReviewWorker(42, "H-RVW-1", "off", repo, "opencode", mockMux, {
+      launchReviewWorker(42, "H-RVW-1", "off", repo, "my-custom-tool", mockMux, {
         baseBranch: "ninthwave/H-DEP-1",
       }, deps);
     });
@@ -1525,7 +1530,7 @@ describe("launchReviewWorker", () => {
     const repo = setupTempRepo();
 
     await captureOutput(() => {
-      launchReviewWorker(42, "H-RVW-1", "off", repo, "opencode", mockMux, {}, deps);
+      launchReviewWorker(42, "H-RVW-1", "off", repo, "my-custom-tool", mockMux, {}, deps);
     });
 
     const sendCall = mockMux.sendMessage.mock.calls[0];

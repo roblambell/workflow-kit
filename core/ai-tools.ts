@@ -150,10 +150,24 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
     envDetection: [{ varName: "OPENCODE", value: "1" }],
     processNames: ["opencode"],
     buildLaunchCmd(opts, deps): LaunchCmdResult {
-      const cmd = `opencode --agent ${opts.agentName} --title '${opts.wsName}'`;
+      // Launcher script pattern (same as Copilot) to safely pass multi-KB prompts.
+      // Uses --prompt to seed the initial prompt into the TUI (auto-starts execution),
+      // and OPENCODE_PERMISSION to auto-approve all permission prompts.
+      const ts = Date.now();
+      const launcherScript = `/tmp/nw-launch-${opts.id}-${ts}.sh`;
+      const promptDataFile = `/tmp/nw-prompt-${opts.id}-${ts}`;
       const promptContent = deps.readFileSync(opts.promptFile, "utf-8");
-      const initialPrompt = `${promptContent}\n\nStart implementing this work item now.`;
-      return { cmd, initialPrompt };
+      deps.writeFileSync(promptDataFile, `${promptContent}\n\nStart implementing this work item now.`);
+      deps.writeFileSync(
+        launcherScript,
+        `#!/bin/bash\n` +
+          `PROMPT=$(cat '${promptDataFile}')\n` +
+          `rm -f '${promptDataFile}' '${launcherScript}'\n` +
+          `export OPENCODE_PERMISSION='{"$schema":"https://opencode.ai/config.json","permission":"allow"}'\n` +
+          `exec opencode --agent ${opts.agentName} --title '${opts.wsName}' --prompt "$PROMPT"\n`,
+      );
+      deps.run("chmod", ["+x", launcherScript]);
+      return { cmd: launcherScript, initialPrompt: "" };
     },
   },
   {
