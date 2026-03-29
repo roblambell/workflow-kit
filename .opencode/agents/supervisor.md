@@ -1,1 +1,0 @@
-../../agents/supervisor.md

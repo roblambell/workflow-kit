@@ -1,6 +1,6 @@
 // Structured metrics emitter for orchestrator runs.
-// Writes a JSON file per run to .ninthwave/analytics/ with timing,
-// item counts, CI retry counts, merge strategy, cost/token tracking, and tool info.
+// Collects timing, item counts, CI retry counts, merge strategy,
+// cost/token tracking, and tool info as structured log events.
 
 import type { OrchestratorItem, OrchestratorConfig } from "./orchestrator.ts";
 
@@ -316,97 +316,6 @@ export function collectRunMetrics(
     modelBreakdown: Object.keys(modelBreakdown).length > 0 ? modelBreakdown : undefined,
     detectionLatency,
   };
-}
-
-// ── File I/O dependencies (injectable for testing) ────────────────────
-
-export interface AnalyticsIO {
-  mkdirSync: (path: string, opts: { recursive: boolean }) => void;
-  writeFileSync: (path: string, data: string) => void;
-}
-
-// ── Metrics persistence ───────────────────────────────────────────────
-
-/**
- * Write a run metrics file to the analytics directory.
- * Creates the directory if it doesn't exist.
- * File is named by timestamp: `YYYY-MM-DDTHH-MM-SS-MMMZ.json`
- *
- * @param metrics - The run metrics to persist
- * @param analyticsDir - Path to `.ninthwave/analytics/`
- * @param io - Injectable file system operations
- * @returns The path of the written file
- */
-export function writeRunMetrics(
-  metrics: RunMetrics,
-  analyticsDir: string,
-  io: AnalyticsIO,
-): string {
-  io.mkdirSync(analyticsDir, { recursive: true });
-
-  // Convert ISO timestamp to a filesystem-safe name
-  const safeName = metrics.runTimestamp
-    .replace(/:/g, "-")
-    .replace(/\./g, "-");
-  const filePath = `${analyticsDir}/${safeName}.json`;
-
-  io.writeFileSync(filePath, JSON.stringify(metrics, null, 2) + "\n");
-
-  return filePath;
-}
-
-// ── Auto-commit analytics files ────────────────────────────────────────
-
-/** Injectable git operations for analytics commit (avoids vi.mock). */
-export interface AnalyticsCommitDeps {
-  hasChanges: (repoRoot: string, pathspec: string) => boolean;
-  gitAdd: (repoRoot: string, files: string[]) => void;
-  getStagedFiles: (repoRoot: string) => string[];
-  gitCommit: (repoRoot: string, message: string) => void;
-  gitReset: (repoRoot: string, files: string[]) => void;
-}
-
-export interface CommitAnalyticsResult {
-  committed: boolean;
-  reason?: "no_changes" | "dirty_index" | "committed";
-}
-
-/**
- * Auto-commit analytics files after an orchestration run.
- * Only stages files under the analytics path -- never commits unrelated changes.
- *
- * Safety: if non-analytics files are already staged in the index, skips the
- * commit and returns `dirty_index` to avoid accidentally including them.
- *
- * @param projectRoot - The git repo root
- * @param analyticsRelPath - Relative path to analytics dir (e.g., ".ninthwave/analytics")
- * @param deps - Injectable git operations
- */
-export function commitAnalyticsFiles(
-  projectRoot: string,
-  analyticsRelPath: string,
-  deps: AnalyticsCommitDeps,
-): CommitAnalyticsResult {
-  // 1. Check if analytics files have any changes
-  if (!deps.hasChanges(projectRoot, analyticsRelPath)) {
-    return { committed: false, reason: "no_changes" };
-  }
-
-  // 2. Stage analytics files only
-  deps.gitAdd(projectRoot, [analyticsRelPath]);
-
-  // 3. Safety check: ensure only analytics files are staged
-  const staged = deps.getStagedFiles(projectRoot);
-  const nonAnalytics = staged.filter((f) => !f.startsWith(analyticsRelPath));
-  if (nonAnalytics.length > 0) {
-    // Unstage analytics files we just added to avoid leaving them staged
-    deps.gitReset(projectRoot, [analyticsRelPath]);
-    return { committed: false, reason: "dirty_index" };
-  }
-
-  // 4. Commit
-  deps.gitCommit(projectRoot, "chore: update orchestration analytics");
-  return { committed: true, reason: "committed" };
 }
 
 /**

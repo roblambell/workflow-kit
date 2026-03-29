@@ -39,7 +39,7 @@ v0.1.0 shipped March 2026. Twelve grind cycles (0-11) have shipped since then. S
 
 **Crew mode foundation.** Multi-daemon coordination via WebSocket broker with creator-affinity scheduling -- items prefer the daemon whose human decomposed them, enabling easier steering and intervention. Affinity is a WIP-bounded preference, not a hard rule: when the creator's daemon hits its WIP limit, queued items overflow to other daemons. Review jobs are local-only and do not participate in crew claim scheduling. Mock broker for local testing, persistent daemon IDs, and reconnect state reconciliation. TUI displays crew status when connected.
 
-**Competitive positioning (Q1 2026).** Parallel AI coding exploded: Claude Code Agent Teams (16+ agents), Cursor (8 agents), Superset IDE (10+ agents), dmux, Conductor. All launch parallel sessions. None decompose work, order dependencies, manage CI lifecycle, or orchestrate merges. ninthwave's moat is the integrated pipeline, not session launching.
+**Competitive positioning.** Parallel AI coding exploded in early 2026: Claude Code Agent Teams (16+ agents), Cursor (8 agents), Superset IDE (10+ agents), dmux, Conductor. All launch parallel sessions. None decompose work, order dependencies, manage CI lifecycle, or orchestrate merges. ninthwave's moat is the integrated pipeline, not session launching.
 
 ## Principles
 
@@ -67,19 +67,25 @@ v0.1.0 shipped March 2026. Twelve grind cycles (0-11) have shipped since then. S
 
 Restructuring the CLI mental model: `nw` (no args) adapts to project state, `nw <ID>` launches items with topo-sort, `nw watch` replaces `nw orchestrate`, `nw init` absorbs `nw setup`. Grouped help, rich per-command help pages, and an interactive no-args picker.
 
-### C-beta. Remote Session Access -- Cloud Track
+### Ninthwave Cloud -- Reporting & Analytics
 
-Cloud-track items building on the shipped C-alpha foundation (localhost dashboard, token auth, SessionUrlProvider pattern, BYOT tunnels). Extends with managed infrastructure for teams that want zero-config remote access.
+The next evolution beyond the CLI. Ninthwave Cloud provides reporting and analytics for solo developers and engineering teams using AI coding orchestration.
 
-- **Cloud tunnel provider.** `ninthwave-cloud` implements `SessionUrlProvider` with managed Cloudflare tunnels. Auto-provisions on `--remote`, tears down on shutdown.
-- **Persistent domains.** `*.yourproject.ninthwave.sh` subdomains via Cloudflare Access. Authentication via team SSO.
-- **Interactive mode.** Full TUI or chat-optimized view for remote session interaction. Reviewer jumps into a session from the PR link, remote pair debugging with a stuck worker.
+- **DORA metrics.** Deployment frequency, lead time, change failure rate, and mean time to restore -- derived from the orchestrator's structured event stream.
+- **Model usage analysis.** Token consumption, cost attribution, and model performance comparisons across work items and sessions. Helps engineers evaluate and compare efficiency, quality, and value across models.
+- **Lead times and cycle efficiency.** Time from decomposition to merged PR, broken down by stage (queued, working, CI, review, merge). Identifies bottlenecks in the pipeline.
+- **Review and rebase patterns.** Feedback round-trip times, review pass rates, rebase frequency. Surfaces friction points in the PR lifecycle.
+- **Team insights.** Aggregate metrics across projects, teams, and time periods for engineering leaders. Answers: are we getting faster? Is quality holding? Where is the value?
 
-### D. Expand the Surface Area
+### Sandboxing -- strait
 
-- **External task backends.** Removed in 0.2.0, future plugin candidates. Previously shipped: GitHub Issues, ClickUp, Sentry, PagerDuty. May return as separate packages.
-- **Cross-repo maturity.** Monorepo workspace support (pnpm/yarn/turborepo). Dependency ordering across repos.
-- **Adaptive resource management.** Scaling beyond current memory-aware WIP limits.
+Worker sandboxing is a longer-term vision being developed as a separate project: [strait](https://github.com/ninthwave-sh/strait). Sandboxing was previously shipped in ninthwave (nono integration) and removed in the 0.2.0 scope reduction. strait will provide isolation that integrates with ninthwave's worker lifecycle.
+
+### Deferred
+
+- **External task backends.** GitHub Issues, ClickUp, Sentry, PagerDuty integrations were removed in 0.2.0. May return as separate packages or plugins.
+- **Remote session access.** Cloud tunnel provider and persistent domains. Foundation shipped; full implementation deferred.
+- **Cross-repo maturity and adaptive resource management.** Future extensions beyond current capabilities.
 
 ## Non-Goals
 
@@ -87,7 +93,7 @@ What ninthwave will not become:
 
 1. **Not an AI tool.** No LLM calls in the core pipeline. The daemon is deterministic TypeScript.
 
-2. **Not a compute platform.** ninthwave never owns your compute, your code, or your AI tool billing. The one exception: optional managed domain routing for remote session access.
+2. **Not a compute platform.** ninthwave never owns your compute, your code, or your AI tool billing.
 
 3. **Not a CI/CD replacement.** ninthwave monitors your CI pipeline. It doesn't run tests or build code.
 
@@ -101,20 +107,17 @@ What ninthwave will not become:
 
 ## Feature-Completeness
 
-ninthwave is feature-complete when:
+The CLI is approaching feature-completeness for the core orchestration pipeline. ninthwave is feature-complete when:
 
 - A developer goes from spec to merged, reviewed PRs in a single command cycle.
 - The pipeline handles all common failure modes automatically: CI failures, merge conflicts, review feedback, worker crashes, dependency ordering.
 - Works with 3+ AI coding tools (currently: Claude Code, OpenCode, Copilot CLI).
 - Extensible multiplexer support (ships with cmux, community can extend via Multiplexer interface).
-- Connects to 2+ task backends (previously shipped, removed in 0.2.0 -- may return as plugins).
-- Connects to 2+ observability/alerting backends (previously shipped, removed in 0.2.0 -- may return as plugins).
 - Post-merge CI verification completes the change lifecycle automatically.
 - Every decomposed work item has a test plan with tracked outcomes.
-- Workers run sandboxed by default (previously shipped, removed in 0.2.0 -- may return as a separate package).
-- Remote session links posted on PRs with auth (foundation shipped, full implementation deferred).
 - Resource management is automatic -- memory-aware WIP, no manual tuning.
 - Install to working parallel session in under 10 minutes.
+- Crew mode enables multi-daemon coordination for team workflows.
 
-After feature-completeness, ninthwave enters maintenance: bug fixes, compatibility updates, and community-driven extensions.
+After CLI feature-completeness, the focus shifts to Ninthwave Cloud: reporting, analytics, and team insights built on the orchestrator's structured event stream.
 
