@@ -245,6 +245,8 @@ export interface ExecutionContext {
   worktreeDir: string;
   workDir: string;
   aiTool: string;
+  /** GitHub name-with-owner (e.g. "org/repo") for constructing absolute URLs in PR comments. */
+  hubRepoNwo?: string;
 }
 
 /** External dependencies injected into executeAction. */

@@ -3335,10 +3335,19 @@ export async function cmdOrchestrate(
   // Detect AI tool
   const aiTool = detectAiTool();
 
-  const ctx: ExecutionContext = { projectRoot, worktreeDir, workDir, aiTool };
+  // Compute hub repo NWO once at startup for absolute agent-link URLs in PR comments
+  let hubRepoNwo = "";
+  try {
+    hubRepoNwo = getRepoOwner(projectRoot);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    warn(`Could not determine hub repo NWO: ${msg}`);
+  }
+
+  const ctx: ExecutionContext = { projectRoot, worktreeDir, workDir, aiTool, hubRepoNwo };
   const actionDeps: OrchestratorDeps = {
     launchSingleItem: (item, workDir, worktreeDir, projectRoot, aiTool, baseBranch, forceWorkerLaunch) =>
-      launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux, { baseBranch, forceWorkerLaunch }),
+      launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux, { baseBranch, forceWorkerLaunch, hubRepoNwo }),
     cleanStaleBranch: (item, projRoot) => {
       let targetRepo: string;
       try {
@@ -3364,7 +3373,7 @@ export async function cmdOrchestrate(
       log({ ts: new Date().toISOString(), level: "warn", event: "orchestrator_warning", message }),
     launchReview: (itemId, prNumber, repoRoot, implementerWorktreePath) => {
       const autoFix = orch.config.reviewAutoFix;
-      const result = launchReviewWorker(prNumber, itemId, autoFix, repoRoot, aiTool, mux, { implementerWorktreePath });
+      const result = launchReviewWorker(prNumber, itemId, autoFix, repoRoot, aiTool, mux, { implementerWorktreePath, hubRepoNwo });
       if (!result) return null;
       return { workspaceRef: result.workspaceRef, verdictPath: result.verdictPath };
     },
@@ -3379,7 +3388,7 @@ export async function cmdOrchestrate(
       return true;
     },
     launchRepair: (itemId, prNumber, repoRoot) => {
-      const result = launchRepairWorker(prNumber, itemId, repoRoot, aiTool, mux);
+      const result = launchRepairWorker(prNumber, itemId, repoRoot, aiTool, mux, { hubRepoNwo });
       if (!result) return null;
       return { workspaceRef: result.workspaceRef };
     },
@@ -3395,7 +3404,7 @@ export async function cmdOrchestrate(
     getMergeCommitSha: (repoRoot, prNumber) => ghGetMergeCommitSha(repoRoot, prNumber),
     checkCommitCI: (repoRoot, sha) => ghCheckCommitCI(repoRoot, sha),
     launchVerifier: (itemId, mergeCommitSha, repoRoot) => {
-      const result = launchVerifierWorker(itemId, mergeCommitSha, repoRoot, aiTool, mux);
+      const result = launchVerifierWorker(itemId, mergeCommitSha, repoRoot, aiTool, mux, { hubRepoNwo });
       if (!result) return null;
       return { worktreePath: result.worktreePath, workspaceRef: result.workspaceRef };
     },
@@ -3622,6 +3631,7 @@ export async function cmdOrchestrate(
           const extItemId = `ext-${prNumber}`;
           const result = launchReviewWorker(prNumber, extItemId, autoFix, repoRoot, aiTool, mux, {
             reviewType: "external",
+            hubRepoNwo,
           });
           if (!result) return null;
           return { workspaceRef: result.workspaceRef };

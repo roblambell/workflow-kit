@@ -54,6 +54,7 @@ const defaultCtx: ExecutionContext = {
   worktreeDir: "/tmp/test-project/.worktrees",
   workDir: "/tmp/test-project/.ninthwave/work",
   aiTool: "claude",
+  hubRepoNwo: "test-owner/test-repo",
 };
 
 /** Create mock deps with sensible defaults. Override individual fns as needed. */
