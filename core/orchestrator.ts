@@ -26,7 +26,6 @@ export type OrchestratorItemState =
   | "bootstrapping"
   | "launching"
   | "implementing"
-  | "pr-open"
   | "ci-pending"
   | "ci-passed"
   | "ci-failed"
@@ -122,7 +121,7 @@ export interface OrchestratorItem {
 }
 
 export interface OrchestratorConfig {
-  /** Max concurrent items in launching/implementing/pr-open/ci-pending/ci-passed/ci-failed/review-pending states. */
+  /** Max concurrent items in launching/implementing/ci-pending/ci-passed/ci-failed/review-pending states. */
   wipLimit: number;
   /** When to auto-merge: auto (CI pass, respects review gate + CHANGES_REQUESTED), manual (never auto-merge), bypass (admin override, skips branch protection human review). */
   mergeStrategy: MergeStrategy;
@@ -448,7 +447,6 @@ const WIP_STATES: Set<OrchestratorItemState> = new Set([
   "bootstrapping",
   "launching",
   "implementing",
-  "pr-open",
   "ci-pending",
   "ci-passed",
   "ci-failed",
@@ -762,7 +760,6 @@ export class Orchestrator {
         actions = this.handleImplementing(item, snap, now);
         break;
 
-      case "pr-open":
       case "ci-pending":
       case "ci-passed":
       case "ci-failed":
@@ -863,10 +860,10 @@ export class Orchestrator {
       this.transition(item, "merged", snap?.eventTime);
       return [{ type: "clean", itemId: item.id }];
     }
-    // If a PR appeared, move to pr-open
+    // If a PR appeared, transition directly to ci-pending and process CI status
     if (snap?.prNumber && snap.prState === "open") {
       item.prNumber = snap.prNumber;
-      this.transition(item, "pr-open", snap?.eventTime);
+      this.transition(item, "ci-pending", snap?.eventTime);
       const actions: Action[] = [];
       // Stacked PR just opened -- sync stack navigation comments on all PRs in the chain
       if (item.baseBranch) {
@@ -974,7 +971,7 @@ export class Orchestrator {
   }
 
   /**
-   * Unified handler for pr-open / ci-pending / ci-passed / ci-failed.
+   * Unified handler for ci-pending / ci-passed / ci-failed.
    * Chains transitions within a single cycle so CI pass → merge happens immediately.
    */
   private handlePrLifecycle(
@@ -1414,7 +1411,7 @@ export class Orchestrator {
 
   // ── States where PR comment relay is active ────────────────────
   private static readonly COMMENT_RELAY_STATES: Set<OrchestratorItemState> = new Set([
-    "pr-open", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing",
+    "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing",
   ]);
 
   /**

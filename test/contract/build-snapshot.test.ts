@@ -288,7 +288,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates CI pending status", () => {
       orch.addItem(makeWorkItem("D-3"));
-      orch.setState("D-3", "pr-open");
+      orch.setState("D-3", "ci-pending");
 
       fakeGh.createPR("ninthwave/D-3", "Item D-3");
       fakeGh.setCIStatus("ninthwave/D-3", "pending");
@@ -532,9 +532,9 @@ describe("buildSnapshot contract", () => {
       expect("lastHeartbeat" in item!).toBe(true);
     });
 
-    it("populates lastHeartbeat for pr-open state", () => {
+    it("populates lastHeartbeat for ci-pending state", () => {
       orch.addItem(makeWorkItem("G-7"));
-      orch.setState("G-7", "pr-open");
+      orch.setState("G-7", "ci-pending");
 
       const result = snap(orch);
 

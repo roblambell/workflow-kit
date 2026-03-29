@@ -545,10 +545,10 @@ export function buildSnapshot(
 ): PollSnapshot {
   const items: ItemSnapshot[] = [];
   const readyIds: string[] = [];
-  const heartbeatStates = new Set(["launching", "implementing", "ci-failed", "ci-pending", "ci-passed", "review-pending", "merging", "pr-open"]);
+  const heartbeatStates = new Set(["launching", "implementing", "ci-failed", "ci-pending", "ci-passed", "review-pending", "merging"]);
   let apiErrorCount = 0;
   /** States that require PR polling -- used to count API errors only for items that actually poll GitHub. */
-  const prPollStates = new Set(["implementing", "pr-open", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing", "repairing", "merging", "launching"]);
+  const prPollStates = new Set(["implementing", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing", "repairing", "merging", "launching"]);
 
   // Cache workspace listing once for all isWorkerAlive checks in this snapshot
   const cachedWorkspaces = mux.listWorkspaces();
@@ -702,7 +702,7 @@ export function buildSnapshot(
 
     // Fetch new trusted PR comments for items with open PRs in active states
     if (orchItem.prNumber && fetchComments) {
-      const commentRelayStates = new Set(["pr-open", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing"]);
+      const commentRelayStates = new Set(["ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing"]);
       if (commentRelayStates.has(orchItem.state)) {
         const since = orchItem.lastCommentCheck || orchItem.lastTransition;
         try {
@@ -741,9 +741,9 @@ export async function buildSnapshotAsync(
 ): Promise<PollSnapshot> {
   const items: ItemSnapshot[] = [];
   const readyIds: string[] = [];
-  const heartbeatStates = new Set(["launching", "implementing", "ci-failed", "ci-pending", "ci-passed", "review-pending", "merging", "pr-open"]);
+  const heartbeatStates = new Set(["launching", "implementing", "ci-failed", "ci-pending", "ci-passed", "review-pending", "merging"]);
   let apiErrorCount = 0;
-  const prPollStates = new Set(["implementing", "pr-open", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing", "repairing", "merging", "launching"]);
+  const prPollStates = new Set(["implementing", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing", "repairing", "merging", "launching"]);
 
   // Cache workspace listing once for all isWorkerAlive checks in this snapshot
   const cachedWorkspaces = mux.listWorkspaces();
@@ -886,7 +886,7 @@ export async function buildSnapshotAsync(
 
     // PR comments
     if (orchItem.prNumber && fetchComments) {
-      const commentRelayStates = new Set(["pr-open", "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing"]);
+      const commentRelayStates = new Set(["ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing"]);
       if (commentRelayStates.has(orchItem.state)) {
         const since = orchItem.lastCommentCheck || orchItem.lastTransition;
         try {
@@ -936,7 +936,7 @@ export function isWorkerAlive(item: OrchestratorItem, mux: Multiplexer): boolean
  * - Status pill (orchestrator-owned): lifecycle state text/icon/color
  * - Progress bar (worker-primary, orchestrator-fallback):
  *   - Worker-active states (implementing, launching, ci-failed): heartbeat pass-through, default 0%
- *   - Worker-idle states (ci-pending, pr-open, ci-passed, review-pending, merging): 100%, no label
+ *   - Worker-idle states (ci-pending, ci-passed, review-pending, merging): 100%, no label
  */
 export function syncWorkerDisplay(
   orch: Orchestrator,
@@ -949,7 +949,7 @@ export function syncWorkerDisplay(
   }
 
   const activeStates = new Set<OrchestratorItemState>([
-    "launching", "implementing", "pr-open", "ci-pending",
+    "launching", "implementing", "ci-pending",
     "ci-passed", "ci-failed", "review-pending", "merging",
   ]);
 

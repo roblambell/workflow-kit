@@ -527,7 +527,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-E3", "Conflict CI scenario"));
       orch.getItem("MRG-E3")!.reviewCompleted = true;
-      orch.setState("MRG-E3", "pr-open");
+      orch.setState("MRG-E3", "ci-pending");
       orch.getItem("MRG-E3")!.prNumber = 110;
       orch.getItem("MRG-E3")!.workspaceRef = "ws:e3";
 

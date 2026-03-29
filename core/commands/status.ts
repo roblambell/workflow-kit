@@ -152,7 +152,7 @@ function determineItemState(
   // Try gh for PR status
   const ghCheck = run("which", ["gh"]);
   if (ghCheck.exitCode !== 0) {
-    return { state: "pr-open", prNumber: null };
+    return { state: "ci-pending", prNumber: null };
   }
 
   // Check merged PRs
@@ -230,11 +230,11 @@ function determineItemState(
         if (reviewDecision === "APPROVED") {
           return { state: "review", prNumber: prNum };
         }
-        return { state: "pr-open", prNumber: prNum };
+        return { state: "ci-pending", prNumber: prNum };
       }
     }
 
-    return { state: "pr-open", prNumber: prNum };
+    return { state: "ci-pending", prNumber: prNum };
   }
 
   // Has remote but no PR

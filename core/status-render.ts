@@ -86,7 +86,6 @@ export type ItemState =
   | "ci-failed"
   | "ci-pending"
   | "review"
-  | "pr-open"
   | "in-progress"
   | "queued";
 
@@ -179,7 +178,6 @@ export function stateColor(state: ItemState): string {
     case "ci-pending":
       return CYAN;
     case "review":
-    case "pr-open":
       return BLUE;
     case "queued":
       return DIM;
@@ -205,8 +203,6 @@ export function stateIcon(state: ItemState): string {
       return "◌";
     case "review":
       return "●";
-    case "pr-open":
-      return "○";
     case "queued":
       return "·";
     default:
@@ -231,8 +227,6 @@ export function stateLabel(state: ItemState): string {
       return "CI Pending";
     case "review":
       return "In Review";
-    case "pr-open":
-      return "PR Open";
     case "in-progress":
       return "In Progress";
     case "queued":
@@ -500,7 +494,6 @@ export function formatBatchProgress(items: StatusItem[]): string {
   const order: ItemState[] = [
     "merged",
     "review",
-    "pr-open",
     "ci-pending",
     "rebasing",
     "bootstrapping",
@@ -1009,8 +1002,6 @@ export function mapDaemonItemState(orchState: string, flags?: { rebaseRequested?
     case "reviewing":
     case "ci-passed":
       return "review";
-    case "pr-open":
-      return "pr-open";
     case "queued":
     case "ready":
       return "queued";
@@ -1135,7 +1126,6 @@ export function formatUnifiedProgress(
   const order: ItemState[] = [
     "merged",
     "review",
-    "pr-open",
     "ci-pending",
     "rebasing",
     "bootstrapping",

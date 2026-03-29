@@ -16,7 +16,7 @@ import {
 } from "./helpers.ts";
 
 describe("scenario: full lifecycle", () => {
-  it("single item: queued -> ready -> launching -> implementing -> pr-open -> ci-passed -> merging -> merged -> done", async () => {
+  it("single item: queued -> ready -> launching -> implementing -> ci-pending -> ci-passed -> merging -> merged -> done", async () => {
     const fakeGh = new FakeGitHub();
     const fakeMux = new FakeMux();
 

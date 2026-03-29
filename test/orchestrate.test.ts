@@ -3420,7 +3420,7 @@ describe("orchestrateLoop watch mode", () => {
         const itemCycle = (itemCycles.get(item.id) ?? 0) + 1;
         itemCycles.set(item.id, itemCycle);
 
-        // Drive items through lifecycle: launching → implementing → pr-open → review → merge
+        // Drive items through lifecycle: launching → implementing → ci-pending → review → merge
         if (item.state === "launching") {
           items.push({ id: item.id, workerAlive: true });
         } else if (item.state === "implementing") {

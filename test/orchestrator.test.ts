@@ -237,9 +237,9 @@ describe("Orchestrator", () => {
     expect(actions.some((a) => a.type === "workspace-close" && a.itemId === "H-1-1")).toBe(true);
   });
 
-  // ── 5. Implementing → PR open ─────────────────────────────────
+  // ── 5. Implementing → ci-pending ─────────────────────────────────
 
-  it("transitions implementing to pr-open when PR appears", () => {
+  it("transitions implementing to ci-pending when PR appears", () => {
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.setState("H-1-1", "implementing");
@@ -250,7 +250,7 @@ describe("Orchestrator", () => {
       ]),
     );
 
-    expect(orch.getItem("H-1-1")!.state).toBe("pr-open");
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-pending");
     expect(orch.getItem("H-1-1")!.prNumber).toBe(42);
   });
 
@@ -316,7 +316,7 @@ describe("Orchestrator", () => {
     orch = new Orchestrator({ mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "pr-open");
+    orch.setState("H-1-1", "ci-pending");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
@@ -334,7 +334,7 @@ describe("Orchestrator", () => {
   it("CI fail triggers notify-ci-failure action", () => {
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "pr-open");
+    orch.setState("H-1-1", "ci-pending");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
@@ -350,7 +350,7 @@ describe("Orchestrator", () => {
   it("CI fail increments ciFailCount", () => {
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "pr-open");
+    orch.setState("H-1-1", "ci-pending");
 
     orch.processTransitions(
       snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open" }]),
@@ -596,7 +596,7 @@ describe("Orchestrator", () => {
     orch = new Orchestrator({ mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "pr-open");
+    orch.setState("H-1-1", "ci-pending");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
@@ -638,7 +638,7 @@ describe("Orchestrator", () => {
     orch = new Orchestrator({ mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "pr-open");
+    orch.setState("H-1-1", "ci-pending");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const actions = orch.processTransitions(
@@ -791,12 +791,12 @@ describe("Orchestrator", () => {
     expect(orch.getItem("H-1-1")!.state).toBe("ci-pending");
   });
 
-  // ── 20. pr-open → ci-pending ───────────────────────────────────
+  // ── 20. ci-pending stays ci-pending when CI is pending ─────────
 
-  it("pr-open transitions to ci-pending when CI starts", () => {
+  it("ci-pending stays ci-pending when CI is pending", () => {
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "pr-open");
+    orch.setState("H-1-1", "ci-pending");
 
     orch.processTransitions(
       snapshotWith([{ id: "H-1-1", ciStatus: "pending", prState: "open" }]),
@@ -837,8 +837,8 @@ describe("Orchestrator", () => {
         { id: "A-1-2", prNumber: 11, prState: "open", workerAlive: true },
       ]),
     );
-    expect(orch.getItem("A-1-1")!.state).toBe("pr-open");
-    expect(orch.getItem("A-1-2")!.state).toBe("pr-open");
+    expect(orch.getItem("A-1-1")!.state).toBe("ci-pending");
+    expect(orch.getItem("A-1-2")!.state).toBe("ci-pending");
 
     const cycle4 = orch.processTransitions(
       snapshotWith([
@@ -2018,7 +2018,7 @@ describe("Orchestrator", () => {
     // ── implementing ───────────────────────────────────────────────
 
     describe("implementing →", () => {
-      it("→ pr-open when PR appears (no CI status)", () => {
+      it("→ ci-pending when PR appears (no CI status)", () => {
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
         orch.setState("X-1-1", "implementing");
@@ -2026,7 +2026,7 @@ describe("Orchestrator", () => {
           snapshotWith([{ id: "X-1-1", prNumber: 10, prState: "open", workerAlive: true }]),
         );
         expect(orch.getItem("X-1-1")!.prNumber).toBe(10);
-        expect(orch.getItem("X-1-1")!.state).toBe("pr-open");
+        expect(orch.getItem("X-1-1")!.state).toBe("ci-pending");
       });
 
       it("→ launching (retry) when worker dies without PR and retries remain", () => {
@@ -2083,7 +2083,7 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("implementing");
       });
 
-      it("chains implementing → pr-open → merging when CI passes (auto)", () => {
+      it("chains implementing → ci-pending → merging when CI passes (auto)", () => {
         orch = new Orchestrator({ mergeStrategy: "auto" });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
@@ -2100,122 +2100,6 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("merging");
         expect(orch.getItem("X-1-1")!.prNumber).toBe(50);
         expect(actions.some((a) => a.type === "merge" && a.itemId === "X-1-1")).toBe(true);
-      });
-    });
-
-    // ── pr-open ────────────────────────────────────────────────────
-
-    describe("pr-open →", () => {
-      it("→ ci-pending when CI starts", () => {
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        orch.processTransitions(
-          snapshotWith([{ id: "X-1-1", ciStatus: "pending", prState: "open" }]),
-        );
-        expect(orch.getItem("X-1-1")!.state).toBe("ci-pending");
-      });
-
-      it("→ ci-failed when CI fails", () => {
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        const actions = orch.processTransitions(
-          snapshotWith([{ id: "X-1-1", ciStatus: "fail", prState: "open" }]),
-        );
-        expect(orch.getItem("X-1-1")!.state).toBe("ci-failed");
-        expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(true);
-      });
-
-      it("→ merging when CI passes (auto strategy)", () => {
-        orch = new Orchestrator({ mergeStrategy: "auto" });
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        orch.getItem("X-1-1")!.prNumber = 10;
-        const actions = orch.processTransitions(
-          snapshotWith([{ id: "X-1-1", ciStatus: "pass", prState: "open" }]),
-        );
-        expect(orch.getItem("X-1-1")!.state).toBe("merging");
-        expect(actions.some((a) => a.type === "merge")).toBe(true);
-      });
-
-      it("→ review-pending when CI passes (manual strategy, no approval)", () => {
-        orch = new Orchestrator({ mergeStrategy: "manual" });
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        orch.processTransitions(
-          snapshotWith([{ id: "X-1-1", ciStatus: "pass", prState: "open", reviewDecision: "" }]),
-        );
-        expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
-      });
-
-      it("→ review-pending when CI passes (manual strategy, even with approval)", () => {
-        orch = new Orchestrator({ mergeStrategy: "manual" });
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        orch.getItem("X-1-1")!.prNumber = 10;
-        const actions = orch.processTransitions(
-          snapshotWith([{ id: "X-1-1", ciStatus: "pass", prState: "open", reviewDecision: "APPROVED" }]),
-        );
-        // manual never auto-merges
-        expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
-        expect(actions.some((a) => a.type === "merge")).toBe(false);
-      });
-
-      it("→ review-pending when CI passes (manual strategy)", () => {
-        orch = new Orchestrator({ mergeStrategy: "manual" });
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        orch.processTransitions(
-          snapshotWith([{ id: "X-1-1", ciStatus: "pass", prState: "open" }]),
-        );
-        expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
-      });
-
-      it("→ review-pending when CI passes (auto strategy) with CHANGES_REQUESTED", () => {
-        orch = new Orchestrator({ mergeStrategy: "auto" });
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        orch.getItem("X-1-1")!.prNumber = 10;
-        const actions = orch.processTransitions(
-          snapshotWith([{ id: "X-1-1", ciStatus: "pass", prState: "open", reviewDecision: "CHANGES_REQUESTED" }]),
-        );
-        expect(orch.getItem("X-1-1")!.state).toBe("review-pending");
-        expect(actions.some((a) => a.type === "merge")).toBe(false);
-      });
-
-      it("→ merged when PR externally merged", () => {
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        const actions = orch.processTransitions(
-          snapshotWith([{ id: "X-1-1", prState: "merged" }]),
-        );
-        expect(orch.getItem("X-1-1")!.state).toBe("merged");
-        expect(actions.some((a) => a.type === "clean")).toBe(true);
-      });
-
-      it("stays pr-open when CI status unknown", () => {
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        orch.processTransitions(
-          snapshotWith([{ id: "X-1-1", ciStatus: "unknown", prState: "open" }]),
-        );
-        expect(orch.getItem("X-1-1")!.state).toBe("pr-open");
-      });
-
-      it("stays pr-open with no snapshot", () => {
-        orch.addItem(makeWorkItem("X-1-1"));
-        orch.getItem("X-1-1")!.reviewCompleted = true;
-        orch.setState("X-1-1", "pr-open");
-        orch.processTransitions(emptySnapshot());
-        expect(orch.getItem("X-1-1")!.state).toBe("pr-open");
       });
     });
 
@@ -2289,6 +2173,24 @@ describe("Orchestrator", () => {
         expect(orch.getItem("X-1-1")!.state).toBe("ci-failed");
         expect(actions.some((a) => a.type === "daemon-rebase")).toBe(true);
         expect(actions.some((a) => a.type === "notify-ci-failure")).toBe(false);
+      });
+
+      it("stays ci-pending when CI status unknown", () => {
+        orch.addItem(makeWorkItem("X-1-1"));
+        orch.getItem("X-1-1")!.reviewCompleted = true;
+        orch.setState("X-1-1", "ci-pending");
+        orch.processTransitions(
+          snapshotWith([{ id: "X-1-1", ciStatus: "unknown", prState: "open" }]),
+        );
+        expect(orch.getItem("X-1-1")!.state).toBe("ci-pending");
+      });
+
+      it("stays ci-pending with no snapshot", () => {
+        orch.addItem(makeWorkItem("X-1-1"));
+        orch.getItem("X-1-1")!.reviewCompleted = true;
+        orch.setState("X-1-1", "ci-pending");
+        orch.processTransitions(emptySnapshot());
+        expect(orch.getItem("X-1-1")!.state).toBe("ci-pending");
       });
     });
 
@@ -3061,9 +2963,9 @@ describe("Orchestrator", () => {
     });
 
     it("all WIP states count toward limit", () => {
-      orch = new Orchestrator({ wipLimit: 8 });
+      orch = new Orchestrator({ wipLimit: 7 });
       const wipStates: OrchestratorItemState[] = [
-        "launching", "implementing", "pr-open", "ci-pending",
+        "launching", "implementing", "ci-pending",
         "ci-passed", "ci-failed", "review-pending", "merging",
       ];
       wipStates.forEach((state, i) => {
@@ -3071,7 +2973,7 @@ describe("Orchestrator", () => {
         orch.setState(`W-1-${i + 1}`, state);
       });
 
-      expect(orch.wipCount).toBe(8);
+      expect(orch.wipCount).toBe(7);
       expect(orch.wipSlots).toBe(0);
     });
 
@@ -3237,7 +3139,7 @@ describe("Orchestrator", () => {
       orch.addItem(makeWorkItem("C-1-1"));
       orch.getItem("C-1-1")!.reviewCompleted = true;
       orch.setState("A-1-1", "launching");
-      orch.setState("B-1-1", "pr-open");
+      orch.setState("B-1-1", "ci-pending");
       orch.getItem("B-1-1")!.prNumber = 20;
       orch.setState("C-1-1", "merging");
 
@@ -3282,7 +3184,7 @@ describe("Orchestrator", () => {
       expect(actions.some((a) => a.type === "launch" && a.itemId === "A-1-1")).toBe(true);
     });
 
-    it("implementing → pr-open → ci-passed → merging chains in one tick", () => {
+    it("implementing → ci-pending → ci-passed → merging chains in one tick", () => {
       orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
@@ -3308,7 +3210,7 @@ describe("Orchestrator", () => {
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("B-1-1"));
       orch.getItem("B-1-1")!.reviewCompleted = true;
-      orch.setState("A-1-1", "pr-open");
+      orch.setState("A-1-1", "ci-pending");
       orch.getItem("A-1-1")!.prNumber = 10;
       orch.setState("B-1-1", "ci-pending");
       orch.getItem("B-1-1")!.prNumber = 20;
@@ -3336,7 +3238,7 @@ describe("Orchestrator", () => {
       orch.getItem("C-1-1")!.reviewCompleted = true;
       orch.setState("A-1-1", "merging");
       orch.getItem("A-1-1")!.prNumber = 10;
-      orch.setState("B-1-1", "pr-open");
+      orch.setState("B-1-1", "ci-pending");
       orch.getItem("B-1-1")!.prNumber = 20;
       // C-1-1 starts queued
 
@@ -3362,7 +3264,7 @@ describe("Orchestrator", () => {
   // ── Multi-step chaining from implementing ────────────────────────
 
   describe("Multi-step chaining from implementing through merge evaluation", () => {
-    it("auto strategy: implementing → pr-open → ci-passed → merging in one processTransitions call", () => {
+    it("auto strategy: implementing → ci-pending → ci-passed → merging in one processTransitions call", () => {
       orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("C-1-1"));
       orch.getItem("C-1-1")!.reviewCompleted = true;
@@ -3387,7 +3289,7 @@ describe("Orchestrator", () => {
       expect(mergeAction!.prNumber).toBe(100);
     });
 
-    it("manual strategy: implementing → pr-open → ci-passed → review-pending in one processTransitions call", () => {
+    it("manual strategy: implementing → ci-pending → ci-passed → review-pending in one processTransitions call", () => {
       orch = new Orchestrator({ mergeStrategy: "manual" });
       orch.addItem(makeWorkItem("C-2-1"));
       orch.getItem("C-2-1")!.reviewCompleted = true;
@@ -3410,7 +3312,7 @@ describe("Orchestrator", () => {
       expect(actions.some((a) => a.type === "merge")).toBe(false);
     });
 
-    it("pending CI: implementing → pr-open → ci-pending (stops, does not chain further)", () => {
+    it("pending CI: implementing → ci-pending (stops, does not chain further)", () => {
       orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("C-3-1"));
       orch.getItem("C-3-1")!.reviewCompleted = true;
@@ -3460,7 +3362,7 @@ describe("Orchestrator", () => {
         ]),
       );
 
-      // A-1-1: implementing → pr-open → ci-passed → merging (chained in one tick)
+      // A-1-1: implementing → ci-pending → ci-passed → merging (chained in one tick)
       // Priority merge queue: both are "high" priority, A-1-1 < B-1-1 lexicographically,
       // so only A-1-1 merges this cycle. B-1-1 reverts to ci-passed for next cycle.
       expect(orch2.getItem("A-1-1")!.state).toBe("merging");
@@ -3506,10 +3408,10 @@ describe("Orchestrator", () => {
       expect(orch2.getItem("A-1-1")!.state).toBe("merging");
     });
 
-    it("fresh orchestrator handles items in all 13 states without errors", () => {
+    it("fresh orchestrator handles items in all 12 states without errors", () => {
       const orch2 = new Orchestrator({ wipLimit: 10 });
       const allStates: OrchestratorItemState[] = [
-        "queued", "ready", "launching", "implementing", "pr-open",
+        "queued", "ready", "launching", "implementing",
         "ci-pending", "ci-passed", "ci-failed", "review-pending",
         "merging", "merged", "done", "stuck",
       ];
@@ -3519,7 +3421,7 @@ describe("Orchestrator", () => {
         orch2.setState(`R-1-${i + 1}`, state);
       });
 
-      expect(allStates).toHaveLength(13);
+      expect(allStates).toHaveLength(12);
       expect(() => {
         orch2.processTransitions(emptySnapshot());
       }).not.toThrow();
@@ -4041,7 +3943,7 @@ describe("Orchestrator", () => {
         now,
       );
 
-      // PR appeared → should transition to pr-open lifecycle, not stuck
+      // PR appeared → should transition to ci-pending, not stuck
       expect(orch.getItem("H-1-1")!.state).not.toBe("stuck");
       expect(orch.getItem("H-1-1")!.prNumber).toBe(42);
     });
@@ -4406,7 +4308,7 @@ describe("Orchestrator", () => {
       expect(updated.eventTime).toBeUndefined();
     });
 
-    it("records latency through implementing → pr-open → ci-passed → merging chain", () => {
+    it("records latency through implementing → ci-pending → ci-passed → merging chain", () => {
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.setState("H-1-1", "implementing");
@@ -4426,7 +4328,7 @@ describe("Orchestrator", () => {
       );
 
       const item = orch.getItem("H-1-1")!;
-      // Should have gone implementing → pr-open → ci-passed → merging (auto strategy)
+      // Should have gone implementing → ci-pending → ci-passed → merging (auto strategy)
       // eventTime is carried through the entire chain
       expect(item.state).toBe("merging");
       expect(item.eventTime).toBe(eventTime);
@@ -5190,7 +5092,7 @@ describe("Orchestrator", () => {
     });
 
     describe("stack comment sync on PR open", () => {
-      it("emits sync-stack-comments action when stacked item transitions to pr-open", () => {
+      it("emits sync-stack-comments action when stacked item transitions to ci-pending", () => {
         orch.addItem(makeWorkItem("A-1-1"));
         orch.getItem("A-1-1")!.reviewCompleted = true;
         orch.addItem(makeWorkItem("A-1-2", ["A-1-1"]));
@@ -5208,7 +5110,7 @@ describe("Orchestrator", () => {
           ]),
         );
 
-        expect(orch.getItem("A-1-2")!.state).toBe("pr-open");
+        expect(orch.getItem("A-1-2")!.state).toBe("ci-pending");
         const syncAction = actions.find(
           (a) => a.type === "sync-stack-comments" && a.itemId === "A-1-2",
         );
@@ -5228,7 +5130,7 @@ describe("Orchestrator", () => {
           ]),
         );
 
-        expect(orch.getItem("A-1-1")!.state).toBe("pr-open");
+        expect(orch.getItem("A-1-1")!.state).toBe("ci-pending");
         const syncAction = actions.find(
           (a) => a.type === "sync-stack-comments",
         );
@@ -5245,7 +5147,7 @@ describe("Orchestrator", () => {
         orch.setState("A-1-1", "ci-passed");
         orch.getItem("A-1-1")!.reviewCompleted = true;
         orch.getItem("A-1-1")!.prNumber = 10;
-        orch.setState("A-1-2", "pr-open");
+        orch.setState("A-1-2", "ci-pending");
         orch.getItem("A-1-2")!.prNumber = 11;
         orch.getItem("A-1-2")!.baseBranch = "ninthwave/A-1-1";
 
@@ -5268,7 +5170,7 @@ describe("Orchestrator", () => {
 
         orch.addItem(makeWorkItem("A-1-1"));
         orch.getItem("A-1-1")!.reviewCompleted = true;
-        orch.setState("A-1-1", "pr-open");
+        orch.setState("A-1-1", "ci-pending");
         orch.getItem("A-1-1")!.prNumber = 10;
         orch.getItem("A-1-1")!.baseBranch = "ninthwave/X-1-1";
 
@@ -5287,7 +5189,7 @@ describe("Orchestrator", () => {
 
         orch.addItem(makeWorkItem("A-1-1"));
         orch.getItem("A-1-1")!.reviewCompleted = true;
-        orch.setState("A-1-1", "pr-open");
+        orch.setState("A-1-1", "ci-pending");
         orch.getItem("A-1-1")!.prNumber = 10;
         // No baseBranch, no one stacked on it -- chain is [A-1-1] (length 1)
 
@@ -5627,7 +5529,7 @@ describe("Orchestrator", () => {
     it("ci-passed with reviewCompleted=true skips review gate and merges", () => {
       orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("R-1-1"));
-      orch.setState("R-1-1", "pr-open");
+      orch.setState("R-1-1", "ci-pending");
       orch.getItem("R-1-1")!.prNumber = 42;
       orch.getItem("R-1-1")!.reviewCompleted = true;
 
@@ -5650,7 +5552,7 @@ describe("Orchestrator", () => {
     it("ci-passed emits launch-review, transitions to reviewing", () => {
       orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("R-2-1"));
-      orch.setState("R-2-1", "pr-open");
+      orch.setState("R-2-1", "ci-pending");
       orch.getItem("R-2-1")!.prNumber = 42;
 
       const actions = orch.processTransitions(
@@ -5669,7 +5571,7 @@ describe("Orchestrator", () => {
     it("ci-passed works with manual merge strategy", () => {
       orch = new Orchestrator({ mergeStrategy: "manual" });
       orch.addItem(makeWorkItem("R-2-2"));
-      orch.setState("R-2-2", "pr-open");
+      orch.setState("R-2-2", "ci-pending");
       orch.getItem("R-2-2")!.prNumber = 43;
 
       const actions = orch.processTransitions(
@@ -5798,7 +5700,7 @@ describe("Orchestrator", () => {
       orch.addItem(makeWorkItem("R-7-2"));
       orch.setState("R-7-1", "reviewing"); // occupies 1 review slot
       orch.getItem("R-7-1")!.prNumber = 42;
-      orch.setState("R-7-2", "pr-open");
+      orch.setState("R-7-2", "ci-pending");
       orch.getItem("R-7-2")!.prNumber = 43;
 
       const actions = orch.processTransitions(
@@ -5941,7 +5843,7 @@ describe("Orchestrator", () => {
     it("reviewed merge strategy: full cycle ci-passed → reviewing → ci-passed → merging", () => {
       orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("R-10-1"));
-      orch.setState("R-10-1", "pr-open");
+      orch.setState("R-10-1", "ci-pending");
       orch.getItem("R-10-1")!.prNumber = 42;
 
       // CI passes → should enter reviewing (review gate fires)
@@ -6221,10 +6123,10 @@ describe("Orchestrator", () => {
 
     // ── All existing state count test updated for reviewing ──────────
 
-    it("fresh orchestrator handles all 14 states (including reviewing) without errors", () => {
+    it("fresh orchestrator handles all 13 states (including reviewing) without errors", () => {
       orch = new Orchestrator({ wipLimit: 10 });
       const allStates: OrchestratorItemState[] = [
-        "queued", "ready", "launching", "implementing", "pr-open",
+        "queued", "ready", "launching", "implementing",
         "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing",
         "merging", "merged", "done", "stuck",
       ];
@@ -6234,7 +6136,7 @@ describe("Orchestrator", () => {
         orch.setState(`RV-${i + 1}`, state);
       });
 
-      expect(allStates).toHaveLength(14);
+      expect(allStates).toHaveLength(13);
       expect(() => {
         orch.processTransitions(emptySnapshot());
       }).not.toThrow();
@@ -6243,7 +6145,7 @@ describe("Orchestrator", () => {
     it("all WIP states still count correctly (reviewing excluded)", () => {
       orch = new Orchestrator({ wipLimit: 10 });
       const wipStates: OrchestratorItemState[] = [
-        "launching", "implementing", "pr-open", "ci-pending",
+        "launching", "implementing", "ci-pending",
         "ci-passed", "ci-failed", "review-pending", "merging",
       ];
       wipStates.forEach((state, i) => {
@@ -6251,10 +6153,10 @@ describe("Orchestrator", () => {
         orch.setState(`WR-${i + 1}`, state);
       });
       // Add reviewing item -- should NOT count
-      orch.addItem(makeWorkItem("WR-9"));
-      orch.setState("WR-9", "reviewing");
+      orch.addItem(makeWorkItem("WR-8"));
+      orch.setState("WR-8", "reviewing");
 
-      expect(orch.wipCount).toBe(8);
+      expect(orch.wipCount).toBe(7);
       expect(orch.reviewWipCount).toBe(1);
     });
 
@@ -6263,7 +6165,7 @@ describe("Orchestrator", () => {
     it("entering reviewing emits set-commit-status pending", () => {
       orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("CS-1"));
-      orch.setState("CS-1", "pr-open");
+      orch.setState("CS-1", "ci-pending");
       orch.getItem("CS-1")!.prNumber = 42;
 
       const actions = orch.processTransitions(

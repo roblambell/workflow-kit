@@ -49,7 +49,6 @@ const ACTIVE_STATES = new Set([
   "ready",
   "launching",
   "implementing",
-  "pr-open",
   "ci-pending",
   "ci-passed",
   "ci-failed",

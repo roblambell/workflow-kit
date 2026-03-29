@@ -231,7 +231,7 @@ describe("scenario: stacking", () => {
         fakeGh.setMergeable("ninthwave/A-1", "MERGEABLE");
       }
 
-      // Cycle 4: B creates its stacked PR → next iteration: B implementing → pr-open with baseBranch → sync-stack-comments
+      // Cycle 4: B creates its stacked PR → next iteration: B implementing → ci-pending with baseBranch → sync-stack-comments
       if (cycle === 4) {
         fakeGh.createPR("ninthwave/B-1", "Item B-1");
         fakeGh.setCIStatus("ninthwave/B-1", "pending");

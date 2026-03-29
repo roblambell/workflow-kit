@@ -55,7 +55,6 @@ describe("stateColor", () => {
       "ci-failed",
       "ci-pending",
       "review",
-      "pr-open",
       "in-progress",
       "queued",
     ];
@@ -72,7 +71,6 @@ describe("stateLabel", () => {
     expect(stateLabel("ci-failed")).toBe("CI Failed");
     expect(stateLabel("ci-pending")).toBe("CI Pending");
     expect(stateLabel("review")).toBe("In Review");
-    expect(stateLabel("pr-open")).toBe("PR Open");
     expect(stateLabel("in-progress")).toBe("In Progress");
     expect(stateLabel("queued")).toBe("Queued");
   });
@@ -86,7 +84,6 @@ describe("stateIcon", () => {
       "ci-failed",
       "ci-pending",
       "review",
-      "pr-open",
       "in-progress",
       "queued",
     ];
@@ -115,10 +112,6 @@ describe("stateIcon", () => {
 
   it("returns filled circle for review", () => {
     expect(stateIcon("review")).toBe("●");
-  });
-
-  it("returns empty circle for pr-open", () => {
-    expect(stateIcon("pr-open")).toBe("○");
   });
 
   it("returns play triangle for in-progress", () => {
@@ -723,10 +716,6 @@ describe("mapDaemonItemState", () => {
     expect(mapDaemonItemState("ci-passed")).toBe("review");
   });
 
-  it("maps pr-open to pr-open", () => {
-    expect(mapDaemonItemState("pr-open")).toBe("pr-open");
-  });
-
   it("maps queued/ready to queued", () => {
     expect(mapDaemonItemState("queued")).toBe("queued");
     expect(mapDaemonItemState("ready")).toBe("queued");
@@ -1032,7 +1021,6 @@ describe("state indicators in formatItemRow", () => {
     { state: "ci-failed", icon: "✗", label: "CI Failed" },
     { state: "ci-pending", icon: "◌", label: "CI Pending" },
     { state: "review", icon: "●", label: "In Review" },
-    { state: "pr-open", icon: "○", label: "PR Open" },
     { state: "in-progress", icon: "▸", label: "In Progress" },
     { state: "queued", icon: "·", label: "Queued" },
   ];

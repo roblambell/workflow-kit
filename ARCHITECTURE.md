@@ -29,8 +29,7 @@ Each TODO item moves through a state machine defined in [`core/orchestrator.ts`]
 | `bootstrapping` | Cross-repo target being cloned/initialised |
 | `launching` | Worktree created, AI session being started |
 | `implementing` | Worker is active and coding |
-| `pr-open` | PR created; waiting for CI to start |
-| `ci-pending` | CI checks running |
+| `ci-pending` | PR created; CI checks running (or awaiting CI start) |
 | `ci-passed` | CI green; ready to merge (or review) |
 | `ci-failed` | CI red; worker being notified |
 | `review-pending` | Awaiting review worker launch |
@@ -51,8 +50,7 @@ stateDiagram-v2
     bootstrapping --> launching : repo ready
     bootstrapping --> stuck : clone failed
     launching --> implementing : worker started
-    implementing --> pr_open : PR detected
-    pr_open --> ci_pending : CI started
+    implementing --> ci_pending : PR detected
     ci_pending --> ci_passed : all checks green
     ci_pending --> ci_failed : check failure
     ci_passed --> reviewing : review worker launched
@@ -71,11 +69,11 @@ stateDiagram-v2
 
 ### WIP Limit
 
-States that count toward the WIP limit (see `OrchestratorConfig.wipLimit`): `launching`, `implementing`, `pr-open`, `ci-pending`, `ci-passed`, `ci-failed`, `review-pending`. Review workers have a separate limit (`reviewWipLimit`).
+States that count toward the WIP limit (see `OrchestratorConfig.wipLimit`): `launching`, `implementing`, `ci-pending`, `ci-passed`, `ci-failed`, `review-pending`. Review workers have a separate limit (`reviewWipLimit`).
 
 ### Stacked Launches
 
-When `enableStacking=true`, an item whose only in-flight dependency is in a "stackable" state (`implementing`, `pr-open`, `ci-pending`, `ci-passed`, `ci-failed`) can launch early against the dep's branch rather than waiting for the dep to fully merge. See `STACKABLE_STATES` in `core/orchestrator.ts`.
+When `enableStacking=true`, an item whose only in-flight dependency is in a "stackable" state (`implementing`, `ci-pending`, `ci-passed`, `ci-failed`) can launch early against the dep's branch rather than waiting for the dep to fully merge. See `STACKABLE_STATES` in `core/orchestrator.ts`.
 
 ---
 

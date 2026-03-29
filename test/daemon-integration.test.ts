@@ -195,7 +195,7 @@ describe("Daemon lifecycle: single-item flow", () => {
     deps = mockDeps();
   });
 
-  it("completes full lifecycle: queued → ready → launching → implementing → pr-open → ci-pending → ci-passed → merging → merged → done", () => {
+  it("completes full lifecycle: queued → ready → launching → implementing → ci-pending → ci-passed → merging → merged → done", () => {
     // Phase 1: Add item and promote to ready
     orch.addItem(makeWorkItem("LIFE-1"));
     orch.getItem("LIFE-1")!.reviewCompleted = true;
@@ -217,7 +217,7 @@ describe("Daemon lifecycle: single-item flow", () => {
     );
     expect(orch.getItem("LIFE-1")!.state).toBe("implementing");
 
-    // Phase 4: PR appears → pr-open, then CI starts → ci-pending
+    // Phase 4: PR appears → ci-pending
     actions = orch.processTransitions(
       snapshotWith([
         { id: "LIFE-1", prNumber: 42, prState: "open", ciStatus: "pending", workerAlive: true },
@@ -261,10 +261,10 @@ describe("Daemon lifecycle: single-item flow", () => {
   });
 
   it("transitions through ci-failed and recovery", () => {
-    // Setup: item in pr-open state with PR
+    // Setup: item in ci-pending state with PR
     orch.addItem(makeWorkItem("CIFAIL-1"));
     orch.getItem("CIFAIL-1")!.reviewCompleted = true;
-    orch.setState("CIFAIL-1", "pr-open");
+    orch.setState("CIFAIL-1", "ci-pending");
     orch.getItem("CIFAIL-1")!.prNumber = 50;
     orch.getItem("CIFAIL-1")!.workspaceRef = "workspace:2";
 
@@ -360,11 +360,11 @@ describe("Daemon lifecycle: stuck item and retry logic", () => {
     const orch = new Orchestrator({ wipLimit: 4, maxCiRetries: 1 });
     orch.addItem(makeWorkItem("STUCK-3"));
     orch.getItem("STUCK-3")!.reviewCompleted = true;
-    orch.setState("STUCK-3", "pr-open");
+    orch.setState("STUCK-3", "ci-pending");
     orch.getItem("STUCK-3")!.prNumber = 77;
     orch.getItem("STUCK-3")!.workspaceRef = "workspace:3";
 
-    // First CI failure: pr-open → ci-failed, ciFailCount = 1
+    // First CI failure: ci-pending → ci-failed, ciFailCount = 1
     orch.processTransitions(
       snapshotWith([{ id: "STUCK-3", ciStatus: "fail", prState: "open", isMergeable: true }]),
     );
@@ -639,7 +639,7 @@ describe("Daemon lifecycle: cleanup after merge", () => {
 
     orch.addItem(makeWorkItem("CLN-1"));
     orch.getItem("CLN-1")!.reviewCompleted = true;
-    orch.setState("CLN-1", "pr-open");
+    orch.setState("CLN-1", "ci-pending");
     orch.getItem("CLN-1")!.prNumber = 60;
     orch.getItem("CLN-1")!.workspaceRef = "workspace:5";
 

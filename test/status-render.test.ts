@@ -114,7 +114,7 @@ describe("stateColor", () => {
   it("returns a string for every valid state", () => {
     const states: ItemState[] = [
       "merged", "bootstrapping", "implementing", "rebasing", "ci-failed", "ci-pending",
-      "review", "pr-open", "in-progress", "queued",
+      "review", "in-progress", "queued",
     ];
     for (const state of states) {
       expect(typeof stateColor(state)).toBe("string");
@@ -139,7 +139,7 @@ describe("stateIcon", () => {
   it("returns a string for every valid state", () => {
     const states: ItemState[] = [
       "merged", "bootstrapping", "implementing", "rebasing", "ci-failed", "ci-pending",
-      "review", "pr-open", "in-progress", "queued",
+      "review", "in-progress", "queued",
     ];
     for (const state of states) {
       expect(typeof stateIcon(state)).toBe("string");
@@ -1079,7 +1079,7 @@ describe("mapDaemonItemState", () => {
     expect(mapDaemonItemState("merging")).toBe("ci-pending");
     expect(mapDaemonItemState("review-pending")).toBe("review");
     expect(mapDaemonItemState("ci-passed")).toBe("review");
-    expect(mapDaemonItemState("pr-open")).toBe("pr-open");
+    expect(mapDaemonItemState("pr-open")).toBe("in-progress");
     expect(mapDaemonItemState("queued")).toBe("queued");
     expect(mapDaemonItemState("ready")).toBe("queued");
   });
@@ -1259,7 +1259,7 @@ describe("orchestratorItemsToStatusItems", () => {
       ["merging", "ci-pending"],
       ["review-pending", "review"],
       ["ci-passed", "review"],
-      ["pr-open", "pr-open"],
+      ["pr-open", "in-progress"],
       ["queued", "queued"],
       ["ready", "queued"],
     ];

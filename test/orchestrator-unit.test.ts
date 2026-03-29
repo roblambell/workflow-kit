@@ -472,7 +472,7 @@ describe("setMergeStrategy", () => {
 // ── handleImplementing (tested via processTransitions) ───────────────
 
 describe("handleImplementing", () => {
-  it("transitions to pr-open when PR appears", () => {
+  it("transitions to ci-pending when PR appears", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -483,7 +483,7 @@ describe("handleImplementing", () => {
       NOW,
     );
 
-    expect(orch.getItem("H-1-1")!.state).toBe("pr-open");
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-pending");
     expect(orch.getItem("H-1-1")!.prNumber).toBe(42);
   });
 
@@ -613,7 +613,7 @@ describe("handleImplementing", () => {
       NOW,
     );
 
-    // Should chain through pr-open → ci-passed → merging in one cycle
+    // Should chain through ci-pending → ci-passed → merging in one cycle
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
     expect(actions.some((a) => a.type === "merge")).toBe(true);
   });
@@ -1082,7 +1082,7 @@ describe("full lifecycle: queued → done", () => {
     );
     expect(orch.getItem("H-1-1")!.state).toBe("implementing");
 
-    // Step 3: implementing → pr-open → ci-pending
+    // Step 3: implementing → ci-pending
     orch.processTransitions(
       snapshotWith([{ id: "H-1-1", prNumber: 42, prState: "open", ciStatus: "pending", workerAlive: true }]),
       NOW,
@@ -2583,7 +2583,6 @@ describe("processComments (via processTransitions)", () => {
 
   it("processes comments in all active PR states", () => {
     const prStates: Array<{ state: string; ciStatus: string }> = [
-      { state: "pr-open", ciStatus: "unknown" },
       { state: "ci-pending", ciStatus: "pending" },
       { state: "ci-passed", ciStatus: "pass" },
       { state: "ci-failed", ciStatus: "fail" },
@@ -3146,11 +3145,11 @@ describe("syncWorkerDisplay", () => {
     });
   });
 
-  it("calls setProgress with 1 and no label for pr-open state", () => {
+  it("calls setProgress with 1 and no label for ci-pending state", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "pr-open");
+    orch.setState("H-1-1", "ci-pending");
     orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
 
     const mux = createMockMux();
@@ -3902,7 +3901,7 @@ describe("onTransition callback", () => {
     orch.getItem("H-1-1")!.prNumber = 42;
     const prevCount = calls.length;
 
-    // Second poll: implementing → pr-open (PR appears with pending CI)
+    // Second poll: implementing → ci-pending (PR appears with pending CI)
     orch.processTransitions(
       snapshotWith([{ id: "H-1-1", prNumber: 42, ciStatus: "pending", prState: "open", workerAlive: true }]),
     );
@@ -3934,7 +3933,7 @@ describe("onTransition callback", () => {
       ]),
     );
 
-    // Should have a transition (e.g., implementing → ci-passed or pr-open)
+    // Should have a transition (e.g., implementing → ci-pending → ci-passed)
     expect(calls.length).toBeGreaterThanOrEqual(1);
     // The latency should reflect the ~5s gap between eventTime and detectedTime
     const lastCall = calls[calls.length - 1]!;
