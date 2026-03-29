@@ -1,0 +1,45 @@
+name: Feature Request
+description: Suggest a feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before requesting a feature, check [VISION.md](https://github.com/ninthwave-sh/ninthwave/blob/main/VISION.md)
+        for the roadmap and Non-Goals for what ninthwave will not become.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: "Describe the friction or limitation you're hitting"
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: "How would you solve it? Be specific about the user experience."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: "What workarounds or alternative approaches did you consider?"
+    validations:
+      required: false
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Area
+      options:
+        - CLI commands
+        - Orchestrator daemon
+        - Decomposition
+        - Skills
+        - Agents
+        - Install / setup
+        - Documentation
+        - Other
+    validations:
+      required: true

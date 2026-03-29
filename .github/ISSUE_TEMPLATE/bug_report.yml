@@ -1,0 +1,77 @@
+name: Bug Report
+description: Report a bug in ninthwave
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Fill out the sections below so we can reproduce it.
+  - type: input
+    id: version
+    attributes:
+      label: ninthwave version
+      description: "Run `nw version` and paste the output"
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - Homebrew
+        - Git clone (dev)
+        - install.sh
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: "Describe the bug. Include the command you ran and the output you saw."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: "Minimal steps to trigger the bug"
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: ai-tool
+    attributes:
+      label: AI tool
+      description: "Which AI coding tool were you using?"
+      options:
+        - Claude Code
+        - OpenCode
+        - Copilot CLI
+        - Other
+    validations:
+      required: false
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "Paste any relevant output from `nw logs` or terminal output"
+      render: shell
