@@ -8,7 +8,7 @@ import { join, basename } from "path";
 import { totalmem, freemem } from "os";
 import { execSync } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
-import { run } from "../shell.ts";
+import { run, runAsync } from "../shell.ts";
 import { getAvailableMemory } from "../memory.ts";
 import {
   Orchestrator,
@@ -30,7 +30,7 @@ import { launchSingleItem, launchReviewWorker, launchRepairWorker, launchVerifie
 import { cleanStaleBranchForReuse } from "../branch-cleanup.ts";
 import { detectAiTool } from "./run-items.ts";
 import { cleanSingleWorktree } from "./clean.ts";
-import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI } from "../gh.ts";
+import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrComments, fetchTrustedPrCommentsAsync, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI, checkCommitCIAsync as ghCheckCommitCIAsync, type PrComment } from "../gh.ts";
 import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush, daemonRebase } from "../git.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { reconcile } from "./reconcile.ts";
@@ -508,6 +508,25 @@ export function getWorktreeLastCommitTime(
   }
 }
 
+/**
+ * Async variant of getWorktreeLastCommitTime. Uses runAsync to yield to the
+ * event loop instead of blocking with Bun.spawnSync.
+ */
+export async function getWorktreeLastCommitTimeAsync(
+  projectRoot: string,
+  branchName: string,
+): Promise<string | null> {
+  try {
+    const result = await runAsync("git", ["log", "-1", "--format=%cI", `main..${branchName}`], {
+      cwd: projectRoot,
+    });
+    if (result.exitCode !== 0 || !result.stdout?.trim()) return null;
+    return result.stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
 // ── Snapshot building ──────────────────────────────────────────────
 
 /**
@@ -702,10 +721,11 @@ export function buildSnapshot(
 }
 
 /**
- * Async variant of buildSnapshot. Uses checkPrStatusAsync so each gh CLI
- * call yields to the event loop, keeping keyboard events responsive.
+ * Async variant of buildSnapshot. All subprocess calls (PR status, commit CI,
+ * PR comments, commit time) use async variants that yield to the event loop,
+ * keeping TUI keyboard input responsive during poll cycles.
  *
- * Same snapshot assembly logic as the sync version. Non-gh operations
+ * Same snapshot assembly logic as the sync version. Non-subprocess operations
  * (heartbeat reads, worker-alive checks) remain synchronous since they
  * are local filesystem/process operations that complete instantly.
  */
@@ -714,10 +734,10 @@ export async function buildSnapshotAsync(
   projectRoot: string,
   _worktreeDir: string,
   mux: Multiplexer = getMux(),
-  getLastCommitTime: (projectRoot: string, branchName: string) => string | null = getWorktreeLastCommitTime,
+  getLastCommitTime: (projectRoot: string, branchName: string) => string | null | Promise<string | null> = getWorktreeLastCommitTimeAsync,
   checkPr: (id: string, projectRoot: string) => Promise<string | null> = checkPrStatusAsync,
-  fetchComments?: (repoRoot: string, prNumber: number, since: string) => Array<{ body: string; author: string; createdAt: string }>,
-  checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending",
+  fetchComments?: (repoRoot: string, prNumber: number, since: string) => PrComment[] | Promise<PrComment[]>,
+  checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending" | Promise<"pass" | "fail" | "pending">,
 ): Promise<PollSnapshot> {
   const items: ItemSnapshot[] = [];
   const readyIds: string[] = [];
@@ -750,7 +770,7 @@ export async function buildSnapshotAsync(
       if (checkCommitCI) {
         const repoRoot = orchItem.resolvedRepoRoot ?? projectRoot;
         try {
-          snap.mergeCommitCIStatus = checkCommitCI(repoRoot, orchItem.mergeCommitSha);
+          snap.mergeCommitCIStatus = await checkCommitCI(repoRoot, orchItem.mergeCommitSha);
         } catch {
           // Non-fatal
         }
@@ -852,7 +872,7 @@ export async function buildSnapshotAsync(
     // Worker alive and commit freshness
     if (orchItem.state === "launching" || orchItem.state === "implementing" || orchItem.state === "ci-failed") {
       snap.workerAlive = isWorkerAliveWithCache(orchItem, cachedWorkspaces);
-      const commitTime = getLastCommitTime(repoRoot, `ninthwave/${orchItem.id}`);
+      const commitTime = await getLastCommitTime(repoRoot, `ninthwave/${orchItem.id}`);
       snap.lastCommitTime = commitTime;
       orchItem.lastCommitTime = commitTime;
     }
@@ -870,7 +890,7 @@ export async function buildSnapshotAsync(
       if (commentRelayStates.has(orchItem.state)) {
         const since = orchItem.lastCommentCheck || orchItem.lastTransition;
         try {
-          const comments = fetchComments(repoRoot, orchItem.prNumber, since);
+          const comments = await fetchComments(repoRoot, orchItem.prNumber, since);
           if (comments.length > 0) {
             snap.newComments = comments;
           }
@@ -3693,7 +3713,7 @@ export async function cmdOrchestrate(
   }
 
   const loopDeps: OrchestrateLoopDeps = {
-    buildSnapshot: (o, pr, wd) => buildSnapshotAsync(o, pr, wd, mux, undefined, undefined, fetchTrustedPrComments, ghCheckCommitCI),
+    buildSnapshot: (o, pr, wd) => buildSnapshotAsync(o, pr, wd, mux, undefined, undefined, fetchTrustedPrCommentsAsync, ghCheckCommitCIAsync),
     sleep: (ms) => interruptibleSleep(ms, abortController.signal),
     log,
     actionDeps,

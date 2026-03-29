@@ -220,6 +220,22 @@ export function getRepoOwner(repoRoot: string): string {
   return result.stdout;
 }
 
+/** Async variant of getRepoOwner. Uses ghInRepoAsync to avoid blocking. */
+async function getRepoOwnerAsync(repoRoot: string): Promise<string> {
+  const result = await ghInRepoAsync(repoRoot, [
+    "repo",
+    "view",
+    "--json",
+    "nameWithOwner",
+    "--jq",
+    ".nameWithOwner",
+  ]);
+  if (result.exitCode !== 0 || !result.stdout) {
+    throw new Error("Could not determine repository owner");
+  }
+  return result.stdout;
+}
+
 /** Merge a PR by number. Returns true on success, false on failure. */
 export function prMerge(
   repoRoot: string,
@@ -384,6 +400,65 @@ export function checkCommitCI(
   return "pass";
 }
 
+/**
+ * Async variant of checkCommitCI. Uses ghInRepoAsync to yield to the event
+ * loop instead of blocking with Bun.spawnSync. Same parsing logic as sync version.
+ */
+export async function checkCommitCIAsync(
+  repoRoot: string,
+  sha: string,
+): Promise<"pass" | "fail" | "pending"> {
+  let ownerRepo: string;
+  try {
+    ownerRepo = await getRepoOwnerAsync(repoRoot);
+  } catch {
+    return "pending";
+  }
+
+  const result = await ghInRepoAsync(repoRoot, [
+    "api",
+    `repos/${ownerRepo}/commits/${sha}/check-runs`,
+    "--jq",
+    "[.check_runs[] | {name: .name, status: .status, conclusion: .conclusion}]",
+  ]);
+
+  if (result.exitCode !== 0 || !result.stdout) {
+    return "pending";
+  }
+
+  let checkRuns: Array<{ name: string; status: string; conclusion: string | null }>;
+  try {
+    checkRuns = JSON.parse(result.stdout);
+  } catch {
+    return "pending";
+  }
+
+  // Filter out ignored checks (e.g., Ninthwave / Review to avoid self-referential loops)
+  const relevantRuns = checkRuns.filter((r) => !IGNORED_CHECK_NAMES.has(r.name));
+
+  if (relevantRuns.length === 0) {
+    return "pending"; // No checks found yet
+  }
+
+  let hasFailure = false;
+  let allCompleted = true;
+
+  for (const run of relevantRuns) {
+    if (run.status !== "completed") {
+      allCompleted = false;
+      continue;
+    }
+    const conclusion = run.conclusion?.toLowerCase();
+    if (conclusion === "failure" || conclusion === "cancelled" || conclusion === "timed_out" || conclusion === "action_required") {
+      hasFailure = true;
+    }
+  }
+
+  if (hasFailure) return "fail";
+  if (!allCompleted) return "pending";
+  return "pass";
+}
+
 // ── Commit Status API ───────────────────────────────────────────────
 
 /**
@@ -489,6 +564,58 @@ export function fetchTrustedPrComments(
     const raw = apiGet(repoRoot, `repos/${ownerRepo}/pulls/${prNumber}/comments`, jq);
     if (raw.trim()) {
       const parsed = JSON.parse(raw) as PrComment[];
+      comments.push(...parsed);
+    }
+  } catch { /* ignore */ }
+
+  return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/**
+ * Async variant of fetchTrustedPrComments. Uses ghInRepoAsync for both API
+ * calls to yield to the event loop instead of blocking with Bun.spawnSync.
+ * Same filtering and sorting logic as sync version.
+ */
+export async function fetchTrustedPrCommentsAsync(
+  repoRoot: string,
+  prNumber: number,
+  since: string,
+): Promise<PrComment[]> {
+  let ownerRepo: string;
+  try {
+    ownerRepo = await getRepoOwnerAsync(repoRoot);
+  } catch {
+    return [];
+  }
+
+  const comments: PrComment[] = [];
+  const trustedFilter = '(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")';
+  const jq = `[.[] | select(.created_at > "${since}" and ${trustedFilter}) | {body: .body, author: .user.login, authorAssociation: .author_association, createdAt: .created_at}]`;
+
+  // Issue comments (general PR comments)
+  try {
+    const result = await ghInRepoAsync(repoRoot, [
+      "api",
+      `repos/${ownerRepo}/issues/${prNumber}/comments`,
+      "--jq",
+      jq,
+    ]);
+    if (result.exitCode === 0 && result.stdout?.trim()) {
+      const parsed = JSON.parse(result.stdout) as PrComment[];
+      comments.push(...parsed);
+    }
+  } catch { /* ignore */ }
+
+  // Review comments (inline code comments)
+  try {
+    const result = await ghInRepoAsync(repoRoot, [
+      "api",
+      `repos/${ownerRepo}/pulls/${prNumber}/comments`,
+      "--jq",
+      jq,
+    ]);
+    if (result.exitCode === 0 && result.stdout?.trim()) {
+      const parsed = JSON.parse(result.stdout) as PrComment[];
       comments.push(...parsed);
     }
   } catch { /* ignore */ }

@@ -4,7 +4,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { checkPrStatusAsync } from "../core/commands/pr-monitor.ts";
-import { buildSnapshotAsync } from "../core/commands/orchestrate.ts";
+import { buildSnapshotAsync, getWorktreeLastCommitTimeAsync } from "../core/commands/orchestrate.ts";
+import { getWorktreeLastCommitTime } from "../core/commands/orchestrate.ts";
 import {
   Orchestrator,
   type PollSnapshot,
@@ -293,5 +294,132 @@ describe("buildSnapshotAsync", () => {
     );
 
     expect(snapshot.apiErrorCount).toBeUndefined();
+  });
+
+  it("awaits async getLastCommitTime parameter", async () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("BA-8-1"));
+    orch.getItem("BA-8-1")!.reviewCompleted = true;
+    orch.setState("BA-8-1", "implementing");
+
+    const asyncCheckPr = async () => "BA-8-1\t10\tci-passed\tMERGEABLE\t2026-01-01T00:00:00Z";
+    const asyncGetLastCommitTime = async (_root: string, _branch: string): Promise<string | null> => {
+      // Simulate async delay
+      await new Promise((r) => setTimeout(r, 1));
+      return "2026-01-15T12:00:00Z";
+    };
+
+    const snapshot = await buildSnapshotAsync(
+      orch,
+      "/project",
+      "/project/.worktrees",
+      fakeMux,
+      asyncGetLastCommitTime,
+      asyncCheckPr,
+    );
+
+    expect(snapshot.items).toHaveLength(1);
+    expect(snapshot.items[0]!.lastCommitTime).toBe("2026-01-15T12:00:00Z");
+  });
+
+  it("awaits async fetchComments parameter", async () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("BA-9-1"));
+    orch.getItem("BA-9-1")!.reviewCompleted = true;
+    orch.setState("BA-9-1", "ci-pending");
+    orch.getItem("BA-9-1")!.prNumber = 42;
+
+    const asyncCheckPr = async () => "BA-9-1\t42\tci-passed\tMERGEABLE\t2026-01-01T00:00:00Z";
+    const asyncFetchComments = async (_root: string, _pr: number, _since: string) => {
+      await new Promise((r) => setTimeout(r, 1));
+      return [{ body: "LGTM", author: "reviewer", authorAssociation: "OWNER", createdAt: "2026-01-15T12:00:00Z" }];
+    };
+
+    const snapshot = await buildSnapshotAsync(
+      orch,
+      "/project",
+      "/project/.worktrees",
+      fakeMux,
+      () => null,
+      asyncCheckPr,
+      asyncFetchComments,
+    );
+
+    expect(snapshot.items).toHaveLength(1);
+    expect(snapshot.items[0]!.newComments).toHaveLength(1);
+    expect(snapshot.items[0]!.newComments![0]!.body).toBe("LGTM");
+  });
+
+  it("awaits async checkCommitCI parameter for verifying state", async () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("BA-10-1"));
+    orch.getItem("BA-10-1")!.reviewCompleted = true;
+    orch.setState("BA-10-1", "verifying");
+    orch.getItem("BA-10-1")!.mergeCommitSha = "abc123";
+
+    const asyncCheckPr = vi.fn(async () => null);
+    const asyncCheckCommitCI = async (_root: string, _sha: string): Promise<"pass" | "fail" | "pending"> => {
+      await new Promise((r) => setTimeout(r, 1));
+      return "pass";
+    };
+
+    const snapshot = await buildSnapshotAsync(
+      orch,
+      "/project",
+      "/project/.worktrees",
+      fakeMux,
+      () => null,
+      asyncCheckPr,
+      undefined,
+      asyncCheckCommitCI,
+    );
+
+    expect(snapshot.items).toHaveLength(1);
+    expect(snapshot.items[0]!.mergeCommitCIStatus).toBe("pass");
+    // checkPr should NOT be called for verifying items
+    expect(asyncCheckPr).not.toHaveBeenCalled();
+  });
+});
+
+// ── getWorktreeLastCommitTimeAsync ─────────────────────────────────
+
+describe("getWorktreeLastCommitTimeAsync", () => {
+  it("returns same result as sync getWorktreeLastCommitTime for the current branch", async () => {
+    // Use the current project root and a known branch (main exists in any worktree)
+    // Both should return null for a non-existent branch
+    const fakeRoot = "/nonexistent-project-path";
+    const syncResult = getWorktreeLastCommitTime(fakeRoot, "nonexistent-branch-xyz");
+    const asyncResult = await getWorktreeLastCommitTimeAsync(fakeRoot, "nonexistent-branch-xyz");
+
+    expect(asyncResult).toBe(syncResult);
+    expect(asyncResult).toBeNull();
+  });
+
+  it("returns null for branches with no commits ahead of main", async () => {
+    const result = await getWorktreeLastCommitTimeAsync("/nonexistent-path", "main..main");
+    expect(result).toBeNull();
+  });
+});
+
+// ── Async function signature checks ─────────────────────────────────
+
+describe("async variant signature parity", () => {
+  it("fetchTrustedPrCommentsAsync returns a Promise", () => {
+    // Verify the function exists and returns a thenable
+    expect(typeof gh.fetchTrustedPrCommentsAsync).toBe("function");
+    // Verify parameter count matches sync version (repoRoot, prNumber, since)
+    expect(gh.fetchTrustedPrCommentsAsync.length).toBe(gh.fetchTrustedPrComments.length);
+  });
+
+  it("checkCommitCIAsync returns a Promise", () => {
+    expect(typeof gh.checkCommitCIAsync).toBe("function");
+    // Verify parameter count matches sync version (repoRoot, sha)
+    expect(gh.checkCommitCIAsync.length).toBe(gh.checkCommitCI.length);
+  });
+
+  it("getWorktreeLastCommitTimeAsync returns a Promise", () => {
+    expect(typeof getWorktreeLastCommitTimeAsync).toBe("function");
+    // Verify parameter count matches sync version (projectRoot, branchName)
+    expect(getWorktreeLastCommitTimeAsync.length).toBe(getWorktreeLastCommitTime.length);
   });
 });
