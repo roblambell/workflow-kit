@@ -1,0 +1,35 @@
+YOUR_TODO_ID: L-ER-1
+YOUR_PARTITION: 1
+PROJECT_ROOT: /Users/roblambell/code/ninthwave/.ninthwave/.worktrees/ninthwave-L-ER-1
+HUB_ROOT: /Users/roblambell/code/ninthwave
+IS_HUB_LOCAL: true
+HUB_REPO_NWO: ninthwave-sh/ninthwave
+
+# Fix: Remaining low-priority production fixes (L-ER-1)
+
+**Priority:** Low
+**Source:** Engineering review R3-F13, R2-F14, R4-F2, R4-F5
+**Depends on:** H-ER-10
+**Domain:** orchestrator
+
+Four small fixes across different modules, applied after the orchestrator decomposition:
+
+1. **Add workspace close to cleanSingleWorktree** (~10 LOC in `core/commands/clean.ts`): Add an optional `Multiplexer` parameter to `cleanSingleWorktree()`. When provided, call `closeWorkspacesForIds(new Set([id]), mux)` (best-effort, wrapped in try/catch) before removing the worktree. Currently, cleanup removes the worktree and branches but leaves the cmux workspace running as an orphaned terminal session.
+
+2. **Rename setState to hydrateState** (~10 LOC in `core/orchestrator.ts`): Rename the public `setState()` method (lines ~581-586) to `hydrateState()` to signal its intended use (state restoration from disk, not runtime transitions). This method bypasses `transition()`'s flag management (rebaseRequested, reviewCompleted, ciFailureNotified resets, telemetry, onTransition callbacks). The rename prevents accidental misuse for runtime state changes.
+
+3. **Lock writePid cleanup on failure** (~10 LOC in `core/lock.ts`): In `acquireLock()`, add a `finally` block (or catch) that removes the lock directory if `writePid()` throws (e.g., disk full). Currently, a throw from `writePid` leaves an empty directory with no PID file, which `isLockStale()` correctly detects as stale -- but the cleanup is unnecessary overhead on the next lock attempt.
+
+4. **Strengthen prTitleMatchesWorkItem with branch name** (~15 LOC in `core/work-item-files.ts`): In `prTitleMatchesWorkItem()`, add an optional `branchName` parameter. When provided, check if the branch matches `ninthwave/<todoId>` as the primary discriminator, falling back to title matching only for collision detection. The branch name is a stronger signal than the title since workers always create branches with the `ninthwave/` prefix. Update callers in `orchestrate.ts` and `reconcile.ts` to pass the branch name when available.
+
+**Test plan:**
+- Test `cleanSingleWorktree` with mux parameter: verify workspace close is called
+- Test `cleanSingleWorktree` without mux parameter: verify backward compatibility
+- Grep for `setState(` to update all call sites to `hydrateState(`
+- Test lock cleanup: verify directory is removed when writePid throws
+- Test `prTitleMatchesWorkItem` with branch name: verify branch match takes precedence over title
+- Run `bun test test/` to confirm no regressions
+
+Acceptance: Cleaned worktrees also close their workspaces. `setState` is renamed to `hydrateState`. Lock cleanup handles writePid failures. PR merge detection uses branch name as primary signal. `bun test test/` passes.
+
+Key files: `core/commands/clean.ts:253`, `core/orchestrator.ts:581`, `core/lock.ts:77`, `core/work-item-files.ts`

@@ -272,6 +272,7 @@ export function cmdClean(
 
 /**
  * Remove a single worktree and all associated resources (branches, partition, index entry).
+ * When `mux` is provided, also closes the cmux workspace for this item (best-effort).
  * Returns true if the worktree was found and cleaned, false otherwise.
  */
 export function cleanSingleWorktree(
@@ -279,7 +280,17 @@ export function cleanSingleWorktree(
   worktreeDir: string,
   projectRoot: string,
   deps: CleanDeps = defaultCleanDeps,
+  mux?: Multiplexer,
 ): boolean {
+  // Best-effort workspace close before removing the worktree
+  if (mux) {
+    try {
+      closeWorkspacesForIds(new Set([id]), mux);
+    } catch {
+      // best-effort: workspace may already be closed
+    }
+  }
+
   const branch = `ninthwave/${id}`;
   const partitionDir = join(worktreeDir, ".partitions");
   const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
