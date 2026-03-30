@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.5] - 2026-03-30
+
+### Fixed
+- detect cmux via app path, add tmux to prerequisites, prompt for AI tool dirs in init
+
 ## [0.3.4] - 2026-03-30
 
 ### Added
