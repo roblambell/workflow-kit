@@ -10,6 +10,7 @@ import { execSync } from "node:child_process";
 import { getAvailableMemory } from "../memory.ts";
 import {
   Orchestrator,
+  DEFAULT_CONFIG,
   calculateMemoryWipLimit,
   statusDisplayForState,
   type Action,
@@ -201,13 +202,21 @@ export function detectTuiMode(isDaemonChild: boolean, jsonFlag: boolean, isTTY: 
 export function orchestratorItemsToStatusItems(
   items: OrchestratorItem[],
   remoteItemIds?: Set<string>,
+  maxTimeoutExtensions: number = DEFAULT_CONFIG.maxTimeoutExtensions,
 ): StatusItem[] {
+  const now = Date.now();
   return items.map((item) => ({
     id: item.id,
     title: item.workItem.title,
     state: remoteItemIds?.has(item.id) ? "implementing" : mapDaemonItemState(item.state),
     prNumber: item.prNumber ?? null,
-    ageMs: Date.now() - new Date(item.lastTransition).getTime(),
+    ageMs: now - new Date(item.lastTransition).getTime(),
+    timeoutRemainingMs: item.timeoutDeadline
+      ? Math.max(0, new Date(item.timeoutDeadline).getTime() - now)
+      : undefined,
+    timeoutExtensions: item.timeoutDeadline
+      ? `${item.timeoutExtensionCount ?? 0}/${maxTimeoutExtensions}`
+      : undefined,
     repoLabel: item.resolvedRepoRoot ? basename(item.resolvedRepoRoot) : "",
     failureReason: item.failureReason,
     dependencies: item.workItem.dependencies ?? [],
@@ -237,8 +246,9 @@ export function renderTuiFrame(
   scrollOffset: number = 0,
   remoteItemIds?: Set<string>,
   sessionCode?: string,
+  maxTimeoutExtensions: number = DEFAULT_CONFIG.maxTimeoutExtensions,
 ): void {
-  const statusItems = orchestratorItemsToStatusItems(items, remoteItemIds);
+  const statusItems = orchestratorItemsToStatusItems(items, remoteItemIds, maxTimeoutExtensions);
   const termWidth = getTerminalWidth();
   const termRows = getTerminalHeight();
 
@@ -274,8 +284,9 @@ export function renderTuiPanelFrame(
   tuiState: TuiState,
   write: (s: string) => void = (s) => process.stdout.write(s),
   remoteItemIds?: Set<string>,
+  maxTimeoutExtensions: number = DEFAULT_CONFIG.maxTimeoutExtensions,
 ): void {
-  const statusItems = orchestratorItemsToStatusItems(items, remoteItemIds);
+  const statusItems = orchestratorItemsToStatusItems(items, remoteItemIds, maxTimeoutExtensions);
   const termWidth = getTerminalWidth();
   const termRows = getTerminalHeight();
 
@@ -1970,6 +1981,7 @@ export async function cmdOrchestrate(
     bypassEnabled,
     fixForward,
     skipReview,
+    ...(tuiMode ? {} : { gracePeriodMs: 0 }),
     ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
   });
   for (const id of itemIds) {
@@ -2334,14 +2346,15 @@ export async function cmdOrchestrate(
     detailItemId: null,
     savedLogScrollOffset: 0,
     getSelectedItemId: (index: number) => {
-      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemIds());
+      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemIds(), orch.config.maxTimeoutExtensions);
       const nonQueued = items.filter((i) => i.state !== "queued");
       return nonQueued[index]?.id;
     },
     getItemCount: () => {
-      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemIds());
+      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemIds(), orch.config.maxTimeoutExtensions);
       return items.filter((i) => i.state !== "queued").length;
     },
+    onExtendTimeout: (itemId) => orch.extendTimeout(itemId),
     onStrategyChange: (strategy) => {
       orch.setMergeStrategy(strategy);
     },
@@ -2352,7 +2365,7 @@ export async function cmdOrchestrate(
     onUpdate: () => {
       if (tuiMode) {
         try {
-          renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, getRemoteItemIds());
+          renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, getRemoteItemIds(), orch.config.maxTimeoutExtensions);
         } catch {
           // Non-fatal
         }
@@ -2401,7 +2414,7 @@ export async function cmdOrchestrate(
         }
       }
       try {
-        renderTuiPanelFrame(items, wipLimit, tuiState, undefined, getRemoteItemIds());
+        renderTuiPanelFrame(items, wipLimit, tuiState, undefined, getRemoteItemIds(), orch.config.maxTimeoutExtensions);
       } catch {
         // Non-fatal -- TUI render failure shouldn't block the orchestrator
       }

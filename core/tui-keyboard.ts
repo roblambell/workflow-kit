@@ -107,6 +107,8 @@ export interface TuiState {
   onUpdate?: () => void;
   /** Resolve item ID at the given index in the visible item list. */
   getSelectedItemId?: (index: number) => string | undefined;
+  /** Extend timeout for the currently selected item in grace period. */
+  onExtendTimeout?: (itemId: string) => boolean;
   /** Get total number of items for clamping selectedIndex. */
   getItemCount?: () => number;
   /** Session code (if connected to ninthwave.sh). Shown in help overlay. */
@@ -216,6 +218,16 @@ export function setupKeyboardShortcuts(
       case "d":
         tuiState.viewOptions.showBlockerDetail = !tuiState.viewOptions.showBlockerDetail;
         break;
+      case "x": {
+        if (tuiState.showHelp || tuiState.detailItemId) {
+          handled = false;
+          break;
+        }
+        const selIdx = tuiState.selectedIndex ?? 0;
+        const itemId = tuiState.getSelectedItemId?.(selIdx);
+        handled = itemId ? (tuiState.onExtendTimeout?.(itemId) ?? false) : false;
+        break;
+      }
       case "\r": // Enter -- open detail panel for selected item
       case "i": { // i -- open detail panel for selected item
         const selIdx = tuiState.selectedIndex ?? 0;

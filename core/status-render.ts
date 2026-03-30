@@ -95,6 +95,10 @@ export interface StatusItem {
   state: ItemState;
   prNumber: number | null;
   ageMs: number; // milliseconds since worktree created
+  /** Countdown remaining during timeout grace period. */
+  timeoutRemainingMs?: number;
+  /** Timeout extension counter as "N/M" during active grace period. */
+  timeoutExtensions?: string;
   repoLabel: string;
   /** Descriptive reason for failure, displayed alongside ci-failed/stuck states. */
   failureReason?: string;
@@ -308,6 +312,23 @@ export function formatAge(ms: number): string {
   return "<1m";
 }
 
+/** Format milliseconds into a countdown string (e.g. "4m 31s"). */
+export function formatCountdown(ms: number): string {
+  if (ms < 0) ms = 0;
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
 /**
  * Format a schedule worker status line for the TUI.
  * Returns a line like: "  [sched] daily-tests -- running (2m 14s)"
@@ -410,6 +431,9 @@ export function formatElapsed(item: StatusItem): string {
  * for the worktree-scan path where startedAt is not set.
  */
 export function formatDuration(item: StatusItem): string {
+  if (item.timeoutRemainingMs !== undefined) {
+    return formatCountdown(item.timeoutRemainingMs);
+  }
   if (item.state === "queued") return "-";
   if (item.startedAt) {
     const elapsed = formatElapsed(item);
@@ -465,12 +489,18 @@ export function formatItemRow(
   repoUrl?: string,
   isSelected?: boolean,
 ): string {
-  const icon = stateIcon(item.state);
+  const gracePeriodActive = item.timeoutRemainingMs !== undefined;
+  const icon = gracePeriodActive ? "⚠" : stateIcon(item.state);
   const id = pad(item.id, 12);
   const color = stateColor(item.state);
+  const iconColor = gracePeriodActive ? RED : color;
   const stateCell = formatStateLabelWithPr(item.state, item.prNumber, stateColWidth, repoUrl);
   const remoteDot = item.remote ? ` ${REMOTE_DOT}` : "";
   const duration = pad(formatDuration(item), 8);
+  const durationCell = gracePeriodActive ? `${RED}${duration}${RESET}` : duration;
+  const timeoutExtensions = gracePeriodActive && item.timeoutExtensions
+    ? ` ${DIM}(${item.timeoutExtensions})${RESET}`
+    : "";
   const depCol = depIndicator ?? "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` ${DIM}[${item.repoLabel}]${RESET}` : "";
@@ -480,7 +510,7 @@ export function formatItemRow(
   // Selection highlight: replace leading 2-space indent with bold ">" prefix
   const prefix = isSelected ? `${BOLD}>${RESET} ` : "  ";
 
-  return `${prefix}${color}${icon}${RESET} ${id}${color}${stateCell}${RESET}${remoteDot} ${duration} ${depCol}${title}${repo}${reason}${telemetry}`;
+  return `${prefix}${iconColor}${icon}${RESET} ${id}${color}${stateCell}${RESET}${remoteDot} ${durationCell}${timeoutExtensions} ${depCol}${title}${repo}${reason}${telemetry}`;
 }
 
 /**
@@ -2016,6 +2046,7 @@ export function renderHelpOverlay(
     `  q           Quit`,
     `  Ctrl+C x2   Quit (double-tap)`,
     `  d           Toggle blocker sub-lines`,
+    `  x           Extend worker timeout`,
     `  Up/Down     Scroll item list`,
   ]);
 
