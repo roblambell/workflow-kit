@@ -14,10 +14,8 @@ Instead of running one AI session at a time -- writing code, creating a PR, wait
 
 - **Git** -- version control (you already have this)
 - **GitHub CLI (`gh`)** -- for PR operations. Install via `brew install gh` and authenticate with `gh auth login`
-- **cmux** -- terminal multiplexer for managing parallel sessions. Install via `brew install cmux`
+- **tmux** -- terminal multiplexer for managing parallel sessions. Usually pre-installed on macOS/Linux, or `brew install tmux`. For the richest experience (sidebar status, progress bars), use [cmux](https://cmux.com) instead
 - **An AI coding tool** -- at least one of: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCode](https://opencode.ai), or [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli)
-
-Run `nw doctor` at any time to check that all prerequisites are installed and configured.
 
 ### How do I install ninthwave?
 

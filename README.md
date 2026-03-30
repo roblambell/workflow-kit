@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://github.com/ninthwave-sh/ninthwave/stargazers"><img src="https://img.shields.io/github/stars/ninthwave-sh/ninthwave?style=flat" alt="GitHub stars" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache 2.0 License" /></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.2.0-green" alt="Version" /></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.3.0-green" alt="Version" /></a>
   <a href="https://agentskills.io"><img src="https://img.shields.io/badge/Agent%20Skills-standard-purple" alt="Agent Skills" /></a>
 </p>
 
@@ -26,7 +26,7 @@ Work items are markdown files in `.ninthwave/work/`. Use `/decompose` to generat
 
 Run `nw` or `/work` and the orchestrator handles the rest.
 
-Each item gets its own git worktree and a full native instance of [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview), [OpenCode](https://opencode.ai), or [Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli). The orchestrator monitors CI, coordinates between implementer and review agents, external feedback, and merges approved PRs. Dependent items stack as chained PRs - reviewers get clean diffs.
+Each item gets its own git worktree and a full native instance of [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview), [OpenCode](https://opencode.ai), or [Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli) -- accessed as native iTerm2 tabs, tmux windows, or [cmux](https://cmux.com) workspaces (recommended). The orchestrator monitors CI, coordinates between implementer and review agents, external feedback, and merges approved PRs. Dependent items stack as chained PRs - reviewers get clean diffs.
 
 Join a crew to increase capacity. Tasks brokered by [ninthwave.sh](https://ninthwave.sh) with author-affinity preference, and WIP overflow to crew members.
 
@@ -36,7 +36,33 @@ Join a crew to increase capacity. Tasks brokered by [ninthwave.sh](https://ninth
 brew install ninthwave-sh/tap/ninthwave
 ```
 
-Requires [cmux](https://cmux.com) and [gh](https://cli.github.com). Run `nw doctor` to verify your setup.
+Requires [gh](https://cli.github.com) and a terminal multiplexer -- tmux (usually pre-installed) or [cmux](https://cmux.com) for the richest experience.
+
+## Getting started
+
+**iTerm2** -- launch tmux in control mode and run nw:
+
+```bash
+tmux -CC new -s nw
+nw watch
+```
+
+Workers appear as native iTerm2 tabs. [Learn more →](docs/iterm2.md)
+
+**tmux** -- just run nw. A session is created automatically:
+
+```bash
+nw watch
+```
+
+Attach from another terminal with `tmux attach -t nw-<project>`.
+
+**cmux** (recommended) -- open cmux, then run nw for sidebar status and progress:
+
+```bash
+cmux
+nw watch
+```
 
 ## License
 
