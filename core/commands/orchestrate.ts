@@ -4,7 +4,7 @@
 // Supports daemon mode (--daemon) for background operation with state persistence.
 
 import { existsSync, mkdirSync, readdirSync, appendFileSync } from "fs";
-import { join, basename } from "path";
+import { join, basename, dirname } from "path";
 import { totalmem, freemem } from "os";
 import { execSync } from "node:child_process";
 import { getAvailableMemory } from "../memory.ts";
@@ -46,6 +46,7 @@ import {
   collectRunMetrics,
   parseWorkerTelemetry,
 } from "../analytics.ts";
+import { parseAgentModel, readAgentFileContent } from "../agent-files.ts";
 import {
   writePidFile,
   cleanPidFile,
@@ -934,8 +935,15 @@ function handleActionExecution(
   deps: OrchestrateLoopDeps,
   log: (entry: LogEntry) => void,
 ): void {
+  const sessionEndedMetadata = deps.crewBroker
+    ? (() => {
+      const orchItem = orch.getItem(action.itemId);
+      return orchItem ? buildSessionEndedMetadata(orchItem, ctx, action.type) : null;
+    })()
+    : null;
+
   // Before clean/retry action: capture worker screen for telemetry
-  if ((action.type === "clean" || action.type === "retry") && deps.readScreen) {
+  if ((action.type === "clean" || action.type === "retry" || action.type === "workspace-close") && deps.readScreen) {
     const orchItem = orch.getItem(action.itemId);
     if (orchItem?.workspaceRef) {
       try {
@@ -956,18 +964,6 @@ function handleActionExecution(
             itemId: action.itemId,
             exitCode: telemetry.exitCode,
             stderrLines: telemetry.stderrTail ? telemetry.stderrTail.split("\n").length : 0,
-          });
-        }
-        // Report session_ended telemetry
-        if (deps.crewBroker) {
-          const role = orchItem.reviewWorkspaceRef ? "reviewer"
-            : orchItem.rebaserWorkspaceRef ? "rebaser"
-            : orchItem.fixForwardWorkspaceRef ? "verifier"
-            : "implementer";
-          deps.crewBroker.report("session_ended", action.itemId, {
-            model: orchItem.aiTool ?? ctx.aiTool ?? "unknown",
-            role,
-            durationMs: orchItem.startedAt ? Date.now() - new Date(orchItem.startedAt).getTime() : undefined,
           });
         }
       } catch {
@@ -1000,18 +996,19 @@ function handleActionExecution(
 
   // Report session_started for successful launches
   if (result.success && deps.crewBroker) {
-    const launchRoles: Record<string, string> = {
-      "launch": "implementer",
-      "launch-review": "reviewer",
-      "launch-rebaser": "rebaser",
-      "launch-forward-fixer": "verifier",
-    };
-    const role = launchRoles[action.type];
-    if (role) {
+    if (sessionEndedMetadata) {
+      deps.crewBroker.report("session_ended", action.itemId, sessionEndedMetadata);
+    }
+
+    const launchTelemetry = getLaunchTelemetry(action.type);
+    const orchItem = orch.getItem(action.itemId);
+    if (launchTelemetry && orchItem) {
+      const model = readLaunchModel(ctx, launchTelemetry.filename) ?? undefined;
+      orchItem[launchTelemetry.modelField] = model;
       deps.crewBroker.report("session_started", action.itemId, {
-        model: ctx.aiTool ?? "unknown",
-        role,
-        provider: ctx.aiTool ?? "unknown",
+        agent: orchItem.aiTool ?? ctx.aiTool ?? "unknown",
+        model: model ?? "unknown",
+        role: launchTelemetry.role,
       });
     }
   }
@@ -1064,6 +1061,100 @@ function handleActionExecution(
       });
     }
   }
+}
+
+export function buildSessionEndedMetadata(
+  item: OrchestratorItem,
+  ctx: ExecutionContext,
+  actionType: Action["type"],
+): { agent: string; model: string; role: LaunchTelemetryRole; durationMs?: number } | null {
+  const telemetry = getSessionEndTelemetry(actionType);
+  if (!telemetry) return null;
+
+  const workspaceRef = item[telemetry.workspaceField];
+  if (!workspaceRef) return null;
+
+  return {
+    agent: item.aiTool ?? ctx.aiTool ?? "unknown",
+    model: item[telemetry.modelField] ?? readLaunchModel(ctx, telemetry.filename) ?? "unknown",
+    role: telemetry.role,
+    durationMs: item.startedAt ? Date.now() - new Date(item.startedAt).getTime() : undefined,
+  };
+}
+
+type LaunchTelemetryRole = "implementer" | "reviewer" | "rebaser" | "verifier";
+
+type LaunchTelemetryConfig = {
+  role: LaunchTelemetryRole;
+  filename: string;
+  modelField: "implementerModel" | "reviewerModel" | "rebaserModel" | "forwardFixerModel";
+};
+
+type SessionEndTelemetryConfig = LaunchTelemetryConfig & {
+  workspaceField: "workspaceRef" | "reviewWorkspaceRef" | "rebaserWorkspaceRef" | "fixForwardWorkspaceRef";
+};
+
+const LAUNCH_TELEMETRY_BY_ACTION: Partial<Record<Action["type"], LaunchTelemetryConfig>> = {
+  "launch": { role: "implementer", filename: "implementer.md", modelField: "implementerModel" },
+  "launch-review": { role: "reviewer", filename: "reviewer.md", modelField: "reviewerModel" },
+  "launch-rebaser": { role: "rebaser", filename: "rebaser.md", modelField: "rebaserModel" },
+  "launch-forward-fixer": { role: "verifier", filename: "forward-fixer.md", modelField: "forwardFixerModel" },
+};
+
+const SESSION_END_TELEMETRY_BY_ACTION: Partial<Record<Action["type"], SessionEndTelemetryConfig>> = {
+  "clean": {
+    role: "implementer",
+    filename: "implementer.md",
+    modelField: "implementerModel",
+    workspaceField: "workspaceRef",
+  },
+  "retry": {
+    role: "implementer",
+    filename: "implementer.md",
+    modelField: "implementerModel",
+    workspaceField: "workspaceRef",
+  },
+  "workspace-close": {
+    role: "implementer",
+    filename: "implementer.md",
+    modelField: "implementerModel",
+    workspaceField: "workspaceRef",
+  },
+  "clean-review": {
+    role: "reviewer",
+    filename: "reviewer.md",
+    modelField: "reviewerModel",
+    workspaceField: "reviewWorkspaceRef",
+  },
+  "clean-rebaser": {
+    role: "rebaser",
+    filename: "rebaser.md",
+    modelField: "rebaserModel",
+    workspaceField: "rebaserWorkspaceRef",
+  },
+  "clean-forward-fixer": {
+    role: "verifier",
+    filename: "forward-fixer.md",
+    modelField: "forwardFixerModel",
+    workspaceField: "fixForwardWorkspaceRef",
+  },
+};
+
+function getLaunchTelemetry(actionType: Action["type"]): LaunchTelemetryConfig | undefined {
+  return LAUNCH_TELEMETRY_BY_ACTION[actionType];
+}
+
+function getSessionEndTelemetry(actionType: Action["type"]): SessionEndTelemetryConfig | undefined {
+  return SESSION_END_TELEMETRY_BY_ACTION[actionType];
+}
+
+function getHubRootFromWorkDir(workDir: string): string {
+  return dirname(dirname(workDir));
+}
+
+function readLaunchModel(ctx: ExecutionContext, filename: string): string | null {
+  const content = readAgentFileContent(getHubRootFromWorkDir(ctx.workDir), filename);
+  return content ? parseAgentModel(content) : null;
 }
 
 // ── Event loop ─────────────────────────────────────────────────────
