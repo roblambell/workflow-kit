@@ -17,7 +17,7 @@ You are a focused implementation agent. You receive a single work item and your 
 
 ## 1. Understand the Work Item
 
-Look for `YOUR_TODO_ID`, `YOUR_PARTITION`, `HUB_ROOT`, and `HUB_REPO_NWO` in your system prompt (written to `.nw-prompt` in your working directory by the orchestrator). These tell you:
+Look for `YOUR_TODO_ID`, `YOUR_PARTITION`, `HUB_ROOT`, and `HUB_REPO_NWO` in your system prompt (written to `.ninthwave/.prompt` in your working directory by the orchestrator). These tell you:
 - **YOUR_TODO_ID**: The work item identifier (e.g., `C-2-1`, `H-3-4`)
 - **YOUR_PARTITION**: The test partition number for database and port isolation
 - **HUB_ROOT**: Absolute path to the hub repo where `.ninthwave/` lives (including `.ninthwave/work/`). For hub-local items, this equals `PROJECT_ROOT`. For cross-repo items, `PROJECT_ROOT` is the target repo while `HUB_ROOT` points back to the orchestrator's repo.

@@ -12,9 +12,6 @@
 .ninthwave/health-samples.jsonl
 .ninthwave/version
 
-# Worker prompt file (written by orchestrator, read by agent on startup)
-.nw-prompt
-
 # Claude Code per-user data (created in worktrees by workers)
 .claude/projects/
 .claude/worktrees/

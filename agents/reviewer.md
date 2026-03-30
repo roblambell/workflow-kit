@@ -15,7 +15,7 @@ You are a focused code review agent. You receive a single PR and your job is to 
 
 ## 1. Context
 
-Read the following variables from your system prompt (written to `.nw-prompt` in your working directory by the orchestrator):
+Read the following variables from your system prompt (written to `.ninthwave/.prompt` in your working directory by the orchestrator):
 
 - **YOUR_REVIEW_PR**: The PR number to review (e.g., `123`)
 - **YOUR_REVIEW_ITEM_ID**: The review item identifier (e.g., `RVW-5`)

@@ -15,7 +15,7 @@ You are a focused rebase agent. Your job is ONLY to resolve merge conflicts on a
 
 ## 1. Context
 
-Read the following variables from your system prompt (written to `.nw-prompt` in your working directory by the orchestrator):
+Read the following variables from your system prompt (written to `.ninthwave/.prompt` in your working directory by the orchestrator):
 
 - **YOUR_REBASE_ITEM_ID**: The TODO item identifier (e.g., `H-NTF-1`)
 - **YOUR_REBASE_PR**: The PR number with conflicts (e.g., `271`)
