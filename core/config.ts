@@ -9,6 +9,7 @@ export interface ProjectConfig {
   review_external: boolean;
   schedule_enabled: boolean;
   ai_tool?: string;
+  telemetry?: boolean;
 }
 
 /**
@@ -35,6 +36,7 @@ export function loadConfig(projectRoot: string): ProjectConfig {
       review_external: parsed.review_external === true,
       schedule_enabled: parsed.schedule_enabled === true,
       ai_tool: typeof parsed.ai_tool === "string" ? parsed.ai_tool : undefined,
+      telemetry: typeof parsed.telemetry === "boolean" ? parsed.telemetry : undefined,
     };
   } catch {
     return defaults;

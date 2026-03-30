@@ -102,6 +102,14 @@ class StubCrewBroker implements CrewBroker {
     return null;
   }
 
+  report(_event: string, _todoPath: string, _metadata: Record<string, unknown>): void {
+    // no-op
+  }
+
+  setTelemetry(_enabled: boolean): void {
+    // no-op
+  }
+
   // ── Test helpers ──────────────────────────────────────────────────
 
   /** Simulate broker disconnection. */

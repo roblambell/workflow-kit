@@ -722,13 +722,13 @@ describe("cmdNoArgs", () => {
         wipLimit: 4,
         allSelected: false,
         reviewMode: "mine" as const,
-        crewAction: { type: "join" as const, code: "xK2-9fB" },
+        crewAction: { type: "join" as const, code: "K2F9-AB3X-7YPL-QM4N" },
       }),
       runWatch: async (args) => { watchArgs = args; },
     });
 
     expect(watchArgs).toContain("--crew");
-    expect(watchArgs).toContain("xK2-9fB");
+    expect(watchArgs).toContain("K2F9-AB3X-7YPL-QM4N");
   });
 
   it("passes --crew-create for crew create action", async () => {

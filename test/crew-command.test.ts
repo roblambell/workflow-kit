@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   isCrewCode,
+  normalizeCrewCode,
   parseCrewArgs,
   promptCrewAction,
   printCrewUsage,
@@ -42,38 +43,56 @@ async function captureLog(fn: () => Promise<void> | void): Promise<string[]> {
 // ── isCrewCode ─────────────────────────────────────────────────────
 
 describe("isCrewCode", () => {
-  it("accepts valid codes: mixed case and digits", () => {
-    expect(isCrewCode("xK2-9fB")).toBe(true);
-    expect(isCrewCode("ABC-XYZ")).toBe(true);
-    expect(isCrewCode("a1B-c2D")).toBe(true);
-    expect(isCrewCode("abc-xyz")).toBe(true);
-    expect(isCrewCode("foo-bar")).toBe(true);
-    expect(isCrewCode("123-456")).toBe(true);
+  it("accepts valid 4x4x4x4 codes with hyphens", () => {
+    expect(isCrewCode("K2F9-AB3X-7YPL-QM4N")).toBe(true);
+    expect(isCrewCode("ABCD-EFGH-IJKL-MNOP")).toBe(true);
+    expect(isCrewCode("a1b2-c3d4-e5f6-g7h8")).toBe(true);
+    expect(isCrewCode("abcd-efgh-ijkl-mnop")).toBe(true);
+    expect(isCrewCode("1234-5678-9012-3456")).toBe(true);
   });
 
   it("rejects codes with wrong segment length", () => {
-    expect(isCrewCode("abcd-efgh")).toBe(false); // too long (4+4)
-    expect(isCrewCode("ab-cd")).toBe(false);     // too short (2+2)
-    expect(isCrewCode("ABC-XY1Z")).toBe(false);  // second segment has 4 chars
-    expect(isCrewCode("a-b")).toBe(false);       // too short (1+1)
+    expect(isCrewCode("ABC-XYZ")).toBe(false);       // old 3+3 format
+    expect(isCrewCode("ab-cd")).toBe(false);          // too short
+    expect(isCrewCode("ABCDE-FGHIJ-KLMNO-PQRST")).toBe(false); // 5+5+5+5
+    expect(isCrewCode("ABC-DEFG-HIJK-LMNO")).toBe(false); // 3+4+4+4
   });
 
-  it("accepts codes without hyphen (6 chars)", () => {
-    expect(isCrewCode("abcxyz")).toBe(true);
-    expect(isCrewCode("ABC123")).toBe(true);
+  it("accepts codes without hyphens (16 chars)", () => {
+    expect(isCrewCode("K2F9AB3X7YPLQM4N")).toBe(true);
+    expect(isCrewCode("ABCDEFGHIJKLMNOP")).toBe(true);
+    expect(isCrewCode("abcdefghijklmnop")).toBe(true);
   });
 
   it("rejects codes with trailing or leading hyphen", () => {
-    expect(isCrewCode("abc-")).toBe(false);
-    expect(isCrewCode("-xyz")).toBe(false);
+    expect(isCrewCode("ABCD-")).toBe(false);
+    expect(isCrewCode("-ABCD")).toBe(false);
   });
 
-  it("rejects codes with multiple hyphens", () => {
-    expect(isCrewCode("abc-xyz-def")).toBe(false);
+  it("rejects old 6-char format", () => {
+    expect(isCrewCode("xK2-9fB")).toBe(false);
+    expect(isCrewCode("abc-xyz")).toBe(false);
+    expect(isCrewCode("abcxyz")).toBe(false);
   });
 
   it("rejects empty string", () => {
     expect(isCrewCode("")).toBe(false);
+  });
+});
+
+// ── normalizeCrewCode ─────────────────────────────────────────────
+
+describe("normalizeCrewCode", () => {
+  it("normalizes lowercase 16-char code with hyphens", () => {
+    expect(normalizeCrewCode("k2f9ab3x7yplqm4n")).toBe("K2F9-AB3X-7YPL-QM4N");
+  });
+
+  it("normalizes code with hyphens already present", () => {
+    expect(normalizeCrewCode("k2f9-ab3x-7ypl-qm4n")).toBe("K2F9-AB3X-7YPL-QM4N");
+  });
+
+  it("normalizes mixed-case code", () => {
+    expect(normalizeCrewCode("AbCd-EfGh-IjKl-MnOp")).toBe("ABCD-EFGH-IJKL-MNOP");
   });
 });
 
@@ -85,8 +104,8 @@ describe("parseCrewArgs", () => {
   });
 
   it("parses direct join shorthand", () => {
-    const result = parseCrewArgs(["abc-xyz"]);
-    expect(result).toEqual({ type: "join", code: "abc-xyz" });
+    const result = parseCrewArgs(["ABCD-EFGH-IJKL-MNOP"]);
+    expect(result).toEqual({ type: "join", code: "ABCD-EFGH-IJKL-MNOP" });
   });
 
   it("parses explicit create subcommand", () => {
@@ -95,8 +114,8 @@ describe("parseCrewArgs", () => {
   });
 
   it("parses explicit join subcommand", () => {
-    const result = parseCrewArgs(["join", "abc-xyz"]);
-    expect(result).toEqual({ type: "join", code: "abc-xyz" });
+    const result = parseCrewArgs(["join", "ABCD-EFGH-IJKL-MNOP"]);
+    expect(result).toEqual({ type: "join", code: "ABCD-EFGH-IJKL-MNOP" });
   });
 
   it("throws on unknown subcommand", () => {
@@ -111,14 +130,13 @@ describe("parseCrewArgs", () => {
     expect(() => parseCrewArgs(["join", "INVALID"])).toThrow("Invalid crew code: INVALID");
   });
 
-  it("throws on join with wrong-length code", () => {
-    expect(() => parseCrewArgs(["join", "abcd-efgh"])).toThrow("Invalid crew code: abcd-efgh");
+  it("throws on join with old 6-char code", () => {
+    expect(() => parseCrewArgs(["join", "abc-xyz"])).toThrow("Invalid crew code: abc-xyz");
   });
 
-  it("direct join shorthand routes code-shaped arg to join (not treated as subcommand)", () => {
-    // "foo-bar" looks like a crew code, so it should route to join
-    const result = parseCrewArgs(["foo-bar"]);
-    expect(result).toEqual({ type: "join", code: "foo-bar" });
+  it("direct join shorthand routes code-shaped arg to join", () => {
+    const result = parseCrewArgs(["K2F9-AB3X-7YPL-QM4N"]);
+    expect(result).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
   });
 });
 
@@ -126,9 +144,9 @@ describe("parseCrewArgs", () => {
 
 describe("promptCrewAction", () => {
   it("returns join action for valid crew code input", async () => {
-    const prompt = mockPrompt(["abc-xyz"]);
+    const prompt = mockPrompt(["ABCD-EFGH-IJKL-MNOP"]);
     const result = await promptCrewAction(prompt);
-    expect(result).toEqual({ type: "join", code: "abc-xyz" });
+    expect(result).toEqual({ type: "join", code: "ABCD-EFGH-IJKL-MNOP" });
   });
 
   it("returns create action for 'create' input", async () => {
@@ -162,10 +180,10 @@ describe("promptCrewAction", () => {
   });
 
   it("retries on invalid input then accepts valid code", async () => {
-    const prompt = mockPrompt(["INVALID", "abc-xyz"]);
+    const prompt = mockPrompt(["INVALID", "ABCD-EFGH-IJKL-MNOP"]);
     const lines = await captureLog(async () => {
       const result = await promptCrewAction(prompt);
-      expect(result).toEqual({ type: "join", code: "abc-xyz" });
+      expect(result).toEqual({ type: "join", code: "ABCD-EFGH-IJKL-MNOP" });
     });
     const invalidLine = lines.find((l) => l.includes("Invalid crew code"));
     expect(invalidLine).toBeDefined();
@@ -199,8 +217,8 @@ describe("cmdCrew", () => {
       runWatch: async (args) => { watchArgs.push(args); },
     };
 
-    await cmdCrew(["abc-xyz"], workDir, worktreeDir, projectRoot, deps);
-    expect(watchArgs).toEqual([["--crew", "abc-xyz"]]);
+    await cmdCrew(["ABCD-EFGH-IJKL-MNOP"], workDir, worktreeDir, projectRoot, deps);
+    expect(watchArgs).toEqual([["--crew", "ABCD-EFGH-IJKL-MNOP"]]);
   });
 
   it("create subcommand delegates to watch with --crew-create flag", async () => {
@@ -219,8 +237,8 @@ describe("cmdCrew", () => {
       runWatch: async (args) => { watchArgs.push(args); },
     };
 
-    await cmdCrew(["join", "foo-bar"], workDir, worktreeDir, projectRoot, deps);
-    expect(watchArgs).toEqual([["--crew", "foo-bar"]]);
+    await cmdCrew(["join", "K2F9-AB3X-7YPL-QM4N"], workDir, worktreeDir, projectRoot, deps);
+    expect(watchArgs).toEqual([["--crew", "K2F9-AB3X-7YPL-QM4N"]]);
   });
 
   it("non-TTY with no args prints usage help instead of hanging", async () => {
@@ -245,12 +263,12 @@ describe("cmdCrew", () => {
     const watchArgs: string[][] = [];
     const deps: CrewDeps = {
       isTTY: true,
-      prompt: mockPrompt(["xK2-9fB"]),
+      prompt: mockPrompt(["K2F9-AB3X-7YPL-QM4N"]),
       runWatch: async (args) => { watchArgs.push(args); },
     };
 
     await cmdCrew([], workDir, worktreeDir, projectRoot, deps);
-    expect(watchArgs).toEqual([["--crew", "xK2-9fB"]]);
+    expect(watchArgs).toEqual([["--crew", "K2F9-AB3X-7YPL-QM4N"]]);
   });
 
   it("interactive mode with TTY prompts and creates on 'create' input", async () => {

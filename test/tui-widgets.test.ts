@@ -1153,14 +1153,14 @@ describe("runTextInput", () => {
 
     const resultPromise = runTextInput(io, {
       title: "Ninthwave \u00b7 Join crew",
-      hint: "Format: XXX-XXX (e.g. xK2-9fB)",
+      hint: "Format: XXXX-XXXX-XXXX-XXXX (e.g. K2F9-AB3X-7YPL-QM4N)",
     });
     sendKeys(["\x1B"]);
 
     await resultPromise;
     const output = getOutput();
     expect(output).toContain("Join crew");
-    expect(output).toContain("Format: XXX-XXX");
+    expect(output).toContain("Format: XXXX-XXXX-XXXX-XXXX");
   });
 
   it("accepts without validate function", async () => {
@@ -1375,14 +1375,14 @@ describe("runSelectionScreen -- crew step", () => {
       ["\r"],              // WIP
       ["\r"],              // review
       ["\x1B[B", "\r"],   // crew: down → "Join crew"
-      // Text input: type valid crew code
-      ["a", "B", "3", "-", "x", "Y", "9", "\r"],  // type code
+      // Text input: type valid 16-char crew code (hyphens auto-inserted by transform)
+      ["K", "2", "F", "9", "A", "B", "3", "X", "7", "Y", "P", "L", "Q", "M", "4", "N", "\r"],
       ["\r"],              // confirm
     );
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(result!.crewAction).toEqual({ type: "join", code: "AB3-XY9" });
+    expect(result!.crewAction).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
   });
 
   it("join crew text input rejects invalid code then accepts valid code", async () => {
@@ -1396,17 +1396,17 @@ describe("runSelectionScreen -- crew step", () => {
       ["\r"],              // WIP
       ["\r"],              // review
       ["\x1B[B", "\r"],   // crew: join
-      // Type invalid code, Enter (error), backspace, type valid code, Enter
+      // Type invalid code (3 chars), Enter (error), backspace all, type valid 16-char code, Enter
       ["b", "a", "d", "\r",
-       "\x7f", "\x7f", "\x7f",                    // backspace "bad"
-       "x", "K", "2", "-", "9", "f", "B", "\r"],  // valid code
+       "\x7f", "\x7f", "\x7f",                    // backspace "BAD"
+       "K", "2", "F", "9", "A", "B", "3", "X", "7", "Y", "P", "L", "Q", "M", "4", "N", "\r"],
       ["\r"],              // confirm
     );
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
     expect(getOutput()).toContain("Invalid code");
-    expect(result!.crewAction).toEqual({ type: "join", code: "XK2-9FB" });
+    expect(result!.crewAction).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
   });
 
   it("cancelling at crew step returns null", async () => {
@@ -1563,13 +1563,13 @@ describe("runSelectionScreen -- updated confirmation", () => {
       ["\r"],
       ["\r"],
       ["\x1B[B", "\r"],            // crew: Join crew
-      ["a", "B", "3", "-", "x", "Y", "9", "\r"],  // code: aB3-xY9
+      ["K", "2", "F", "9", "A", "B", "3", "X", "7", "Y", "P", "L", "Q", "M", "4", "N", "\r"],  // code
       ["\r"],
     );
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(getOutput()).toContain("Joining crew AB3-XY9");
+    expect(getOutput()).toContain("Joining crew K2F9-AB3X-7YPL-QM4N");
   });
 
   it("confirmation title is 'Ninthwave · Start orchestration?'", async () => {

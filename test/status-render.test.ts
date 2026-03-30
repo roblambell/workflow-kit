@@ -2385,28 +2385,28 @@ describe("small terminal fallback", () => {
 // ── Crew mode TUI tests ──────────────────────────────────────────────
 
 describe("crew mode TUI rendering", () => {
-  it("formatCrewInline shows crew code and online count", () => {
+  it("formatCrewInline shows abbreviated crew code and online count", () => {
     const output = formatCrewInline({
-      crewCode: "A7K-M2P",
+      crewCode: "K2F9-AB3X-7YPL-QM4N",
       daemonCount: 2,
       availableCount: 3,
       claimedCount: 5,
       completedCount: 2,
       connected: true,
     });
-    expect(output).toBe("Crew A7K-M2P  2 online");
+    expect(output).toBe("Crew K2F9\u2026  2 online");
   });
 
   it("formatCrewInline shows OFFLINE when disconnected", () => {
     const output = formatCrewInline({
-      crewCode: "A7K-M2P",
+      crewCode: "K2F9-AB3X-7YPL-QM4N",
       daemonCount: 0,
       availableCount: 0,
       claimedCount: 0,
       completedCount: 0,
       connected: false,
     });
-    expect(output).toBe("Crew A7K-M2P  OFFLINE");
+    expect(output).toBe("Crew K2F9\u2026  OFFLINE");
   });
 
   it("formatCrewStatusPanel still renders full-width bar (backward compat)", () => {
@@ -2426,7 +2426,7 @@ describe("crew mode TUI rendering", () => {
   it("formatTitleMetrics renders inline crew status after Ninthwave", () => {
     const items: StatusItem[] = [makeStatusItem()];
     const output = formatTitleMetrics(items, 100, new Date().toISOString(), {
-      crewCode: "X1Y-Z2W",
+      crewCode: "K2F9-AB3X-7YPL-QM4N",
       daemonCount: 1,
       availableCount: 0,
       claimedCount: 1,
@@ -2435,7 +2435,7 @@ describe("crew mode TUI rendering", () => {
     });
     const text = stripAnsi(output);
     expect(text).toContain("Ninthwave");
-    expect(text).toContain("Crew X1Y-Z2W  1 online");
+    expect(text).toContain("Crew K2F9\u2026  1 online");
   });
 
   it("formatStatusTable includes inline crew status on title line", () => {
@@ -2444,7 +2444,7 @@ describe("crew mode TUI rendering", () => {
     ];
     const output = formatStatusTable(items, 120, undefined, false, {
       crewStatus: {
-        crewCode: "X1Y-Z2W",
+        crewCode: "K2F9-AB3X-7YPL-QM4N",
         daemonCount: 1,
         availableCount: 0,
         claimedCount: 1,
@@ -2453,7 +2453,7 @@ describe("crew mode TUI rendering", () => {
       },
     });
     const text = stripAnsi(output);
-    expect(text).toContain("Crew X1Y-Z2W  1 online");
+    expect(text).toContain("Crew K2F9\u2026  1 online");
     // No DAEMON column in new design
     expect(text).not.toContain("DAEMON");
   });
@@ -2482,7 +2482,7 @@ describe("crew mode TUI rendering", () => {
     const items: StatusItem[] = [makeStatusItem()];
     const withCrew = buildStatusLayout(items, 100, undefined, false, {
       crewStatus: {
-        crewCode: "ABC-DEF",
+        crewCode: "K2F9-AB3X-7YPL-QM4N",
         daemonCount: 2,
         availableCount: 3,
         claimedCount: 1,
@@ -2492,7 +2492,7 @@ describe("crew mode TUI rendering", () => {
     });
     const withoutCrew = buildStatusLayout(items, 100);
     const headerText = stripAnsi(withCrew.headerLines.join("\n"));
-    expect(headerText).toContain("Crew ABC-DEF  2 online");
+    expect(headerText).toContain("Crew K2F9\u2026  2 online");
     // Inline crew status should NOT add an extra header line
     expect(withCrew.headerLines.length).toBe(withoutCrew.headerLines.length);
     // DAEMON column removed in favor of remote dot indicator

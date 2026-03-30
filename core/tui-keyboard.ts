@@ -109,6 +109,8 @@ export interface TuiState {
   getSelectedItemId?: (index: number) => string | undefined;
   /** Get total number of items for clamping selectedIndex. */
   getItemCount?: () => number;
+  /** Crew code (if in crew mode). Shown in help overlay. */
+  crewCode?: string;
 }
 
 /**

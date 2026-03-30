@@ -13,8 +13,8 @@ import { die } from "../output.ts";
 
 // ── Types ──────────────────────────────────────────────────────────
 
-/** Crew code pattern: 3 alphanumeric chars, optional hyphen, 3 alphanumeric chars (case-insensitive). */
-export const CREW_CODE_PATTERN = /^[A-Z0-9]{3}-?[A-Z0-9]{3}$/i;
+/** Crew code pattern: 4 groups of 4 alphanumeric chars, optional hyphens (case-insensitive). */
+export const CREW_CODE_PATTERN = /^[A-Z0-9]{4}-?[A-Z0-9]{4}-?[A-Z0-9]{4}-?[A-Z0-9]{4}$/i;
 
 export type CrewAction =
   | { type: "join"; code: string }
@@ -34,10 +34,10 @@ export function isCrewCode(value: string): boolean {
   return CREW_CODE_PATTERN.test(value);
 }
 
-/** Normalize a crew code to uppercase with hyphen (e.g. "k2f9ab" -> "K2F-9AB"). */
+/** Normalize a crew code to uppercase with hyphens (e.g. "k2f9ab3x7yplqm4n" -> "K2F9-AB3X-7YPL-QM4N"). */
 export function normalizeCrewCode(value: string): string {
   const upper = value.toUpperCase().replace(/-/g, "");
-  if (upper.length === 6) return `${upper.slice(0, 3)}-${upper.slice(3)}`;
+  if (upper.length === 16) return `${upper.slice(0, 4)}-${upper.slice(4, 8)}-${upper.slice(8, 12)}-${upper.slice(12)}`;
   return value.toUpperCase();
 }
 
@@ -64,7 +64,7 @@ export function parseCrewArgs(args: string[]): CrewAction | null {
       throw new Error("Usage: nw crew join <crew-code>");
     }
     if (!isCrewCode(code)) {
-      throw new Error(`Invalid crew code: ${code}. Expected format: XXX-XXX (e.g. xK2-9fB)`);
+      throw new Error(`Invalid crew code: ${code}. Expected format: XXXX-XXXX-XXXX-XXXX (e.g. K2F9-AB3X-7YPL-QM4N)`);
     }
     return { type: "join", code };
   }
@@ -119,7 +119,7 @@ export async function promptCrewAction(
       return { type: "join", code: answer };
     }
 
-    console.log(`  ${YELLOW}Invalid crew code.${RESET} Expected format: ${BOLD}XXX-XXX${RESET} (e.g. xK2-9fB), or type ${CYAN}create${RESET}.`);
+    console.log(`  ${YELLOW}Invalid crew code.${RESET} Expected format: ${BOLD}XXXX-XXXX-XXXX-XXXX${RESET} (e.g. K2F9-AB3X-7YPL-QM4N), or type ${CYAN}create${RESET}.`);
   }
 }
 
@@ -134,9 +134,9 @@ export function printCrewUsage(): void {
   console.log("  nw crew join <crew-code> Join a crew (explicit)");
   console.log();
   console.log("Examples:");
-  console.log("  nw crew xK2-9fB");
+  console.log("  nw crew K2F9-AB3X-7YPL-QM4N");
   console.log("  nw crew create");
-  console.log("  nw crew join xK2-9fB");
+  console.log("  nw crew join K2F9-AB3X-7YPL-QM4N");
 }
 
 // ── Command handler ────────────────────────────────────────────────

@@ -502,9 +502,18 @@ export function runTextInput(
         return;
       }
 
-      // Printable character (single byte, code >= 32)
-      if (key.length === 1 && key.charCodeAt(0) >= 32) {
-        value += key;
+      // Skip escape sequences (arrow keys, function keys, etc.)
+      if (key.charCodeAt(0) === 0x1b) return;
+
+      // Printable characters (supports paste: multi-char strings from Cmd-V / Ctrl-V)
+      let added = false;
+      for (const ch of key) {
+        if (ch.charCodeAt(0) >= 32) {
+          value += ch;
+          added = true;
+        }
+      }
+      if (added) {
         if (opts.transform) value = opts.transform(value);
         error = "";
         render();
@@ -805,20 +814,21 @@ export async function runSelectionScreen(
       io.write(CLEAR_SCREEN);
       const textResult = await runTextInput(io, {
         title: "Ninthwave \u00b7 Join crew",
-        hint: "e.g. K2F 9AB",
+        hint: "e.g. K2F9 AB3X 7YPL QM4N",
         validate: (v) =>
           CREW_CODE_PATTERN.test(v)
             ? null
-            : "Invalid code. Expected 6 characters (e.g. K2F-9AB)",
+            : "Invalid code. Expected 16 characters (e.g. K2F9-AB3X-7YPL-QM4N)",
         transform: (v) => {
-          // Auto-uppercase and auto-insert hyphen
-          let s = v.toUpperCase().replace(/[^A-Z0-9-]/g, "");
-          // Insert hyphen after 3 chars if user typed 4+ without one
-          if (s.length >= 4 && !s.includes("-")) {
-            s = s.slice(0, 3) + "-" + s.slice(3);
+          // Auto-uppercase and auto-insert hyphens
+          let s = v.toUpperCase().replace(/[^A-Z0-9]/g, "");
+          // Insert hyphens after every 4 chars
+          let result = "";
+          for (let i = 0; i < s.length && i < 16; i++) {
+            if (i > 0 && i % 4 === 0) result += "-";
+            result += s[i];
           }
-          // Cap at 7 chars (XXX-XXX)
-          return s.slice(0, 7);
+          return result;
         },
       });
       io.write(HIDE_CURSOR);

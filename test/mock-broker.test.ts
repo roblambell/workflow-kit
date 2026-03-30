@@ -165,12 +165,12 @@ afterEach(() => {
 
 describe("mock-broker", () => {
   describe("crew creation", () => {
-    it("creates a crew with a 6-char XXX-XXX code", async () => {
+    it("creates a crew with a 16-char XXXX-XXXX-XXXX-XXXX code", async () => {
       const { port } = startBroker();
       const code = await createCrew(port);
 
-      expect(code).toMatch(/^[A-Za-z0-9]{3}-[A-Za-z0-9]{3}$/);
-      expect(code.replace("-", "")).toHaveLength(6);
+      expect(code).toMatch(/^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/);
+      expect(code.replace(/-/g, "")).toHaveLength(16);
     });
 
     it("creates unique crew codes", async () => {
@@ -195,7 +195,7 @@ describe("mock-broker", () => {
     it("rejects connection to non-existent crew", async () => {
       const { port } = startBroker();
       try {
-        const ws = await connectWs(port, "ABC-XYZ", "daemon-1", "worker-1");
+        const ws = await connectWs(port, "ABCD-EFGH-IJKL-MNOP", "daemon-1", "worker-1");
         ws.close();
         expect.unreachable("Should have failed");
       } catch {

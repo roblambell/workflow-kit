@@ -93,12 +93,26 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface ReportMessage {
+  type: "report";
+  daemonId: string;
+  event: string;
+  todoPath: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ReportAckMessage {
+  type: "report_ack";
+  event: string;
+}
+
 export type ClientMessage =
   | SyncMessage
   | ClaimMessage
   | CompleteMessage
   | HeartbeatMessage
-  | ScheduleClaimMessage;
+  | ScheduleClaimMessage
+  | ReportMessage;
 
 export type ServerMessage =
   | SyncAckMessage
@@ -107,6 +121,7 @@ export type ServerMessage =
   | HeartbeatAckMessage
   | ReconnectStateMessage
   | ScheduleClaimResponseMessage
+  | ReportAckMessage
   | ErrorMessage;
 
 // ── Reconnect reconciliation callback ───────────────────────────────
@@ -159,6 +174,12 @@ export interface CrewBroker {
 
   /** Get the latest crew status from crew_update messages. Null until first update received. */
   getCrewStatus(): CrewStatus | null;
+
+  /** Send a telemetry report event. Fire-and-forget, no-op if telemetry disabled. */
+  report(event: string, todoPath: string, metadata: Record<string, unknown>): void;
+
+  /** Enable or disable telemetry reporting. */
+  setTelemetry(enabled: boolean): void;
 }
 
 // ── DaemonId persistence ────────────────────────────────────────────
@@ -248,6 +269,31 @@ export function resolveOperatorId(
   return email;
 }
 
+// ── Crew code persistence ──────────────────────────────────────────
+
+/** Path to the crew-code file in the user state directory. */
+export function crewCodePath(projectRoot: string): string {
+  return join(userStateDir(projectRoot), "crew-code");
+}
+
+/** Read a previously saved crew code. Returns null if none saved. */
+export function readCrewCode(projectRoot: string): string | null {
+  const filePath = crewCodePath(projectRoot);
+  if (!existsSync(filePath)) return null;
+  const code = readFileSync(filePath, "utf-8").trim();
+  return code.length > 0 ? code : null;
+}
+
+/** Save a crew code to the user state directory for persistent sessions. */
+export function saveCrewCode(projectRoot: string, code: string): void {
+  const filePath = crewCodePath(projectRoot);
+  const dir = dirname(filePath);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  writeFileSync(filePath, code, "utf-8");
+}
+
 // ── Injectable dependencies ─────────────────────────────────────────
 
 export interface CrewBrokerDeps {
@@ -294,6 +340,7 @@ export class WebSocketCrewBroker implements CrewBroker {
   } | null = null;
   private disconnectedIntentionally = false;
   private crewStatus: CrewStatus | null = null;
+  private telemetryEnabled: boolean;
 
   constructor(
     projectRoot: string,
@@ -302,6 +349,7 @@ export class WebSocketCrewBroker implements CrewBroker {
     repoUrl: string,
     deps: CrewBrokerDeps,
     name?: string,
+    telemetryEnabled?: boolean,
   ) {
     this.daemonId = getOrCreateDaemonId(projectRoot);
     this.operatorId = resolveOperatorId(projectRoot);
@@ -309,6 +357,7 @@ export class WebSocketCrewBroker implements CrewBroker {
     this.url = `${url}/api/crews/${crewCode}/ws`;
     this.repoUrl = repoUrl;
     this.deps = deps;
+    this.telemetryEnabled = telemetryEnabled ?? false;
   }
 
   /** Expose daemonId for testing. */
@@ -430,6 +479,17 @@ export class WebSocketCrewBroker implements CrewBroker {
     });
   }
 
+  report(event: string, todoPath: string, metadata: Record<string, unknown>): void {
+    if (!this.telemetryEnabled) return;
+    this.send({
+      type: "report",
+      daemonId: this.daemonId,
+      event,
+      todoPath,
+      metadata,
+    });
+  }
+
   heartbeat(): void {
     this.send({
       type: "heartbeat",
@@ -456,6 +516,10 @@ export class WebSocketCrewBroker implements CrewBroker {
 
   getCrewStatus(): CrewStatus | null {
     return this.crewStatus;
+  }
+
+  setTelemetry(enabled: boolean): void {
+    this.telemetryEnabled = enabled;
   }
 
   // ── Internal helpers ────────────────────────────────────────────
@@ -505,6 +569,10 @@ export class WebSocketCrewBroker implements CrewBroker {
       }
 
       case "complete_ack":
+        // No-op -- fire-and-forget
+        break;
+
+      case "report_ack":
         // No-op -- fire-and-forget
         break;
 

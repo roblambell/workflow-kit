@@ -38,7 +38,7 @@ import { confirmPrompt } from "../prompt.ts";
 import { shouldEnterInteractive, runInteractiveFlow } from "../interactive.ts";
 import type { WorkItem, LogEntry } from "../types.ts";
 import { ID_IN_FILENAME, PRIORITY_NUM } from "../types.ts";
-import { loadConfig } from "../config.ts";
+import { loadConfig, saveConfig } from "../config.ts";
 import { preflight } from "../preflight.ts";
 import {
   collectRunMetrics,
@@ -86,7 +86,7 @@ import {
   type LogEntry as PanelLogEntry,
 } from "../status-render.ts";
 import type { CrewBroker, CrewStatus, SyncItem } from "../crew.ts";
-import { WebSocketCrewBroker, resolveOperatorId } from "../crew.ts";
+import { WebSocketCrewBroker, resolveOperatorId, readCrewCode, saveCrewCode } from "../crew.ts";
 import { AuthorCache } from "../git-author.ts";
 import {
   readScheduleState,
@@ -189,6 +189,7 @@ export function renderTuiFrame(
   viewOptions?: ViewOptions,
   scrollOffset: number = 0,
   remoteItemIds?: Set<string>,
+  crewCode?: string,
 ): void {
   const statusItems = orchestratorItemsToStatusItems(items, remoteItemIds);
   const termWidth = getTerminalWidth();
@@ -198,7 +199,7 @@ export function renderTuiFrame(
 
   if (viewOptions?.showHelp) {
     // Render help overlay instead of the normal frame
-    const helpLines = renderHelpOverlay(termWidth, termRows);
+    const helpLines = renderHelpOverlay(termWidth, termRows, crewCode);
     const content = helpLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else if (termRows >= MIN_FULLSCREEN_ROWS) {
@@ -235,7 +236,7 @@ export function renderTuiPanelFrame(
 
   if (tuiState.viewOptions.showHelp) {
     // Render help overlay instead of the panel frame
-    const helpLines = renderHelpOverlay(termWidth, termRows);
+    const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.crewCode);
     const content = helpLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else if (tuiState.detailItemId) {
@@ -377,7 +378,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     write("\x1B[H");
 
     if (tuiState.viewOptions.showHelp) {
-      const helpLines = renderHelpOverlay(termWidth, termRows);
+      const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.crewCode);
       const content = helpLines.join("\n");
       write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
     } else if (tuiState.detailItemId) {
@@ -938,6 +939,20 @@ function handleActionExecution(
             stderrLines: telemetry.stderrTail ? telemetry.stderrTail.split("\n").length : 0,
           });
         }
+        // Report session_ended telemetry
+        if (deps.crewBroker) {
+          const role = orchItem.reviewerWorkspaceRef ? "reviewer"
+            : orchItem.rebaserWorkspaceRef ? "rebaser"
+            : orchItem.fixForwardWorkspaceRef ? "verifier"
+            : "implementer";
+          deps.crewBroker.report("session_ended", action.itemId, {
+            model: ctx.aiTool ?? "unknown",
+            role,
+            durationMs: orchItem.startedAt ? Date.now() - new Date(orchItem.startedAt).getTime() : undefined,
+            inputTokens: cost.inputTokens,
+            outputTokens: cost.outputTokens,
+          });
+        }
       } catch {
         // Non-fatal -- cost/telemetry capture failure doesn't block cleanup
       }
@@ -965,6 +980,24 @@ function handleActionExecution(
     success: result.success,
     error: result.error,
   });
+
+  // Report session_started for successful launches
+  if (result.success && deps.crewBroker) {
+    const launchRoles: Record<string, string> = {
+      "launch": "implementer",
+      "launch-review": "reviewer",
+      "launch-rebaser": "rebaser",
+      "launch-forward-fixer": "verifier",
+    };
+    const role = launchRoles[action.type];
+    if (role) {
+      deps.crewBroker.report("session_started", action.itemId, {
+        model: ctx.aiTool ?? "unknown",
+        role,
+        provider: ctx.aiTool ?? "unknown",
+      });
+    }
+  }
 
   // Bootstrap success: immediately follow up with a launch action
   if (action.type === "bootstrap" && result.success) {
@@ -1115,6 +1148,63 @@ export async function orchestrateLoop(
         entry.baseBranch = item.baseBranch;
       }
       log(entry as LogEntry);
+
+      // Telemetry report on state transitions
+      if (deps.crewBroker) {
+        const orchItem = orch.getItem(itemId);
+        if (orchItem) {
+          if (from === "implementing" && to === "ci-pending" && orchItem.prNumber) {
+            deps.crewBroker.report("pr_opened", itemId, {
+              prNumber: orchItem.prNumber,
+              branch: `ninthwave/${itemId}`,
+            });
+          }
+          if (from === "ci-pending" && (to === "ci-passed" || to === "ci-failed")) {
+            deps.crewBroker.report("ci_result", itemId, {
+              passed: to === "ci-passed",
+              checkName: "github-actions",
+              prNumber: orchItem.prNumber,
+            });
+          }
+          if (from === "reviewing" && (to === "ci-passed" || to === "review-pending")) {
+            deps.crewBroker.report("review_submitted", itemId, {
+              reviewer: "ai",
+              verdict: to === "ci-passed" ? "approved" : "changes_requested",
+              prNumber: orchItem.prNumber,
+            });
+          }
+          if (from === "review-pending" && to === "ci-pending") {
+            deps.crewBroker.report("review_addressed", itemId, {
+              round: orchItem.reviewRound ?? 1,
+              prNumber: orchItem.prNumber,
+            });
+          }
+          if (to === "rebasing") {
+            deps.crewBroker.report("rebase", itemId, { reason: "conflicts" });
+          }
+          if (to === "merged" && orchItem.prNumber) {
+            deps.crewBroker.report("pr_merged", itemId, { prNumber: orchItem.prNumber });
+          }
+          if (from === "forward-fix-pending" && (to === "done" || to === "fix-forward-failed")) {
+            deps.crewBroker.report("post_merge_ci", itemId, {
+              passed: to === "done",
+              checkName: "github-actions",
+              prNumber: orchItem.prNumber,
+            });
+          }
+          if (from === "fix-forward-failed" && to === "fixing-forward") {
+            deps.crewBroker.report("fix_forward_started", itemId, {
+              triggerPr: orchItem.prNumber,
+              fixBranch: `ninthwave/${itemId}-fix`,
+            });
+          }
+          if (from === "fixing-forward" && (to === "done" || to === "stuck")) {
+            deps.crewBroker.report("fix_forward_result", itemId, {
+              succeeded: to === "done",
+            });
+          }
+        }
+      }
     };
   }
 
@@ -1993,6 +2083,32 @@ export async function cmdOrchestrate(
     // No git remote available
   }
 
+  // Load saved crew code for persistent sessions
+  const savedCrewCode = readCrewCode(projectRoot);
+  if (!crewCode && !crewCreate && savedCrewCode) {
+    // Re-activate saved crew via POST /api/crews with code field
+    info("Re-activating saved crew...");
+    const brokerBaseUrl = crewUrl ?? "https://ninthwave.sh";
+    const httpUrl = brokerBaseUrl.replace(/^wss?:\/\//, "https://");
+    try {
+      const res = await fetch(`${httpUrl}/api/crews`, {
+        method: "POST",
+        body: JSON.stringify({ repoUrl: crewRepoUrl, code: savedCrewCode }),
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { code: string };
+        crewCode = body.code;
+        if (!crewUrl) crewUrl = "wss://ninthwave.sh";
+        info(`Crew re-activated: ${crewCode}`);
+      } else {
+        info("Saved crew code expired, starting solo.");
+      }
+    } catch {
+      info("Could not reach crew server, starting solo.");
+    }
+  }
+
   if (crewCreate) {
     info("Creating crew...");
     const brokerBaseUrl = crewUrl ?? "https://ninthwave.sh";
@@ -2031,6 +2147,7 @@ export async function cmdOrchestrate(
       die(`Failed to connect to crew server: ${(err as Error).message}`);
     }
     crewBroker = broker;
+    saveCrewCode(projectRoot, crewCode);
   }
 
   /** Get IDs of items claimed by other crew members (for remote indicator in TUI). */
@@ -2065,6 +2182,24 @@ export async function cmdOrchestrate(
     ? false
     : (reviewExternal || projectConfig.review_external);
   const scheduleEnabled = projectConfig.schedule_enabled;
+
+  // Resolve telemetry: env var > config > first-run prompt > disabled
+  let telemetryEnabled = false;
+  if (process.env.NW_TELEMETRY === "1") {
+    telemetryEnabled = true;
+  } else if (projectConfig.telemetry !== undefined) {
+    telemetryEnabled = projectConfig.telemetry;
+  } else if (process.stdin.isTTY && !isDaemonChild) {
+    const answer = await confirmPrompt(
+      "Send anonymous usage stats to ninthwave.sh? Your crew stats will be viewable at ninthwave.sh/stats/{code}.",
+      false,
+    );
+    telemetryEnabled = answer;
+    saveConfig(projectRoot, { telemetry: telemetryEnabled });
+  }
+  if (telemetryEnabled && crewBroker) {
+    crewBroker.setTelemetry(true);
+  }
 
   // State persistence: serialize state each poll cycle so the status pane can display all items.
   // Written in both daemon and interactive mode -- the status pane reads this file to show
@@ -2135,6 +2270,7 @@ export async function cmdOrchestrate(
         }
       }
     },
+    crewCode: crewCode ?? undefined,
   };
 
   const onPollComplete = (items: OrchestratorItem[], _pollIntervalMs?: number) => {
@@ -2331,6 +2467,32 @@ export async function cmdOrchestrate(
     if (tuiMode) process.stdout.write(ALT_SCREEN_OFF);
   };
   process.on("exit", exitAltScreen);
+
+  // Show crew code splash screen on startup (dismissed by any keypress)
+  if (tuiMode && crewCode) {
+    const termWidth = getTerminalWidth();
+    const termRows = getTerminalHeight();
+    const lines: string[] = [];
+    const centerLine = (text: string, plainLen: number) => {
+      const pad = Math.max(0, Math.floor((termWidth - plainLen) / 2));
+      return " ".repeat(pad) + text;
+    };
+    const midRow = Math.floor(termRows / 2) - 2;
+    for (let i = 0; i < midRow; i++) lines.push("");
+    lines.push(centerLine(`\x1B[1m\x1B[36m${crewCode}\x1B[0m`, crewCode.length));
+    lines.push("");
+    lines.push(centerLine("\x1B[2mPress ? for help  |  Press any key to continue\x1B[0m", 47));
+    process.stdout.write("\x1B[H" + lines.join("\x1B[K\n") + "\x1B[J");
+
+    // Wait for any keypress to dismiss
+    await new Promise<void>((resolve) => {
+      const onData = () => {
+        process.stdin.removeListener("data", onData);
+        resolve();
+      };
+      process.stdin.on("data", onData);
+    });
+  }
 
   // Write PID file for foreground mode too (prevents duplicate instances)
   if (!isDaemonChild) {

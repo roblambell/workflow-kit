@@ -11,6 +11,9 @@ import {
   WebSocketCrewBroker,
   getOrCreateDaemonId,
   daemonIdPath,
+  readCrewCode,
+  saveCrewCode,
+  crewCodePath,
   type CrewBrokerDeps,
   type ReconnectState,
   type ClientMessage,
@@ -613,5 +616,170 @@ describe("WebSocketCrewBroker", () => {
       expect(receivedHeartbeat.ts).toBeDefined();
       broker.disconnect();
     });
+  });
+});
+
+// ── Crew code persistence ──────────────────────────────────────────
+
+describe("crew code persistence", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "crew-code-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("readCrewCode returns null when no code saved", () => {
+    expect(readCrewCode(tempDir)).toBeNull();
+  });
+
+  it("saveCrewCode and readCrewCode round-trip", () => {
+    saveCrewCode(tempDir, "K2F9-AB3X-7YPL-QM4N");
+    expect(readCrewCode(tempDir)).toBe("K2F9-AB3X-7YPL-QM4N");
+  });
+
+  it("saveCrewCode overwrites previous value", () => {
+    saveCrewCode(tempDir, "AAAA-BBBB-CCCC-DDDD");
+    saveCrewCode(tempDir, "XXXX-YYYY-ZZZZ-1234");
+    expect(readCrewCode(tempDir)).toBe("XXXX-YYYY-ZZZZ-1234");
+  });
+
+  it("readCrewCode returns null for empty file", () => {
+    const filePath = crewCodePath(tempDir);
+    mkdirSync(join(tempDir, ".ninthwave", "projects"), { recursive: true });
+    // crewCodePath uses userStateDir which depends on HOME
+    // Write directly to the path
+    const dir = require("path").dirname(filePath);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(filePath, "", "utf-8");
+    expect(readCrewCode(tempDir)).toBeNull();
+  });
+});
+
+// ── Report method ──────────────────────────────────────────────────
+
+describe("report method", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "crew-report-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("report sends message when telemetry enabled", async () => {
+    let receivedReport: any = null;
+    const { server, port } = startTestServer({
+      onMessage: (_ws, msg) => {
+        if (msg.type === "report") {
+          receivedReport = msg;
+        }
+      },
+    });
+
+    try {
+      const { log } = createLogCollector();
+      const broker = new WebSocketCrewBroker(
+        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", "https://github.com/test/repo",
+        { log, heartbeatIntervalMs: 60_000 },
+        "test-daemon",
+        true, // telemetryEnabled
+      );
+
+      const connectP = broker.connect();
+      await new Promise((r) => setTimeout(r, 50));
+      broker.sync([]);
+      await connectP;
+
+      broker.report("pr_opened", "test-item", { prNumber: 42, branch: "ninthwave/test-item" });
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(receivedReport).not.toBeNull();
+      expect(receivedReport.type).toBe("report");
+      expect(receivedReport.event).toBe("pr_opened");
+      expect(receivedReport.todoPath).toBe("test-item");
+      expect(receivedReport.metadata.prNumber).toBe(42);
+      broker.disconnect();
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("report is no-op when telemetry disabled", async () => {
+    let receivedReport: any = null;
+    const { server, port } = startTestServer({
+      onMessage: (_ws, msg) => {
+        if (msg.type === "report") {
+          receivedReport = msg;
+        }
+      },
+    });
+
+    try {
+      const { log } = createLogCollector();
+      const broker = new WebSocketCrewBroker(
+        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", "https://github.com/test/repo",
+        { log, heartbeatIntervalMs: 60_000 },
+        "test-daemon",
+        false, // telemetryEnabled = false
+      );
+
+      const connectP = broker.connect();
+      await new Promise((r) => setTimeout(r, 50));
+      broker.sync([]);
+      await connectP;
+
+      broker.report("pr_opened", "test-item", { prNumber: 42 });
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(receivedReport).toBeNull();
+      broker.disconnect();
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  it("setTelemetry enables reporting after construction", async () => {
+    let receivedReport: any = null;
+    const { server, port } = startTestServer({
+      onMessage: (_ws, msg) => {
+        if (msg.type === "report") {
+          receivedReport = msg;
+        }
+      },
+    });
+
+    try {
+      const { log } = createLogCollector();
+      const broker = new WebSocketCrewBroker(
+        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", "https://github.com/test/repo",
+        { log, heartbeatIntervalMs: 60_000 },
+        "test-daemon",
+        // telemetryEnabled omitted (default false)
+      );
+
+      const connectP = broker.connect();
+      await new Promise((r) => setTimeout(r, 50));
+      broker.sync([]);
+      await connectP;
+
+      broker.report("pr_opened", "test-item", { prNumber: 42 });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(receivedReport).toBeNull();
+
+      broker.setTelemetry(true);
+      broker.report("pr_merged", "test-item", { prNumber: 42 });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(receivedReport).not.toBeNull();
+      expect(receivedReport.event).toBe("pr_merged");
+      broker.disconnect();
+    } finally {
+      server.stop(true);
+    }
   });
 });

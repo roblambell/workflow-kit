@@ -290,7 +290,7 @@ describe("confirmSummary", () => {
     const crewResult: InteractiveResult = {
       ...result,
       reviewMode: "all",
-      crewAction: { type: "join", code: "xK2-9fB" },
+      crewAction: { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
     };
     const logs: string[] = [];
     const origLog = console.log;
@@ -302,7 +302,7 @@ describe("confirmSummary", () => {
     }
     const output = logs.join("\n");
     expect(output).toContain("all");
-    expect(output).toContain("join xK2-9fB");
+    expect(output).toContain("join K2F9-AB3X-7YPL-QM4N");
   });
 
   it("displays solo when crewAction is null", async () => {
@@ -556,8 +556,8 @@ describe("promptCrewMode", () => {
   });
 
   it('returns join with code on input "2" then valid code', async () => {
-    const result = await promptCrewMode(makePrompt(["2", "xK2-9fB"]));
-    expect(result).toEqual({ type: "join", code: "xK2-9fB" });
+    const result = await promptCrewMode(makePrompt(["2", "K2F9-AB3X-7YPL-QM4N"]));
+    expect(result).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
   });
 
   it("returns null when user cancels join code prompt", async () => {
@@ -566,8 +566,8 @@ describe("promptCrewMode", () => {
   });
 
   it("retries on invalid crew code then accepts valid", async () => {
-    const result = await promptCrewMode(makePrompt(["2", "invalid", "xK2-9fB"]));
-    expect(result).toEqual({ type: "join", code: "xK2-9fB" });
+    const result = await promptCrewMode(makePrompt(["2", "invalid", "K2F9-AB3X-7YPL-QM4N"]));
+    expect(result).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
   });
 
   it("retries on invalid choice then accepts valid", async () => {

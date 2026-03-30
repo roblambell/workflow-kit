@@ -384,7 +384,7 @@ export async function promptCrewMode(
         if (isCrewCode(code)) {
           return { type: "join", code };
         }
-        console.log(`  ${YELLOW}Invalid crew code.${RESET} Expected format: ${BOLD}XXX-XXX${RESET} (e.g. xK2-9fB).`);
+        console.log(`  ${YELLOW}Invalid crew code.${RESET} Expected format: ${BOLD}XXXX-XXXX-XXXX-XXXX${RESET} (e.g. K2F9-AB3X-7YPL-QM4N).`);
       }
     }
 

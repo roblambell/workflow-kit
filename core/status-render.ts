@@ -1160,10 +1160,19 @@ export function formatUnifiedProgress(
   return `  ${leftSide}  ${totalText}`;
 }
 
-/** Format inline crew status string (plain text, no ANSI). */
+/** Abbreviate a long crew code to first group + ellipsis (e.g. "K2F9-AB3X-7YPL-QM4N" → "K2F9…"). */
+function abbreviateCrewCode(code: string): string {
+  const dash = code.indexOf("-");
+  if (dash > 0) return code.slice(0, dash) + "\u2026";
+  if (code.length > 8) return code.slice(0, 4) + "\u2026";
+  return code;
+}
+
+/** Format inline crew status string (plain text, no ANSI). Uses abbreviated code to save space. */
 export function formatCrewInline(status: CrewStatusInfo): string {
-  if (!status.connected) return `Crew ${status.crewCode}  OFFLINE`;
-  return `Crew ${status.crewCode}  ${status.daemonCount} online`;
+  const short = abbreviateCrewCode(status.crewCode);
+  if (!status.connected) return `Crew ${short}  OFFLINE`;
+  return `Crew ${short}  ${status.daemonCount} online`;
 }
 
 /**
@@ -1957,10 +1966,20 @@ export function formatItemDetail(
 export function renderHelpOverlay(
   termWidth: number,
   termRows: number,
+  crewCode?: string,
 ): string[] {
   // ── Build content lines (plain text, no padding yet) ──────────────
 
   const sections: string[][] = [];
+
+  // Crew code section (if in crew mode)
+  if (crewCode) {
+    sections.push([
+      `${BOLD}Crew Code${RESET}`,
+      `  ${CYAN}${crewCode}${RESET}`,
+      `  ${DIM}View stats: ninthwave.sh/stats/${crewCode}${RESET}`,
+    ]);
+  }
 
   // Metrics section
   sections.push([

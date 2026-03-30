@@ -74,7 +74,7 @@ export interface CrewEvent {
   ts: string;
   crew_id: string;
   daemon_id: string;
-  event: "claim" | "sync" | "complete" | "disconnect" | "reconnect" | "abandon" | "schedule_claim";
+  event: "claim" | "sync" | "complete" | "disconnect" | "reconnect" | "abandon" | "schedule_claim" | "report";
   todo_path: string;
   metadata: { affinity: "author" | "pool" } | Record<string, unknown>;
 }
@@ -150,8 +150,17 @@ export class MockBroker {
 
       routes: {
         "/api/crews": {
-          POST: (_req: Request) => {
-            const code = broker.createCrew();
+          POST: async (req: Request) => {
+            let requestedCode: string | undefined;
+            try {
+              const body = await req.json();
+              if (body && typeof body.code === "string" && body.code.length > 0) {
+                requestedCode = body.code;
+              }
+            } catch { /* no body or malformed */ }
+            const code = requestedCode && broker.crews.has(requestedCode)
+              ? requestedCode
+              : broker.createCrew(requestedCode);
             return Response.json({ code }, { status: 201 });
           },
         },
@@ -161,7 +170,7 @@ export class MockBroker {
         const url = new URL(req.url);
 
         // WebSocket upgrade: /api/crews/:code/ws?daemonId=...&name=...
-        const wsMatch = url.pathname.match(/^\/api\/crews\/([A-Za-z0-9]{3}-[A-Za-z0-9]{3})\/ws$/);
+        const wsMatch = url.pathname.match(/^\/api\/crews\/([A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4})\/ws$/);
         if (wsMatch) {
           const code = wsMatch[1]!;
           const daemonId = url.searchParams.get("daemonId");
@@ -259,8 +268,8 @@ export class MockBroker {
 
   // ── Crew management ───────────────────────────────────────────────
 
-  private createCrew(): string {
-    const code = this.generateCode();
+  private createCrew(requestedCode?: string): string {
+    const code = requestedCode ?? this.generateCode();
     this.crews.set(code, {
       code,
       items: new Map(),
@@ -274,9 +283,10 @@ export class MockBroker {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let code: string;
     do {
-      const part1 = Array.from({ length: 3 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-      const part2 = Array.from({ length: 3 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-      code = `${part1}-${part2}`;
+      const parts = Array.from({ length: 4 }, () =>
+        Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""),
+      );
+      code = parts.join("-");
     } while (this.crews.has(code));
     return code;
   }
@@ -387,6 +397,10 @@ export class MockBroker {
       case "heartbeat":
         daemon.lastHeartbeat = Date.now();
         this.send(ws, { type: "heartbeat_ack", ts: msg.ts });
+        break;
+      case "report":
+        this.logEvent(crew.code, daemonId, "report", msg.todoPath ?? "", msg.metadata ?? {});
+        this.send(ws, { type: "report_ack", event: msg.event });
         break;
     }
   }
