@@ -170,7 +170,7 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
           `PROMPT=$(cat '${promptDataFile}')\n` +
           `rm -f '${promptDataFile}' '${launcherScript}'\n` +
           `export OPENCODE_PERMISSION='{"$schema":"https://opencode.ai/config.json","permission":"allow"}'\n` +
-          `exec opencode --agent ${opts.agentName} --title '${opts.wsName}' --prompt "$PROMPT"\n`,
+          `exec opencode --agent ${opts.agentName} --prompt "$PROMPT"\n`,
       );
       deps.run("chmod", ["+x", launcherScript]);
       return { cmd: launcherScript, initialPrompt: "" };

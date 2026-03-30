@@ -265,7 +265,7 @@ describe("opencode profile buildLaunchCmd", () => {
     const calls = (deps.writeFileSync as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls[1]![0]).toMatch(/^\/fake\/state\/tmp\/nw-launch-H-X-3-\d+\.sh$/);
     const script = calls[1]![1] as string;
-    expect(script).toContain("opencode --agent ninthwave-implementer --title 'H-X-3 My Title' --prompt");
+    expect(script).toContain("opencode --agent ninthwave-implementer --prompt");
     expect(script).toContain("OPENCODE_PERMISSION");
   });
 
