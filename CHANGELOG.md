@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.8] - 2026-03-30
+
+### Added
+- report daemon session metadata and token usage to broker
+- consolidate nw watch into nw, wait for items when none exist
+
+### Fixed
+- increase keystroke-to-Return delay for TUI message delivery
+- eliminate EDR-triggering shell scripts from worker launch
+- filter untracked deps from crew sync to prevent stuck queue (#456)
+
 ## [0.3.7] - 2026-03-30
 
 ### Fixed
