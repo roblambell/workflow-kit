@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3] - 2026-03-30
+
+### Added
+- replace number-toggle AI tool selection with TUI checkbox in onboard flow
+
+### Fixed
+- copy agent files and skills into project instead of symlinking to bundle
+
 ## [0.3.2] - 2026-03-30
 
 ### Added
