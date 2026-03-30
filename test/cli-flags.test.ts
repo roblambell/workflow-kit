@@ -78,8 +78,8 @@ describe("CLI flags", () => {
       const result = runCli("--help");
       expect(result.stdout).toContain("init");
       expect(result.stdout).toContain("list");
-      expect(result.stdout).toContain("watch");
       expect(result.stdout).toContain("doctor");
+      expect(result.stdout).toContain("nw [options]");
     });
   });
 
@@ -104,11 +104,10 @@ describe("CLI flags", () => {
       expect(result.stdout).toContain("Launch parallel coding sessions");
     });
 
-    it("shows command-specific help for watch --help", () => {
-      const result = runCli("watch", "--help");
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("nw watch");
-      expect(result.stdout).toContain("Run the full pipeline");
+    it("rejects watch as unknown command (removed -- use nw directly)", () => {
+      const result = runCli("watch");
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("Unknown command: watch");
     });
 
     it("rejects orchestrate as unknown command", () => {

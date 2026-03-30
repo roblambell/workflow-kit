@@ -337,49 +337,53 @@ describe("cmdNoArgs", () => {
     expect(output).toContain("Welcome to ninthwave");
   });
 
-  it("shows guidance when .ninthwave/ exists but no work items", async () => {
+  it("waits for items and then routes to interactive flow when items appear", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+    let parseCallCount = 0;
+    let interactiveFlowCalled = false;
 
-    try {
-      await cmdNoArgs(projectDir, {
-        isTTY: true,
-        parseWorkItems: () => [],
-        isDaemonRunning: () => null,
-      });
-    } finally {
-      console.log = origLog;
-    }
+    await cmdNoArgs(projectDir, {
+      isTTY: true,
+      parseWorkItems: () => {
+        parseCallCount++;
+        return parseCallCount > 1 ? [fakeWorkItem("H-1", "Test item")] : [];
+      },
+      sleep: async () => {},
+      isDaemonRunning: () => null,
+      runInteractiveFlow: async () => { interactiveFlowCalled = true; return null; },
+    });
 
-    const output = logs.join("\n");
-    expect(output).toContain("No work items found");
-    expect(output).toContain("/decompose");
+    expect(parseCallCount).toBeGreaterThan(1);
+    expect(interactiveFlowCalled).toBe(true);
   });
 
-  it("shows guidance when .ninthwave/ exists but work dir missing", async () => {
+  it("waits when work dir is missing until it appears", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
-    // No work/ subdirectory
+    // No work/ subdirectory initially
 
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+    let existsCallCount = 0;
+    let interactiveFlowCalled = false;
 
-    try {
-      await cmdNoArgs(projectDir, {
-        isTTY: true,
-        isDaemonRunning: () => null,
-      });
-    } finally {
-      console.log = origLog;
-    }
+    await cmdNoArgs(projectDir, {
+      isTTY: true,
+      existsSync: (p: string) => {
+        // .ninthwave/ always exists; work dir appears after first sleep
+        if (typeof p === "string" && p.endsWith("work")) {
+          existsCallCount++;
+          return existsCallCount > 1;
+        }
+        return true;
+      },
+      parseWorkItems: () => [fakeWorkItem("H-1", "Test item")],
+      sleep: async () => {},
+      isDaemonRunning: () => null,
+      runInteractiveFlow: async () => { interactiveFlowCalled = true; return null; },
+    });
 
-    const output = logs.join("\n");
-    expect(output).toContain("No work items found");
+    expect(interactiveFlowCalled).toBe(true);
   });
 
   it("routes to status view when daemon is running", async () => {

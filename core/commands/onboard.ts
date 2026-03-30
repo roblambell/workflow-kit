@@ -91,6 +91,7 @@ export interface NoArgsDeps extends OnboardDeps {
   runStatusWatch?: (worktreeDir: string, projectRoot: string) => Promise<void>;
   printHelp?: () => void;
   loadConfig?: (projectRoot: string) => ProjectConfig;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const defaultCommandExists: CommandChecker = (cmd: string): boolean => {
@@ -349,13 +350,18 @@ export async function cmdNoArgs(
   }
 
   if (todos.length === 0) {
-    console.log();
-    console.log(
-      `No work items found. Create work items in ${BOLD}.ninthwave/work/${RESET}` +
-        ` or use the ${BOLD}/decompose${RESET} skill in your AI tool to break down your plan.`,
+    process.stdout.write(
+      `\nWaiting for work items in ${BOLD}.ninthwave/work/${RESET} ...` +
+        ` ${DIM}(Ctrl+C to exit)${RESET}\n\n`,
     );
-    console.log();
-    return;
+    const doSleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    while (todos.length === 0) {
+      await doSleep(2000);
+      if (checkExists(workDir)) {
+        todos = doParseT(workDir, worktreeDir);
+      }
+    }
+    // Items appeared -- fall through to daemon check and interactive flow
   }
 
   // State 4: Daemon running → live status view

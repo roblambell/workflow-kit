@@ -79,7 +79,7 @@ describe("COMMAND_REGISTRY", () => {
   it("workflow group contains expected commands", () => {
     const workflow = COMMAND_REGISTRY.filter((c) => c.group === "workflow").map((c) => c.name);
     expect(workflow).toContain("init");
-    expect(workflow).toContain("watch");
+    expect(workflow).toContain("crew");
     expect(workflow).toContain("status");
     expect(workflow).toContain("stop");
   });
@@ -173,7 +173,7 @@ describe("grouped help (nw --help)", () => {
 
   it("shows workflow commands", () => {
     const result = runCli("--help");
-    expect(result.stdout).toContain("watch");
+    expect(result.stdout).toContain("crew");
     expect(result.stdout).toContain("status");
     expect(result.stdout).toContain("init");
     expect(result.stdout).toContain("stop");
@@ -200,7 +200,7 @@ describe("grouped help (nw --help)", () => {
     const result = runCli("--help");
     // Verify key structural elements
     const lines = result.stdout.split("\n");
-    expect(lines[0]).toContain("Usage: nw <command>");
+    expect(lines[0]).toContain("Usage: nw");
     // Find Workflow section
     const workflowIdx = lines.findIndex((l) => l.startsWith("Workflow:"));
     expect(workflowIdx).toBeGreaterThan(0);
@@ -255,36 +255,36 @@ describe("full help (nw --help-all)", () => {
 });
 
 describe("per-command rich help (nw <command> --help)", () => {
-  it("shows description for watch", () => {
-    const result = runCli("watch", "--help");
+  it("shows description for init", () => {
+    const result = runCli("init", "--help");
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Run the full pipeline");
+    expect(result.stdout).toContain("Auto-detect and initialize");
   });
 
-  it("shows usage line for watch", () => {
-    const result = runCli("watch", "--help");
+  it("shows usage line for init", () => {
+    const result = runCli("init", "--help");
     expect(result.stdout).toContain("Usage:");
-    expect(result.stdout).toContain("nw watch");
+    expect(result.stdout).toContain("nw init");
   });
 
-  it("shows flags for watch", () => {
-    const result = runCli("watch", "--help");
+  it("shows flags for init", () => {
+    const result = runCli("init", "--help");
     expect(result.stdout).toContain("Flags:");
-    expect(result.stdout).toContain("--items");
-    expect(result.stdout).toContain("--daemon");
+    expect(result.stdout).toContain("--global");
+    expect(result.stdout).toContain("--yes");
   });
 
-  it("shows flag descriptions for watch", () => {
-    const result = runCli("watch", "--help");
-    expect(result.stdout).toContain("Work item IDs to process");
-    expect(result.stdout).toContain("Run in daemon mode");
+  it("shows flag descriptions for init", () => {
+    const result = runCli("init", "--help");
+    expect(result.stdout).toContain("Install global shell alias");
+    expect(result.stdout).toContain("Skip confirmation");
   });
 
-  it("shows examples for watch", () => {
-    const result = runCli("watch", "--help");
+  it("shows examples for init", () => {
+    const result = runCli("init", "--help");
     expect(result.stdout).toContain("Examples:");
-    expect(result.stdout).toContain("nw watch");
-    expect(result.stdout).toContain("nw watch --daemon");
+    expect(result.stdout).toContain("nw init");
+    expect(result.stdout).toContain("nw init --global");
   });
 
   it("shows rich help for list with flags", () => {

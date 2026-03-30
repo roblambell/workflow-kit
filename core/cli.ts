@@ -11,7 +11,7 @@ import { WORK_ITEM_ID_CLI_PATTERN, cmdRunItems } from "./commands/run-items.ts";
 import { ensureMuxInteractiveOrDie } from "./mux.ts";
 
 /** Commands that require a multiplexer and should auto-launch cmux. */
-const COMMANDS_NEEDING_MUX = new Set(["watch", "start"]);
+const COMMANDS_NEEDING_MUX = new Set(["start"]);
 
 // ── Project root resolution ──────────────────────────────────────────
 
@@ -71,6 +71,31 @@ if (!command) {
   }
 
   await cmdNoArgs(projectRoot);
+  process.exit(0);
+}
+
+// ── Flag-style invocations → cmdOrchestrate ──────────────────────────
+// `nw --daemon`, `nw --items H-1`, `nw --dangerously-bypass`, etc.
+// Route the full arg list directly to the orchestrator.
+
+if (command.startsWith("-")) {
+  const gitResult = run("git", [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-common-dir",
+  ]);
+  if (gitResult.exitCode !== 0) {
+    die("Not inside a git repository");
+  }
+  const projectRoot = gitResult.stdout.replace(/\/.git$/, "");
+  const isInitialized = existsSync(join(projectRoot, ".ninthwave"));
+  if (process.stdin.isTTY && isInitialized) {
+    await ensureMuxInteractiveOrDie(process.argv.slice(2));
+  }
+  const workDir = join(projectRoot, ".ninthwave", "work");
+  const worktreeDir = join(projectRoot, ".ninthwave", ".worktrees");
+  const { cmdOrchestrate } = await import("./commands/orchestrate.ts");
+  await cmdOrchestrate(process.argv.slice(2), workDir, worktreeDir, projectRoot);
   process.exit(0);
 }
 

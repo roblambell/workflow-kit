@@ -2005,9 +2005,9 @@ export async function cmdOrchestrate(
     totalMemoryGB: Math.round(totalmem() / (1024 ** 3)),
   });
 
-  if (itemIds.length === 0) {
+  if (itemIds.length === 0 && !watchMode && !daemonMode) {
     die(
-      "Usage: ninthwave watch --items ID1 ID2 ... [--merge-strategy auto|manual] [--wip-limit N] [--poll-interval SECS] [--daemon] [--no-watch] [--watch-interval SECS]",
+      "Usage: nw --items ID1 ID2 ... [--merge-strategy auto|manual] [--wip-limit N] [--poll-interval SECS] [--daemon] [--no-watch] [--watch-interval SECS]",
     );
   }
 

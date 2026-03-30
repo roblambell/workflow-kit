@@ -26,7 +26,6 @@ import {
 } from "./commands/pr-monitor.ts";
 import { cmdCiFailures } from "./commands/ci.ts";
 import { cmdInit } from "./commands/init.ts";
-import { cmdWatch } from "./commands/orchestrate.ts";
 import { cmdCrew } from "./commands/crew.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
 import { cmdAnalytics } from "./commands/analytics.ts";
@@ -111,31 +110,6 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
       "-y": "Skip confirmation prompts",
     },
     examples: ["nw init", "nw init --global", "nw init --yes"],
-  },
-  {
-    name: "watch",
-    usage: "watch [--items ID1 ID2 ...] [--tool NAME[,NAME]] [--daemon] [--no-watch]",
-    description: "Run the full pipeline (TUI, daemon, or JSON modes)",
-    group: "workflow",
-    needsRoot: true,
-    needsWork: true,
-    handler: async (ctx) => { await cmdWatch(ctx.args, ctx.workDir, ctx.worktreeDir, ctx.projectRoot); },
-    flags: {
-      "--items": "Work item IDs to process",
-      "--tool": "AI tool(s), comma-separated for round-robin (claude, opencode, copilot)",
-      "--daemon": "Run in daemon mode (background)",
-      "--no-watch": "Disable TUI watch mode",
-      "--watch": "Enable TUI watch mode",
-      "--no-review": "Disable review workers (on by default)",
-      "--review": "Enable review workers (default)",
-      "--no-fix-forward": "Skip post-merge CI fix-forward on main",
-      "--fix-forward": "Enable post-merge CI fix-forward (default)",
-    },
-    examples: [
-      "nw watch",
-      "nw watch --items H-FOO-1 H-FOO-2",
-      "nw watch --daemon",
-    ],
   },
   {
     name: "crew",
@@ -578,8 +552,9 @@ function printGroup(label: string, commands: CommandEntry[]): void {
 
 /** Print grouped usage help (Workflow + Diagnostics only). */
 export function printHelp(): void {
-  console.log("Usage: nw <command> [options]");
+  console.log("Usage: nw [options]             Run orchestration (waits for items if none exist)");
   console.log("       nw <ID> [ID2...]          Launch work items by ID");
+  console.log("       nw <command> [options]    Run a specific command");
   console.log();
 
   const groups = commandsByGroup(["workflow", "diagnostic"]);
@@ -593,8 +568,9 @@ export function printHelp(): void {
 
 /** Print full usage help with all groups including Advanced. */
 export function printHelpAll(): void {
-  console.log("Usage: nw <command> [options]");
+  console.log("Usage: nw [options]             Run orchestration (waits for items if none exist)");
   console.log("       nw <ID> [ID2...]          Launch work items by ID");
+  console.log("       nw <command> [options]    Run a specific command");
   console.log();
 
   const groups = commandsByGroup(GROUP_ORDER);
