@@ -3,6 +3,8 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { join } from "path";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import {
   orchestrateLoop,
   adaptivePollInterval,
@@ -16,6 +18,7 @@ import {
   isWorkerAliveWithCache,
   forkDaemon,
   cleanOrphanedWorktrees,
+  buildSessionEndedMetadata,
   parseWatchArgs,
   validateItemIds,
   pushLogBuffer,
@@ -3658,6 +3661,81 @@ describe("orchestrateLoop crew mode", () => {
       isDisconnected: () => disconnected,
     };
   }
+
+  function createTelemetryCtx(agentFilename: string, model: string): ExecutionContext {
+    const projectRoot = mkdtempSync(join(tmpdir(), "nw-telemetry-ctx-"));
+    mkdirSync(join(projectRoot, ".ninthwave", "work"), { recursive: true });
+    mkdirSync(join(projectRoot, "agents"), { recursive: true });
+    writeFileSync(join(projectRoot, "agents", agentFilename), `---\nmodel: ${model}\n---\n`);
+
+    return {
+      ...defaultCtx,
+      projectRoot,
+      worktreeDir: join(projectRoot, ".ninthwave", ".worktrees"),
+      workDir: join(projectRoot, ".ninthwave", "work"),
+    };
+  }
+
+  it("reports session_started with configured model from agent frontmatter", async () => {
+    const ctx = createTelemetryCtx("implementer.md", "opus");
+    try {
+      const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+      orch.addItem(makeWorkItem("T-MODEL-1"));
+      orch.getItem("T-MODEL-1")!.reviewCompleted = true;
+
+      let cycle = 0;
+      const { broker } = mockCrewBroker({ connected: true, claimResults: ["T-MODEL-1"] });
+
+      const deps: OrchestrateLoopDeps = {
+        buildSnapshot: (): PollSnapshot => {
+          cycle++;
+          if (cycle === 1) return { items: [], readyIds: ["T-MODEL-1"] };
+          return { items: [{ id: "T-MODEL-1", workerAlive: true }], readyIds: [] };
+        },
+        sleep: () => Promise.resolve(),
+        log: () => {},
+        actionDeps: mockActionDeps(),
+        crewBroker: broker,
+        getFreeMem: () => 16 * 1024 ** 3,
+      };
+
+      await orchestrateLoop(orch, ctx, deps, { maxIterations: 2 });
+
+      const reportCalls = (broker.report as any).mock.calls.filter(([event]: [string]) => event === "session_started");
+      expect(reportCalls).toHaveLength(1);
+      expect(reportCalls[0]).toEqual([
+        "session_started",
+        "T-MODEL-1",
+        { agent: "claude", model: "opus", role: "implementer" },
+      ]);
+      expect(reportCalls[0]![2]).not.toHaveProperty("provider");
+    } finally {
+      rmSync(ctx.projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("builds session_ended metadata with harness and model from agent frontmatter", () => {
+    const ctx = createTelemetryCtx("implementer.md", "opus");
+    try {
+      const startedAt = new Date(Date.now() - 1_000).toISOString();
+      const metadata = buildSessionEndedMetadata({
+        ...makeOrchestratorItem("T-MODEL-2"),
+        workspaceRef: "workspace:1",
+        aiTool: "claude",
+        startedAt,
+      }, ctx, "clean");
+
+      expect(metadata).toMatchObject({
+        agent: "claude",
+        model: "opus",
+        role: "implementer",
+      });
+      expect(metadata).toHaveProperty("durationMs");
+      expect(metadata).not.toHaveProperty("provider");
+    } finally {
+      rmSync(ctx.projectRoot, { recursive: true, force: true });
+    }
+  });
 
   it("filters launch actions through crew broker -- only claimed items launch", async () => {
     const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });

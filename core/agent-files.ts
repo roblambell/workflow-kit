@@ -10,6 +10,27 @@ import { AGENT_SOURCES } from "./commands/setup.ts";
 /** Agent files to seed into worktrees -- derived from AI_TOOL_PROFILES. */
 const AGENT_FILES = agentFileTargets(AGENT_SOURCES);
 
+/** Parse the configured LLM model from YAML frontmatter. */
+export function parseAgentModel(content: string): string | null {
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!frontmatterMatch) return null;
+
+  const modelMatch = frontmatterMatch[1]?.match(/^[ \t]*model[ \t]*:[ \t]*(.+?)[ \t]*$/m);
+  if (!modelMatch) return null;
+
+  let model = modelMatch[1]?.trim() ?? "";
+  if (!model) return null;
+
+  if (
+    (model.startsWith('"') && model.endsWith('"')) ||
+    (model.startsWith("'") && model.endsWith("'"))
+  ) {
+    model = model.slice(1, -1).trim();
+  }
+
+  return model.length > 0 ? model : null;
+}
+
 /** Dependencies for seedAgentFiles, injectable for testing. */
 export interface SeedAgentFilesDeps {
   run: typeof run;
@@ -39,12 +60,16 @@ export function readAgentFileContent(
   deps: Pick<SeedAgentFilesDeps, "run" | "readFileSync" | "existsSync"> = defaultSeedDeps,
 ): string | null {
   // Try reading from origin/main first for consistency with remote state
-  const gitResult = deps.run("git", ["show", `origin/main:agents/${filename}`], {
-    cwd: hubRoot,
-    timeout: GIT_TIMEOUT,
-  });
-  if (gitResult.exitCode === 0 && gitResult.stdout.length > 0) {
-    return gitResult.stdout;
+  try {
+    const gitResult = deps.run("git", ["show", `origin/main:agents/${filename}`], {
+      cwd: hubRoot,
+      timeout: GIT_TIMEOUT,
+    });
+    if (gitResult.exitCode === 0 && gitResult.stdout.length > 0) {
+      return gitResult.stdout;
+    }
+  } catch {
+    // Fall back to the local filesystem if git is unavailable.
   }
 
   // Fallback to local filesystem

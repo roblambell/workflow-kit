@@ -105,6 +105,14 @@ export interface OrchestratorItem {
   fixForwardWorkspaceRef?: string;
   /** AI tool used for this item's implementation worker. Review/rebaser/forward-fixer inherit this. */
   aiTool?: string;
+  /** LLM model parsed from agents/implementer.md frontmatter for telemetry. */
+  implementerModel?: string;
+  /** LLM model parsed from agents/reviewer.md frontmatter for telemetry. */
+  reviewerModel?: string;
+  /** LLM model parsed from agents/rebaser.md frontmatter for telemetry. */
+  rebaserModel?: string;
+  /** LLM model parsed from agents/forward-fixer.md frontmatter for telemetry. */
+  forwardFixerModel?: string;
   /** ISO timestamp after which timeout kill proceeds. Set on first timeout detection, cleared on state transitions. */
   timeoutDeadline?: string;
   /** Number of user-initiated timeout extensions via extendTimeout(). */
