@@ -1,6 +1,6 @@
 // Structured metrics emitter for orchestrator runs.
 // Collects timing, item counts, CI retry counts, merge strategy,
-// cost/token tracking, and tool info as structured log events.
+// and tool info as structured log events.
 
 import type { OrchestratorItem, OrchestratorConfig } from "./orchestrator.ts";
 import { run } from "./shell.ts";
@@ -16,16 +16,6 @@ export interface ItemMetric {
   retryCount: number;
   tool: string;
   prNumber?: number;
-  /** Total tokens used by this item's worker session. Null when cost data is unavailable. */
-  tokensUsed?: number | null;
-  /** Total cost in USD for this item's worker session. Null when cost data is unavailable. */
-  costUsd?: number | null;
-  /** Input tokens used. Null when unavailable. */
-  inputTokens?: number | null;
-  /** Output tokens used. Null when unavailable. */
-  outputTokens?: number | null;
-  /** Model identifier used by the worker. Null when unavailable. */
-  model?: string | null;
   /** Detection latency in milliseconds for this item's last transition. */
   detectionLatencyMs?: number;
   /** ISO timestamp of when the worker was launched. */
@@ -65,18 +55,6 @@ export interface RunMetrics {
   mergeStrategy: string;
   /** Per-item metrics. */
   items: ItemMetric[];
-  /** Aggregate tokens used across all items. Null when no cost data is available. */
-  totalTokensUsed: number | null;
-  /** Aggregate cost in USD across all items. Null when no cost data is available. */
-  totalCostUsd: number | null;
-  /** Aggregate input tokens across all items. Null when unavailable. */
-  totalInputTokens?: number | null;
-  /** Aggregate output tokens across all items. Null when unavailable. */
-  totalOutputTokens?: number | null;
-  /** Cost per merged PR. Null when no cost or PR data. */
-  costPerPr?: number | null;
-  /** Count of unique models used by workers. */
-  modelBreakdown?: Record<string, number>;
   /** Detection latency percentiles for this run. Null when no latency data is available. */
   detectionLatency: DetectionLatencyStats | null;
 }
@@ -118,57 +96,6 @@ export function computeDetectionLatency(
     sampleCount: sorted.length,
     slowDetection: p95Ms > thresholdMs,
   };
-}
-
-// ── Cost/token parsing ────────────────────────────────────────────────
-
-/** Parsed cost summary from a worker session's exit output or heartbeat. */
-export interface CostSummary {
-  tokensUsed: number | null;
-  costUsd: number | null;
-  inputTokens?: number | null;
-  outputTokens?: number | null;
-  model?: string | null;
-}
-
-/**
- * Parse Claude Code's exit summary for token count and cost.
- *
- * Handles common output formats:
- *   - "Total tokens: 42,567" or "Tokens: 42567"
- *   - "Total cost: $3.45" or "Cost: $0.12"
- *
- * Returns null for each field that cannot be parsed.
- * Gracefully handles empty input, malformed text, and tools
- * that don't report cost data.
- */
-export function parseCostSummary(text: string): CostSummary {
-  if (!text) return { tokensUsed: null, costUsd: null };
-
-  let tokensUsed: number | null = null;
-  let costUsd: number | null = null;
-
-  // Match token count: "Total tokens: 42,567", "Tokens: 42567", "Total token: 100,000"
-  // Requires either "total" prefix or plural "tokens" to avoid false positives
-  // like "CSRF token: 12345".
-  const tokenMatch = text.match(/(?:total\s+tokens?|tokens)\s*[:=]\s*([\d,]+)/i);
-  if (tokenMatch) {
-    const parsed = parseInt(tokenMatch[1]!.replace(/,/g, ""), 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      tokensUsed = parsed;
-    }
-  }
-
-  // Match cost: "$3.45" or "cost: $0.12" or "cost: 1.23"
-  const costMatch = text.match(/cost\s*[:=]\s*\$?\s*([\d.]+)/i);
-  if (costMatch) {
-    const parsed = parseFloat(costMatch[1]!);
-    if (!isNaN(parsed) && parsed >= 0) {
-      costUsd = parsed;
-    }
-  }
-
-  return { tokensUsed, costUsd };
 }
 
 // ── Worker telemetry parsing ────────────────────────────────────────
@@ -226,7 +153,6 @@ export function parseWorkerTelemetry(screenText: string): WorkerTelemetry {
  * @param startTime - ISO timestamp when the run started
  * @param endTime - ISO timestamp when the run ended
  * @param aiTool - The AI tool used for this run (e.g., "claude", "cursor")
- * @param costData - Optional per-item cost data parsed from worker exit output
  */
 export function collectRunMetrics(
   allItems: OrchestratorItem[],
@@ -234,73 +160,29 @@ export function collectRunMetrics(
   startTime: string,
   endTime: string,
   aiTool: string,
-  costData?: Map<string, CostSummary>,
 ): RunMetrics {
   const start = new Date(startTime).getTime();
   const end = new Date(endTime).getTime();
   const wallClockMs = Math.max(0, end - start);
 
-  const items: ItemMetric[] = allItems.map((item) => {
-    const cost = costData?.get(item.id);
-    return {
-      id: item.id,
-      state: item.state,
-      ciRetryCount: item.ciFailCount,
-      retryCount: item.retryCount,
-      tool: aiTool,
-      ...(item.prNumber != null ? { prNumber: item.prNumber } : {}),
-      tokensUsed: cost?.tokensUsed ?? null,
-      costUsd: cost?.costUsd ?? null,
-      inputTokens: cost?.inputTokens ?? null,
-      outputTokens: cost?.outputTokens ?? null,
-      model: cost?.model ?? null,
-      ...(item.detectionLatencyMs != null ? { detectionLatencyMs: item.detectionLatencyMs } : {}),
-      ...(item.startedAt ? { startedAt: item.startedAt } : {}),
-      ...(item.endedAt ? { endedAt: item.endedAt } : {}),
-      ...(item.exitCode != null ? { exitCode: item.exitCode } : {}),
-    };
-  });
+  const items: ItemMetric[] = allItems.map((item) => ({
+    id: item.id,
+    state: item.state,
+    ciRetryCount: item.ciFailCount,
+    retryCount: item.retryCount,
+    tool: aiTool,
+    ...(item.prNumber != null ? { prNumber: item.prNumber } : {}),
+    ...(item.detectionLatencyMs != null ? { detectionLatencyMs: item.detectionLatencyMs } : {}),
+    ...(item.startedAt ? { startedAt: item.startedAt } : {}),
+    ...(item.endedAt ? { endedAt: item.endedAt } : {}),
+    ...(item.exitCode != null ? { exitCode: item.exitCode } : {}),
+  }));
 
   // Compute detection latency percentiles from items that have latency data
   const latencies = allItems
     .map((item) => item.detectionLatencyMs)
     .filter((ms): ms is number => ms != null && ms > 0);
   const detectionLatency = computeDetectionLatency(latencies);
-
-  // Aggregate totals -- null when no items have cost data
-  const itemsWithTokens = items.filter((i) => i.tokensUsed != null);
-  const itemsWithCost = items.filter((i) => i.costUsd != null);
-
-  const totalTokensUsed = itemsWithTokens.length > 0
-    ? itemsWithTokens.reduce((sum, i) => sum + i.tokensUsed!, 0)
-    : null;
-  const totalCostUsd = itemsWithCost.length > 0
-    ? itemsWithCost.reduce((sum, i) => sum + i.costUsd!, 0)
-    : null;
-
-  // Aggregate input/output tokens
-  const itemsWithInput = items.filter((i) => i.inputTokens != null);
-  const itemsWithOutput = items.filter((i) => i.outputTokens != null);
-  const totalInputTokens = itemsWithInput.length > 0
-    ? itemsWithInput.reduce((sum, i) => sum + i.inputTokens!, 0)
-    : null;
-  const totalOutputTokens = itemsWithOutput.length > 0
-    ? itemsWithOutput.reduce((sum, i) => sum + i.outputTokens!, 0)
-    : null;
-
-  // Model breakdown: count items per model
-  const modelBreakdown: Record<string, number> = {};
-  for (const item of items) {
-    if (item.model) {
-      modelBreakdown[item.model] = (modelBreakdown[item.model] ?? 0) + 1;
-    }
-  }
-
-  // Cost per PR: total cost / items with PRs that completed
-  const completedWithPR = items.filter((i) => i.state === "done" && i.prNumber != null);
-  const costPerPr = totalCostUsd != null && completedWithPR.length > 0
-    ? Math.round((totalCostUsd / completedWithPR.length) * 100) / 100
-    : null;
 
   return {
     runTimestamp: startTime,
@@ -310,12 +192,6 @@ export function collectRunMetrics(
     itemsFailed: allItems.filter((i) => i.state === "stuck").length,
     mergeStrategy: config.mergeStrategy,
     items,
-    totalTokensUsed,
-    totalCostUsd,
-    totalInputTokens,
-    totalOutputTokens,
-    costPerPr,
-    modelBreakdown: Object.keys(modelBreakdown).length > 0 ? modelBreakdown : undefined,
     detectionLatency,
   };
 }

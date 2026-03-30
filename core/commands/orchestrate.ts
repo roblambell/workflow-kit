@@ -44,9 +44,7 @@ import { loadConfig, saveConfig, loadUserConfig } from "../config.ts";
 import { preflight } from "../preflight.ts";
 import {
   collectRunMetrics,
-  parseCostSummary,
   parseWorkerTelemetry,
-  type CostSummary,
 } from "../analytics.ts";
 import {
   writePidFile,
@@ -699,7 +697,6 @@ function handleRunComplete(
   config: OrchestrateLoopConfig,
   log: (entry: LogEntry) => void,
   runStartTime: string,
-  costData: Map<string, CostSummary>,
 ): void {
   // Final cleanup sweep: close workspaces and remove worktrees for managed items.
   // Stuck items preserve their worktree so users can inspect partial work.
@@ -764,7 +761,6 @@ function handleRunComplete(
       runStartTime,
       endTime,
       config.aiTool ?? "unknown",
-      costData.size > 0 ? costData : undefined,
     );
     log({
       ts: endTime,
@@ -790,12 +786,11 @@ function handleRunComplete(
  * Format the compact end-of-run summary that prints to stdout after TUI exit.
  * Persists in terminal scrollback since it's written after exitAltScreen().
  *
- * Format: "ninthwave: N merged, M stuck, K queued (Xm Ys) / Cost: $X.XX (N PRs) | Lead time: p50 Xm, p95 Ym"
+ * Format: "ninthwave: N merged, M stuck, K queued (Xm Ys) | Lead time: p50 Xm, p95 Ym"
  */
 export function formatExitSummary(
   allItems: OrchestratorItem[],
   runStartTime: string,
-  costData?: Map<string, CostSummary>,
 ): string {
   const merged = allItems.filter((i) => i.state === "done").length;
   const stuck = allItems.filter((i) => i.state === "stuck").length;
@@ -808,17 +803,6 @@ export function formatExitSummary(
   const durationStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 
   let line = `ninthwave: ${merged} merged, ${stuck} stuck, ${queued} queued (${durationStr})`;
-
-  // Cost
-  if (costData && costData.size > 0) {
-    const costItems = [...costData.values()].filter((c) => c.costUsd != null);
-    if (costItems.length > 0) {
-      const totalCost = costItems.reduce((sum, c) => sum + c.costUsd!, 0);
-      const prCount = merged;
-      line += ` / Cost: $${totalCost.toFixed(2)}`;
-      if (prCount > 0) line += ` (${prCount} PRs)`;
-    }
-  }
 
   // Lead time (time from start to done for each completed item)
   const leadTimes = allItems
@@ -855,7 +839,6 @@ export type CompletionAction = "run-more" | "clean" | "quit";
 export function formatCompletionBanner(
   allItems: OrchestratorItem[],
   runStartTime: string,
-  costData?: Map<string, CostSummary>,
 ): string[] {
   const merged = allItems.filter((i) => i.state === "done").length;
   const stuck = allItems.filter((i) => i.state === "stuck").length;
@@ -869,15 +852,6 @@ export function formatCompletionBanner(
   const lines: string[] = [];
   lines.push("");
   lines.push(`  All ${total} items complete. ${merged} merged, ${stuck} stuck. (${durationStr})`);
-
-  // Inline analytics
-  if (costData && costData.size > 0) {
-    const costItems = [...costData.values()].filter((c) => c.costUsd != null);
-    if (costItems.length > 0) {
-      const totalCost = costItems.reduce((sum, c) => sum + c.costUsd!, 0);
-      lines.push(`  Cost: $${totalCost.toFixed(2)} across ${costItems.length} workers`);
-    }
-  }
 
   const leadTimes = allItems
     .filter((i) => i.state === "done" && i.startedAt && i.endedAt)
@@ -950,7 +924,7 @@ export function waitForCompletionKey(
 }
 
 /**
- * Execute a single orchestrator action with logging, cost capture, and reconcile.
+ * Execute a single orchestrator action with logging, telemetry capture, and reconcile.
  * Extracted from orchestrateLoop for readability.
  */
 function handleActionExecution(
@@ -959,26 +933,13 @@ function handleActionExecution(
   ctx: ExecutionContext,
   deps: OrchestrateLoopDeps,
   log: (entry: LogEntry) => void,
-  costData: Map<string, CostSummary>,
 ): void {
-  // Before clean/retry action: capture worker screen for cost/token parsing and telemetry
+  // Before clean/retry action: capture worker screen for telemetry
   if ((action.type === "clean" || action.type === "retry") && deps.readScreen) {
     const orchItem = orch.getItem(action.itemId);
     if (orchItem?.workspaceRef) {
       try {
         const screenText = deps.readScreen(orchItem.workspaceRef, 50);
-        const cost = parseCostSummary(screenText);
-        if (cost.tokensUsed != null || cost.costUsd != null) {
-          costData.set(action.itemId, cost);
-          log({
-            ts: new Date().toISOString(),
-            level: "info",
-            event: "cost_captured",
-            itemId: action.itemId,
-            tokensUsed: cost.tokensUsed,
-            costUsd: cost.costUsd,
-          });
-        }
         // Capture worker telemetry (exit code, stderr tail) for diagnostics
         const telemetry = parseWorkerTelemetry(screenText);
         if (telemetry.exitCode != null) {
@@ -999,7 +960,7 @@ function handleActionExecution(
         }
         // Report session_ended telemetry
         if (deps.crewBroker) {
-          const role = orchItem.reviewerWorkspaceRef ? "reviewer"
+          const role = orchItem.reviewWorkspaceRef ? "reviewer"
             : orchItem.rebaserWorkspaceRef ? "rebaser"
             : orchItem.fixForwardWorkspaceRef ? "verifier"
             : "implementer";
@@ -1007,12 +968,10 @@ function handleActionExecution(
             model: orchItem.aiTool ?? ctx.aiTool ?? "unknown",
             role,
             durationMs: orchItem.startedAt ? Date.now() - new Date(orchItem.startedAt).getTime() : undefined,
-            inputTokens: cost.inputTokens,
-            outputTokens: cost.outputTokens,
           });
         }
       } catch {
-        // Non-fatal -- cost/telemetry capture failure doesn't block cleanup
+        // Non-fatal -- telemetry capture failure doesn't block cleanup
       }
     }
   }
@@ -1065,7 +1024,7 @@ function handleActionExecution(
       if (orchItem.baseBranch) {
         launchAction.baseBranch = orchItem.baseBranch;
       }
-      handleActionExecution(launchAction, orch, ctx, deps, log, costData);
+      handleActionExecution(launchAction, orch, ctx, deps, log);
     }
   }
 
@@ -1119,7 +1078,7 @@ export interface OrchestrateLoopDeps {
   getFreeMem?: () => number;
   /** Reconcile work item files with GitHub state after merge actions. */
   reconcile?: (workDir: string, worktreeDir: string, projectRoot: string) => void;
-  /** Read screen content from a worker workspace for cost/token parsing. */
+  /** Read screen content from a worker workspace for telemetry capture. */
   readScreen?: (ref: string, lines?: number) => string;
   /** Called after each poll cycle with current items. Used for daemon state persistence and TUI countdown. */
   onPollComplete?: (items: OrchestratorItem[], pollIntervalMs?: number) => void;
@@ -1138,7 +1097,7 @@ export interface OrchestrateLoopDeps {
    * Returns the chosen action (run-more, clean, quit).
    * Only called when tuiMode is true and watch mode is false.
    */
-  completionPrompt?: (allItems: OrchestratorItem[], runStartTime: string, costData: Map<string, CostSummary>) => Promise<CompletionAction>;
+  completionPrompt?: (allItems: OrchestratorItem[], runStartTime: string) => Promise<CompletionAction>;
 }
 
 export interface OrchestrateLoopConfig {
@@ -1298,7 +1257,6 @@ export async function orchestrateLoop(
   const authorCache = new AuthorCache();
 
   const runStartTime = new Date().toISOString();
-  const costData = new Map<string, CostSummary>();
 
   log({
     ts: runStartTime,
@@ -1351,7 +1309,7 @@ export async function orchestrateLoop(
     const allItems = orch.getAllItems();
     const allTerminal = allItems.every((i) => i.state === "done" || i.state === "stuck");
     if (allTerminal) {
-      handleRunComplete(allItems, orch, ctx, deps, config, log, runStartTime, costData);
+      handleRunComplete(allItems, orch, ctx, deps, config, log, runStartTime);
 
       // Watch mode: instead of exiting, poll for new work items
       if (config.watch && deps.scanWorkItems) {
@@ -1410,7 +1368,7 @@ export async function orchestrateLoop(
 
       // TUI mode (non-watch): show completion prompt
       if (config.tuiMode && deps.completionPrompt) {
-        const action = await deps.completionPrompt(allItems, runStartTime, costData);
+        const action = await deps.completionPrompt(allItems, runStartTime);
         log({
           ts: new Date().toISOString(),
           level: "info",
@@ -1673,7 +1631,7 @@ export async function orchestrateLoop(
 
     // Execute actions
     for (const action of actions) {
-      handleActionExecution(action, orch, ctx, deps, log, costData);
+      handleActionExecution(action, orch, ctx, deps, log);
     }
 
     // Crew mode: notify broker of completed items (merge/done)
@@ -2512,11 +2470,11 @@ export async function cmdOrchestrate(
     ...(scheduleLoopDeps ? { scheduleDeps: scheduleLoopDeps } : {}),
     // Completion prompt for TUI mode: render banner + wait for keypress
     ...(tuiMode ? {
-      completionPrompt: async (allItems, runStartTime, costData) => {
+      completionPrompt: async (allItems, runStartTime) => {
         // Remove the orchestrate keyboard handler so keys are routed to the prompt
         cleanupKeyboard();
         // Render the completion banner on screen
-        const bannerLines = formatCompletionBanner(allItems, runStartTime, costData);
+        const bannerLines = formatCompletionBanner(allItems, runStartTime);
         const write = (s: string) => process.stdout.write(s);
         write("\x1B[H"); // cursor home
         // Re-render the current TUI frame first (to show final state)

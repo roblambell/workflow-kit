@@ -4372,17 +4372,6 @@ describe("formatExitSummary", () => {
     expect(result).toMatch(/2m \d+s/);
   });
 
-  it("includes cost when costData is provided", () => {
-    const startTime = new Date(Date.now() - 60_000).toISOString();
-    const items: OrchestratorItem[] = [
-      { ...makeOrchestratorItem("E-1"), state: "done" as any },
-    ];
-    const costData = new Map([["E-1", { tokensUsed: 50000, costUsd: 1.23 }]]);
-    const result = formatExitSummary(items, startTime, costData);
-    expect(result).toContain("Cost: $1.23");
-    expect(result).toContain("1 PRs");
-  });
-
   it("includes lead time percentiles when timing data exists", () => {
     const now = Date.now();
     const items: OrchestratorItem[] = [
@@ -4417,16 +4406,6 @@ describe("formatCompletionBanner", () => {
     expect(text).toContain("[r] Run more");
     expect(text).toContain("[c] Clean up");
     expect(text).toContain("[q] Quit");
-  });
-
-  it("includes cost when costData is provided", () => {
-    const items: OrchestratorItem[] = [
-      { ...makeOrchestratorItem("B-1"), state: "done" as any },
-    ];
-    const costData = new Map([["B-1", { tokensUsed: 10000, costUsd: 0.50 }]]);
-    const lines = formatCompletionBanner(items, new Date().toISOString(), costData);
-    const text = lines.join("\n");
-    expect(text).toContain("Cost: $0.50");
   });
 });
 
