@@ -1580,7 +1580,7 @@ export async function orchestrateLoop(
         if (!deps.crewBroker.isConnected()) {
           // Block ALL launches when disconnected -- prevents stall detection
           for (const action of launchActions) {
-            orch.setState(action.itemId, "ready");
+            orch.hydrateState(action.itemId, "ready");
           }
           actions = actions.filter((a) => a.type !== "launch");
           log({
@@ -1607,7 +1607,7 @@ export async function orchestrateLoop(
 
           // Put all original launch actions back to ready
           for (const action of launchActions) {
-            orch.setState(action.itemId, "ready");
+            orch.hydrateState(action.itemId, "ready");
           }
           // Remove original launch actions
           actions = actions.filter((a) => a.type !== "launch");
@@ -1617,7 +1617,7 @@ export async function orchestrateLoop(
           for (const claimedId of claimedIds) {
             const orchItem = orch.getItem(claimedId);
             if (orchItem && LAUNCHABLE.has(orchItem.state)) {
-              orch.setState(claimedId, "launching");
+              orch.hydrateState(claimedId, "launching");
               actions.push({ type: "launch", itemId: claimedId });
             }
           }

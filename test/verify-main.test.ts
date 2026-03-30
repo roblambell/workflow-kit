@@ -56,7 +56,7 @@ describe("merged → forward-fix-pending transition (fixForward=true)", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merged");
+    orch.hydrateState("H-1-1", "merged");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
 
     orch.processTransitions(emptySnapshot(), NOW);
@@ -68,7 +68,7 @@ describe("merged → forward-fix-pending transition (fixForward=true)", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merged");
+    orch.hydrateState("H-1-1", "merged");
     // No mergeCommitSha set -- graceful fallback to done
 
     orch.processTransitions(emptySnapshot(), NOW);
@@ -84,7 +84,7 @@ describe("merged → done transition (fixForward=false)", () => {
     const orch = new Orchestrator({ fixForward: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merged");
+    orch.hydrateState("H-1-1", "merged");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
 
     orch.processTransitions(emptySnapshot(), NOW);
@@ -100,7 +100,7 @@ describe("forward-fix-pending → done when CI passes", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "forward-fix-pending");
+    orch.hydrateState("H-1-1", "forward-fix-pending");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
 
     const actions = orch.processTransitions(
@@ -116,7 +116,7 @@ describe("forward-fix-pending → done when CI passes", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "forward-fix-pending");
+    orch.hydrateState("H-1-1", "forward-fix-pending");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
 
     orch.processTransitions(
@@ -135,7 +135,7 @@ describe("forward-fix-pending → fix-forward-failed when CI fails", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "forward-fix-pending");
+    orch.hydrateState("H-1-1", "forward-fix-pending");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
 
     orch.processTransitions(
@@ -156,7 +156,7 @@ describe("fix-forward-failed → stuck after maxFixForwardRetries exceeded", () 
     const orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 2 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fix-forward-failed");
+    orch.hydrateState("H-1-1", "fix-forward-failed");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
     orch.getItem("H-1-1")!.fixForwardFailCount = 2;
 
@@ -173,7 +173,7 @@ describe("fix-forward-failed → stuck after maxFixForwardRetries exceeded", () 
     const orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 2 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fix-forward-failed");
+    orch.hydrateState("H-1-1", "fix-forward-failed");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
     orch.getItem("H-1-1")!.fixForwardFailCount = 1;
 
@@ -190,7 +190,7 @@ describe("fix-forward-failed → stuck after maxFixForwardRetries exceeded", () 
     const orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 2 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fix-forward-failed");
+    orch.hydrateState("H-1-1", "fix-forward-failed");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
     orch.getItem("H-1-1")!.fixForwardFailCount = 1;
 
@@ -213,7 +213,7 @@ describe("checkCommitCI", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "forward-fix-pending");
+    orch.hydrateState("H-1-1", "forward-fix-pending");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
 
     const fakeMux = { listWorkspaces: () => "", readScreen: () => "" } as any;
@@ -238,7 +238,7 @@ describe("checkCommitCI", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fix-forward-failed");
+    orch.hydrateState("H-1-1", "fix-forward-failed");
     orch.getItem("H-1-1")!.mergeCommitSha = "def456";
     orch.getItem("H-1-1")!.fixForwardFailCount = 1;
 
@@ -264,7 +264,7 @@ describe("checkCommitCI", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "forward-fix-pending");
+    orch.hydrateState("H-1-1", "forward-fix-pending");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
 
     const fakeMux = { listWorkspaces: () => "", readScreen: () => "" } as any;
@@ -308,7 +308,7 @@ describe("merge commit SHA retrieval in executeMerge", () => {
     const orch = new Orchestrator({ fixForward: true, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merging");
+    orch.hydrateState("H-1-1", "merging");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const ctx: ExecutionContext = {
@@ -348,7 +348,7 @@ describe("merge commit SHA retrieval in executeMerge", () => {
     const orch = new Orchestrator({ fixForward: true, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merging");
+    orch.hydrateState("H-1-1", "merging");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const ctx: ExecutionContext = {
@@ -389,7 +389,7 @@ describe("merge commit SHA retrieval in executeMerge", () => {
     const orch = new Orchestrator({ fixForward: true, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merging");
+    orch.hydrateState("H-1-1", "merging");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     const ctx: ExecutionContext = {
@@ -433,7 +433,7 @@ describe("checkCommitCI ignores Ninthwave / Review check", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "forward-fix-pending");
+    orch.hydrateState("H-1-1", "forward-fix-pending");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha123";
 
     const calledWith: string[] = [];
@@ -480,7 +480,7 @@ describe("dependency resolution with fix-forward", () => {
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
     orch.getItem("H-1-2")!.reviewCompleted = true;
-    orch.setState("H-1-1", "forward-fix-pending");
+    orch.hydrateState("H-1-1", "forward-fix-pending");
     orch.getItem("H-1-1")!.mergeCommitSha = "abc123";
 
     const fakeMux = { listWorkspaces: () => "", readScreen: () => "" } as any;
@@ -500,7 +500,7 @@ describe("dependency resolution with fix-forward", () => {
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
-    orch.setState("H-1-1", "done");
+    orch.hydrateState("H-1-1", "done");
 
     const fakeMux = { listWorkspaces: () => "", readScreen: () => "" } as any;
 
@@ -517,7 +517,7 @@ describe("dependency resolution with fix-forward", () => {
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
-    orch.setState("H-1-1", "merged");
+    orch.hydrateState("H-1-1", "merged");
 
     const fakeMux = { listWorkspaces: () => "", readScreen: () => "" } as any;
 
@@ -538,7 +538,7 @@ describe("end-to-end: merge → fix-forward → done flow", () => {
     const orch = new Orchestrator({ fixForward: true, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merging");
+    orch.hydrateState("H-1-1", "merging");
     orch.getItem("H-1-1")!.prNumber = 42;
 
     // Cycle 1: PR gets merged externally -- merging → merged
@@ -557,7 +557,7 @@ describe("end-to-end: merge → fix-forward → done flow", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merged");
+    orch.hydrateState("H-1-1", "merged");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-abc";
 
     // Step 1: merged → forward-fix-pending
@@ -576,7 +576,7 @@ describe("end-to-end: merge → fix-forward → done flow", () => {
     const orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merged");
+    orch.hydrateState("H-1-1", "merged");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-abc";
 
     // Step 1: merged → forward-fix-pending
@@ -603,7 +603,7 @@ describe("end-to-end: merge → fix-forward → done flow", () => {
     const orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 3 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "merged");
+    orch.hydrateState("H-1-1", "merged");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-abc";
 
     // Step 1: merged → forward-fix-pending
@@ -641,7 +641,7 @@ describe("fix-forward-failed → fixing-forward transition triggers launch-forwa
     const orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 3 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fix-forward-failed");
+    orch.hydrateState("H-1-1", "fix-forward-failed");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
     orch.getItem("H-1-1")!.fixForwardFailCount = 1;
 
@@ -658,7 +658,7 @@ describe("fix-forward-failed → fixing-forward transition triggers launch-forwa
     const orch = new Orchestrator({ fixForward: true, maxFixForwardRetries: 3 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fix-forward-failed");
+    orch.hydrateState("H-1-1", "fix-forward-failed");
     // No mergeCommitSha set
     orch.getItem("H-1-1")!.fixForwardFailCount = 1;
 
@@ -680,7 +680,7 @@ describe("fixing-forward state handling", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fixing-forward");
+    orch.hydrateState("H-1-1", "fixing-forward");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
     orch.getItem("H-1-1")!.fixForwardWorkspaceRef = "workspace:5";
 
@@ -697,7 +697,7 @@ describe("fixing-forward state handling", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fixing-forward");
+    orch.hydrateState("H-1-1", "fixing-forward");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
     orch.getItem("H-1-1")!.fixForwardWorkspaceRef = "workspace:5";
 
@@ -743,7 +743,7 @@ describe("fixing-forward state handling", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fixing-forward");
+    orch.hydrateState("H-1-1", "fixing-forward");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
     orch.getItem("H-1-1")!.fixForwardWorkspaceRef = "workspace:5";
 
@@ -759,7 +759,7 @@ describe("fixing-forward state handling", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fixing-forward");
+    orch.hydrateState("H-1-1", "fixing-forward");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
     // No fixForwardWorkspaceRef
 
@@ -798,7 +798,7 @@ describe("executeLaunchForwardFixer action", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fixing-forward");
+    orch.hydrateState("H-1-1", "fixing-forward");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
 
     const deps: OrchestratorDeps = {
@@ -823,7 +823,7 @@ describe("executeLaunchForwardFixer action", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fixing-forward");
+    orch.hydrateState("H-1-1", "fixing-forward");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
 
     const result = orch.executeAction(
@@ -840,7 +840,7 @@ describe("executeLaunchForwardFixer action", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "fixing-forward");
+    orch.hydrateState("H-1-1", "fixing-forward");
     // No mergeCommitSha
 
     const deps: OrchestratorDeps = {
@@ -884,7 +884,7 @@ describe("executeCleanForwardFixer action", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "done");
+    orch.hydrateState("H-1-1", "done");
     orch.getItem("H-1-1")!.fixForwardWorkspaceRef = "workspace:7";
 
     let cleanCalled = false;
@@ -911,7 +911,7 @@ describe("executeCleanForwardFixer action", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.setState("H-1-1", "done");
+    orch.hydrateState("H-1-1", "done");
     orch.getItem("H-1-1")!.fixForwardWorkspaceRef = "workspace:7";
 
     const result = orch.executeAction(

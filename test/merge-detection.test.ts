@@ -115,7 +115,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-1", "Implement feature X"));
       orch.getItem("MRG-1")!.reviewCompleted = true;
-      orch.setState("MRG-1", "implementing");
+      orch.hydrateState("MRG-1", "implementing");
 
       // Simulate: PR was created and auto-merged via `gh pr merge --squash --auto`
       // between polls, so buildSnapshot sees it as merged directly
@@ -163,7 +163,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-2", "Fix parsing bug"));
       orch.getItem("MRG-2")!.reviewCompleted = true;
-      orch.setState("MRG-2", "ci-pending");
+      orch.hydrateState("MRG-2", "ci-pending");
       orch.getItem("MRG-2")!.prNumber = 50;
 
       // Simulate: someone merged the PR externally while CI was still pending
@@ -194,7 +194,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-3", "Add new endpoint"));
       orch.getItem("MRG-3")!.reviewCompleted = true;
-      orch.setState("MRG-3", "ci-passed");
+      orch.hydrateState("MRG-3", "ci-passed");
       orch.getItem("MRG-3")!.reviewCompleted = true;
       orch.getItem("MRG-3")!.prNumber = 60;
 
@@ -226,7 +226,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       // New item with same ID but different title
       orch.addItem(makeWorkItem("H-FOO-1", "Brand new feature for v2"));
       orch.getItem("H-FOO-1")!.reviewCompleted = true;
-      orch.setState("H-FOO-1", "implementing");
+      orch.hydrateState("H-FOO-1", "implementing");
       // No prNumber tracked -- this is a fresh launch
 
       // Old merged PR has a completely different title
@@ -261,7 +261,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("H-FOO-2", "Original item title"));
       orch.getItem("H-FOO-2")!.reviewCompleted = true;
-      orch.setState("H-FOO-2", "ci-passed");
+      orch.hydrateState("H-FOO-2", "ci-passed");
       orch.getItem("H-FOO-2")!.reviewCompleted = true;
       // Orchestrator already tracked this PR number
       orch.getItem("H-FOO-2")!.prNumber = 42;
@@ -300,7 +300,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-6", "Update config"));
       orch.getItem("MRG-6")!.reviewCompleted = true;
-      orch.setState("MRG-6", "ci-pending");
+      orch.hydrateState("MRG-6", "ci-pending");
       orch.getItem("MRG-6")!.prNumber = 70;
       orch.getItem("MRG-6")!.workspaceRef = "ws:6";
 
@@ -331,7 +331,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-6B", "Update config v2"));
       orch.getItem("MRG-6B")!.reviewCompleted = true;
-      orch.setState("MRG-6B", "ci-pending");
+      orch.hydrateState("MRG-6B", "ci-pending");
       orch.getItem("MRG-6B")!.prNumber = 71;
       orch.getItem("MRG-6B")!.workspaceRef = "ws:6b";
       orch.getItem("MRG-6B")!.rebaseRequested = true; // already requested
@@ -362,7 +362,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator({ mergeStrategy: "auto", maxMergeRetries: 3 });
       orch.addItem(makeWorkItem("MRG-7", "Feature with flaky merge"));
       orch.getItem("MRG-7")!.reviewCompleted = true;
-      orch.setState("MRG-7", "ci-passed");
+      orch.hydrateState("MRG-7", "ci-passed");
       orch.getItem("MRG-7")!.reviewCompleted = true;
       orch.getItem("MRG-7")!.prNumber = 80;
 
@@ -429,7 +429,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-8", "Cleanup dead code"));
       orch.getItem("MRG-8")!.reviewCompleted = true;
-      orch.setState("MRG-8", "ci-passed");
+      orch.hydrateState("MRG-8", "ci-passed");
       orch.getItem("MRG-8")!.reviewCompleted = true;
       orch.getItem("MRG-8")!.prNumber = 90;
 
@@ -470,7 +470,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-E1", "Fix flaky test"));
       orch.getItem("MRG-E1")!.reviewCompleted = true;
-      orch.setState("MRG-E1", "ci-failed");
+      orch.hydrateState("MRG-E1", "ci-failed");
       orch.getItem("MRG-E1")!.reviewCompleted = true;
       orch.getItem("MRG-E1")!.prNumber = 95;
       orch.getItem("MRG-E1")!.ciFailCount = 1;
@@ -492,7 +492,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator({ mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("MRG-E2", "Conflict scenario"));
       orch.getItem("MRG-E2")!.reviewCompleted = true;
-      orch.setState("MRG-E2", "ci-passed");
+      orch.hydrateState("MRG-E2", "ci-passed");
       orch.getItem("MRG-E2")!.reviewCompleted = true;
       orch.getItem("MRG-E2")!.prNumber = 100;
       orch.getItem("MRG-E2")!.workspaceRef = "ws:e2";
@@ -527,7 +527,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-E3", "Conflict CI scenario"));
       orch.getItem("MRG-E3")!.reviewCompleted = true;
-      orch.setState("MRG-E3", "ci-pending");
+      orch.hydrateState("MRG-E3", "ci-pending");
       orch.getItem("MRG-E3")!.prNumber = 110;
       orch.getItem("MRG-E3")!.workspaceRef = "ws:e3";
 
@@ -559,13 +559,13 @@ describe("Merge detection pipeline (end-to-end)", () => {
       const orch = new Orchestrator();
       orch.addItem(makeWorkItem("MRG-E4-P", "Pending PR"));
       orch.getItem("MRG-E4-P")!.reviewCompleted = true;
-      orch.setState("MRG-E4-P", "implementing");
+      orch.hydrateState("MRG-E4-P", "implementing");
       orch.addItem(makeWorkItem("MRG-E4-F", "Failing PR"));
       orch.getItem("MRG-E4-F")!.reviewCompleted = true;
-      orch.setState("MRG-E4-F", "implementing");
+      orch.hydrateState("MRG-E4-F", "implementing");
       orch.addItem(makeWorkItem("MRG-E4-R", "Ready PR"));
       orch.getItem("MRG-E4-R")!.reviewCompleted = true;
-      orch.setState("MRG-E4-R", "implementing");
+      orch.hydrateState("MRG-E4-R", "implementing");
 
       const checkPr = (id: string, _root: string) => {
         switch (id) {

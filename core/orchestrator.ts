@@ -141,8 +141,9 @@ export class Orchestrator {
     return this.getAllItems().filter((item) => item.state === state);
   }
 
-  /** Directly set an item's state (for external updates like launch confirmation). */
-  setState(id: string, state: OrchestratorItemState): void {
+  /** Hydrate an item's state from persisted data (disk restore, crash recovery).
+   *  Bypasses transition()'s flag management and callbacks -- not for runtime state changes. */
+  hydrateState(id: string, state: OrchestratorItemState): void {
     const item = this.items.get(id);
     if (!item) return;
     item.state = state;

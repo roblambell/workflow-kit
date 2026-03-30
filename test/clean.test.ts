@@ -127,6 +127,46 @@ describe("cleanSingleWorktree", () => {
     expect(deps.deleteRemoteBranch).toHaveBeenCalledWith(repo, "ninthwave/H-CI-2");
   });
 
+  it("closes workspace when mux is provided", () => {
+    const deps = createMockCleanDeps();
+    const mux = createMockMux();
+    mux.listWorkspaces.mockReturnValue("workspace:1 TODO H-CI-2 some title");
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
+
+    const result = cleanSingleWorktree("H-CI-2", worktreeDir, repo, deps, mux);
+    expect(result).toBe(true);
+    expect(mux.closeWorkspace).toHaveBeenCalled();
+    expect(deps.removeWorktree).toHaveBeenCalled();
+  });
+
+  it("works without mux parameter (backward compatibility)", () => {
+    const deps = createMockCleanDeps();
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
+
+    // No mux parameter -- should not throw
+    const result = cleanSingleWorktree("H-CI-2", worktreeDir, repo, deps);
+    expect(result).toBe(true);
+    expect(deps.removeWorktree).toHaveBeenCalled();
+  });
+
+  it("continues cleanup when workspace close throws", () => {
+    const deps = createMockCleanDeps();
+    const mux = createMockMux();
+    mux.listWorkspaces.mockImplementation(() => { throw new Error("cmux error"); });
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
+
+    const result = cleanSingleWorktree("H-CI-2", worktreeDir, repo, deps, mux);
+    expect(result).toBe(true);
+    // Worktree cleanup still runs despite workspace close failure
+    expect(deps.removeWorktree).toHaveBeenCalled();
+  });
+
   it("falls back to rmSync and logs warning when removeWorktree throws", () => {
     const deps = createMockCleanDeps();
     const repo = setupTempRepo();

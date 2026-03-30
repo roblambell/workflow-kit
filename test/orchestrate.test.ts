@@ -974,16 +974,16 @@ describe("adaptivePollInterval", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("A-1-1"));
     orch.getItem("A-1-1")!.reviewCompleted = true;
-    orch.setState("A-1-1", "ready");
+    orch.hydrateState("A-1-1", "ready");
     expect(adaptivePollInterval(orch)).toBe(2_000);
 
-    orch.setState("A-1-1", "implementing");
+    orch.hydrateState("A-1-1", "implementing");
     expect(adaptivePollInterval(orch)).toBe(2_000);
 
-    orch.setState("A-1-1", "ci-pending");
+    orch.hydrateState("A-1-1", "ci-pending");
     expect(adaptivePollInterval(orch)).toBe(2_000);
 
-    orch.setState("A-1-1", "done");
+    orch.hydrateState("A-1-1", "done");
     expect(adaptivePollInterval(orch)).toBe(2_000);
   });
 });
@@ -1435,7 +1435,7 @@ describe("buildSnapshot cross-repo", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BS-1-1"));
     orch.getItem("BS-1-1")!.reviewCompleted = true;
-    orch.setState("BS-1-1", "implementing");
+    orch.hydrateState("BS-1-1", "implementing");
     orch.getItem("BS-1-1")!.resolvedRepoRoot = "/target-repo";
 
     let checkedRepo: string | undefined;
@@ -1464,7 +1464,7 @@ describe("buildSnapshot cross-repo", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BS-2-1"));
     orch.getItem("BS-2-1")!.reviewCompleted = true;
-    orch.setState("BS-2-1", "implementing");
+    orch.hydrateState("BS-2-1", "implementing");
     orch.getItem("BS-2-1")!.resolvedRepoRoot = "/target-repo";
 
     let commitTimeRepo: string | undefined;
@@ -1649,7 +1649,7 @@ describe("buildSnapshot lastCommitTime", () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("HC-1-1"));
     orch.getItem("HC-1-1")!.reviewCompleted = true;
-    orch.setState("HC-1-1", "implementing");
+    orch.hydrateState("HC-1-1", "implementing");
     // Set workspace ref so worker appears alive
     const item = orch.getItem("HC-1-1")!;
     item.workspaceRef = "workspace:1";
@@ -1676,7 +1676,7 @@ describe("buildSnapshot lastCommitTime", () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("HC-2-1"));
     orch.getItem("HC-2-1")!.reviewCompleted = true;
-    orch.setState("HC-2-1", "implementing");
+    orch.hydrateState("HC-2-1", "implementing");
     const item = orch.getItem("HC-2-1")!;
     item.workspaceRef = "workspace:2";
 
@@ -1697,7 +1697,7 @@ describe("buildSnapshot lastCommitTime", () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("HC-3-1"));
     orch.getItem("HC-3-1")!.reviewCompleted = true;
-    orch.setState("HC-3-1", "launching");
+    orch.hydrateState("HC-3-1", "launching");
     const item = orch.getItem("HC-3-1")!;
     item.workspaceRef = "workspace:3";
 
@@ -1716,7 +1716,7 @@ describe("buildSnapshot lastCommitTime", () => {
     const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("HC-4-1"));
     orch.getItem("HC-4-1")!.reviewCompleted = true;
-    orch.setState("HC-4-1", "ci-pending");
+    orch.hydrateState("HC-4-1", "ci-pending");
 
     const getLastCommitTime = vi.fn(() => "2026-03-24T12:00:00+00:00");
     const mux = mockMux();
@@ -1749,7 +1749,7 @@ describe("buildSnapshot isMergeable", () => {
     const orch = new Orchestrator({ wipLimit: 2 });
     orch.addItem(makeWorkItem("M-1-1"));
     orch.getItem("M-1-1")!.reviewCompleted = true;
-    orch.setState("M-1-1", "ci-pending");
+    orch.hydrateState("M-1-1", "ci-pending");
 
     // Simulate checkPr returning: ID\tPR\tSTATUS\tMERGEABLE
     const checkPr = () => "M-1-1\t10\tfailing\tMERGEABLE";
@@ -1768,7 +1768,7 @@ describe("buildSnapshot isMergeable", () => {
     const orch = new Orchestrator({ wipLimit: 2 });
     orch.addItem(makeWorkItem("M-2-1"));
     orch.getItem("M-2-1")!.reviewCompleted = true;
-    orch.setState("M-2-1", "ci-pending");
+    orch.hydrateState("M-2-1", "ci-pending");
 
     const checkPr = () => "M-2-1\t10\tfailing\tCONFLICTING";
     const getLastCommitTime = vi.fn(() => null);
@@ -1786,7 +1786,7 @@ describe("buildSnapshot isMergeable", () => {
     const orch = new Orchestrator({ wipLimit: 2 });
     orch.addItem(makeWorkItem("M-3-1"));
     orch.getItem("M-3-1")!.reviewCompleted = true;
-    orch.setState("M-3-1", "ci-pending");
+    orch.hydrateState("M-3-1", "ci-pending");
 
     const checkPr = () => "M-3-1\t10\tpending\tUNKNOWN";
     const getLastCommitTime = vi.fn(() => null);
@@ -1803,7 +1803,7 @@ describe("buildSnapshot isMergeable", () => {
     const orch = new Orchestrator({ wipLimit: 2 });
     orch.addItem(makeWorkItem("M-4-1"));
     orch.getItem("M-4-1")!.reviewCompleted = true;
-    orch.setState("M-4-1", "ci-pending");
+    orch.hydrateState("M-4-1", "ci-pending");
 
     // Old 3-field format without mergeable
     const checkPr = () => "M-4-1\t10\tpending";
@@ -1839,7 +1839,7 @@ describe("buildSnapshot ready status mapping", () => {
     const orch = new Orchestrator({ wipLimit: 2 });
     orch.addItem(makeWorkItem("R-1-1"));
     orch.getItem("R-1-1")!.reviewCompleted = true;
-    orch.setState("R-1-1", "ci-pending");
+    orch.hydrateState("R-1-1", "ci-pending");
 
     // checkPr returns "ready" status with MERGEABLE 4th field
     const checkPr = () => "R-1-1\t42\tready\tMERGEABLE";
@@ -1880,7 +1880,7 @@ describe("buildSnapshot merge detection", () => {
     const item = makeWorkItem("MRG-1-1");
     item.title = "Fix the daemon polling loop";
     orch.addItem(item);
-    orch.setState("MRG-1-1", "implementing");
+    orch.hydrateState("MRG-1-1", "implementing");
     // prNumber is never set -- either stale PR or auto-merged before daemon saw it
     expect(orch.getItem("MRG-1-1")!.prNumber).toBeUndefined();
 
@@ -2703,13 +2703,13 @@ describe("orchestrateLoop post-merge conflict detection", () => {
 
     // T-1-1 is in ci-pending (about to pass CI and get merged by orchestrator)
     // T-1-2 and T-1-3 are also in-flight with PRs
-    orch.setState("T-1-1", "ci-pending");
+    orch.hydrateState("T-1-1", "ci-pending");
     orch.getItem("T-1-1")!.prNumber = 10;
     orch.getItem("T-1-1")!.workspaceRef = "workspace:1";
-    orch.setState("T-1-2", "ci-pending");
+    orch.hydrateState("T-1-2", "ci-pending");
     orch.getItem("T-1-2")!.prNumber = 11;
     orch.getItem("T-1-2")!.workspaceRef = "workspace:2";
-    orch.setState("T-1-3", "ci-pending");
+    orch.hydrateState("T-1-3", "ci-pending");
     orch.getItem("T-1-3")!.prNumber = 12;
     orch.getItem("T-1-3")!.workspaceRef = "workspace:3";
 
@@ -2766,10 +2766,10 @@ describe("orchestrateLoop post-merge conflict detection", () => {
     orch.getItem("T-1-2")!.reviewCompleted = true;
 
     // T-1-1 about to pass CI and get merged; T-1-2 also in-flight
-    orch.setState("T-1-1", "ci-pending");
+    orch.hydrateState("T-1-1", "ci-pending");
     orch.getItem("T-1-1")!.prNumber = 10;
     orch.getItem("T-1-1")!.workspaceRef = "workspace:1";
-    orch.setState("T-1-2", "ci-pending");
+    orch.hydrateState("T-1-2", "ci-pending");
     orch.getItem("T-1-2")!.prNumber = 11;
     orch.getItem("T-1-2")!.workspaceRef = "workspace:2";
 

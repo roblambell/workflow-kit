@@ -183,6 +183,39 @@ describe("prTitleMatchesWorkItem", () => {
     expect(prTitleMatchesWorkItem("some title", "")).toBe(false);
     expect(prTitleMatchesWorkItem("", "")).toBe(false);
   });
+
+  it("matches when branch name follows ninthwave/<id> pattern", () => {
+    // Branch name is a stronger signal than title -- overrides title mismatch
+    expect(
+      prTitleMatchesWorkItem("rephrased title", "original title", "ninthwave/H-MUX-1"),
+    ).toBe(true);
+  });
+
+  it("matches when branch name provided with matching titles", () => {
+    expect(
+      prTitleMatchesWorkItem("same title", "same title", "ninthwave/H-MUX-1"),
+    ).toBe(true);
+  });
+
+  it("falls back to title matching when no branch name provided", () => {
+    // Without branch name, rephrased titles don't match
+    expect(
+      prTitleMatchesWorkItem("rephrased title", "original title"),
+    ).toBe(false);
+  });
+
+  it("falls back to title matching when branch is not a ninthwave branch", () => {
+    // Non-ninthwave branch doesn't trigger branch-based matching
+    expect(
+      prTitleMatchesWorkItem("rephrased title", "original title", "feature/some-branch"),
+    ).toBe(false);
+  });
+
+  it("matches with undefined branch name (backward compat)", () => {
+    expect(
+      prTitleMatchesWorkItem("extract Multiplexer interface", "extract Multiplexer interface", undefined),
+    ).toBe(true);
+  });
 });
 
 // ── Reconcile collision tests ────────────────────────────────────────
@@ -367,7 +400,7 @@ describe("buildSnapshot: item ID collision safety", () => {
     // branch name. buildSnapshot must compare titles and ignore the stale PR.
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-FOO-1", "new work"));
-    orch.setState("H-FOO-1", "implementing");
+    orch.hydrateState("H-FOO-1", "implementing");
 
     const mockCheckPr = (id: string) => {
       if (id === "H-FOO-1") {
@@ -409,7 +442,7 @@ describe("buildSnapshot: item ID collision safety", () => {
     // prevent merge detection. The worker may use a different PR title than the item title.
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-FOO-1", "update decompose skill output format"));
-    orch.setState("H-FOO-1", "ci-passed");
+    orch.hydrateState("H-FOO-1", "ci-passed");
     orch.getItem("H-FOO-1")!.reviewCompleted = true;
     // Simulate: orchestrator already tracked this PR during the run
     const item = orch.getItem("H-FOO-1")!;
@@ -455,7 +488,7 @@ describe("buildSnapshot: item ID collision safety", () => {
     // different title, it should ignore it -- this is an old PR from a previous cycle.
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-FOO-1", "new work"));
-    orch.setState("H-FOO-1", "ci-passed");
+    orch.hydrateState("H-FOO-1", "ci-passed");
     orch.getItem("H-FOO-1")!.reviewCompleted = true;
     const item = orch.getItem("H-FOO-1")!;
     item.prNumber = 99; // Different PR number -- not the one that merged
@@ -497,7 +530,7 @@ describe("buildSnapshot: item ID collision safety", () => {
   it("reports merged when PR title matches item title", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-FOO-1", "old work"));
-    orch.setState("H-FOO-1", "implementing");
+    orch.hydrateState("H-FOO-1", "implementing");
 
     const mockCheckPr = (id: string) => {
       if (id === "H-FOO-1") {

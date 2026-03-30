@@ -287,13 +287,26 @@ export function normalizeTitleForComparison(title: string): string {
 }
 
 /**
- * Check if a PR title matches a TODO title.
+ * Check if a PR matches a work item.
  *
- * Returns true only if the normalized titles are an exact match.
- * Substring matches are intentionally rejected -- a PR titled "old work"
- * should not match a TODO titled "old work extended".
+ * When `branchName` is provided and follows the `ninthwave/<id>` pattern,
+ * the branch is used as the primary discriminator -- it's a stronger signal
+ * than the title because workers always create branches with the `ninthwave/`
+ * prefix. Falls back to normalized title comparison when no branch is provided,
+ * which also serves as the collision-detection path for reused IDs.
  */
-export function prTitleMatchesWorkItem(prTitle: string, todoTitle: string): boolean {
+export function prTitleMatchesWorkItem(
+  prTitle: string,
+  todoTitle: string,
+  branchName?: string,
+): boolean {
+  // Primary: branch name match (strongest signal).
+  // Workers always create branches named ninthwave/<todoId>.
+  if (branchName?.startsWith("ninthwave/")) {
+    return true;
+  }
+
+  // Fallback: normalized title comparison (collision detection for ID reuse)
   if (!prTitle || !todoTitle) return false;
   const normPr = normalizeTitleForComparison(prTitle);
   const normTodo = normalizeTitleForComparison(todoTitle);

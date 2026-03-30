@@ -91,7 +91,7 @@ export function reconstructState(
       if (savedState === "verify-failed") savedState = "fix-forward-failed";
       if (savedState === "repairing-main") savedState = "fixing-forward";
       if (savedState === "forward-fix-pending" || savedState === "fix-forward-failed" || savedState === "fixing-forward") {
-        orch.setState(item.id, savedState as OrchestratorItemState);
+        orch.hydrateState(item.id, savedState as OrchestratorItemState);
         continue;
       }
     }
@@ -105,7 +105,7 @@ export function reconstructState(
     // Item has a worktree -- check PR status in the correct repo
     const statusLine = checkPr(item.id, repoRoot);
     if (!statusLine) {
-      orch.setState(item.id, "implementing");
+      orch.hydrateState(item.id, "implementing");
       recoverWorkspaceRef(orch, item.id, workspaceList);
       continue;
     }
@@ -134,35 +134,35 @@ export function reconstructState(
         const mergedPrNum = prNumStr ? parseInt(prNumStr, 10) : undefined;
         const alreadyTracked = mergedPrNum != null && previousPrNumber === mergedPrNum;
         if (alreadyTracked) {
-          orch.setState(item.id, "merged");
+          orch.hydrateState(item.id, "merged");
         } else {
           const mergedPrTitle = parts[5] ?? "";
           const itemTitle = orch.getItem(item.id)?.workItem.title ?? "";
           if (mergedPrTitle && itemTitle && !prTitleMatchesWorkItem(mergedPrTitle, itemTitle)) {
-            orch.setState(item.id, "implementing");
+            orch.hydrateState(item.id, "implementing");
             recoverWorkspaceRef(orch, item.id, workspaceList);
           } else {
-            orch.setState(item.id, "merged");
+            orch.hydrateState(item.id, "merged");
           }
         }
         break;
       }
       case "ready":
       case "ci-passed":
-        orch.setState(item.id, "ci-passed");
+        orch.hydrateState(item.id, "ci-passed");
         recoverWorkspaceRef(orch, item.id, workspaceList);
         break;
       case "failing":
-        orch.setState(item.id, "ci-failed");
+        orch.hydrateState(item.id, "ci-failed");
         recoverWorkspaceRef(orch, item.id, workspaceList);
         break;
       case "pending":
-        orch.setState(item.id, "ci-pending");
+        orch.hydrateState(item.id, "ci-pending");
         recoverWorkspaceRef(orch, item.id, workspaceList);
         break;
       case "no-pr":
       default:
-        orch.setState(item.id, "implementing");
+        orch.hydrateState(item.id, "implementing");
         recoverWorkspaceRef(orch, item.id, workspaceList);
         break;
     }

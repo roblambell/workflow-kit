@@ -161,7 +161,7 @@ describe("telemetry: startedAt / endedAt on transitions", () => {
 
     // Manually set state back to launching and then implementing again
     // (simulating a scenario where the item re-enters implementing)
-    orch.setState("T-1-1", "launching");
+    orch.hydrateState("T-1-1", "launching");
     orch.processTransitions({ items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] });
 
     const secondStart = orch.getItem("T-1-1")!.startedAt;

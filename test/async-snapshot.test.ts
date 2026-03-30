@@ -137,7 +137,7 @@ describe("buildSnapshotAsync", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-1-1"));
     orch.getItem("BA-1-1")!.reviewCompleted = true;
-    orch.setState("BA-1-1", "implementing");
+    orch.hydrateState("BA-1-1", "implementing");
 
     const asyncCheckPr = async (_id: string, _root: string) => {
       return "BA-1-1\t10\tci-passed\tMERGEABLE\t2026-01-01T00:00:00Z";
@@ -162,7 +162,7 @@ describe("buildSnapshotAsync", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-2-1"));
     orch.getItem("BA-2-1")!.reviewCompleted = true;
-    orch.setState("BA-2-1", "done");
+    orch.hydrateState("BA-2-1", "done");
 
     const asyncCheckPr = vi.fn(async () => null);
 
@@ -184,7 +184,7 @@ describe("buildSnapshotAsync", () => {
     orch.addItem(makeWorkItem("BA-3-1"));
     orch.addItem(makeWorkItem("BA-3-2", ["BA-3-1"]));
     orch.getItem("BA-3-1")!.reviewCompleted = true;
-    orch.setState("BA-3-1", "done");
+    orch.hydrateState("BA-3-1", "done");
 
     const asyncCheckPr = vi.fn(async () => null);
 
@@ -204,7 +204,7 @@ describe("buildSnapshotAsync", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-4-1"));
     orch.getItem("BA-4-1")!.reviewCompleted = true;
-    orch.setState("BA-4-1", "implementing");
+    orch.hydrateState("BA-4-1", "implementing");
 
     const asyncCheckPr = async (_id: string, _root: string) => null;
 
@@ -226,7 +226,7 @@ describe("buildSnapshotAsync", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-5-1"));
     orch.getItem("BA-5-1")!.reviewCompleted = true;
-    orch.setState("BA-5-1", "merging");
+    orch.hydrateState("BA-5-1", "merging");
 
     const asyncCheckPr = async () => "BA-5-1\t20\tmerged\t\t\tItem BA-5-1";
 
@@ -250,8 +250,8 @@ describe("buildSnapshotAsync", () => {
     orch.addItem(makeWorkItem("BA-6-2"));
     orch.getItem("BA-6-1")!.reviewCompleted = true;
     orch.getItem("BA-6-2")!.reviewCompleted = true;
-    orch.setState("BA-6-1", "ci-pending");
-    orch.setState("BA-6-2", "implementing");
+    orch.hydrateState("BA-6-1", "ci-pending");
+    orch.hydrateState("BA-6-2", "implementing");
 
     // Both items return empty string (API error)
     const asyncCheckPr = async () => "";
@@ -280,7 +280,7 @@ describe("buildSnapshotAsync", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-7-1"));
     orch.getItem("BA-7-1")!.reviewCompleted = true;
-    orch.setState("BA-7-1", "implementing");
+    orch.hydrateState("BA-7-1", "implementing");
 
     const asyncCheckPr = async () => "BA-7-1\t10\tci-passed\tMERGEABLE\t2026-01-01T00:00:00Z";
 
@@ -300,7 +300,7 @@ describe("buildSnapshotAsync", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-8-1"));
     orch.getItem("BA-8-1")!.reviewCompleted = true;
-    orch.setState("BA-8-1", "implementing");
+    orch.hydrateState("BA-8-1", "implementing");
 
     const asyncCheckPr = async () => "BA-8-1\t10\tci-passed\tMERGEABLE\t2026-01-01T00:00:00Z";
     const asyncGetLastCommitTime = async (_root: string, _branch: string): Promise<string | null> => {
@@ -326,7 +326,7 @@ describe("buildSnapshotAsync", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-9-1"));
     orch.getItem("BA-9-1")!.reviewCompleted = true;
-    orch.setState("BA-9-1", "ci-pending");
+    orch.hydrateState("BA-9-1", "ci-pending");
     orch.getItem("BA-9-1")!.prNumber = 42;
 
     const asyncCheckPr = async () => "BA-9-1\t42\tci-passed\tMERGEABLE\t2026-01-01T00:00:00Z";
@@ -354,7 +354,7 @@ describe("buildSnapshotAsync", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-10-1"));
     orch.getItem("BA-10-1")!.reviewCompleted = true;
-    orch.setState("BA-10-1", "forward-fix-pending");
+    orch.hydrateState("BA-10-1", "forward-fix-pending");
     orch.getItem("BA-10-1")!.mergeCommitSha = "abc123";
 
     const asyncCheckPr = vi.fn(async () => null);

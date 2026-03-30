@@ -80,7 +80,12 @@ export function acquireLock(lockPath: string, timeoutMs = 5000): void {
 
   while (true) {
     if (tryMkdir(lockPath)) {
-      writePid(lockPath);
+      try {
+        writePid(lockPath);
+      } catch (e) {
+        removeLockDir(lockPath);
+        throw e;
+      }
       // Verify we still own the lock (guards against concurrent stale-lock recovery)
       if (verifyPid(lockPath)) {
         return;
@@ -92,7 +97,12 @@ export function acquireLock(lockPath: string, timeoutMs = 5000): void {
     if (isLockStale(lockPath)) {
       removeLockDir(lockPath);
       if (tryMkdir(lockPath)) {
-        writePid(lockPath);
+        try {
+          writePid(lockPath);
+        } catch (e) {
+          removeLockDir(lockPath);
+          throw e;
+        }
         if (verifyPid(lockPath)) {
           return;
         }

@@ -108,7 +108,7 @@ describe("buildSnapshot contract", () => {
       orch.addItem(makeWorkItem("A-2", ["A-1"]));
 
       // A-1 is done, so A-2's dependency is met
-      orch.setState("A-1", "done");
+      orch.hydrateState("A-1", "done");
 
       const result = snap(orch);
 
@@ -132,7 +132,7 @@ describe("buildSnapshot contract", () => {
       orch.addItem(makeWorkItem("A-1"));
       orch.addItem(makeWorkItem("A-2", ["A-1"]));
 
-      orch.setState("A-1", "merged");
+      orch.hydrateState("A-1", "merged");
 
       const result = snap(orch);
 
@@ -154,7 +154,7 @@ describe("buildSnapshot contract", () => {
   describe("implementing items", () => {
     it("checks workerAlive from mux and lastCommitTime from injected function", () => {
       orch.addItem(makeWorkItem("B-1"));
-      orch.setState("B-1", "implementing");
+      orch.hydrateState("B-1", "implementing");
       const orchItem = orch.getItem("B-1")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "B-1")!;
 
@@ -175,7 +175,7 @@ describe("buildSnapshot contract", () => {
 
     it("reports workerAlive false when worker is dead", () => {
       orch.addItem(makeWorkItem("B-2"));
-      orch.setState("B-2", "implementing");
+      orch.hydrateState("B-2", "implementing");
       const orchItem = orch.getItem("B-2")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "B-2")!;
       fakeMux.setAlive(orchItem.workspaceRef, false);
@@ -189,7 +189,7 @@ describe("buildSnapshot contract", () => {
 
     it("reports null lastCommitTime when no commits exist", () => {
       orch.addItem(makeWorkItem("B-3"));
-      orch.setState("B-3", "implementing");
+      orch.hydrateState("B-3", "implementing");
       const orchItem = orch.getItem("B-3")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "B-3")!;
 
@@ -209,7 +209,7 @@ describe("buildSnapshot contract", () => {
   describe("launching items", () => {
     it("checks workerAlive and lastCommitTime like implementing", () => {
       orch.addItem(makeWorkItem("L-1"));
-      orch.setState("L-1", "launching");
+      orch.hydrateState("L-1", "launching");
       const orchItem = orch.getItem("L-1")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "L-1")!;
 
@@ -230,7 +230,7 @@ describe("buildSnapshot contract", () => {
   describe("ci-failed items", () => {
     it("checks workerAlive and lastCommitTime like implementing", () => {
       orch.addItem(makeWorkItem("C-1"));
-      orch.setState("C-1", "ci-failed");
+      orch.hydrateState("C-1", "ci-failed");
       const orchItem = orch.getItem("C-1")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "C-1")!;
 
@@ -252,7 +252,7 @@ describe("buildSnapshot contract", () => {
   describe("PR lifecycle items", () => {
     it("populates prNumber, ciStatus, prState, isMergeable, eventTime from checkPr (CI passing, ready to merge)", () => {
       orch.addItem(makeWorkItem("D-1"));
-      orch.setState("D-1", "ci-passed");
+      orch.hydrateState("D-1", "ci-passed");
 
       fakeGh.createPR("ninthwave/D-1", "Item D-1");
       fakeGh.setCIStatus("ninthwave/D-1", "pass");
@@ -272,7 +272,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates CI failing status", () => {
       orch.addItem(makeWorkItem("D-2"));
-      orch.setState("D-2", "ci-pending");
+      orch.hydrateState("D-2", "ci-pending");
 
       fakeGh.createPR("ninthwave/D-2", "Item D-2");
       fakeGh.setCIStatus("ninthwave/D-2", "fail");
@@ -287,7 +287,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates CI pending status", () => {
       orch.addItem(makeWorkItem("D-3"));
-      orch.setState("D-3", "ci-pending");
+      orch.hydrateState("D-3", "ci-pending");
 
       fakeGh.createPR("ninthwave/D-3", "Item D-3");
       fakeGh.setCIStatus("ninthwave/D-3", "pending");
@@ -302,7 +302,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates merged prState", () => {
       orch.addItem(makeWorkItem("D-4"));
-      orch.setState("D-4", "merging");
+      orch.hydrateState("D-4", "merging");
 
       fakeGh.createPR("ninthwave/D-4", "Item D-4");
       fakeGh.mergePR("ninthwave/D-4");
@@ -316,7 +316,7 @@ describe("buildSnapshot contract", () => {
 
     it("isMergeable false for conflicting PRs", () => {
       orch.addItem(makeWorkItem("D-5"));
-      orch.setState("D-5", "ci-passed");
+      orch.hydrateState("D-5", "ci-passed");
 
       fakeGh.createPR("ninthwave/D-5", "Item D-5");
       fakeGh.setCIStatus("ninthwave/D-5", "pass");
@@ -331,7 +331,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates reviewDecision APPROVED via ready status", () => {
       orch.addItem(makeWorkItem("D-6"));
-      orch.setState("D-6", "review-pending");
+      orch.hydrateState("D-6", "review-pending");
 
       fakeGh.createPR("ninthwave/D-6", "Item D-6");
       fakeGh.setCIStatus("ninthwave/D-6", "pass");
@@ -351,7 +351,7 @@ describe("buildSnapshot contract", () => {
   describe("checkPr returns null (no-pr)", () => {
     it("snapshot has no prNumber or ciStatus when checkPr returns null", () => {
       orch.addItem(makeWorkItem("E-1"));
-      orch.setState("E-1", "implementing");
+      orch.hydrateState("E-1", "implementing");
       const orchItem = orch.getItem("E-1")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "E-1")!;
 
@@ -369,7 +369,7 @@ describe("buildSnapshot contract", () => {
 
     it("snapshot has no prNumber when checkPr returns no-pr status line", () => {
       orch.addItem(makeWorkItem("E-2"));
-      orch.setState("E-2", "implementing");
+      orch.hydrateState("E-2", "implementing");
       const orchItem = orch.getItem("E-2")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "E-2")!;
 
@@ -391,7 +391,7 @@ describe("buildSnapshot contract", () => {
   describe("verifying items", () => {
     it("populates mergeCommitCIStatus from checkCommitCI", () => {
       orch.addItem(makeWorkItem("F-1"));
-      orch.setState("F-1", "forward-fix-pending");
+      orch.hydrateState("F-1", "forward-fix-pending");
       const orchItem = orch.getItem("F-1")!;
       orchItem.mergeCommitSha = "abc123";
 
@@ -406,7 +406,7 @@ describe("buildSnapshot contract", () => {
 
     it("returns pending when checkCommitCI is not injected", () => {
       orch.addItem(makeWorkItem("F-2"));
-      orch.setState("F-2", "forward-fix-pending");
+      orch.hydrateState("F-2", "forward-fix-pending");
       const orchItem = orch.getItem("F-2")!;
       orchItem.mergeCommitSha = "def456";
 
@@ -420,7 +420,7 @@ describe("buildSnapshot contract", () => {
 
     it("reports fail from checkCommitCI", () => {
       orch.addItem(makeWorkItem("F-3"));
-      orch.setState("F-3", "fix-forward-failed");
+      orch.hydrateState("F-3", "fix-forward-failed");
       const orchItem = orch.getItem("F-3")!;
       orchItem.mergeCommitSha = "ghi789";
 
@@ -435,7 +435,7 @@ describe("buildSnapshot contract", () => {
 
     it("skips verifying items without mergeCommitSha", () => {
       orch.addItem(makeWorkItem("F-4"));
-      orch.setState("F-4", "forward-fix-pending");
+      orch.hydrateState("F-4", "forward-fix-pending");
       // No mergeCommitSha set
 
       const result = snap(orch, { checkCommitCI: fakeGh.checkCommitCI });
@@ -456,7 +456,7 @@ describe("buildSnapshot contract", () => {
       writeHeartbeat(PROJECT_ROOT, "G-1", 0.5, "Writing code", memIO);
 
       orch.addItem(makeWorkItem("G-1"));
-      orch.setState("G-1", "implementing");
+      orch.hydrateState("G-1", "implementing");
       const orchItem = orch.getItem("G-1")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "G-1")!;
 
@@ -476,7 +476,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates lastHeartbeat for launching state", () => {
       orch.addItem(makeWorkItem("G-2"));
-      orch.setState("G-2", "launching");
+      orch.hydrateState("G-2", "launching");
       const orchItem = orch.getItem("G-2")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "G-2")!;
 
@@ -489,7 +489,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates lastHeartbeat for ci-pending state", () => {
       orch.addItem(makeWorkItem("G-3"));
-      orch.setState("G-3", "ci-pending");
+      orch.hydrateState("G-3", "ci-pending");
 
       const result = snap(orch);
 
@@ -500,7 +500,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates lastHeartbeat for ci-passed state", () => {
       orch.addItem(makeWorkItem("G-4"));
-      orch.setState("G-4", "ci-passed");
+      orch.hydrateState("G-4", "ci-passed");
 
       const result = snap(orch);
 
@@ -511,7 +511,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates lastHeartbeat for review-pending state", () => {
       orch.addItem(makeWorkItem("G-5"));
-      orch.setState("G-5", "review-pending");
+      orch.hydrateState("G-5", "review-pending");
 
       const result = snap(orch);
 
@@ -522,7 +522,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates lastHeartbeat for merging state", () => {
       orch.addItem(makeWorkItem("G-6"));
-      orch.setState("G-6", "merging");
+      orch.hydrateState("G-6", "merging");
 
       const result = snap(orch);
 
@@ -533,7 +533,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates lastHeartbeat for ci-pending state", () => {
       orch.addItem(makeWorkItem("G-7"));
-      orch.setState("G-7", "ci-pending");
+      orch.hydrateState("G-7", "ci-pending");
 
       const result = snap(orch);
 
@@ -544,7 +544,7 @@ describe("buildSnapshot contract", () => {
 
     it("populates lastHeartbeat for ci-failed state", () => {
       orch.addItem(makeWorkItem("G-8"));
-      orch.setState("G-8", "ci-failed");
+      orch.hydrateState("G-8", "ci-failed");
       const orchItem = orch.getItem("G-8")!;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "G-8")!;
 
@@ -557,7 +557,7 @@ describe("buildSnapshot contract", () => {
 
     it("does NOT populate lastHeartbeat for done state", () => {
       orch.addItem(makeWorkItem("G-9"));
-      orch.setState("G-9", "done");
+      orch.hydrateState("G-9", "done");
 
       const result = snap(orch);
 
@@ -568,7 +568,7 @@ describe("buildSnapshot contract", () => {
 
     it("does NOT populate lastHeartbeat for stuck state", () => {
       orch.addItem(makeWorkItem("G-10"));
-      orch.setState("G-10", "stuck");
+      orch.hydrateState("G-10", "stuck");
 
       const result = snap(orch);
 
@@ -583,7 +583,7 @@ describe("buildSnapshot contract", () => {
   describe("terminal states", () => {
     it("skips done items", () => {
       orch.addItem(makeWorkItem("T-1"));
-      orch.setState("T-1", "done");
+      orch.hydrateState("T-1", "done");
 
       const result = snap(orch);
 
@@ -593,7 +593,7 @@ describe("buildSnapshot contract", () => {
 
     it("skips stuck items", () => {
       orch.addItem(makeWorkItem("T-2"));
-      orch.setState("T-2", "stuck");
+      orch.hydrateState("T-2", "stuck");
 
       const result = snap(orch);
 
@@ -607,7 +607,7 @@ describe("buildSnapshot contract", () => {
   describe("reviewing items", () => {
     it("checks review worker alive via reviewWorkspaceRef", () => {
       orch.addItem(makeWorkItem("R-1"));
-      orch.setState("R-1", "reviewing");
+      orch.hydrateState("R-1", "reviewing");
       const orchItem = orch.getItem("R-1")!;
       orchItem.reviewWorkspaceRef = fakeMux.launchWorkspace("/tmp/wt-review", "claude", "R-1")!;
 
@@ -620,7 +620,7 @@ describe("buildSnapshot contract", () => {
 
     it("reports review worker dead when workspace is closed", () => {
       orch.addItem(makeWorkItem("R-2"));
-      orch.setState("R-2", "reviewing");
+      orch.hydrateState("R-2", "reviewing");
       const orchItem = orch.getItem("R-2")!;
       orchItem.reviewWorkspaceRef = fakeMux.launchWorkspace("/tmp/wt-review", "claude", "R-2")!;
       fakeMux.setAlive(orchItem.reviewWorkspaceRef, false);
@@ -638,7 +638,7 @@ describe("buildSnapshot contract", () => {
   describe("rebasing items", () => {
     it("checks rebaser worker alive via rebaserWorkspaceRef", () => {
       orch.addItem(makeWorkItem("RP-1"));
-      orch.setState("RP-1", "rebasing");
+      orch.hydrateState("RP-1", "rebasing");
       const orchItem = orch.getItem("RP-1")!;
       orchItem.rebaserWorkspaceRef = fakeMux.launchWorkspace("/tmp/wt-rebaser", "claude", "RP-1")!;
 
@@ -655,7 +655,7 @@ describe("buildSnapshot contract", () => {
   describe("fixing-forward items", () => {
     it("checks forward-fixer worker alive via fixForwardWorkspaceRef", () => {
       orch.addItem(makeWorkItem("RM-1"));
-      orch.setState("RM-1", "fixing-forward");
+      orch.hydrateState("RM-1", "fixing-forward");
       const orchItem = orch.getItem("RM-1")!;
       orchItem.fixForwardWorkspaceRef = fakeMux.launchWorkspace("/tmp/wt-verify", "claude", "RM-1")!;
 
@@ -672,7 +672,7 @@ describe("buildSnapshot contract", () => {
   describe("cross-repo items", () => {
     it("uses resolvedRepoRoot for checkPr instead of projectRoot", () => {
       orch.addItem(makeWorkItem("X-1"));
-      orch.setState("X-1", "ci-pending");
+      orch.hydrateState("X-1", "ci-pending");
       const orchItem = orch.getItem("X-1")!;
       orchItem.resolvedRepoRoot = "/other/repo";
 
@@ -689,7 +689,7 @@ describe("buildSnapshot contract", () => {
 
     it("uses resolvedRepoRoot for lastCommitTime in implementing state", () => {
       orch.addItem(makeWorkItem("X-2"));
-      orch.setState("X-2", "implementing");
+      orch.hydrateState("X-2", "implementing");
       const orchItem = orch.getItem("X-2")!;
       orchItem.resolvedRepoRoot = "/other/repo";
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "X-2")!;
@@ -712,7 +712,7 @@ describe("buildSnapshot contract", () => {
   describe("comment fetching", () => {
     it("fetches comments for items with open PRs in relay-eligible states", () => {
       orch.addItem(makeWorkItem("CM-1"));
-      orch.setState("CM-1", "ci-pending");
+      orch.hydrateState("CM-1", "ci-pending");
       const orchItem = orch.getItem("CM-1")!;
       orchItem.prNumber = 42;
       orchItem.lastTransition = "2026-03-29T08:00:00Z";
@@ -738,7 +738,7 @@ describe("buildSnapshot contract", () => {
 
     it("does not fetch comments when fetchComments is not provided", () => {
       orch.addItem(makeWorkItem("CM-2"));
-      orch.setState("CM-2", "ci-pending");
+      orch.hydrateState("CM-2", "ci-pending");
       const orchItem = orch.getItem("CM-2")!;
       orchItem.prNumber = 43;
 
@@ -756,7 +756,7 @@ describe("buildSnapshot contract", () => {
 
     it("does not fetch comments for states outside the relay set", () => {
       orch.addItem(makeWorkItem("CM-3"));
-      orch.setState("CM-3", "implementing");
+      orch.hydrateState("CM-3", "implementing");
       const orchItem = orch.getItem("CM-3")!;
       orchItem.prNumber = 44;
       orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "CM-3")!;
@@ -788,14 +788,14 @@ describe("buildSnapshot contract", () => {
       orch.addItem(makeWorkItem("M-4")); // done
       orch.addItem(makeWorkItem("M-5")); // verifying
 
-      orch.setState("M-2", "implementing");
+      orch.hydrateState("M-2", "implementing");
       orch.getItem("M-2")!.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "M-2")!;
 
-      orch.setState("M-3", "ci-passed");
+      orch.hydrateState("M-3", "ci-passed");
 
-      orch.setState("M-4", "done");
+      orch.hydrateState("M-4", "done");
 
-      orch.setState("M-5", "forward-fix-pending");
+      orch.hydrateState("M-5", "forward-fix-pending");
       orch.getItem("M-5")!.mergeCommitSha = "sha123";
       fakeGh.setMergeCommitCI("sha123", "pending");
 
@@ -832,7 +832,7 @@ describe("buildSnapshot contract", () => {
   describe("merged PR title collision check", () => {
     it("sets prState merged when title matches work item title", () => {
       orch.addItem(makeWorkItem("TC-1"));
-      orch.setState("TC-1", "merging");
+      orch.hydrateState("TC-1", "merging");
 
       fakeGh.createPR("ninthwave/TC-1", "Item TC-1");
       fakeGh.mergePR("ninthwave/TC-1");

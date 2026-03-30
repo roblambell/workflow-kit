@@ -1,3 +1,10 @@
+YOUR_TODO_ID: L-ER-1
+YOUR_PARTITION: 1
+PROJECT_ROOT: /Users/roblambell/code/ninthwave/.ninthwave/.worktrees/ninthwave-L-ER-1
+HUB_ROOT: /Users/roblambell/code/ninthwave
+IS_HUB_LOCAL: true
+HUB_REPO_NWO: ninthwave-sh/ninthwave
+
 # Fix: Remaining low-priority production fixes (L-ER-1)
 
 **Priority:** Low

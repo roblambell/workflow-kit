@@ -265,7 +265,7 @@ describe("Daemon lifecycle: single-item flow", () => {
     // Setup: item in ci-pending state with PR
     orch.addItem(makeWorkItem("CIFAIL-1"));
     orch.getItem("CIFAIL-1")!.reviewCompleted = true;
-    orch.setState("CIFAIL-1", "ci-pending");
+    orch.hydrateState("CIFAIL-1", "ci-pending");
     orch.getItem("CIFAIL-1")!.prNumber = 50;
     orch.getItem("CIFAIL-1")!.workspaceRef = "workspace:2";
 
@@ -361,7 +361,7 @@ describe("Daemon lifecycle: stuck item and retry logic", () => {
     const orch = new Orchestrator({ wipLimit: 4, maxCiRetries: 1 });
     orch.addItem(makeWorkItem("STUCK-3"));
     orch.getItem("STUCK-3")!.reviewCompleted = true;
-    orch.setState("STUCK-3", "ci-pending");
+    orch.hydrateState("STUCK-3", "ci-pending");
     orch.getItem("STUCK-3")!.prNumber = 77;
     orch.getItem("STUCK-3")!.workspaceRef = "workspace:3";
 
@@ -404,7 +404,7 @@ describe("Daemon lifecycle: stuck item and retry logic", () => {
 
     orch.addItem(makeWorkItem("STUCK-4"));
     orch.getItem("STUCK-4")!.reviewCompleted = true;
-    orch.setState("STUCK-4", "stuck");
+    orch.hydrateState("STUCK-4", "stuck");
     orch.getItem("STUCK-4")!.workspaceRef = "workspace:4";
 
     const result = orch.executeAction(
@@ -504,7 +504,7 @@ describe("Daemon lifecycle: stacking (dependent items)", () => {
     orch.processTransitions(
       snapshotWith([{ id: "NOSTACK-1", workerAlive: true }]),
     );
-    orch.setState("NOSTACK-1", "ci-passed");
+    orch.hydrateState("NOSTACK-1", "ci-passed");
     orch.getItem("NOSTACK-1")!.reviewCompleted = true;
     orch.getItem("NOSTACK-1")!.prNumber = 20;
 
@@ -530,7 +530,7 @@ describe("Daemon lifecycle: stacking (dependent items)", () => {
     orch.processTransitions(
       snapshotWith([{ id: "DEPSTK-1", workerAlive: true }]),
     );
-    orch.setState("DEPSTK-1", "ci-passed");
+    orch.hydrateState("DEPSTK-1", "ci-passed");
     orch.getItem("DEPSTK-1")!.reviewCompleted = true;
     orch.getItem("DEPSTK-1")!.prNumber = 30;
 
@@ -564,7 +564,7 @@ describe("Daemon lifecycle: stacking (dependent items)", () => {
     // Let me use a different approach: make DEPSTK-1 go to stuck via worker crash.
     // Actually, DEPSTK-1 is in ci-passed/ci-failed, not launching. So stuckOrRetry won't be called here.
     // Let's just force the state to test the stuck dep pause behavior.
-    orch.setState("DEPSTK-1", "stuck");
+    orch.hydrateState("DEPSTK-1", "stuck");
 
     // Process transitions -- stuck DEPSTK-1 should pause DEPSTK-2
     const actions = orch.processTransitions(
@@ -603,12 +603,12 @@ describe("Daemon lifecycle: stacking with stuck dependency notification", () => 
     // Set PR and state manually for fast setup
     orch.getItem("STKN-1")!.prNumber = 40;
     orch.getItem("STKN-1")!.workspaceRef = "workspace:1";
-    orch.setState("STKN-1", "ci-failed");
+    orch.hydrateState("STKN-1", "ci-failed");
     orch.getItem("STKN-1")!.reviewCompleted = true;
     orch.getItem("STKN-1")!.ciFailCount = 1; // over maxCiRetries: 0
 
     // Set up STKN-2 as stacked on STKN-1
-    orch.setState("STKN-2", "implementing");
+    orch.hydrateState("STKN-2", "implementing");
     orch.getItem("STKN-2")!.baseBranch = "ninthwave/STKN-1";
     orch.getItem("STKN-2")!.workspaceRef = "workspace:2";
 
@@ -640,7 +640,7 @@ describe("Daemon lifecycle: cleanup after merge", () => {
 
     orch.addItem(makeWorkItem("CLN-1"));
     orch.getItem("CLN-1")!.reviewCompleted = true;
-    orch.setState("CLN-1", "ci-pending");
+    orch.hydrateState("CLN-1", "ci-pending");
     orch.getItem("CLN-1")!.prNumber = 60;
     orch.getItem("CLN-1")!.workspaceRef = "workspace:5";
 
@@ -682,7 +682,7 @@ describe("Daemon lifecycle: cleanup after merge", () => {
 
     orch.addItem(makeWorkItem("CLN-2"));
     orch.getItem("CLN-2")!.reviewCompleted = true;
-    orch.setState("CLN-2", "done");
+    orch.hydrateState("CLN-2", "done");
     orch.getItem("CLN-2")!.workspaceRef = "workspace:6";
 
     const result = orch.executeAction(
@@ -707,7 +707,7 @@ describe("Daemon lifecycle: cleanup after merge", () => {
 
     orch.addItem(makeWorkItem("CLN-3"));
     orch.getItem("CLN-3")!.reviewCompleted = true;
-    orch.setState("CLN-3", "done");
+    orch.hydrateState("CLN-3", "done");
     orch.getItem("CLN-3")!.workspaceRef = "workspace:7";
 
     const result = orch.executeAction(
@@ -729,7 +729,7 @@ describe("Daemon lifecycle: cleanup after merge", () => {
 
     orch.addItem(makeWorkItem("CLN-4"));
     orch.getItem("CLN-4")!.reviewCompleted = true;
-    orch.setState("CLN-4", "done");
+    orch.hydrateState("CLN-4", "done");
     orch.getItem("CLN-4")!.workspaceRef = "workspace:8";
 
     const result = orch.executeAction(
@@ -944,7 +944,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     // Item 1: launching state
     orch.addItem(makeWorkItem("CR-1"), 1);
     const cr1 = orch.getItem("CR-1")!;
-    orch.setState("CR-1", "launching");
+    orch.hydrateState("CR-1", "launching");
     cr1.workspaceRef = "workspace:1";
     cr1.partition = 1;
     cr1.resolvedRepoRoot = "/repos/project-a";
@@ -955,7 +955,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     // Item 2: implementing state
     orch.addItem(makeWorkItem("CR-2"), 2);
     const cr2 = orch.getItem("CR-2")!;
-    orch.setState("CR-2", "implementing");
+    orch.hydrateState("CR-2", "implementing");
     cr2.workspaceRef = "workspace:2";
     cr2.partition = 2;
     cr2.resolvedRepoRoot = "/repos/project-b";
@@ -968,7 +968,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     // Item 3: ci-pending state (also carries transient fields that should NOT survive)
     orch.addItem(makeWorkItem("CR-3"), 3);
     const cr3 = orch.getItem("CR-3")!;
-    orch.setState("CR-3", "ci-pending");
+    orch.hydrateState("CR-3", "ci-pending");
     cr3.prNumber = 301;
     cr3.partition = 3;
     cr3.workspaceRef = "workspace:3";
@@ -986,7 +986,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     // Item 4: reviewing state
     orch.addItem(makeWorkItem("CR-4", ["CR-3"]), 4);
     const cr4 = orch.getItem("CR-4")!;
-    orch.setState("CR-4", "reviewing");
+    orch.hydrateState("CR-4", "reviewing");
     cr4.prNumber = 401;
     cr4.partition = 4;
     cr4.workspaceRef = "workspace:4";
@@ -1000,7 +1000,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     // Item 5: merging state
     orch.addItem(makeWorkItem("CR-5"), 5);
     const cr5 = orch.getItem("CR-5")!;
-    orch.setState("CR-5", "merging");
+    orch.hydrateState("CR-5", "merging");
     cr5.prNumber = 501;
     cr5.partition = 5;
     cr5.workspaceRef = "workspace:5";
@@ -1117,7 +1117,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     for (const savedItem of restored!.items) {
       const item = orch2.getItem(savedItem.id);
       if (!item) continue;
-      orch2.setState(savedItem.id, savedItem.state as OrchestratorItemState);
+      orch2.hydrateState(savedItem.id, savedItem.state as OrchestratorItemState);
       if (savedItem.prNumber != null) item.prNumber = savedItem.prNumber;
       item.ciFailCount = savedItem.ciFailCount;
       item.retryCount = savedItem.retryCount;
@@ -1201,7 +1201,7 @@ describe("Daemon lifecycle: launch failure handling", () => {
 
     orch.addItem(makeWorkItem("LF-1"));
     orch.getItem("LF-1")!.reviewCompleted = true;
-    orch.setState("LF-1", "launching");
+    orch.hydrateState("LF-1", "launching");
 
     const result = orch.executeAction(
       { type: "launch", itemId: "LF-1" },
@@ -1223,7 +1223,7 @@ describe("Daemon lifecycle: launch failure handling", () => {
 
     orch.addItem(makeWorkItem("LF-2"));
     orch.getItem("LF-2")!.reviewCompleted = true;
-    orch.setState("LF-2", "launching");
+    orch.hydrateState("LF-2", "launching");
 
     const result = orch.executeAction(
       { type: "launch", itemId: "LF-2" },
@@ -1244,7 +1244,7 @@ describe("Daemon lifecycle: launch failure handling", () => {
 
     orch.addItem(makeWorkItem("LF-3"));
     orch.getItem("LF-3")!.reviewCompleted = true;
-    orch.setState("LF-3", "launching");
+    orch.hydrateState("LF-3", "launching");
 
     const result = orch.executeAction(
       { type: "launch", itemId: "LF-3" },
