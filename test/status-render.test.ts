@@ -360,6 +360,15 @@ describe("formatDuration", () => {
     });
     expect(formatDuration(item)).toBe("5m");
   });
+
+  it("returns countdown format during timeout grace period", () => {
+    const item = makeStatusItem({
+      timeoutRemainingMs: 270_000,
+      startedAt: "2026-01-01T00:00:00Z",
+      endedAt: "2026-01-01T01:00:00Z",
+    });
+    expect(formatDuration(item)).toBe("4m 30s");
+  });
 });
 
 describe("formatTelemetrySuffix", () => {
@@ -480,6 +489,19 @@ describe("formatItemRow", () => {
     const item = makeStatusItem({ repoLabel: "my-repo" });
     const row = stripAnsi(formatItemRow(item, 40));
     expect(row).toContain("[my-repo]");
+  });
+
+  it("shows warning icon and red countdown during timeout grace period", () => {
+    const item = makeStatusItem({
+      timeoutRemainingMs: 270_000,
+      timeoutExtensions: "1/3",
+    });
+    const row = formatItemRow(item, 40);
+    const text = stripAnsi(row);
+    expect(text).toContain("⚠");
+    expect(text).toContain("4m 30s");
+    expect(text).toContain("(1/3)");
+    expect(row).toContain(`${RED}4m 30s`);
   });
 });
 
@@ -1388,6 +1410,19 @@ describe("orchestratorItemsToStatusItems", () => {
     expect(result!.endedAt).toBe("2024-01-01T01:00:00Z");
     expect(result!.exitCode).toBe(2);
     expect(result!.stderrTail).toBe("npm ERR!");
+  });
+
+  it("passes through timeout grace fields", () => {
+    const now = Date.now();
+    const item: OrchestratorItem = {
+      ...makeOrchestratorItem("C-1-1", "implementing"),
+      timeoutDeadline: new Date(now + 270_000).toISOString(),
+      timeoutExtensionCount: 1,
+    };
+    const [result] = orchestratorItemsToStatusItems([item], undefined, 3);
+    expect(result!.timeoutRemainingMs).toBeLessThanOrEqual(270_000);
+    expect(result!.timeoutRemainingMs).toBeGreaterThan(269_000);
+    expect(result!.timeoutExtensions).toBe("1/3");
   });
 
   it("handles empty item list", () => {
@@ -2576,6 +2611,12 @@ describe("renderHelpOverlay", () => {
     expect(text).toContain("Ctrl+C");   // double-tap quit
     expect(text).toContain("Escape");   // dismiss help
     expect(text).toContain("?");        // toggle help
+  });
+
+  it("documents timeout extension shortcut", () => {
+    const lines = renderHelpOverlay(100, 40);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("x           Extend worker timeout");
   });
 
   it("help content is ASCII-only except strategy icons", () => {

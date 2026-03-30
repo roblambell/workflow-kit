@@ -2216,6 +2216,39 @@ describe("setupKeyboardShortcuts", () => {
     cleanup();
   });
 
+  it("x extends timeout for the selected item", () => {
+    const ac = new AbortController();
+    const stdin = mockStdin();
+    const extendedIds: string[] = [];
+    const tuiState: TuiState = {
+      scrollOffset: 0,
+      viewOptions: { mergeStrategy: "auto" },
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      panelMode: "split",
+      logBuffer: [],
+      logScrollOffset: 0,
+      logLevelFilter: "all",
+      selectedIndex: 1,
+      detailItemId: null,
+      savedLogScrollOffset: 0,
+      getSelectedItemId: (idx: number) => idx === 1 ? "H-TG-3" : undefined,
+      getItemCount: () => 2,
+      onExtendTimeout: (itemId: string) => {
+        extendedIds.push(itemId);
+        return true;
+      },
+    };
+
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+    (stdin as any)._emit("data", "x");
+
+    expect(extendedIds).toEqual(["H-TG-3"]);
+  });
+
   // ── Help overlay keyboard handling ──────────────────────────────────
 
   it("? toggles showHelp boolean", () => {
