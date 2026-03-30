@@ -215,11 +215,11 @@ nw heartbeat --progress 0.85 --label "Checked diff"
 
 Before creating the PR, delete your work item file so that merging the PR automatically marks the item as done.
 
-1. Delete the file: `rm ${HUB_ROOT}/.ninthwave/work/*--YOUR_TODO_ID.md`
-2. Verify it's gone: `ls ${HUB_ROOT}/.ninthwave/work/*--YOUR_TODO_ID.md` should return "No such file"
-3. Commit: `git add ${HUB_ROOT}/.ninthwave/work/ && git commit -m "chore: remove YOUR_TODO_ID"`
+1. Delete the file: `rm .ninthwave/work/*--YOUR_TODO_ID.md`
+2. Verify it's gone: `ls .ninthwave/work/*--YOUR_TODO_ID.md` should return "No such file"
+3. Commit: `git add .ninthwave/work/ && git commit -m "chore: remove YOUR_TODO_ID"`
 
-> **Why?** Each work item is a separate file in `.ninthwave/work/`. Deleting your file cannot conflict with other workers' changes -- they each touch only their own file.
+> **Why?** The work item file exists in your worktree (branched from main). Use relative paths and stay in your worktree -- do not use `${HUB_ROOT}` absolute paths here. Committing the deletion on your branch means merging the PR removes it from main. Each work item is a separate file, so this cannot conflict with other workers.
 
 **Cross-repo items** (when `IS_HUB_LOCAL` is `false`):
 
