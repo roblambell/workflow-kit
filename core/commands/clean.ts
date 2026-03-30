@@ -35,7 +35,7 @@ import {
 } from "../cross-repo.ts";
 
 /**
- * Close cmux workspaces whose item ID is in the given set.
+ * Close multiplexer workspaces whose item ID is in the given set.
  * Shared helper used by both reconcile (targeted) and clean (broad).
  * Returns the number of workspaces successfully closed.
  */
@@ -69,7 +69,7 @@ export function closeWorkspacesForIds(
       continue;
     }
 
-    // Workspace name contains the item ID (e.g., "nw-H-WRK-1-1")
+    // Multiplexer format where the ref itself contains the item ID.
     for (const id of ids) {
       if (trimmed.includes(id)) {
         info(`Closing workspace ${trimmed} (${id})`);
@@ -85,7 +85,7 @@ export function closeWorkspacesForIds(
   return closed;
 }
 
-/** Close all cmux workspaces that belong to work items. */
+/** Close all multiplexer workspaces that belong to work items. */
 export function cmdCloseWorkspaces(mux: Multiplexer = getMux()): void {
   if (!mux.isAvailable()) {
     warn("cmux not available, skipping workspace close");
@@ -117,7 +117,7 @@ export function cmdCloseWorkspaces(mux: Multiplexer = getMux()): void {
   console.log(`${GREEN}Closed ${closed} workspace(s)${RESET}`);
 }
 
-/** Close cmux workspace for a specific item ID. */
+/** Close a multiplexer workspace for a specific item ID. */
 export function cmdCloseWorkspace(targetId: string, mux: Multiplexer = getMux()): void {
   if (!targetId) die("Usage: ninthwave close-workspace <ID>");
 

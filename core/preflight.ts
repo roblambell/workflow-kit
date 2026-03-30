@@ -88,16 +88,24 @@ export function checkAiTool(runner: ShellRunner): CheckResult {
   };
 }
 
-/** Check: cmux multiplexer available. */
+/** Check: tmux or cmux multiplexer available. */
 export function checkMultiplexer(runner: ShellRunner): CheckResult {
+  const available: string[] = [];
+  if (runner("which", ["tmux"]).exitCode === 0) {
+    available.push("tmux");
+  }
   if (runner("which", ["cmux"]).exitCode === 0) {
-    return { status: "pass", message: "cmux available" };
+    available.push("cmux");
+  }
+
+  if (available.length > 0) {
+    return { status: "pass", message: `${available.join(", ")} available` };
   }
 
   return {
     status: "fail",
-    message: "No multiplexer available (need cmux)",
-    detail: "Install: brew install --cask manaflow-ai/cmux/cmux",
+    message: "No multiplexer available (need tmux or cmux)",
+    detail: "Install tmux: brew install tmux; or cmux: brew install --cask manaflow-ai/cmux/cmux",
   };
 }
 

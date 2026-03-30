@@ -42,7 +42,7 @@ export interface OrchestratorItem {
   state: OrchestratorItemState;
   prNumber?: number;
   partition?: number;
-  /** cmux workspace reference (e.g., "workspace:1"). */
+  /** Multiplexer workspace reference (e.g., "workspace:1" or "session:nw:H-1-1"). */
   workspaceRef?: string;
   /** Timestamp of last state change (ISO string). */
   lastTransition: string;
@@ -66,11 +66,11 @@ export interface OrchestratorItem {
   baseBranch?: string;
   /** Absolute path to the repo where the PR lives. For hub-local items, equals projectRoot. For cross-repo items, points to the target repo. */
   resolvedRepoRoot?: string;
-  /** cmux workspace reference for the review worker session. */
+  /** Multiplexer workspace reference for the review worker session. */
   reviewWorkspaceRef?: string;
   /** Absolute path to the verdict file written by the review worker. */
   reviewVerdictPath?: string;
-  /** cmux workspace reference for the rebaser worker session (rebase-only). */
+  /** Multiplexer workspace reference for the rebaser worker session (rebase-only). */
   rebaserWorkspaceRef?: string;
   /** Whether this item's review has been completed (approved). Resets on CI regression. */
   reviewCompleted?: boolean;
@@ -108,7 +108,7 @@ export interface OrchestratorItem {
   mergeCommitSha?: string;
   /** Number of times CI fix-forward on main has failed for this item. */
   fixForwardFailCount?: number;
-  /** cmux workspace reference for the forward-fixer worker session. */
+  /** Multiplexer workspace reference for the forward-fixer worker session. */
   fixForwardWorkspaceRef?: string;
 }
 

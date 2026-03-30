@@ -91,6 +91,8 @@ describe("checkMultiplexer (preflight)", () => {
     const result = checkMultiplexer(allFailRunner());
     expect(result.status).toBe("fail");
     expect(result.message).toContain("No multiplexer");
+    expect(result.detail).toContain("brew install tmux");
+    expect(result.detail).toContain("brew install --cask manaflow-ai/cmux/cmux");
   });
 
   it("passes with cmux", () => {
@@ -98,6 +100,15 @@ describe("checkMultiplexer (preflight)", () => {
       "which cmux": { stdout: "/usr/local/bin/cmux", stderr: "", exitCode: 0 },
     });
     expect(checkMultiplexer(runner).status).toBe("pass");
+  });
+
+  it("passes with tmux", () => {
+    const runner = mockRunner({
+      "which tmux": { stdout: "/usr/local/bin/tmux", stderr: "", exitCode: 0 },
+    });
+    const result = checkMultiplexer(runner);
+    expect(result.status).toBe("pass");
+    expect(result.message).toContain("tmux");
   });
 });
 

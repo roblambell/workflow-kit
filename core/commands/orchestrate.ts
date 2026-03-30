@@ -32,6 +32,7 @@ import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, f
 import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush, daemonRebase } from "../git.ts";
 import { run } from "../shell.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
+import { resolveSessionName } from "../tmux.ts";
 import { reconcile } from "./reconcile.ts";
 import { die, warn, info, ALT_SCREEN_ON, ALT_SCREEN_OFF } from "../output.ts";
 import { confirmPrompt } from "../prompt.ts";
@@ -135,6 +136,51 @@ export type { LogEntry } from "../types.ts";
 
 export function structuredLog(entry: LogEntry): void {
   console.log(JSON.stringify(entry));
+}
+
+export interface TmuxStartupInfo {
+  sessionName: string;
+  outsideTmuxSession: boolean;
+  attachHintLines: string[];
+}
+
+/** Build startup metadata and attach hints for tmux-backed orchestration. */
+export function getTmuxStartupInfo(
+  projectRoot: string,
+  env: Record<string, string | undefined> = process.env,
+  runner: typeof run = run,
+): TmuxStartupInfo {
+  const sessionName = resolveSessionName({
+    runner,
+    env,
+    cwd: () => projectRoot,
+  });
+  const outsideTmuxSession = !env.TMUX;
+
+  if (!outsideTmuxSession) {
+    return {
+      sessionName,
+      outsideTmuxSession,
+      attachHintLines: [],
+    };
+  }
+
+  const attachCommand = `tmux attach -t ${sessionName}`;
+  const attachHintLines = env.TERM_PROGRAM === "iTerm.app"
+    ? [
+        `Tmux session ready: ${sessionName}`,
+        `iTerm2: open a new tab or split pane and run: ${attachCommand}`,
+      ]
+    : [
+        `Tmux session ready: ${sessionName}`,
+        `Attach with: ${attachCommand}`,
+      ];
+
+  return {
+    sessionName,
+    outsideTmuxSession,
+    attachHintLines,
+  };
 }
 
 // ── TUI mode helpers ────────────────────────────────────────────────
@@ -1979,6 +2025,23 @@ export async function cmdOrchestrate(
     die(mux.diagnoseUnavailable());
   }
 
+  if (mux.type === "tmux") {
+    const tmuxInfo = getTmuxStartupInfo(projectRoot);
+    log({
+      ts: new Date().toISOString(),
+      level: "info",
+      event: "tmux_session_resolved",
+      sessionName: tmuxInfo.sessionName,
+      outsideTmuxSession: tmuxInfo.outsideTmuxSession,
+      termProgram: process.env.TERM_PROGRAM ?? null,
+    });
+    if (!jsonFlag && tmuxInfo.outsideTmuxSession) {
+      for (const line of tmuxInfo.attachHintLines) {
+        info(line);
+      }
+    }
+  }
+
   // Prune stale git worktree registry entries (e.g., from copied repos or
   // crashed sessions). Safe no-op when nothing is stale.
   try {
@@ -1995,9 +2058,11 @@ export async function cmdOrchestrate(
       const list = mux.listWorkspaces();
       if (!list) return;
       for (const line of list.split("\n")) {
-        if (!line.includes(itemId)) continue;
-        const match = line.match(/workspace:\d+/);
-        if (match) mux.closeWorkspace(match[0]);
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.includes(itemId)) continue;
+        const match = trimmed.match(/workspace:\d+/);
+        mux.closeWorkspace(match?.[0] ?? trimmed);
+        return;
       }
     },
     log,

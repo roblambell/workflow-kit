@@ -169,10 +169,10 @@ export function reconstructState(
 
 /**
  * Try to recover the workspaceRef for an implementing item by matching
- * its item ID in the cmux workspace listing.
+ * its item ID in the live multiplexer workspace listing.
  *
- * Workspace names follow the pattern: "workspace:N  ✳ <ID> <title>"
- * so we scan for lines containing the item ID.
+ * cmux listings include refs like "workspace:N  ✳ <ID> <title>" while tmux
+ * listings return one ref per line (for example, "session:nw:<ID>").
  */
 function recoverWorkspaceRef(
   orch: Orchestrator,
@@ -182,14 +182,15 @@ function recoverWorkspaceRef(
   if (!workspaceList) return;
 
   for (const line of workspaceList.split("\n")) {
-    if (!line.includes(itemId)) continue;
-    const match = line.match(/workspace:\d+/);
-    if (match) {
-      const orchItem = orch.getItem(itemId);
-      if (orchItem) {
-        orchItem.workspaceRef = match[0];
-      }
-      return;
+    const trimmed = line.trim();
+    if (!trimmed || !trimmed.includes(itemId)) continue;
+
+    const match = trimmed.match(/workspace:\d+/);
+    const workspaceRef = match?.[0] ?? trimmed;
+    const orchItem = orch.getItem(itemId);
+    if (orchItem) {
+      orchItem.workspaceRef = workspaceRef;
     }
+    return;
   }
 }

@@ -9,6 +9,7 @@ import {
   reconstructState,
   interruptibleSleep,
   computeDefaultWipLimit,
+  getTmuxStartupInfo,
   buildSnapshot,
   setupKeyboardShortcuts,
   isWorkerAlive,
@@ -1033,6 +1034,39 @@ describe("reconstructState", () => {
     expect(item.workspaceRef).toBe("workspace:29");
 
     // Cleanup
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("recovers workspaceRef from live tmux workspaces during reconstruction", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("H-TM-3"));
+    orch.getItem("H-TM-3")!.reviewCompleted = true;
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-test-tmux-${Date.now()}`);
+    const wtDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const wtPath = join(wtDir, "ninthwave-H-TM-3");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const fakeMux = {
+      type: "tmux" as const,
+      isAvailable: () => true,
+      diagnoseUnavailable: () => "not available",
+      launchWorkspace: () => null,
+      splitPane: () => null,
+      sendMessage: () => true,
+      readScreen: () => "",
+      listWorkspaces: () =>
+        "nw-dev:nw:H-TM-3",
+      closeWorkspace: () => true,
+    };
+
+    const noopCheckPr = () => null;
+    reconstructState(orch, tmpDir, wtDir, fakeMux, noopCheckPr);
+
+    const item = orch.getItem("H-TM-3")!;
+    expect(item.state).toBe("implementing");
+    expect(item.workspaceRef).toBe("nw-dev:nw:H-TM-3");
+
     require("fs").rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -2909,6 +2943,37 @@ describe("isWorkerAliveWithCache", () => {
 
     const itemMissing = makeItem("T-99-1", "workspace:99");
     expect(isWorkerAliveWithCache(itemMissing, listing)).toBe(false);
+  });
+
+  it("matches tmux refs with embedded item IDs", () => {
+    const item = makeItem("H-TM-3", "nw-dev:nw:H-TM-3");
+    expect(isWorkerAliveWithCache(item, "nw-dev:nw:H-TM-3\nnw-dev:nw:H-TM-4")).toBe(true);
+  });
+});
+
+describe("getTmuxStartupInfo", () => {
+  it("returns a generic attach hint outside tmux", () => {
+    const info = getTmuxStartupInfo(
+      "/Users/rob/code/ninthwave",
+      {},
+      vi.fn(() => ({ stdout: "", stderr: "", exitCode: 0 })),
+    );
+
+    expect(info.sessionName).toBe("nw-ninthwave");
+    expect(info.outsideTmuxSession).toBe(true);
+    expect(info.attachHintLines[1]).toContain("tmux attach -t nw-ninthwave");
+  });
+
+  it("returns an iTerm2-specific attach hint outside tmux", () => {
+    const info = getTmuxStartupInfo(
+      "/Users/rob/code/ninthwave",
+      { TERM_PROGRAM: "iTerm.app" },
+      vi.fn(() => ({ stdout: "", stderr: "", exitCode: 0 })),
+    );
+
+    expect(info.sessionName).toBe("nw-ninthwave");
+    expect(info.attachHintLines[1]).toContain("iTerm2");
+    expect(info.attachHintLines[1]).toContain("tmux attach -t nw-ninthwave");
   });
 });
 
