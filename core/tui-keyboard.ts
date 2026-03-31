@@ -8,6 +8,8 @@ import {
   type ViewOptions,
   type PanelMode,
   type LogEntry as PanelLogEntry,
+  type CollaborationMode,
+  type ReviewMode,
   getTerminalHeight,
   clampScrollOffset,
   MIN_SPLIT_ROWS,
@@ -69,6 +71,15 @@ function extractLogLevel(message: string): string {
   return match ? match[1]! : "info";
 }
 
+// Re-export runtime control types from status-render for consumers
+export type { CollaborationMode, ReviewMode } from "./status-render.ts";
+
+/** Cycle order for review mode. */
+export const REVIEW_MODE_CYCLE: ReviewMode[] = ["off", "ninthwave-prs", "all-prs"];
+
+/** Cycle order for collaboration mode. */
+export const COLLABORATION_MODE_CYCLE: CollaborationMode[] = ["local", "shared", "joined"];
+
 // ── TUI keyboard state ────────────────────────────────────────────
 
 /** Shared mutable state for TUI keyboard shortcuts and scroll. */
@@ -85,6 +96,12 @@ export interface TuiState {
   ctrlCTimestamp: number;
   /** Whether the help overlay is visible. */
   showHelp: boolean;
+  /** Whether the controls overlay is visible. */
+  showControls: boolean;
+  /** Current collaboration mode (per-run, not persisted). */
+  collaborationMode: CollaborationMode;
+  /** Current AI review mode (per-run, not persisted). */
+  reviewMode: ReviewMode;
   /** Active panel mode: split (default), logs-only, or status-only. */
   panelMode: PanelMode;
   /** Ring buffer of log entries for the TUI log panel (max LOG_BUFFER_MAX). */
@@ -105,6 +122,10 @@ export interface TuiState {
   onPanelModeChange?: (mode: PanelMode) => void;
   /** Called when the user presses +/- to adjust WIP limit. Receives the delta (+1 or -1). */
   onWipChange?: (delta: number) => void;
+  /** Called when the review mode changes from the controls overlay. */
+  onReviewChange?: (mode: ReviewMode) => void;
+  /** Called when the collaboration mode changes from the controls overlay. */
+  onCollaborationChange?: (mode: CollaborationMode) => void;
   /** Called after any key that should trigger an immediate re-render. */
   onUpdate?: () => void;
   /** Resolve item ID at the given index in the visible item list. */
@@ -198,17 +219,94 @@ export function setupKeyboardShortcuts(
     }
 
     let handled = true;
+
+    // ── Controls overlay number-key selection ──────────────────────
+    // When the controls overlay is open, 1-9 select options directly.
+    if (tuiState.showControls && key >= "1" && key <= "9") {
+      const num = parseInt(key, 10);
+      switch (num) {
+        // Collaboration: 1=Local, 2=Share, 3=Join
+        case 1: case 2: case 3: {
+          const modes: CollaborationMode[] = ["local", "shared", "joined"];
+          const newMode = modes[num - 1]!;
+          if (newMode !== tuiState.collaborationMode) {
+            tuiState.collaborationMode = newMode;
+            tuiState.viewOptions.collaborationMode = newMode;
+            tuiState.onCollaborationChange?.(newMode);
+          }
+          break;
+        }
+        // Reviews: 4=Off, 5=Ninthwave PRs, 6=All PRs
+        case 4: case 5: case 6: {
+          const modes: ReviewMode[] = ["off", "ninthwave-prs", "all-prs"];
+          const newMode = modes[num - 4]!;
+          if (newMode !== tuiState.reviewMode) {
+            tuiState.reviewMode = newMode;
+            tuiState.viewOptions.reviewMode = newMode;
+            log({
+              ts: new Date().toISOString(),
+              level: "info",
+              event: "review_mode_change",
+              oldMode: tuiState.reviewMode,
+              newMode,
+            });
+            tuiState.onReviewChange?.(newMode);
+          }
+          break;
+        }
+        // Merge: 7=Manual, 8=Auto, 9=Bypass (when allowed)
+        case 7: case 8: case 9: {
+          const strategies: MergeStrategy[] = ["manual", "auto", "bypass"];
+          const newStrategy = strategies[num - 7]!;
+          if (newStrategy === "bypass" && !tuiState.bypassEnabled) break;
+          if (newStrategy !== tuiState.mergeStrategy) {
+            const oldStrategy = tuiState.mergeStrategy;
+            tuiState.mergeStrategy = newStrategy;
+            tuiState.viewOptions.mergeStrategy = newStrategy;
+            log({
+              ts: new Date().toISOString(),
+              level: "info",
+              event: "strategy_cycle",
+              oldStrategy,
+              newStrategy,
+            });
+            tuiState.onStrategyChange?.(newStrategy);
+          }
+          break;
+        }
+      }
+      tuiState.onUpdate?.();
+      return;
+    }
+
     switch (key) {
       case "?":
         tuiState.showHelp = !tuiState.showHelp;
         tuiState.viewOptions.showHelp = tuiState.showHelp;
+        // Close controls if help is opening
+        if (tuiState.showHelp) {
+          tuiState.showControls = false;
+          tuiState.viewOptions.showControls = false;
+        }
         break;
-      case "\x1b": // Raw Escape (length 1) -- dismiss help overlay or detail panel
+      case "c": // Toggle controls overlay
+        tuiState.showControls = !tuiState.showControls;
+        tuiState.viewOptions.showControls = tuiState.showControls;
+        // Close help if controls is opening
+        if (tuiState.showControls) {
+          tuiState.showHelp = false;
+          tuiState.viewOptions.showHelp = false;
+        }
+        break;
+      case "\x1b": // Raw Escape (length 1) -- dismiss help, controls, or detail panel
         // Only treat single-byte \x1b as Escape. Arrow keys send \x1b[A etc.
         // which are longer sequences and won't match this case.
         if (tuiState.showHelp) {
           tuiState.showHelp = false;
           tuiState.viewOptions.showHelp = false;
+        } else if (tuiState.showControls) {
+          tuiState.showControls = false;
+          tuiState.viewOptions.showControls = false;
         } else if (tuiState.detailItemId) {
           // Return from detail view to log panel, restore scroll offset
           tuiState.detailItemId = null;
