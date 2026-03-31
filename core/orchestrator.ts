@@ -82,6 +82,19 @@ export class Orchestrator {
   }
 
   /**
+   * Change the configured WIP limit at runtime.
+   * Updates config.wipLimit so that slot calculations (including memory-adjusted
+   * effective limit) use the new value immediately. Minimum 1.
+   */
+  setWipLimit(limit: number): void {
+    const clamped = Math.max(1, Math.floor(limit));
+    (this.config as { wipLimit: number }).wipLimit = clamped;
+    // Clear memory-adjusted override so the new configured limit takes effect
+    // immediately. The next poll cycle will re-evaluate memory pressure.
+    this._effectiveWipLimit = undefined;
+  }
+
+  /**
    * Change the merge strategy at runtime.
    * "bypass" is only allowed when config.bypassEnabled is true (set via --dangerously-bypass).
    * Forward-only: existing items keep their current state; only subsequent evaluateMerge calls
