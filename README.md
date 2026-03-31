@@ -22,7 +22,7 @@ Ninthwave orchestrates parallel AI coding sessions from markdown work items.
 
 ## How it works
 
-Work items are markdown files in `.ninthwave/work/`. Use `/decompose` to generate them from a plan.
+Work items are markdown files in `.ninthwave/work/`. Use `/decompose` skill to generate them from a plan.
 
 Run `nw` or `/work` and the orchestrator handles the rest.
 
