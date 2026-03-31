@@ -4,7 +4,7 @@
 <h1 align="center">Ninthwave</h1>
 
 <p align="center">
-  <strong>Local-first parallel AI coding orchestration.</strong>
+  <strong>Decompose. Run nw. Get merged PRs.</strong>
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
   <a href="https://ninthwave.sh"><img src="docs/assets/hero-orchestrator.png" alt="Ninthwave orchestrator: status table showing parallel work items with states, throughput, and merged PRs" width="740" /></a>
 </p>
 
-Ninthwave orchestrates parallel AI coding sessions from markdown work items. Local by default -- no account or server required.
+Ninthwave orchestrates parallel AI coding sessions from markdown work items.
 
 ## How it works
 
@@ -30,7 +30,7 @@ Each item gets its own git worktree and a full native instance of [Claude Code](
 
 The orchestrator monitors CI, coordinates between implementer and review agents, external feedback, and merges approved PRs. Dependent items stack as chained PRs - reviewers get clean diffs.
 
-Share sessions via [ninthwave.sh](https://ninthwave.sh) for collaboration with author-affinity preference, and WIP overflow to your crew.
+Tasks can be brokered by [ninthwave.sh](https://ninthwave.sh) for collaboration with author-affinity preference.
 
 ## Install
 
