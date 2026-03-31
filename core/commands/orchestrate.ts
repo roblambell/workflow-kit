@@ -89,7 +89,7 @@ import {
   type LogEntry as PanelLogEntry,
 } from "../status-render.ts";
 import type { CrewBroker, CrewStatus, SyncItem } from "../crew.ts";
-import { WebSocketCrewBroker, resolveOperatorId, readCrewCode, saveCrewCode } from "../crew.ts";
+import { WebSocketCrewBroker, resolveOperatorId, saveCrewCode } from "../crew.ts";
 import { AuthorCache } from "../git-author.ts";
 import {
   readScheduleState,
@@ -926,6 +926,101 @@ export function waitForCompletionKey(
   });
 }
 
+// ── Arming window ────────────────────────────────────────────────────
+
+/** Default arming window duration (ms). */
+export const ARMING_WINDOW_MS = 4000;
+
+/** User intent chosen during the arming window. */
+export type StartupIntent = "local" | "share" | "join" | "paused";
+
+/**
+ * Format the arming window banner lines for the TUI.
+ * Displayed as a compact overlay at the bottom of the live status UI.
+ */
+export function formatArmingBanner(remainingMs: number): string[] {
+  const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+  const lines: string[] = [];
+  lines.push("");
+  lines.push(`  \x1B[1mStarting local in ${remainingSec}s\x1B[0m`);
+  lines.push("");
+  lines.push("  \x1B[2m[J]\x1B[0m Join   \x1B[2m[S]\x1B[0m Share   \x1B[2m[P]\x1B[0m Pause   \x1B[2m[Enter]\x1B[0m Start now");
+  lines.push("");
+  return lines;
+}
+
+/**
+ * Wait for an arming window keypress or timeout.
+ *
+ * @param stdin - Readable stream (must already be in raw mode)
+ * @param signal - Optional abort signal
+ * @param durationMs - Arming window duration (default: ARMING_WINDOW_MS)
+ * @param now - Injectable clock for testing
+ */
+export function waitForArmingKey(
+  stdin: NodeJS.ReadStream,
+  signal?: AbortSignal,
+  durationMs: number = ARMING_WINDOW_MS,
+  now: () => number = Date.now,
+): Promise<StartupIntent> {
+  return new Promise<StartupIntent>((resolve) => {
+    if (signal?.aborted) {
+      resolve("local");
+      return;
+    }
+
+    let paused = false;
+    const startMs = now();
+
+    const timer = setTimeout(() => {
+      if (!paused) {
+        cleanup();
+        resolve("local");
+      }
+    }, durationMs);
+
+    const onAbort = () => {
+      cleanup();
+      resolve("local");
+    };
+
+    const onData = (key: string) => {
+      switch (key.toLowerCase()) {
+        case "j":
+          cleanup();
+          resolve("join");
+          break;
+        case "s":
+          cleanup();
+          resolve("share");
+          break;
+        case "p":
+          // Pause cancels the auto-start timer; user must press Enter/J/S
+          paused = true;
+          break;
+        case "\r": // Enter
+        case "\x1b": // Escape
+          cleanup();
+          resolve("local");
+          break;
+        case "\x03": // Ctrl-C
+          cleanup();
+          resolve("local");
+          break;
+      }
+    };
+
+    function cleanup() {
+      clearTimeout(timer);
+      stdin.removeListener("data", onData);
+      signal?.removeEventListener("abort", onAbort);
+    }
+
+    stdin.on("data", onData);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
  * Execute a single orchestrator action with logging, telemetry capture, and reconcile.
  * Extracted from orchestrateLoop for readability.
@@ -1234,6 +1329,13 @@ export interface OrchestrateLoopConfig {
   watchIntervalMs?: number;
   /** When true, TUI is active -- enables the post-completion prompt. */
   tuiMode?: boolean;
+  /**
+   * Duration (ms) to gate claims at the start of the loop. During this window,
+   * launch actions are suppressed (items reverted to ready) so the daemon runs
+   * but does not start work. Used by the arming window at startup.
+   * 0 or undefined = no gating.
+   */
+  claimsGatedMs?: number;
 }
 
 /** Result from the orchestrate loop indicating why it exited. */
@@ -1384,6 +1486,7 @@ export async function orchestrateLoop(
   let __lastTransitionIter = 0;
   let lastScheduleCheckMs = 0; // Force first check immediately
   let lastMainRefreshMs = 0; // Force first refresh immediately
+  const loopStartMs = Date.now();
   while (true) {
     __iterations++;
     if (config.maxIterations != null && __iterations > config.maxIterations) {
@@ -1626,6 +1729,28 @@ export async function orchestrateLoop(
     // Process transitions (pure state machine)
     let actions = orch.processTransitions(snapshot);
     __lastActions = actions;
+
+    // Arming window: suppress launch actions during the claims-gated period
+    if (config.claimsGatedMs && config.claimsGatedMs > 0) {
+      const elapsedMs = Date.now() - loopStartMs;
+      if (elapsedMs < config.claimsGatedMs) {
+        const launchActions = actions.filter((a) => a.type === "launch");
+        if (launchActions.length > 0) {
+          for (const action of launchActions) {
+            orch.hydrateState(action.itemId, "ready");
+          }
+          actions = actions.filter((a) => a.type !== "launch");
+          log({
+            ts: new Date().toISOString(),
+            level: "info",
+            event: "claims_gated",
+            elapsedMs,
+            gatedMs: config.claimsGatedMs,
+            suppressedCount: launchActions.length,
+          });
+        }
+      }
+    }
 
     // Crew mode: claim/filter launch actions through the broker
     if (deps.crewBroker) {
@@ -2263,31 +2388,9 @@ export async function cmdOrchestrate(
     // No git remote available
   }
 
-  // Load saved crew code for persistent sessions
-  const savedCrewCode = readCrewCode(projectRoot);
-  if (!crewCode && !connectMode && savedCrewCode) {
-    // Re-activate saved crew via POST /api/crews with code field
-    info("Re-activating saved session...");
-    const brokerBaseUrl = crewUrl ?? "https://ninthwave.sh";
-    const httpUrl = brokerBaseUrl.replace(/^wss?:\/\//, "https://");
-    try {
-      const res = await fetch(`${httpUrl}/api/crews`, {
-        method: "POST",
-        body: JSON.stringify({ repoUrl: crewRepoUrl, code: savedCrewCode }),
-        headers: { "Content-Type": "application/json" },
-      });
-      if (res.ok) {
-        const body = (await res.json()) as { code: string };
-        crewCode = body.code;
-        if (!crewUrl) crewUrl = "wss://ninthwave.sh";
-        info(`Session re-activated: ${crewCode}`);
-      } else {
-        info("Saved session code expired, starting local.");
-      }
-    } catch {
-      info("Could not reach ninthwave.sh, starting local.");
-    }
-  }
+  // Local-first: never re-activate saved crew codes on plain startup.
+  // Previous collaboration state does not carry into a new run.
+  // Explicit --crew or --connect is required to enter collaboration mode.
 
   if (connectMode && !crewCode) {
     info("Connecting to ninthwave.sh...");
@@ -2668,6 +2771,110 @@ export async function cmdOrchestrate(
     if (tuiMode) process.stdout.write(ALT_SCREEN_OFF);
   };
   process.on("exit", exitAltScreen);
+
+  // ── Arming window: local-first startup with collaboration options ──
+  // Shown in TUI mode when no explicit collaboration intent (no --crew, no --connect).
+  // Renders an initial TUI frame with a startup banner overlay.
+  // Defaults to local after ARMING_WINDOW_MS; J/S/P/Enter resolve immediately.
+  const hasExplicitCollabIntent = !!(crewCode || connectMode);
+  if (tuiMode && !hasExplicitCollabIntent) {
+    // Render initial TUI frame so the status table is visible behind the banner
+    const initialItems = orch.getAllItems();
+    try {
+      renderTuiPanelFrame(initialItems, wipLimit, tuiState, undefined, undefined, orch.config.maxTimeoutExtensions);
+    } catch { /* non-fatal */ }
+
+    // Overlay arming banner at the bottom of the screen
+    const termRows = getTerminalHeight();
+    const bannerLines = formatArmingBanner(ARMING_WINDOW_MS);
+    const startRow = Math.max(1, termRows - bannerLines.length);
+    process.stdout.write(`\x1B[${startRow};1H`);
+    for (const line of bannerLines) {
+      process.stdout.write(line + "\x1B[K\n");
+    }
+
+    // Wait for user choice or timeout
+    const armingIntent = await waitForArmingKey(process.stdin, abortController.signal);
+
+    log({
+      ts: new Date().toISOString(),
+      level: "info",
+      event: "arming_window_resolved",
+      intent: armingIntent,
+    });
+
+    // Handle arming window result
+    if (armingIntent === "share") {
+      connectMode = true;
+      // Share flow: create session
+      const brokerBaseUrl = crewUrl ?? "https://ninthwave.sh";
+      const httpUrl = brokerBaseUrl.replace(/^wss?:\/\//, "https://");
+      try {
+        const res = await fetch(`${httpUrl}/api/crews`, {
+          method: "POST",
+          body: JSON.stringify({ repoUrl: crewRepoUrl }),
+          headers: { "Content-Type": "application/json" },
+        });
+        if (res.ok) {
+          const body = (await res.json()) as { code: string };
+          crewCode = body.code;
+          if (!crewUrl) crewUrl = "wss://ninthwave.sh";
+          log({ ts: new Date().toISOString(), level: "info", event: "arming_share_created", crewCode });
+        } else {
+          log({ ts: new Date().toISOString(), level: "warn", event: "arming_share_failed", status: res.status });
+        }
+      } catch {
+        log({ ts: new Date().toISOString(), level: "warn", event: "arming_share_unreachable" });
+      }
+    } else if (armingIntent === "join") {
+      // Join flow: prompt for crew code
+      // Temporarily leave alt screen and raw mode to collect input
+      cleanupKeyboard();
+      process.stdout.write(ALT_SCREEN_OFF);
+      const readline = await import("readline");
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const joinCode = await new Promise<string>((resolve) => {
+        rl.question("Enter session code: ", (answer: string) => {
+          rl.close();
+          resolve(answer.trim());
+        });
+      });
+      process.stdout.write(ALT_SCREEN_ON);
+      cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
+      if (joinCode) {
+        crewCode = joinCode;
+        if (!crewUrl) crewUrl = "wss://ninthwave.sh";
+        log({ ts: new Date().toISOString(), level: "info", event: "arming_join_code", crewCode });
+      }
+    }
+    // "local" and "paused" intents: proceed without crew broker.
+    // "paused" will be handled by the claimsGatedMs mechanism if needed in the future.
+
+    // Set up crew broker if arming window chose share or join
+    if (crewCode && !crewBroker) {
+      if (!crewUrl) crewUrl = "wss://ninthwave.sh";
+      const resolvedName = crewName ?? (await import("os")).hostname();
+      const broker = new WebSocketCrewBroker(projectRoot, crewUrl, crewCode, crewRepoUrl, {
+        log: (level, msg) => log({ ts: new Date().toISOString(), level, event: "crew_client", message: msg }),
+      }, resolvedName);
+      try {
+        await broker.connect();
+        crewBroker = broker;
+        tuiState.sessionCode = crewCode;
+        loopDeps.crewBroker = broker;
+        saveCrewCode(projectRoot, crewCode);
+        log({ ts: new Date().toISOString(), level: "info", event: "arming_crew_connected", crewCode });
+      } catch (err) {
+        log({
+          ts: new Date().toISOString(),
+          level: "warn",
+          event: "arming_crew_connect_failed",
+          error: (err as Error).message,
+        });
+        // Fall through to local mode
+      }
+    }
+  }
 
   // Show session splash screen on startup (auto-dismisses after 3s or any keypress)
   if (tuiMode && crewCode) {

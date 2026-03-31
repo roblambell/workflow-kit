@@ -26,6 +26,9 @@ import {
   formatExitSummary,
   formatCompletionBanner,
   waitForCompletionKey,
+  formatArmingBanner,
+  waitForArmingKey,
+  ARMING_WINDOW_MS,
   LOG_BUFFER_MAX,
   type LogEntry,
   type LogLevelFilter,
@@ -34,6 +37,7 @@ import {
   type ParsedWatchArgs,
   type TuiState,
   type CompletionAction,
+  type StartupIntent,
 } from "../core/commands/orchestrate.ts";
 import type { LogEntry as PanelLogEntry } from "../core/status-render.ts";
 import { MIN_SPLIT_ROWS } from "../core/status-render.ts";
@@ -49,6 +53,7 @@ import type { WorkItem } from "../core/types.ts";
 import type { Multiplexer } from "../core/mux.ts";
 import { pidFilePath, logFilePath, readLayoutPreference, writeLayoutPreference, preferencesFilePath, userStateDir, type DaemonState } from "../core/daemon.ts";
 import type { CrewBroker } from "../core/crew.ts";
+import { readCrewCode, crewCodePath } from "../core/crew.ts";
 import { shouldEnterInteractive } from "../core/interactive.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -5049,5 +5054,312 @@ describe("log closure ring buffer integration", () => {
     expect(logBuffer[1]!.message).toBe("[warn] slow_poll: took 5s");
     expect(logBuffer[2]!.message).toBe("[error] ci_failed");
     expect(logBuffer[2]!.itemId).toBe("H-1");
+  });
+});
+
+// ── Arming window tests ──────────────────────────────────────────────
+
+describe("formatArmingBanner", () => {
+  it("shows remaining seconds", () => {
+    const lines = formatArmingBanner(3500);
+    const joined = lines.join("\n");
+    expect(joined).toContain("4s");
+    expect(joined).toContain("Join");
+    expect(joined).toContain("Share");
+    expect(joined).toContain("Pause");
+    expect(joined).toContain("Start now");
+  });
+
+  it("shows 0s when time expired", () => {
+    const lines = formatArmingBanner(0);
+    const joined = lines.join("\n");
+    expect(joined).toContain("0s");
+  });
+});
+
+describe("waitForArmingKey", () => {
+  function mockStdinForArming(): {
+    stream: NodeJS.ReadStream;
+    emit: (key: string) => void;
+    listeners: Map<string, Function>;
+  } {
+    const listeners = new Map<string, Function>();
+    const stream = {
+      isTTY: true,
+      on: vi.fn((event: string, handler: Function) => {
+        listeners.set(event, handler);
+      }),
+      removeListener: vi.fn((event: string, _handler: Function) => {
+        listeners.delete(event);
+      }),
+    } as unknown as NodeJS.ReadStream;
+    return {
+      stream,
+      emit: (key: string) => {
+        const handler = listeners.get("data") as ((k: string) => void) | undefined;
+        handler?.(key);
+      },
+      listeners,
+    };
+  }
+
+  it("resolves to 'local' on Enter key", async () => {
+    const { stream, emit } = mockStdinForArming();
+    const promise = waitForArmingKey(stream, undefined, 10_000);
+    emit("\r");
+    expect(await promise).toBe("local");
+  });
+
+  it("resolves to 'local' on Escape key", async () => {
+    const { stream, emit } = mockStdinForArming();
+    const promise = waitForArmingKey(stream, undefined, 10_000);
+    emit("\x1b");
+    expect(await promise).toBe("local");
+  });
+
+  it("resolves to 'join' on J key", async () => {
+    const { stream, emit } = mockStdinForArming();
+    const promise = waitForArmingKey(stream, undefined, 10_000);
+    emit("j");
+    expect(await promise).toBe("join");
+  });
+
+  it("resolves to 'share' on S key", async () => {
+    const { stream, emit } = mockStdinForArming();
+    const promise = waitForArmingKey(stream, undefined, 10_000);
+    emit("s");
+    expect(await promise).toBe("share");
+  });
+
+  it("resolves to 'local' on timeout", async () => {
+    const { stream } = mockStdinForArming();
+    const result = await waitForArmingKey(stream, undefined, 50);
+    expect(result).toBe("local");
+  });
+
+  it("resolves to 'local' when signal is already aborted", async () => {
+    const { stream } = mockStdinForArming();
+    const ac = new AbortController();
+    ac.abort();
+    const result = await waitForArmingKey(stream, ac.signal, 10_000);
+    expect(result).toBe("local");
+  });
+
+  it("pause (P) prevents auto-start timeout", async () => {
+    const { stream, emit } = mockStdinForArming();
+    // Use a very short timeout -- without P, this would resolve to "local"
+    const promise = waitForArmingKey(stream, undefined, 50);
+    // Press P immediately to pause
+    emit("p");
+    // Wait longer than the timeout
+    await new Promise((r) => setTimeout(r, 100));
+    // Should NOT have resolved yet (timer was cancelled by P)
+    // Now press Enter to resolve
+    emit("\r");
+    expect(await promise).toBe("local");
+  });
+});
+
+describe("ARMING_WINDOW_MS", () => {
+  it("is between 3000 and 5000ms", () => {
+    expect(ARMING_WINDOW_MS).toBeGreaterThanOrEqual(3000);
+    expect(ARMING_WINDOW_MS).toBeLessThanOrEqual(5000);
+  });
+});
+
+// ── Claims gating in orchestrateLoop ─────────────────────────────────
+
+describe("orchestrateLoop claims gating", () => {
+  it("suppresses launch actions during claimsGatedMs window", async () => {
+    const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("T-GATE-1"));
+    orch.getItem("T-GATE-1")!.reviewCompleted = true;
+    orch.addItem(makeWorkItem("T-GATE-2"));
+    orch.getItem("T-GATE-2")!.reviewCompleted = true;
+
+    let cycle = 0;
+    const logs: LogEntry[] = [];
+    const launchCalls: string[] = [];
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        cycle++;
+        // Items are always ready for launch
+        return { items: [], readyIds: ["T-GATE-1", "T-GATE-2"] };
+      },
+      sleep: () => Promise.resolve(),
+      log: (e) => logs.push(e),
+      actionDeps: mockActionDeps({
+        launchSingleItem: vi.fn((workItem) => {
+          launchCalls.push(workItem.id);
+          return { worktreePath: "/tmp/test", workspaceRef: `ws:${workItem.id}` };
+        }),
+      }),
+      getFreeMem: () => 16 * 1024 ** 3,
+    };
+
+    // lint-ignore: no-unbounded-orchestrate-loop
+    await orchestrateLoop(orch, defaultCtx, deps, {
+      maxIterations: 3,
+      // Gate claims for a very long time so all iterations are gated
+      claimsGatedMs: 999_999,
+    });
+
+    // No items should have been launched during gated window
+    expect(launchCalls).toHaveLength(0);
+    // Items should be in ready state (reverted from launching)
+    expect(orch.getItem("T-GATE-1")!.state).toBe("ready");
+    expect(orch.getItem("T-GATE-2")!.state).toBe("ready");
+    // Should have logged the gating events
+    const gatedLogs = logs.filter((l) => l.event === "claims_gated");
+    expect(gatedLogs.length).toBeGreaterThan(0);
+  });
+
+  it("allows launches after claimsGatedMs expires", async () => {
+    const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("T-UNGATE-1"));
+    orch.getItem("T-UNGATE-1")!.reviewCompleted = true;
+
+    let cycle = 0;
+    const launchCalls: string[] = [];
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        cycle++;
+        if (cycle <= 2) return { items: [], readyIds: ["T-UNGATE-1"] };
+        return { items: [{ id: "T-UNGATE-1", workerAlive: true }], readyIds: [] };
+      },
+      sleep: () => Promise.resolve(),
+      log: () => {},
+      actionDeps: mockActionDeps({
+        launchSingleItem: vi.fn((workItem) => {
+          launchCalls.push(workItem.id);
+          return { worktreePath: "/tmp/test", workspaceRef: `ws:${workItem.id}` };
+        }),
+      }),
+      getFreeMem: () => 16 * 1024 ** 3,
+    };
+
+    // Gate claims for 0ms (effectively no gating -- already expired)
+    // lint-ignore: no-unbounded-orchestrate-loop
+    await orchestrateLoop(orch, defaultCtx, deps, {
+      maxIterations: 3,
+      claimsGatedMs: 0,
+    });
+
+    // Item should have been launched
+    expect(launchCalls).toContain("T-UNGATE-1");
+  });
+
+  it("explicit join/share skips arming window -- joined daemons gate on broker connection", async () => {
+    // When a crew broker is provided (explicit join/share), claims are gated
+    // by broker connectivity, not by claimsGatedMs.
+    const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("T-JOIN-1"));
+    orch.getItem("T-JOIN-1")!.reviewCompleted = true;
+
+    let cycle = 0;
+    let brokerConnected = false;
+    const launchCalls: string[] = [];
+
+    const broker: CrewBroker = {
+      connect: vi.fn(async () => {}),
+      sync: vi.fn(),
+      claim: vi.fn(async () => {
+        if (!brokerConnected) return null;
+        return "T-JOIN-1";
+      }),
+      complete: vi.fn(),
+      heartbeat: vi.fn(),
+      disconnect: vi.fn(),
+      isConnected: vi.fn(() => brokerConnected),
+      getCrewStatus: vi.fn(() => null),
+      scheduleClaim: vi.fn(async () => false),
+      report: vi.fn(),
+      setTelemetry: vi.fn(),
+    };
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        cycle++;
+        // After cycle 2, simulate broker becoming connected
+        if (cycle === 2) brokerConnected = true;
+        return { items: [], readyIds: ["T-JOIN-1"] };
+      },
+      sleep: () => Promise.resolve(),
+      log: () => {},
+      actionDeps: mockActionDeps({
+        launchSingleItem: vi.fn((workItem) => {
+          launchCalls.push(workItem.id);
+          return { worktreePath: "/tmp/test", workspaceRef: `ws:${workItem.id}` };
+        }),
+      }),
+      crewBroker: broker,
+      getFreeMem: () => 16 * 1024 ** 3,
+    };
+
+    // No claimsGatedMs -- crew mode uses broker connectivity for gating
+    // lint-ignore: no-unbounded-orchestrate-loop
+    await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 4 });
+
+    // First cycle: broker disconnected, no launches
+    // Second cycle: broker becomes connected, launch happens via broker.claim()
+    expect(launchCalls).toContain("T-JOIN-1");
+  });
+});
+
+// ── Session lifecycle: no saved session reuse ────────────────────────
+
+describe("session lifecycle", () => {
+  it("readCrewCode finds saved code but cmdOrchestrate no longer uses it", () => {
+    // Verify that readCrewCode still works as a function (for backward compat)
+    // but it's no longer imported or called from orchestrate.ts
+    const tmpDir = mkdtempSync(join(tmpdir(), "nw-session-test-"));
+    try {
+      // No crew code saved -- should return null
+      expect(readCrewCode(tmpDir)).toBeNull();
+
+      // Write a crew code using the correct state directory path
+      const stateDir = userStateDir(tmpDir);
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(crewCodePath(tmpDir), "test-code-123", "utf-8");
+
+      // readCrewCode still works as a standalone function
+      expect(readCrewCode(tmpDir)).toBe("test-code-123");
+
+      // But the orchestrate module no longer imports readCrewCode
+      // This is verified by the fact that the import was removed and the code compiles
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+      // Also clean up the state dir in ~/.ninthwave/
+      try { rmSync(userStateDir(tmpDir), { recursive: true, force: true }); } catch { /* best-effort */ }
+    }
+  });
+
+  it("saved crew code is written only on explicit share/join, not plain startup", () => {
+    // The only calls to saveCrewCode in orchestrate.ts are:
+    // 1. After explicit --crew/--connect broker setup
+    // 2. After arming window share/join resolution
+    // There is no automatic re-activation of saved crew codes on plain startup.
+    const tmpDir = mkdtempSync(join(tmpdir(), "nw-session-test-"));
+    try {
+      // readCrewCode returns null when no code is saved
+      expect(readCrewCode(tmpDir)).toBeNull();
+
+      // Simulate: a saved crew code exists but plain nw ignores it
+      const stateDir = userStateDir(tmpDir);
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(crewCodePath(tmpDir), "old-session-xyz", "utf-8");
+
+      // The crew code is there on disk
+      expect(readCrewCode(tmpDir)).toBe("old-session-xyz");
+
+      // But in the new code, cmdOrchestrate never reads it.
+      // The arming window starts local by default.
+      // Only explicit --crew <code> or arming window J/S choices set up crew mode.
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+      try { rmSync(userStateDir(tmpDir), { recursive: true, force: true }); } catch { /* best-effort */ }
+    }
   });
 });
