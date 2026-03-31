@@ -16,6 +16,12 @@ import type { MergeStrategy } from "./orchestrator.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+/** Collaboration mode: local-only, sharing a session, or joined to another. */
+export type CollaborationMode = "local" | "shared" | "joined";
+
+/** AI review mode: off (skip gate), ninthwave-prs (review ninthwave-managed PRs), all-prs (review everything). */
+export type ReviewMode = "off" | "ninthwave-prs" | "all-prs";
+
 /** Crew status info for TUI display. */
 export interface CrewStatusInfo {
   crewCode: string;
@@ -45,6 +51,12 @@ export interface ViewOptions {
   ctrlCPending?: boolean;
   /** When true, render the help overlay instead of the normal frame. */
   showHelp?: boolean;
+  /** When true, render the controls overlay instead of the normal frame. */
+  showControls?: boolean;
+  /** Current collaboration mode for display. */
+  collaborationMode?: CollaborationMode;
+  /** Current AI review mode for display. */
+  reviewMode?: ReviewMode;
   /** Active schedule workers to display in the TUI. */
   scheduleWorkers?: ScheduleWorkerInfo[];
   /** Number of items where GitHub API returned errors. When > 0, a warning is shown in the footer. */
@@ -1406,7 +1418,7 @@ export function buildStatusLayout(
     footerLines.push(`  ${YELLOW}Press Ctrl-C again to exit${RESET}`);
   } else if (viewOptions?.mergeStrategy) {
     const badge = strategyIndicator(viewOptions.mergeStrategy);
-    const left = `  ${badge} ${DIM}(shift+tab to cycle) · ? for help${RESET}`;
+    const left = `  ${badge} ${DIM}· c controls · ? help${RESET}`;
     if (apiWarning) {
       const leftLen = stripAnsiForWidth(left).length;
       const warnLen = stripAnsiForWidth(apiWarning).length;
@@ -1739,7 +1751,7 @@ function buildPanelFooter(
     footerLines.push(`  ${YELLOW}Press Ctrl-C again to exit${RESET}`);
   } else if (viewOptions?.mergeStrategy) {
     const badge = strategyIndicator(viewOptions.mergeStrategy);
-    footerLines.push(`  ${badge} ${DIM}(shift+tab to cycle) · ? for help${RESET}`);
+    footerLines.push(`  ${badge} ${DIM}· c controls · ? help${RESET}`);
   } else {
     const shortcuts = `q quit  d deps  ↑/↓ scroll`;
     footerLines.push(`  ${DIM}${shortcuts}${RESET}`);
@@ -2052,6 +2064,7 @@ export function renderHelpOverlay(
   // Keyboard shortcuts section
   sections.push([
     `${BOLD}Keyboard Shortcuts${RESET}`,
+    `  c           Open runtime controls`,
     `  Shift+Tab   Cycle merge strategy`,
     `  +/-         Adjust WIP limit`,
     `  ?           Toggle this help overlay`,
@@ -2152,6 +2165,167 @@ export function renderHelpOverlay(
     output.push("");
   }
 
+  return output;
+}
+
+// ─── Controls overlay ───────────────────────────────────────────────────────
+
+/** Human-readable label for a collaboration mode. */
+export function collaborationLabel(mode: CollaborationMode): string {
+  switch (mode) {
+    case "local": return "Local";
+    case "shared": return "Share";
+    case "joined": return "Join";
+  }
+}
+
+/** Human-readable label for a review mode. */
+export function reviewModeLabel(mode: ReviewMode): string {
+  switch (mode) {
+    case "off": return "Off";
+    case "ninthwave-prs": return "Ninthwave PRs";
+    case "all-prs": return "All PRs";
+  }
+}
+
+/**
+ * Render a full-screen controls overlay for runtime settings.
+ * Styled identically to renderHelpOverlay() -- box-drawing border, centered.
+ * Number keys 1-9 select options directly; current selections are highlighted.
+ */
+export function renderControlsOverlay(
+  termWidth: number,
+  termRows: number,
+  opts: {
+    collaborationMode: CollaborationMode;
+    reviewMode: ReviewMode;
+    mergeStrategy: MergeStrategy;
+    bypassEnabled: boolean;
+    wipLimit?: number;
+  },
+): string[] {
+  const { collaborationMode, reviewMode, mergeStrategy, bypassEnabled, wipLimit } = opts;
+  const sections: string[][] = [];
+
+  // Collaboration section
+  const collabOptions: [string, CollaborationMode][] = [
+    ["1", "local"], ["2", "shared"], ["3", "joined"],
+  ];
+  const collabLine = collabOptions.map(([key, mode]) => {
+    const label = collaborationLabel(mode);
+    return mode === collaborationMode
+      ? `${BOLD}[${key}] ${label}${RESET}`
+      : `${DIM}[${key}]${RESET} ${label}`;
+  }).join("   ");
+  sections.push([
+    `${BOLD}Collaboration${RESET}`,
+    `  ${collabLine}`,
+  ]);
+
+  // Reviews section
+  const reviewOptions: [string, ReviewMode][] = [
+    ["4", "off"], ["5", "ninthwave-prs"], ["6", "all-prs"],
+  ];
+  const reviewLine = reviewOptions.map(([key, mode]) => {
+    const label = reviewModeLabel(mode);
+    return mode === reviewMode
+      ? `${BOLD}[${key}] ${label}${RESET}`
+      : `${DIM}[${key}]${RESET} ${label}`;
+  }).join("   ");
+  sections.push([
+    `${BOLD}Reviews${RESET}`,
+    `  ${reviewLine}`,
+  ]);
+
+  // Merge section
+  const mergeOptions: [string, MergeStrategy, string][] = [
+    ["7", "manual", "Manual"],
+    ["8", "auto", "Auto"],
+    ["9", "bypass", "Bypass"],
+  ];
+  const mergeLine = mergeOptions.map(([key, strat, label]) => {
+    if (strat === "bypass" && !bypassEnabled) {
+      return `${DIM}[${key}] ${label}${RESET}`;
+    }
+    return strat === mergeStrategy
+      ? `${BOLD}[${key}] ${strategyIndicator(strat)} ${label}${RESET}`
+      : `${DIM}[${key}]${RESET} ${strategyIndicator(strat)} ${label}`;
+  }).join("   ");
+  sections.push([
+    `${BOLD}Merge${RESET}`,
+    `  ${mergeLine}`,
+  ]);
+
+  // WIP section
+  const wipDisplay = wipLimit !== undefined ? `${wipLimit}` : "auto";
+  sections.push([
+    `${BOLD}WIP Limit${RESET}  ${CYAN}${wipDisplay}${RESET}`,
+    `  ${DIM}Press${RESET} + ${DIM}to increase,${RESET} - ${DIM}to decrease${RESET}`,
+  ]);
+
+  // Flatten with blank separators
+  const contentLines: string[] = [];
+  for (let s = 0; s < sections.length; s++) {
+    if (s > 0) contentLines.push("");
+    contentLines.push(...sections[s]!);
+  }
+
+  // Compute box dimensions
+  const maxContentWidth = Math.max(
+    ...contentLines.map((l) => stripAnsiForWidth(l).length),
+  );
+  const innerWidth = Math.min(maxContentWidth + 4, termWidth - 4);
+  const boxWidth = innerWidth + 2;
+
+  // Draw box
+  const boxLines: string[] = [];
+  const leftMargin = Math.max(0, Math.floor((termWidth - boxWidth) / 2));
+  const marginPad = " ".repeat(leftMargin);
+
+  boxLines.push(`${marginPad}┌${"─".repeat(innerWidth)}┐`);
+
+  const title = "Controls";
+  const titlePad = Math.max(0, Math.floor((innerWidth - title.length) / 2));
+  boxLines.push(`${marginPad}│${" ".repeat(titlePad)}${BOLD}${title}${RESET}${" ".repeat(Math.max(0, innerWidth - titlePad - title.length))}│`);
+  boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
+
+  const maxContentDisplay = innerWidth - 2;
+  for (const line of contentLines) {
+    const displayLen = stripAnsiForWidth(line).length;
+    let rendered = line;
+    if (displayLen > maxContentDisplay) {
+      let visible = 0;
+      let cutIdx = 0;
+      const plain = stripAnsiForWidth(line);
+      for (let i = 0; i < plain.length && visible < maxContentDisplay - 3; i++) {
+        visible++;
+        cutIdx = i + 1;
+      }
+      rendered = plain.slice(0, cutIdx) + "...";
+    }
+    const renderedLen = stripAnsiForWidth(rendered).length;
+    const rightPad = Math.max(0, innerWidth - 2 - renderedLen);
+    boxLines.push(`${marginPad}│  ${rendered}${" ".repeat(rightPad)}│`);
+  }
+
+  boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
+  const hint = "Press c or Escape to close";
+  const hintPad = Math.max(0, Math.floor((innerWidth - hint.length) / 2));
+  boxLines.push(`${marginPad}│${" ".repeat(hintPad)}${DIM}${hint}${RESET}${" ".repeat(Math.max(0, innerWidth - hintPad - hint.length))}│`);
+  boxLines.push(`${marginPad}└${"─".repeat(innerWidth)}┘`);
+
+  // Vertically center
+  const totalBoxHeight = boxLines.length;
+  const topPad = Math.max(0, Math.floor((termRows - totalBoxHeight) / 2));
+
+  const output: string[] = [];
+  for (let i = 0; i < topPad; i++) {
+    output.push("");
+  }
+  output.push(...boxLines);
+  while (output.length < termRows) {
+    output.push("");
+  }
   return output;
 }
 

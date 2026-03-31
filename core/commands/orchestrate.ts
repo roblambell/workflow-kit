@@ -77,6 +77,7 @@ import {
   buildStatusLayout,
   renderFullScreenFrame,
   renderHelpOverlay,
+  renderControlsOverlay,
   renderDetailOverlay,
   clampScrollOffset,
   buildPanelLayout,
@@ -128,7 +129,7 @@ export { buildSnapshotAsync, isWorkerAlive, isWorkerAliveWithCache, getWorktreeL
 export { buildSnapshot } from "../snapshot.ts";
 export { reconstructState } from "../reconstruct.ts";
 export { parseWatchArgs, validateItemIds, type ParsedWatchArgs } from "./watch-args.ts";
-export { setupKeyboardShortcuts, filterLogsByLevel, pushLogBuffer, LOG_BUFFER_MAX, type TuiState, type LogLevelFilter } from "../tui-keyboard.ts";
+export { setupKeyboardShortcuts, filterLogsByLevel, pushLogBuffer, LOG_BUFFER_MAX, REVIEW_MODE_CYCLE, COLLABORATION_MODE_CYCLE, type TuiState, type LogLevelFilter, type CollaborationMode, type ReviewMode } from "../tui-keyboard.ts";
 export { processExternalReviews, type ExternalReviewDeps } from "../external-review.ts";
 export { processScheduledTasks, type ScheduleLoopDeps } from "../schedule-processing.ts";
 export { forkDaemon } from "../daemon.ts";
@@ -298,6 +299,17 @@ export function renderTuiPanelFrame(
     const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
     const content = helpLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+  } else if (tuiState.showControls) {
+    // Render controls overlay for runtime settings
+    const controlsLines = renderControlsOverlay(termWidth, termRows, {
+      collaborationMode: tuiState.collaborationMode,
+      reviewMode: tuiState.reviewMode,
+      mergeStrategy: tuiState.mergeStrategy,
+      bypassEnabled: tuiState.bypassEnabled,
+      wipLimit,
+    });
+    const content = controlsLines.join("\n");
+    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else if (tuiState.detailItemId) {
     // Render detail overlay for the selected item
     const detailStatusItem = statusItems.find((i) => i.id === tuiState.detailItemId);
@@ -393,6 +405,9 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     ctrlCPending: false,
     ctrlCTimestamp: 0,
     showHelp: false,
+    showControls: false,
+    collaborationMode: "local",
+    reviewMode: "ninthwave-prs",
     panelMode,
     logBuffer,
     logScrollOffset: 0,
@@ -439,6 +454,16 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     if (tuiState.viewOptions.showHelp) {
       const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
       const content = helpLines.join("\n");
+      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+    } else if (tuiState.showControls) {
+      const controlsLines = renderControlsOverlay(termWidth, termRows, {
+        collaborationMode: tuiState.collaborationMode,
+        reviewMode: tuiState.reviewMode,
+        mergeStrategy: tuiState.mergeStrategy,
+        bypassEnabled: tuiState.bypassEnabled,
+        wipLimit: data.wipLimit,
+      });
+      const content = controlsLines.join("\n");
       write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
     } else if (tuiState.detailItemId) {
       const detailItem = data.items.find((i) => i.id === tuiState.detailItemId);
@@ -2512,12 +2537,17 @@ export async function cmdOrchestrate(
       showBlockerDetail: true,
       sessionStartedAt: daemonStartedAt,
       mergeStrategy: orch.config.mergeStrategy,
+      collaborationMode: "local",
+      reviewMode: orch.config.skipReview ? "off" : "ninthwave-prs",
     },
     mergeStrategy: orch.config.mergeStrategy,
     bypassEnabled: orch.config.bypassEnabled,
     ctrlCPending: false,
     ctrlCTimestamp: 0,
     showHelp: false,
+    showControls: false,
+    collaborationMode: "local",
+    reviewMode: orch.config.skipReview ? "off" : "ninthwave-prs",
     panelMode: savedPanelMode,
     logBuffer,
     logScrollOffset: 0,
@@ -2556,6 +2586,29 @@ export async function cmdOrchestrate(
       if (!wipLimitFromCli) {
         try { saveUserConfig({ wip_limit: newLimit }); } catch { /* best-effort */ }
       }
+    },
+    onReviewChange: (mode) => {
+      const skip = mode === "off";
+      orch.setSkipReview(skip);
+      log({
+        ts: new Date().toISOString(),
+        level: "info",
+        event: "review_mode_changed",
+        mode,
+        skipReview: skip,
+        source: "keyboard",
+      });
+    },
+    onCollaborationChange: (mode) => {
+      log({
+        ts: new Date().toISOString(),
+        level: "info",
+        event: "collaboration_mode_changed",
+        mode,
+        source: "keyboard",
+      });
+      // Collaboration mode state is tracked in TUI; actual crew connection
+      // is handled by the crew broker at startup via --crew/--connect flags.
     },
     onPanelModeChange: (mode) => {
       writeLayoutPreference(projectRoot, mode);

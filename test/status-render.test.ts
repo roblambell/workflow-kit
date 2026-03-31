@@ -52,7 +52,12 @@ import {
   type PanelLayout,
   type LogEntry,
   renderHelpOverlay,
+  renderControlsOverlay,
   renderDetailOverlay,
+  collaborationLabel,
+  reviewModeLabel,
+  type CollaborationMode,
+  type ReviewMode,
 } from "../core/status-render.ts";
 import {
   detectTuiMode,
@@ -1957,8 +1962,8 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("› auto");
-    expect(footerText).toContain("shift+tab to cycle");
-    expect(footerText).toContain("? for help");
+    expect(footerText).toContain("c controls");
+    expect(footerText).toContain("? help");
     // Old shortcuts should NOT appear
     expect(footerText).not.toContain("quit");
     expect(footerText).not.toContain("scroll");
@@ -1971,7 +1976,7 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("‖ manual");
-    expect(footerText).toContain("shift+tab to cycle");
+    expect(footerText).toContain("c controls");
   });
 
   it("renders bypass strategy with » icon", () => {
@@ -1981,7 +1986,7 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("» bypass");
-    expect(footerText).toContain("shift+tab to cycle");
+    expect(footerText).toContain("c controls");
   });
 
   it("renders Ctrl+C confirmation footer when ctrlCPending is true", () => {
@@ -1993,7 +1998,7 @@ describe("buildStatusLayout", () => {
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("Press Ctrl-C again to exit");
     // Strategy indicator should NOT appear during Ctrl+C pending
-    expect(footerText).not.toContain("shift+tab");
+    expect(footerText).not.toContain("c controls");
   });
 });
 
@@ -2571,12 +2576,12 @@ describe("connection mode TUI rendering", () => {
 
 describe("renderHelpOverlay", () => {
   it("returns expected number of lines matching termRows", () => {
-    const lines = renderHelpOverlay(80, 30);
-    expect(lines.length).toBe(30);
+    const lines = renderHelpOverlay(80, 40);
+    expect(lines.length).toBe(40);
   });
 
   it("box-drawing characters are correct (top-left, top-right, bottom-left, bottom-right)", () => {
-    const lines = renderHelpOverlay(80, 30);
+    const lines = renderHelpOverlay(80, 40);
     const nonEmpty = lines.filter((l) => l.trim().length > 0);
     const plain = nonEmpty.map(stripAnsi);
     // First non-empty line should be the top border
@@ -2587,7 +2592,7 @@ describe("renderHelpOverlay", () => {
 
   it("content fits within termWidth", () => {
     const termWidth = 60;
-    const lines = renderHelpOverlay(termWidth, 30);
+    const lines = renderHelpOverlay(termWidth, 40);
     for (const line of lines) {
       const displayLen = stripAnsi(line).length;
       expect(displayLen).toBeLessThanOrEqual(termWidth);
@@ -2882,7 +2887,8 @@ describe("renderPanelFrame", () => {
       lastNonEmpty.includes("quit") ||
       lastNonEmpty.includes("scroll") ||
       lastNonEmpty.includes("items") ||
-      lastNonEmpty.includes("shift+tab"),
+      lastNonEmpty.includes("shift+tab") ||
+      lastNonEmpty.includes("c controls"),
     ).toBe(true);
   });
 
@@ -3262,5 +3268,151 @@ describe("formatItemDetail for each item state", () => {
     const text = lines.map(stripAnsi).join("\n");
     expect(text).toContain("--");
     expect(text).not.toContain("\x1b]8;;");
+  });
+});
+
+// ── Runtime control label helpers ────────────────────────────────────────────
+
+describe("collaborationLabel", () => {
+  it("returns human-readable labels for all modes", () => {
+    expect(collaborationLabel("local")).toBe("Local");
+    expect(collaborationLabel("shared")).toBe("Share");
+    expect(collaborationLabel("joined")).toBe("Join");
+  });
+});
+
+describe("reviewModeLabel", () => {
+  it("returns human-readable labels for all modes", () => {
+    expect(reviewModeLabel("off")).toBe("Off");
+    expect(reviewModeLabel("ninthwave-prs")).toBe("Ninthwave PRs");
+    expect(reviewModeLabel("all-prs")).toBe("All PRs");
+  });
+});
+
+// ── renderControlsOverlay ────────────────────────────────────────────────────
+
+describe("renderControlsOverlay", () => {
+  const baseOpts = {
+    collaborationMode: "local" as CollaborationMode,
+    reviewMode: "off" as ReviewMode,
+    mergeStrategy: "manual" as const,
+    bypassEnabled: false,
+    wipLimit: 3,
+  };
+
+  it("returns expected number of lines matching termRows", () => {
+    const lines = renderControlsOverlay(80, 30, baseOpts);
+    expect(lines.length).toBe(30);
+  });
+
+  it("box-drawing characters are correct", () => {
+    const lines = renderControlsOverlay(80, 30, baseOpts);
+    const nonEmpty = lines.filter((l) => l.trim().length > 0);
+    const plain = nonEmpty.map(stripAnsi);
+    expect(plain[0]).toMatch(/┌─+┐/);
+    expect(plain[plain.length - 1]).toMatch(/└─+┘/);
+  });
+
+  it("contains Controls title", () => {
+    const lines = renderControlsOverlay(100, 40, baseOpts);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("Controls");
+  });
+
+  it("contains all three setting groups", () => {
+    const lines = renderControlsOverlay(100, 40, baseOpts);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("Collaboration");
+    expect(text).toContain("Reviews");
+    expect(text).toContain("Merge");
+  });
+
+  it("shows collaboration modes with number keys", () => {
+    const lines = renderControlsOverlay(100, 40, baseOpts);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("[1]");
+    expect(text).toContain("Local");
+    expect(text).toContain("[2]");
+    expect(text).toContain("Share");
+    expect(text).toContain("[3]");
+    expect(text).toContain("Join");
+  });
+
+  it("shows review modes with number keys", () => {
+    const lines = renderControlsOverlay(100, 40, baseOpts);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("[4]");
+    expect(text).toContain("Off");
+    expect(text).toContain("[5]");
+    expect(text).toContain("Ninthwave PRs");
+    expect(text).toContain("[6]");
+    expect(text).toContain("All PRs");
+  });
+
+  it("shows merge strategies with number keys", () => {
+    const lines = renderControlsOverlay(100, 40, baseOpts);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("[7]");
+    expect(text).toContain("Manual");
+    expect(text).toContain("[8]");
+    expect(text).toContain("Auto");
+    expect(text).toContain("[9]");
+    expect(text).toContain("Bypass");
+  });
+
+  it("shows WIP limit section", () => {
+    const lines = renderControlsOverlay(100, 40, baseOpts);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("WIP Limit");
+    expect(text).toContain("3");
+    expect(text).toContain("+");
+    expect(text).toContain("-");
+  });
+
+  it("shows dismissal hint", () => {
+    const lines = renderControlsOverlay(100, 40, baseOpts);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("Press c or Escape to close");
+  });
+
+  it("content fits within termWidth", () => {
+    const termWidth = 60;
+    const lines = renderControlsOverlay(termWidth, 30, baseOpts);
+    for (const line of lines) {
+      const displayLen = stripAnsi(line).length;
+      expect(displayLen).toBeLessThanOrEqual(termWidth);
+    }
+  });
+
+  it("uses strategy indicator icons in merge section", () => {
+    const lines = renderControlsOverlay(100, 40, { ...baseOpts, bypassEnabled: true });
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toMatch(/›/);
+    expect(text).toMatch(/‖/);
+    expect(text).toMatch(/»/);
+  });
+});
+
+// ── Help overlay mentions controls shortcut ──────────────────────────────────
+
+describe("renderHelpOverlay runtime controls discoverability", () => {
+  it("documents 'c' shortcut for opening runtime controls", () => {
+    const lines = renderHelpOverlay(100, 40);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("c           Open runtime controls");
+  });
+});
+
+// ── Footer advertises controls ───────────────────────────────────────────────
+
+describe("buildStatusLayout footer controls hint", () => {
+  it("footer mentions 'c controls' when merge strategy is set", () => {
+    const items = [makeStatusItem({ state: "implementing" })];
+    const layout = buildStatusLayout(items, 120, 3, false, {
+      mergeStrategy: "manual",
+    });
+    const footerText = stripAnsi(layout.footerLines.join("\n"));
+    expect(footerText).toContain("c controls");
+    expect(footerText).toContain("? help");
   });
 });
