@@ -13,6 +13,8 @@ designed for ninthwave orchestration (`nw watch`) and stop.
 
 You are a focused implementation agent. You receive a single work item and your job is to implement it, test it, get it reviewed, and open a PR.
 
+Keep the queue model straight while you work: `.ninthwave/work/` is the live queue of open work, `/decompose` populates it, and `nw` works through it. Completed work is meant to be looked up through PRs, `nw history`, `nw logs`, and git history -- not preserved in a `done` lane under `.ninthwave/work/`.
+
 **Execute all phases sequentially without stopping for user input. Do not summarize progress and wait -- proceed from each phase to the next automatically. Your session is not interactive; no human is watching. Run to completion.**
 
 ## 0. Inbox Contract
@@ -53,6 +55,8 @@ Look for `YOUR_TODO_ID`, `YOUR_PARTITION`, `PROJECT_ROOT`, `HUB_ROOT`, `IS_HUB_L
 - **HUB_ROOT**: Absolute path to the hub repo where `.ninthwave/` lives (including `.ninthwave/work/`)
 - **IS_HUB_LOCAL**: `true` if this item targets the hub repo itself, `false` if it targets a different (cross-repo) repository
 - **HUB_REPO_NWO**: The GitHub `owner/repo` slug for the hub repository (e.g., `ninthwave-sh/ninthwave`). Used for absolute links in PR comments.
+
+These variable names are part of the launched-worker contract. Keep them stable and do not rename or reinterpret them in your changes.
 
 Read the full work item details from your system prompt, including: title, description, **acceptance criteria**, priority, source, domain, and affected files.
 

@@ -22,6 +22,7 @@ import {
   type PersistedBackendMode,
   type TuiSettingsDefaults,
 } from "./tui-settings.ts";
+import { stripAnsiForWidth } from "./status-render.ts";
 
 // ── ANSI escape helpers ─────────────────────────────────────────────
 
@@ -52,7 +53,52 @@ export interface CheckboxItem {
   id: string;
   label: string;
   detail?: string; // e.g., priority, deps
+  subline?: string;
   checked: boolean;
+}
+
+const CHECKBOX_LABEL_INDENT = " ".repeat(6);
+
+function truncateCheckboxLine(line: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  const plain = stripAnsiForWidth(line);
+  if (plain.length <= maxWidth) return line;
+  if (maxWidth <= 3) return plain.slice(0, maxWidth);
+  return `${plain.slice(0, maxWidth - 3)}...`;
+}
+
+function buildCheckboxRenderLines(
+  items: CheckboxItem[],
+  cursor: number,
+  linkAllId?: string,
+): { lines: string[]; itemStartLines: number[]; itemEndLines: number[] } {
+  const lines: string[] = [];
+  const itemStartLines: number[] = [];
+  const itemEndLines: number[] = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    const isActive = i === cursor;
+    itemStartLines[i] = lines.length;
+
+    const checkbox = item.checked ? `${GREEN}[x]${RESET}` : `[ ]`;
+    const pointer = isActive ? `${CYAN}>${RESET}` : " ";
+    const label = isActive ? `${BOLD}${item.label}${RESET}` : item.label;
+    const detail = item.detail ? ` ${DIM}${item.detail}${RESET}` : "";
+    lines.push(`${pointer} ${checkbox} ${label}${detail}`);
+
+    if (item.subline) {
+      lines.push(`${CHECKBOX_LABEL_INDENT}${DIM}${item.subline}${RESET}`);
+    }
+
+    if (linkAllId && item.id === linkAllId) {
+      lines.push("");
+    }
+
+    itemEndLines[i] = lines.length;
+  }
+
+  return { lines, itemStartLines, itemEndLines };
 }
 
 export interface CheckboxListResult {
@@ -139,17 +185,22 @@ export function runCheckboxList(
     const render = () => {
       const rows = io.getRows();
       const cols = io.getCols();
-      // Layout: title (2 lines), items (variable), footer (3 lines)
+      // Layout: title (2 lines), items viewport (variable rendered lines), footer (3 lines)
       const headerLines = 3; // title + blank + optional error
       const footerLines = 3; // blank + instructions + blank
-      const separatorLines = opts.linkAllId ? 1 : 0; // blank line after sentinel
-      const viewportHeight = Math.max(1, rows - headerLines - footerLines - separatorLines);
+      const viewportHeight = Math.max(1, rows - headerLines - footerLines);
 
-      // Clamp scroll to keep cursor visible
-      if (cursor < scrollOffset) scrollOffset = cursor;
-      if (cursor >= scrollOffset + viewportHeight) {
-        scrollOffset = cursor - viewportHeight + 1;
+      const { lines, itemStartLines, itemEndLines } = buildCheckboxRenderLines(items, cursor, opts.linkAllId);
+      const totalRenderedLines = lines.length;
+      const cursorStartLine = itemStartLines[cursor] ?? 0;
+      const cursorEndLine = itemEndLines[cursor] ?? cursorStartLine + 1;
+
+      // Clamp scroll to keep the active item fully visible, accounting for sublines.
+      if (cursorStartLine < scrollOffset) scrollOffset = cursorStartLine;
+      if (cursorEndLine > scrollOffset + viewportHeight) {
+        scrollOffset = cursorEndLine - viewportHeight;
       }
+      scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, totalRenderedLines - viewportHeight)));
 
       let out = CURSOR_HOME;
 
@@ -170,31 +221,19 @@ export function runCheckboxList(
       }
 
       // Items
-      const visibleEnd = Math.min(items.length, scrollOffset + viewportHeight);
-      for (let i = scrollOffset; i < visibleEnd; i++) {
-        const item = items[i]!;
-        const isActive = i === cursor;
-        const checkbox = item.checked ? `${GREEN}[x]${RESET}` : `[ ]`;
-        const pointer = isActive ? `${CYAN}>${RESET}` : " ";
-        const label = isActive ? `${BOLD}${item.label}${RESET}` : item.label;
-        const detail = item.detail ? ` ${DIM}${item.detail}${RESET}` : "";
-        const line = `${pointer} ${checkbox} ${label}${detail}`;
-        // Truncate to terminal width
-        out += `${line.slice(0, cols + 60)}${CLEAR_LINE}\n`; // +60 for ANSI codes
-        // Visual separator after sentinel
-        if (opts.linkAllId && item.id === opts.linkAllId) {
-          out += `${CLEAR_LINE}\n`;
-        }
+      const visibleLines = lines.slice(scrollOffset, scrollOffset + viewportHeight);
+      for (const line of visibleLines) {
+        out += `${truncateCheckboxLine(line, cols)}${CLEAR_LINE}\n`;
       }
 
       // Fill remaining viewport lines
-      for (let i = visibleEnd - scrollOffset; i < viewportHeight; i++) {
+      for (let i = visibleLines.length; i < viewportHeight; i++) {
         out += `${CLEAR_LINE}\n`;
       }
 
       // Scroll indicator
-      if (items.length > viewportHeight) {
-        const pct = Math.round(((scrollOffset + viewportHeight) / items.length) * 100);
+      if (totalRenderedLines > viewportHeight) {
+        const pct = Math.round(((scrollOffset + viewportHeight) / totalRenderedLines) * 100);
         out += `${DIM}${Math.min(pct, 100)}%${RESET}${CLEAR_LINE}\n`;
       } else {
         out += `${CLEAR_LINE}\n`;
@@ -834,12 +873,13 @@ export function toCheckboxItems(items: WorkItem[]): CheckboxItem[] {
         : DIM;
     const depInfo =
       t.dependencies.length > 0
-        ? ` (deps: ${t.dependencies.join(", ")})`
-        : "";
+        ? `deps: ${t.dependencies.join(", ")}`
+        : undefined;
     return {
       id: t.id,
       label: `${CYAN}${t.id}${RESET}  ${t.title}`,
-      detail: `${priorityColor}[${t.priority}]${RESET}${depInfo}`,
+      detail: `${priorityColor}[${t.priority}]${RESET}`,
+      subline: depInfo,
       checked: true,
     };
   });

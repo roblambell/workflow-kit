@@ -1,6 +1,7 @@
 // Tests for core/tui-widgets.ts -- In-TUI selection widgets.
 
 import { describe, it, expect, vi } from "vitest";
+import { stripAnsiForWidth } from "../core/status-render.ts";
 import {
   runCheckboxList,
   runSingleSelect,
@@ -96,6 +97,15 @@ function makeCheckboxItems(count: number): CheckboxItem[] {
     label: `Item ${i + 1}`,
     checked: false,
   }));
+}
+
+function getLastRenderedFrame(output: string): string {
+  const frames = output.split("\x1B[H");
+  return frames[frames.length - 1] ?? output;
+}
+
+function getPlainFrameLines(output: string): string[] {
+  return getLastRenderedFrame(output).split("\n").map((line) => stripAnsiForWidth(line));
 }
 
 // ── CheckboxList widget ─────────────────────────────────────────────
@@ -269,6 +279,79 @@ describe("runCheckboxList", () => {
 
     const result = await resultPromise;
     expect(result.selectedIds).toEqual(["T-15"]);
+  });
+
+  it("renders dependency text on an aligned sub-line", async () => {
+    const { io, sendKeys, getOutput } = createMockIO({ rows: 10, cols: 50 });
+    const items: CheckboxItem[] = [
+      {
+        id: "B-2",
+        label: "B-2  Dependent task",
+        detail: "[medium]",
+        subline: "deps: A-1",
+        checked: true,
+      },
+    ];
+
+    const resultPromise = runCheckboxList(io, items);
+    sendKeys(["\r"]);
+
+    const result = await resultPromise;
+    const lines = getPlainFrameLines(getOutput());
+    expect(result.cancelled).toBe(false);
+    expect(lines).toContain("> [x] B-2  Dependent task [medium]");
+    expect(lines).toContain("      deps: A-1");
+  });
+
+  it("keeps the checkbox frame within narrow terminal bounds", async () => {
+    const { io, sendKeys, getOutput } = createMockIO({ rows: 8, cols: 24 });
+    const items: CheckboxItem[] = [
+      {
+        id: "T-1",
+        label: "Extremely long item label with ANSI",
+        detail: "[medium]",
+        subline: "deps: A-1, B-2, C-3",
+        checked: true,
+      },
+      {
+        id: "T-2",
+        label: "Second item with more text",
+        detail: "[high]",
+        checked: true,
+      },
+    ];
+
+    const resultPromise = runCheckboxList(io, items);
+    sendKeys(["\r"]);
+
+    const result = await resultPromise;
+    const lines = getPlainFrameLines(getOutput());
+    const itemLines = lines.slice(3, 5);
+    expect(result.cancelled).toBe(false);
+    expect(lines.length).toBeLessThanOrEqual(8);
+    for (const line of itemLines) {
+      expect(line.length).toBeLessThanOrEqual(24);
+    }
+  });
+
+  it("scrolls by rendered lines so active two-line items stay visible", async () => {
+    const { io, sendKeys, getOutput } = createMockIO({ rows: 10, cols: 36 });
+    const items: CheckboxItem[] = [
+      { id: "T-1", label: "Item 1", checked: false },
+      { id: "T-2", label: "Item 2", detail: "[medium]", subline: "deps: T-1", checked: false },
+      { id: "T-3", label: "Item 3", checked: false },
+      { id: "T-4", label: "Item 4", detail: "[high]", subline: "deps: T-2, T-3", checked: false },
+    ];
+
+    const resultPromise = runCheckboxList(io, items);
+    sendKeys(["\x1B[B", "\x1B[B", "\x1B[B", " ", "\r"]);
+
+    const result = await resultPromise;
+    const frame = getPlainFrameLines(getOutput()).join("\n");
+    expect(result.selectedIds).toEqual(["T-4"]);
+    expect(frame).toContain("> [x] Item 4 [high]");
+    expect(frame).toContain("      deps: T-2, T-3");
+    expect(frame).not.toContain("Item 1");
   });
 });
 
@@ -798,13 +881,15 @@ describe("toCheckboxItems", () => {
     expect(checkboxItems[0]!.checked).toBe(true);
     expect(checkboxItems[1]!.id).toBe("B-2");
     expect(checkboxItems[1]!.detail).toContain("[medium]");
-    expect(checkboxItems[1]!.detail).toContain("deps: A-1");
+    expect(checkboxItems[1]!.detail).not.toContain("deps:");
+    expect(checkboxItems[1]!.subline).toBe("deps: A-1");
   });
 
   it("handles items without dependencies", () => {
     const items = [makeWorkItem("A-1", "Solo task", "low")];
     const checkboxItems = toCheckboxItems(items);
     expect(checkboxItems[0]!.detail).not.toContain("deps:");
+    expect(checkboxItems[0]!.subline).toBeUndefined();
   });
 });
 
