@@ -8,7 +8,6 @@ import { homedir } from "os";
 export interface ProjectConfig {
   review_external: boolean;
   schedule_enabled: boolean;
-  ai_tools?: string[];
 }
 
 /**
@@ -31,13 +30,9 @@ export function loadConfig(projectRoot: string): ProjectConfig {
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return defaults;
     }
-    const ai_tools = Array.isArray(parsed.ai_tools) && parsed.ai_tools.every((t: unknown) => typeof t === "string") && parsed.ai_tools.length > 0
-      ? (parsed.ai_tools as string[])
-      : undefined;
     return {
       review_external: parsed.review_external === true,
       schedule_enabled: parsed.schedule_enabled === true,
-      ai_tools,
     };
   } catch {
     return defaults;

@@ -629,6 +629,8 @@ describe("initProject", () => {
     const parsed = JSON.parse(config);
     expect(parsed.review_external).toBe(false);
     expect(parsed.schedule_enabled).toBe(false);
+    expect(parsed).not.toHaveProperty("ai_tools");
+    expect(Object.keys(parsed)).toEqual(["review_external", "schedule_enabled"]);
   });
 
   it("creates a full working setup on a fresh repo", () => {
@@ -1340,6 +1342,7 @@ describe("initProject config.json", () => {
     const configJson = JSON.parse(readFileSync(configJsonPath, "utf-8"));
     expect(configJson.review_external).toBe(false);
     expect(configJson.schedule_enabled).toBe(false);
+    expect(configJson).not.toHaveProperty("ai_tools");
     // No workspace data in config.json
     expect(configJson).not.toHaveProperty("workspace");
   });
