@@ -1598,8 +1598,8 @@ describe("handleMerging", () => {
 // ── Reviewing state ──────────────────────────────────────────────────
 
 describe("handleReviewing", () => {
-  const approveVerdict = { verdict: "approve" as const, summary: "No issues.", blockerCount: 0, nitCount: 0, preExistingCount: 0, architectureScore: 8, codeQualityScore: 9, performanceScore: 7, testCoverageScore: 8, unresolvedDecisions: 0, criticalGaps: 0, confidence: 9 };
-  const requestChangesVerdict = { verdict: "request-changes" as const, summary: "Found blockers.", blockerCount: 2, nitCount: 0, preExistingCount: 0, architectureScore: 5, codeQualityScore: 4, performanceScore: 6, testCoverageScore: 3, unresolvedDecisions: 2, criticalGaps: 2, confidence: 7 };
+  const approveVerdict = { verdict: "approve" as const, summary: "No issues.", blockingCount: 0, nonBlockingCount: 0, architectureScore: 8, codeQualityScore: 9, performanceScore: 7, testCoverageScore: 8, unresolvedDecisions: 0, criticalGaps: 0, confidence: 9 };
+  const requestChangesVerdict = { verdict: "request-changes" as const, summary: "Found blockers.", blockingCount: 2, nonBlockingCount: 0, architectureScore: 5, codeQualityScore: 4, performanceScore: 6, testCoverageScore: 3, unresolvedDecisions: 2, criticalGaps: 2, confidence: 7 };
 
   it("transitions to ci-passed with reviewCompleted on approve verdict", () => {
     const orch = new Orchestrator({ mergeStrategy: "auto" });
@@ -1821,16 +1821,14 @@ describe("multi-round review cycle", () => {
     const requestChangesVerdict = {
       verdict: "request-changes" as const,
       summary: "Found blockers.",
-      blockerCount: 2,
-      nitCount: 0,
-      preExistingCount: 0,
+      blockingCount: 2,
+      nonBlockingCount: 0,
     };
     const approveVerdict = {
       verdict: "approve" as const,
       summary: "No issues.",
-      blockerCount: 0,
-      nitCount: 0,
-      preExistingCount: 0,
+      blockingCount: 0,
+      nonBlockingCount: 0,
     };
 
     // Step 1: Review worker requests changes → review-pending
@@ -4042,16 +4040,14 @@ describe("review round counter", () => {
   const requestChangesVerdict = {
     verdict: "request-changes" as const,
     summary: "Found blockers.",
-    blockerCount: 2,
-    nitCount: 1,
-    preExistingCount: 0,
+    blockingCount: 2,
+    nonBlockingCount: 1,
   };
   const approveVerdict = {
     verdict: "approve" as const,
     summary: "No issues.",
-    blockerCount: 0,
-    nitCount: 0,
-    preExistingCount: 0,
+    blockingCount: 0,
+    nonBlockingCount: 0,
   };
 
   it("increments reviewRound on each launch-review execution", () => {
@@ -4122,8 +4118,8 @@ describe("review round counter", () => {
     const notifyAction = actions.find((a) => a.type === "notify-review");
     expect(notifyAction).toBeDefined();
     expect(notifyAction!.message).toContain("round 2");
-    expect(notifyAction!.message).toContain("2 blockers");
-    expect(notifyAction!.message).toContain("1 nits");
+    expect(notifyAction!.message).toContain("2 blocking");
+    expect(notifyAction!.message).toContain("1 non-blocking");
     expect(notifyAction!.message).toContain("Found blockers.");
   });
 

@@ -36,7 +36,7 @@ import {
   formatCompactMetrics,
   formatUnifiedProgress,
   formatTitleMetrics,
-  blockerIcon,
+  blockingIcon,
   formatBlockerSubline,
   MIN_FULLSCREEN_ROWS,
   MIN_SPLIT_ROWS,
@@ -182,25 +182,25 @@ describe("truncateTitle", () => {
   });
 });
 
-describe("blockerIcon", () => {
+describe("blockingIcon", () => {
   it("returns RED ⧗ for count >= 2", () => {
-    expect(blockerIcon(2)).toBe(`${RED}⧗${RESET}`);
-    expect(blockerIcon(5)).toBe(`${RED}⧗${RESET}`);
+    expect(blockingIcon(2)).toBe(`${RED}⧗${RESET}`);
+    expect(blockingIcon(5)).toBe(`${RED}⧗${RESET}`);
   });
 
   it("returns YELLOW ⧗ for count === 1", () => {
-    expect(blockerIcon(1)).toBe(`${YELLOW}⧗${RESET}`);
+    expect(blockingIcon(1)).toBe(`${YELLOW}⧗${RESET}`);
   });
 
   it("returns a single space for count === 0", () => {
-    expect(blockerIcon(0)).toBe(" ");
+    expect(blockingIcon(0)).toBe(" ");
   });
 
   it("output is always 1 visible character wide", () => {
     // Icon or space -- strip ANSI, should be 1 char
-    expect(stripAnsi(blockerIcon(0))).toHaveLength(1);
-    expect(stripAnsi(blockerIcon(1))).toHaveLength(1);
-    expect(stripAnsi(blockerIcon(3))).toHaveLength(1);
+    expect(stripAnsi(blockingIcon(0))).toHaveLength(1);
+    expect(stripAnsi(blockingIcon(1))).toHaveLength(1);
+    expect(stripAnsi(blockingIcon(3))).toHaveLength(1);
   });
 });
 

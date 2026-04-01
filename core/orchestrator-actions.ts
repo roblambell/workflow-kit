@@ -876,6 +876,8 @@ export function executePostReview(
     `| Code Quality | ${v.codeQualityScore}/10 |`,
     `| Performance | ${v.performanceScore}/10 |`,
     `| Test Coverage | ${v.testCoverageScore}/10 |`,
+    `| Blocking | ${v.blockingCount} |`,
+    `| Non-blocking | ${v.nonBlockingCount} |`,
     `| Unresolved Decisions | ${v.unresolvedDecisions} |`,
     `| Critical Gaps | ${v.criticalGaps} |`,
     `| Confidence | ${v.confidence}/10 |`,

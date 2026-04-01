@@ -879,7 +879,7 @@ export class Orchestrator {
           itemId: item.id,
           prNumber: item.prNumber,
           statusState: "success",
-          statusDescription: `Review passed: ${v.blockerCount} blockers, ${v.nitCount} nits`,
+          statusDescription: `Review passed: ${v.blockingCount} blocking, ${v.nonBlockingCount} non-blocking`,
         });
         actions.push(...this.evaluateMerge(item, snap, snap?.eventTime));
         return actions;
@@ -899,13 +899,13 @@ export class Orchestrator {
           itemId: item.id,
           prNumber: item.prNumber,
           statusState: "failure",
-          statusDescription: `Changes requested: ${v.blockerCount} blockers found`,
+          statusDescription: `Changes requested: ${v.blockingCount} blocking, ${v.nonBlockingCount} non-blocking`,
         });
         const round = item.reviewRound ?? 1;
         actions.push({
           type: "notify-review",
           itemId: item.id,
-          message: `[ORCHESTRATOR] Review Feedback (round ${round}): ${v.blockerCount} blockers, ${v.nitCount} nits.\n\n${v.summary}`,
+          message: `[ORCHESTRATOR] Review Feedback (round ${round}): ${v.blockingCount} blocking, ${v.nonBlockingCount} non-blocking.\n\n${v.summary}`,
         });
         return actions;
       }

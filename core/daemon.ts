@@ -405,9 +405,8 @@ export interface WorkerProgress {
 export interface ReviewVerdict {
   verdict: "approve" | "request-changes";
   summary: string;
-  blockerCount: number;
-  nitCount: number;
-  preExistingCount: number;
+  blockingCount: number;
+  nonBlockingCount: number;
   /** Architecture quality: modularity, separation of concerns, appropriate abstractions (1-10). */
   architectureScore: number;
   /** Code quality: readability, naming, error handling, idiomatic patterns (1-10). */

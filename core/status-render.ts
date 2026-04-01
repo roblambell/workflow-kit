@@ -264,13 +264,13 @@ export function truncateTitle(title: string, maxWidth: number): string {
 }
 
 /**
- * Return a color-coded blocker icon based on unresolved blocker count.
+ * Return a color-coded blocking icon based on unresolved blocker count.
  * RED ⧗ for 2+ blockers, YELLOW ⧗ for 1 blocker, plain space for 0.
  * Always 1 visible character wide to preserve column alignment.
  */
-export function blockerIcon(blockerCount: number): string {
-  if (blockerCount >= 2) return `${RED}⧗${RESET}`;
-  if (blockerCount === 1) return `${YELLOW}⧗${RESET}`;
+export function blockingIcon(blockingCount: number): string {
+  if (blockingCount >= 2) return `${RED}⧗${RESET}`;
+  if (blockingCount === 1) return `${YELLOW}⧗${RESET}`;
   return " ";
 }
 
@@ -910,7 +910,7 @@ export function formatStatusTable(
   function depIndicator(itemId: string): string {
     if (!blockedBy) return "  ";
     const blockers = blockedBy.get(itemId) ?? [];
-    return blockerIcon(blockers.length) + " ";
+    return blockingIcon(blockers.length) + " ";
   }
 
   // Header
@@ -1322,7 +1322,7 @@ export function buildStatusLayout(
   function depIndicator(itemId: string): string {
     if (!blockedBy) return "  ";
     const blockers = blockedBy.get(itemId) ?? [];
-    return blockerIcon(blockers.length) + " ";
+    return blockingIcon(blockers.length) + " ";
   }
 
   // Header: title with inline crew status + right-aligned metrics

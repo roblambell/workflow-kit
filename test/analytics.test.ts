@@ -271,7 +271,7 @@ describe("orchestrateLoop analytics integration", () => {
           };
         case 5: // Review approves (reviewCompleted was reset by CI failure)
           return {
-            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass", reviewVerdict: { verdict: "approve" as const, summary: "OK", blockerCount: 0, nitCount: 0, preExistingCount: 0, architectureScore: 8, codeQualityScore: 9, performanceScore: 7, testCoverageScore: 8, unresolvedDecisions: 0, criticalGaps: 0, confidence: 9 } }],
+            items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass", reviewVerdict: { verdict: "approve" as const, summary: "OK", blockingCount: 0, nonBlockingCount: 0, architectureScore: 8, codeQualityScore: 9, performanceScore: 7, testCoverageScore: 8, unresolvedDecisions: 0, criticalGaps: 0, confidence: 9 } }],
             readyIds: [],
           };
         default:

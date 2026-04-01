@@ -6015,8 +6015,8 @@ describe("Orchestrator", () => {
       expect(actions.some((a) => a.type === "launch-review")).toBe(true);
     });
 
-    const approveVerdict = { verdict: "approve" as const, summary: "No issues found.", blockerCount: 0, nitCount: 0, preExistingCount: 0, architectureScore: 8, codeQualityScore: 9, performanceScore: 7, testCoverageScore: 8, unresolvedDecisions: 0, criticalGaps: 0, confidence: 9 };
-    const requestChangesVerdict = { verdict: "request-changes" as const, summary: "Found blockers.", blockerCount: 2, nitCount: 1, preExistingCount: 0, architectureScore: 5, codeQualityScore: 4, performanceScore: 6, testCoverageScore: 3, unresolvedDecisions: 2, criticalGaps: 2, confidence: 7 };
+    const approveVerdict = { verdict: "approve" as const, summary: "No issues found.", blockingCount: 0, nonBlockingCount: 0, architectureScore: 8, codeQualityScore: 9, performanceScore: 7, testCoverageScore: 8, unresolvedDecisions: 0, criticalGaps: 0, confidence: 9 };
+    const requestChangesVerdict = { verdict: "request-changes" as const, summary: "Found blockers.", blockingCount: 2, nonBlockingCount: 1, architectureScore: 5, codeQualityScore: 4, performanceScore: 6, testCoverageScore: 3, unresolvedDecisions: 2, criticalGaps: 2, confidence: 7 };
 
     it("reviewing + approve verdict sets reviewCompleted, back to ci-passed, then merges (auto)", () => {
       orch = new Orchestrator({ mergeStrategy: "auto" });
@@ -6638,7 +6638,7 @@ describe("Orchestrator", () => {
       const statusActions = actions.filter((a) => a.type === "set-commit-status");
       expect(statusActions).toHaveLength(1);
       expect(statusActions[0]!.statusState).toBe("failure");
-      expect(statusActions[0]!.statusDescription).toContain("blockers");
+      expect(statusActions[0]!.statusDescription).toContain("blocking");
     });
 
     // ── executeAction: set-commit-status ────────────────────────────
@@ -6726,7 +6726,7 @@ describe("Orchestrator", () => {
       orch.getItem("PR-1")!.prNumber = 50;
 
       const verdict = {
-        verdict: "approve" as const, summary: "All good.", blockerCount: 0, nitCount: 1, preExistingCount: 0,
+        verdict: "approve" as const, summary: "All good.", blockingCount: 0, nonBlockingCount: 1,
         architectureScore: 8, codeQualityScore: 9, performanceScore: 7, testCoverageScore: 8,
         unresolvedDecisions: 0, criticalGaps: 1, confidence: 8,
       };
@@ -6746,6 +6746,8 @@ describe("Orchestrator", () => {
       expect(body).toContain("Code Quality | 9/10");
       expect(body).toContain("Performance | 7/10");
       expect(body).toContain("Test Coverage | 8/10");
+      expect(body).toContain("Blocking | 0");
+      expect(body).toContain("Non-blocking | 1");
       expect(body).toContain("Unresolved Decisions | 0");
       expect(body).toContain("Critical Gaps | 1");
       expect(body).toContain("Confidence | 8/10");
@@ -6759,7 +6761,7 @@ describe("Orchestrator", () => {
       orch.getItem("PR-2")!.prNumber = 51;
 
       const verdict = {
-        verdict: "request-changes" as const, summary: "Found issues.", blockerCount: 3, nitCount: 2, preExistingCount: 1,
+        verdict: "request-changes" as const, summary: "Found issues.", blockingCount: 3, nonBlockingCount: 2,
         architectureScore: 5, codeQualityScore: 4, performanceScore: 6, testCoverageScore: 3,
         unresolvedDecisions: 2, criticalGaps: 3, confidence: 7,
       };
@@ -6775,6 +6777,8 @@ describe("Orchestrator", () => {
       expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
       expect(body).toContain("Verdict: Changes Requested");
       expect(body).not.toContain("Reviewed PR #");
+      expect(body).toContain("Blocking | 3");
+      expect(body).toContain("Non-blocking | 2");
       expect(body).toContain("Architecture | 5/10");
       expect(body).toContain("Confidence | 7/10");
     });
@@ -6785,14 +6789,14 @@ describe("Orchestrator", () => {
       orch.hydrateState("PR-3", "reviewing");
       orch.getItem("PR-3")!.prNumber = 52;
 
-      const approveVerdict = { verdict: "approve" as const, summary: "OK", blockerCount: 0, nitCount: 2, preExistingCount: 0, architectureScore: 8, codeQualityScore: 9, performanceScore: 7, testCoverageScore: 8, unresolvedDecisions: 0, criticalGaps: 0, confidence: 9 };
+      const approveVerdict = { verdict: "approve" as const, summary: "OK", blockingCount: 0, nonBlockingCount: 2, architectureScore: 8, codeQualityScore: 9, performanceScore: 7, testCoverageScore: 8, unresolvedDecisions: 0, criticalGaps: 0, confidence: 9 };
       const actions = orch.processTransitions(
         snapshotWith([{ id: "PR-3", ciStatus: "pass", prState: "open", reviewVerdict: approveVerdict }]),
       );
 
       const statusActions = actions.filter((a) => a.type === "set-commit-status");
       expect(statusActions).toHaveLength(1);
-      expect(statusActions[0]!.statusDescription).toBe("Review passed: 0 blockers, 2 nits");
+      expect(statusActions[0]!.statusDescription).toBe("Review passed: 0 blocking, 2 non-blocking");
     });
 
     it("request-changes status description uses new format", () => {
@@ -6801,14 +6805,14 @@ describe("Orchestrator", () => {
       orch.hydrateState("PR-4", "reviewing");
       orch.getItem("PR-4")!.prNumber = 53;
 
-      const changesVerdict = { verdict: "request-changes" as const, summary: "Issues", blockerCount: 5, nitCount: 0, preExistingCount: 0, architectureScore: 4, codeQualityScore: 3, performanceScore: 5, testCoverageScore: 2, unresolvedDecisions: 3, criticalGaps: 5, confidence: 6 };
+      const changesVerdict = { verdict: "request-changes" as const, summary: "Issues", blockingCount: 5, nonBlockingCount: 0, architectureScore: 4, codeQualityScore: 3, performanceScore: 5, testCoverageScore: 2, unresolvedDecisions: 3, criticalGaps: 5, confidence: 6 };
       const actions = orch.processTransitions(
         snapshotWith([{ id: "PR-4", ciStatus: "pass", prState: "open", reviewVerdict: changesVerdict }]),
       );
 
       const statusActions = actions.filter((a) => a.type === "set-commit-status");
       expect(statusActions).toHaveLength(1);
-      expect(statusActions[0]!.statusDescription).toBe("Changes requested: 5 blockers found");
+      expect(statusActions[0]!.statusDescription).toBe("Changes requested: 5 blocking, 0 non-blocking");
     });
   });
 
