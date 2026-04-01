@@ -12,10 +12,36 @@ import { cleanStaleBranchForReuse } from "../core/branch-cleanup.ts";
 import { parseWorkItems } from "../core/parser.ts";
 import { checkInbox, writeInbox } from "../core/commands/inbox.ts";
 
+type MockMux = Multiplexer & {
+  isAvailable: Mock;
+  diagnoseUnavailable: Mock;
+  launchWorkspace: Mock;
+  splitPane: Mock;
+  sendMessage: Mock;
+  writeInbox: Mock;
+  readScreen: Mock;
+  listWorkspaces: Mock;
+  closeWorkspace: Mock;
+  setStatus: Mock;
+  setProgress: Mock;
+};
+
+type MockLaunchDeps = LaunchGitDeps & {
+  fetchOrigin: Mock;
+  ffMerge: Mock;
+  branchExists: Mock;
+  createWorktree: Mock;
+  attachWorktree: Mock;
+  removeWorktree: Mock;
+  deleteBranch: Mock;
+  findWorktreeForBranch: Mock;
+  prList: Mock;
+};
+
 /** Create a mock Multiplexer for dependency injection (avoids vi.mock leaking). */
-function createMockMux(): Multiplexer & Record<string, Mock> {
+function createMockMux(type: Multiplexer["type"] = "cmux"): MockMux {
   return {
-    type: "cmux",
+    type,
     isAvailable: vi.fn(() => true),
     diagnoseUnavailable: vi.fn(() => "not available"),
     launchWorkspace: vi.fn(() => "workspace:1"),
@@ -27,11 +53,11 @@ function createMockMux(): Multiplexer & Record<string, Mock> {
     closeWorkspace: vi.fn(() => true),
     setStatus: vi.fn(() => true),
     setProgress: vi.fn(() => true),
-  } as any;
+  } as MockMux;
 }
 
 /** Create mock LaunchGitDeps for dependency injection. */
-function createMockLaunchDeps(): LaunchGitDeps & Record<string, Mock> {
+function createMockLaunchDeps(): MockLaunchDeps {
   return {
     fetchOrigin: vi.fn(),
     ffMerge: vi.fn(),
@@ -44,7 +70,7 @@ function createMockLaunchDeps(): LaunchGitDeps & Record<string, Mock> {
     deleteBranch: vi.fn(),
     findWorktreeForBranch: vi.fn(() => null),
     prList: vi.fn(() => ({ ok: true as const, data: [] as Array<{ number: number; title: string }> })),
-  } as any;
+  } as MockLaunchDeps;
 }
 
 /**
@@ -1158,6 +1184,40 @@ describe("extractItemText", () => {
 
 describe("launchAiSession agentName", () => {
   afterEach(() => cleanupTempRepos());
+
+  it("dispatches to buildHeadlessCmd when mux.type is headless", () => {
+    const mockMux = createMockMux("headless");
+    const repo = setupTempRepo();
+    const promptFile = join(repo, "prompt.txt");
+    writeFileSync(promptFile, "test prompt");
+
+    launchAiSession("claude", repo, "T-1", "Test", promptFile, mockMux);
+
+    const launchCall = mockMux.launchWorkspace.mock.calls[0];
+    expect(launchCall).toBeDefined();
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain("claude -p \"Start\"");
+    expect(cmd).not.toContain("--name 'T-1 Test'");
+  });
+
+  it.each(["cmux", "tmux"] as const)(
+    "dispatches to buildLaunchCmd when mux.type is %s",
+    (muxType) => {
+      const mockMux = createMockMux(muxType);
+      const repo = setupTempRepo();
+      const promptFile = join(repo, "prompt.txt");
+      writeFileSync(promptFile, "test prompt");
+
+      launchAiSession("claude", repo, "T-1", "Test", promptFile, mockMux);
+
+      const launchCall = mockMux.launchWorkspace.mock.calls[0];
+      expect(launchCall).toBeDefined();
+      const cmd = launchCall[1] as string;
+      expect(cmd).toContain("--name 'T-1 Test'");
+      expect(cmd).toContain("-- Start");
+      expect(cmd).not.toContain("claude -p \"Start\"");
+    },
+  );
 
   it("defaults agentName to ninthwave-implementer when not specified", () => {
     const mockMux = createMockMux();

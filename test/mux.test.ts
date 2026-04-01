@@ -19,6 +19,7 @@ import * as cmux from "../core/cmux.ts";
 import { HeadlessAdapter } from "../core/headless.ts";
 import {
   CmuxAdapter,
+  createMux,
   detectMuxType,
   getMux,
   type DetectMuxDeps,
@@ -263,6 +264,13 @@ describe("getMux", () => {
     expect(mux).toBeInstanceOf(HeadlessAdapter);
   });
 
+  it("returns HeadlessAdapter when NINTHWAVE_MUX=headless", () => {
+    const deps = makeDeps({ NINTHWAVE_MUX: "headless" });
+    const mux = getMux(deps);
+    expect(mux).toBeInstanceOf(HeadlessAdapter);
+    expect(mux.type).toBe("headless");
+  });
+
   it("returns TmuxAdapter when detection picks tmux", () => {
     const deps = makeDeps({ TMUX: "/tmp/tmux-501/default,12345,0" });
     const mux = getMux(deps);
@@ -280,5 +288,25 @@ describe("getMux", () => {
     const deps = makeDeps({ NINTHWAVE_MUX: "cmux" });
     const mux = getMux(deps);
     expect(mux).toBeInstanceOf(CmuxAdapter);
+  });
+});
+
+describe("createMux", () => {
+  it("returns HeadlessAdapter for headless type", () => {
+    const mux = createMux("headless");
+    expect(mux).toBeInstanceOf(HeadlessAdapter);
+    expect(mux.type).toBe("headless");
+  });
+
+  it("returns TmuxAdapter for tmux type", () => {
+    const mux = createMux("tmux");
+    expect(mux).toBeInstanceOf(TmuxAdapter);
+    expect(mux.type).toBe("tmux");
+  });
+
+  it("returns CmuxAdapter for cmux type", () => {
+    const mux = createMux("cmux");
+    expect(mux).toBeInstanceOf(CmuxAdapter);
+    expect(mux.type).toBe("cmux");
   });
 });

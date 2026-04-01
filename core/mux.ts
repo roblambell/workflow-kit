@@ -139,13 +139,8 @@ export function detectMuxType(deps: DetectMuxDeps = defaultDetectDeps): MuxType 
   return "headless";
 }
 
-/**
- * Return the active multiplexer adapter based on auto-detection.
- *
- * Falls back to a headless adapter when no terminal multiplexer is available.
- */
-export function getMux(deps?: DetectMuxDeps): Multiplexer {
-  const muxType = detectMuxType(deps);
+/** Instantiate a mux adapter for a detected mux type. */
+export function createMux(muxType: MuxType, cwd: string = process.cwd()): Multiplexer {
   if (muxType === "tmux") {
     return new TmuxAdapter({
       runner: defaultShellRun,
@@ -155,9 +150,18 @@ export function getMux(deps?: DetectMuxDeps): Multiplexer {
     });
   }
   if (muxType === "headless") {
-    return new HeadlessAdapter(process.cwd());
+    return new HeadlessAdapter(cwd);
   }
   return new CmuxAdapter();
+}
+
+/**
+ * Return the active multiplexer adapter based on auto-detection.
+ *
+ * Falls back to a headless adapter when no terminal multiplexer is available.
+ */
+export function getMux(deps?: DetectMuxDeps): Multiplexer {
+  return createMux(detectMuxType(deps));
 }
 
 // ── Ensure we're inside a mux session ───────────────────────────────
@@ -177,30 +181,19 @@ export type AutoLaunchResult =
 /**
  * Pure detection logic: determine whether to proceed or error.
  *
- * Detection chain:
- * 1. NINTHWAVE_MUX override → tmux/headless: proceed, cmux: must be in session, invalid: warn+fallthrough
- * 2. CMUX_WORKSPACE_ID set → proceed (already inside cmux)
- * 3. $TMUX set → proceed (inside tmux session)
- * 4. tmux installed → proceed (adapter creates its own session)
- * 5. cmux installed → error (detected but not in a session)
- * 6. Nothing → proceed (headless fallback)
+ * Headless is always available, so every scenario can proceed.
+ *
+ * We still validate NINTHWAVE_MUX so invalid overrides emit a warning rather than
+ * silently masking a typo.
  */
 export function checkAutoLaunch(deps: AutoLaunchDeps): AutoLaunchResult {
-  const { env, checkBinary, warn } = deps;
+  const { env, warn } = deps;
 
   // 1. NINTHWAVE_MUX override
   if (env.NINTHWAVE_MUX) {
     const override = env.NINTHWAVE_MUX as string;
-    if (override === "tmux") return { action: "proceed" };
-    if (override === "headless") return { action: "proceed" };
-    if (override === "cmux") {
-      // Must be inside a cmux session
-      if (env.CMUX_WORKSPACE_ID) return { action: "proceed" };
-      return {
-        action: "error",
-        message: "NINTHWAVE_MUX=cmux but not inside a cmux session. Open cmux and run nw there.",
-        reason: "cmux-not-in-session",
-      };
+    if (override === "tmux" || override === "headless" || override === "cmux") {
+      return { action: "proceed" };
     }
     // Invalid value -- warn and fall through to auto-detect
     (warn ?? defaultWarn)(
@@ -208,25 +201,6 @@ export function checkAutoLaunch(deps: AutoLaunchDeps): AutoLaunchResult {
     );
   }
 
-  // 2. Already inside cmux -- proceed normally
-  if (env.CMUX_WORKSPACE_ID) return { action: "proceed" };
-
-  // 3. Inside a tmux session -- proceed
-  if (env.TMUX) return { action: "proceed" };
-
-  // 4. tmux installed -- proceed (adapter creates its own session)
-  if (checkBinary("tmux")) return { action: "proceed" };
-
-  // 5. cmux installed but not in a session
-  if (checkBinary("cmux")) {
-    return {
-      action: "error",
-      message: "Not inside a cmux session. Open cmux and run nw there.",
-      reason: "cmux-not-in-session",
-    };
-  }
-
-  // 6. Nothing installed -- proceed with headless fallback
   return { action: "proceed" };
 }
 

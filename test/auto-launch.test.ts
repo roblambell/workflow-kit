@@ -20,34 +20,6 @@ function makeDeps(overrides: Partial<AutoLaunchDeps> = {}): AutoLaunchDeps {
   };
 }
 
-// ── Helper: capture console.error + mock process.exit ───────────────
-
-function withMockedExit(fn: () => void): { exitCode: number | null; stderr: string } {
-  const errors: string[] = [];
-  const origError = console.error;
-  const origExit = process.exit;
-  console.error = (...args: unknown[]) => errors.push(args.join(" "));
-  process.exit = ((code?: number) => {
-    throw new Error(`EXIT:${code ?? 0}`);
-  }) as never;
-
-  let exitCode: number | null = null;
-  try {
-    fn();
-  } catch (e: unknown) {
-    if (e instanceof Error && e.message.startsWith("EXIT:")) {
-      exitCode = parseInt(e.message.slice(5), 10);
-    } else {
-      throw e;
-    }
-  } finally {
-    console.error = origError;
-    process.exit = origExit;
-  }
-
-  return { exitCode, stderr: errors.join("\n") };
-}
-
 // ── checkAutoLaunch (pure detection logic) ──────────────────────────
 
 describe("checkAutoLaunch", () => {
@@ -59,15 +31,12 @@ describe("checkAutoLaunch", () => {
     expect(checkAutoLaunch(deps)).toEqual({ action: "proceed" });
   });
 
-  it("returns error when cmux installed but not in a session", () => {
+  it("returns proceed when cmux is installed but not in a session", () => {
     const deps = makeDeps({
       env: {},
       checkBinary: (name) => name === "cmux",
     });
-    const result = checkAutoLaunch(deps);
-    expect(result.action).toBe("error");
-    expect((result as { message: string; reason: string }).message).toContain("Open cmux");
-    expect((result as { reason: string }).reason).toBe("cmux-not-in-session");
+    expect(checkAutoLaunch(deps)).toEqual({ action: "proceed" });
   });
 
   it("returns proceed when nothing available (headless fallback)", () => {
@@ -93,10 +62,10 @@ describe("checkAutoLaunch", () => {
     expect(checkAutoLaunch(deps)).toEqual({ action: "proceed" });
   });
 
-  it("does not check binary when CMUX_WORKSPACE_ID is set", () => {
+  it("does not need binary checks when override already resolves", () => {
     const checkBinary = vi.fn(() => false);
     const deps = makeDeps({
-      env: { CMUX_WORKSPACE_ID: "workspace:1" },
+      env: { NINTHWAVE_MUX: "headless" },
       checkBinary,
     });
     checkAutoLaunch(deps);
@@ -120,15 +89,12 @@ describe("checkAutoLaunch", () => {
     expect(checkAutoLaunch(deps)).toEqual({ action: "proceed" });
   });
 
-  it("cmux available outside session still returns error", () => {
+  it("cmux available outside session still returns proceed", () => {
     const deps = makeDeps({
       env: {},
       checkBinary: (name) => name === "cmux",
     });
-    const result = checkAutoLaunch(deps);
-    expect(result.action).toBe("error");
-    expect((result as { message: string; reason: string }).message).toContain("Open cmux");
-    expect((result as { reason: string }).reason).toBe("cmux-not-in-session");
+    expect(checkAutoLaunch(deps)).toEqual({ action: "proceed" });
   });
 
   // ── NINTHWAVE_MUX override tests ──────────────────────────────────
@@ -148,15 +114,12 @@ describe("checkAutoLaunch", () => {
     expect(checkAutoLaunch(deps)).toEqual({ action: "proceed" });
   });
 
-  it("NINTHWAVE_MUX=cmux returns error when not inside cmux session", () => {
+  it("NINTHWAVE_MUX=cmux returns proceed even when not inside cmux session", () => {
     const deps = makeDeps({
       env: { NINTHWAVE_MUX: "cmux" },
       checkBinary: () => false,
     });
-    const result = checkAutoLaunch(deps);
-    expect(result.action).toBe("error");
-    expect((result as { message: string }).message).toContain("NINTHWAVE_MUX=cmux");
-    expect((result as { message: string }).message).toContain("not inside a cmux session");
+    expect(checkAutoLaunch(deps)).toEqual({ action: "proceed" });
   });
 
   it("invalid NINTHWAVE_MUX warns and falls through to auto-detect", () => {
@@ -193,18 +156,13 @@ describe("ensureMuxOrAutoLaunch", () => {
     ensureMuxOrAutoLaunch(["watch"], deps);
   });
 
-  it("dies with session message when cmux installed but not in session", () => {
+  it("returns normally when cmux is installed but not in session", () => {
     const deps = makeDeps({
       env: {},
       checkBinary: (name) => name === "cmux",
     });
 
-    const { exitCode, stderr } = withMockedExit(() => {
-      ensureMuxOrAutoLaunch(["watch"], deps);
-    });
-
-    expect(exitCode).toBe(1);
-    expect(stderr).toContain("Open cmux");
+    ensureMuxOrAutoLaunch(["watch"], deps);
   });
 
   it("returns normally when nothing is available (headless fallback)", () => {
@@ -294,29 +252,14 @@ describe("ensureMuxInteractiveOrDie", () => {
     await ensureMuxInteractiveOrDie([], deps);
   });
 
-  it("cmux-not-in-session + user says Y: opens cmux and exits", async () => {
+  it("returns normally when cmux is installed but not in session", async () => {
     const deps = makeInteractiveDeps({
       checkBinary: (n) => n === "cmux",
-      promptAnswers: ["y"],
       platform: "darwin",
     });
-    const { exitCode } = await withMockedExitAsync(async () => {
-      await ensureMuxInteractiveOrDie([], deps);
-    });
-    expect(exitCode).toBe(0);
-    expect(deps.opened).toContain("cmux");
-  });
-
-  it("cmux-not-in-session + user says N: dies with message", async () => {
-    const deps = makeInteractiveDeps({
-      checkBinary: (n) => n === "cmux",
-      promptAnswers: ["n"],
-    });
-    const { exitCode, stderr } = await withMockedExitAsync(async () => {
-      await ensureMuxInteractiveOrDie([], deps);
-    });
-    expect(exitCode).toBe(1);
-    expect(stderr).toContain("Open cmux");
+    await ensureMuxInteractiveOrDie([], deps);
+    expect(deps.opened).toHaveLength(0);
+    expect(deps.installed).toHaveLength(0);
   });
 
   it("nothing-installed does not prompt for install", async () => {
@@ -329,33 +272,3 @@ describe("ensureMuxInteractiveOrDie", () => {
     expect(deps.opened).toHaveLength(0);
   });
 });
-
-// ── Helper: async version of withMockedExit ──────────────────────────
-
-async function withMockedExitAsync(
-  fn: () => Promise<void>,
-): Promise<{ exitCode: number | null; stderr: string }> {
-  const errors: string[] = [];
-  const origError = console.error;
-  const origExit = process.exit;
-  console.error = (...args: unknown[]) => errors.push(args.join(" "));
-  process.exit = ((code?: number) => {
-    throw new Error(`EXIT:${code ?? 0}`);
-  }) as never;
-
-  let exitCode: number | null = null;
-  try {
-    await fn();
-  } catch (e: unknown) {
-    if (e instanceof Error && e.message.startsWith("EXIT:")) {
-      exitCode = parseInt(e.message.slice(5), 10);
-    } else {
-      throw e;
-    }
-  } finally {
-    console.error = origError;
-    process.exit = origExit;
-  }
-
-  return { exitCode, stderr: errors.join("\n") };
-}
