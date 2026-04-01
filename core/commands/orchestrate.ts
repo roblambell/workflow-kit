@@ -407,7 +407,7 @@ export function renderTuiPanelFrame(
     const controlsLines = renderControlsOverlay(termWidth, termRows, {
       collaborationMode: tuiState.collaborationMode,
       reviewMode: tuiState.reviewMode,
-      mergeStrategy: tuiState.mergeStrategy,
+      mergeStrategy: tuiState.pendingStrategy ?? tuiState.mergeStrategy,
       bypassEnabled: tuiState.bypassEnabled,
       wipLimit,
     });
@@ -2643,6 +2643,8 @@ export async function cmdOrchestrate(
       ...(futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
     },
     mergeStrategy: orch.config.mergeStrategy,
+    pendingStrategy: undefined,
+    pendingStrategyTimer: undefined,
     bypassEnabled: orch.config.bypassEnabled,
     ctrlCPending: false,
     ctrlCTimestamp: 0,

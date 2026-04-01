@@ -49,6 +49,8 @@ export interface ViewOptions {
   crewStatus?: CrewStatusInfo;
   /** Current merge strategy -- used for footer indicator in TUI mode. */
   mergeStrategy?: MergeStrategy;
+  /** Pending merge strategy selection waiting for the debounce window to settle. */
+  pendingStrategy?: MergeStrategy;
   /** When true, footer shows "Press Ctrl-C again to exit" instead of strategy indicator. */
   ctrlCPending?: boolean;
   /** When true, render the help overlay instead of the normal frame. */
@@ -88,8 +90,21 @@ export function strategyIndicator(strategy: MergeStrategy): string {
   }
 }
 
-function formatStrategyFooterLine(strategy: MergeStrategy): string {
-  const badge = strategyIndicator(strategy);
+function strategyFooterIndicator(
+  strategy: MergeStrategy,
+  pendingStrategy?: MergeStrategy,
+): string {
+  if (!pendingStrategy || pendingStrategy === strategy) {
+    return strategyIndicator(strategy);
+  }
+  return `${strategyIndicator(strategy)} ${DIM}->${RESET} ${strategyIndicator(pendingStrategy)} ${DIM}(5s...)${RESET}`;
+}
+
+function formatStrategyFooterLine(
+  strategy: MergeStrategy,
+  pendingStrategy?: MergeStrategy,
+): string {
+  const badge = strategyFooterIndicator(strategy, pendingStrategy);
   return `  ${badge} ${DIM}(shift+tab to cycle) · c controls · ? help${RESET}`;
 }
 
@@ -1586,7 +1601,7 @@ export function buildStatusLayout(
   if (viewOptions?.ctrlCPending) {
     footerLines.push(`  ${YELLOW}Press Ctrl-C again to exit${RESET}`);
   } else if (viewOptions?.mergeStrategy) {
-    const left = formatStrategyFooterLine(viewOptions.mergeStrategy);
+    const left = formatStrategyFooterLine(viewOptions.mergeStrategy, viewOptions.pendingStrategy);
     if (apiWarning) {
       const leftLen = stripAnsiForWidth(left).length;
       const warnLen = stripAnsiForWidth(apiWarning).length;
@@ -1944,7 +1959,7 @@ function buildPanelFooter(
   if (viewOptions?.ctrlCPending) {
     footerLines.push(`  ${YELLOW}Press Ctrl-C again to exit${RESET}`);
   } else if (viewOptions?.mergeStrategy) {
-    footerLines.push(formatStrategyFooterLine(viewOptions.mergeStrategy));
+    footerLines.push(formatStrategyFooterLine(viewOptions.mergeStrategy, viewOptions.pendingStrategy));
   } else {
     const shortcuts = `q quit  d deps  ↑/↓ scroll`;
     footerLines.push(`  ${DIM}${shortcuts}${RESET}`);

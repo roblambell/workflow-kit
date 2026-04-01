@@ -2195,6 +2195,7 @@ describe("setupKeyboardShortcuts", () => {
   // ── Shift+Tab strategy cycling ──────────────────────────────────────
 
   it("Shift+Tab cycles merge strategy auto → manual", () => {
+    vi.useFakeTimers();
     const ac = new AbortController();
     const logs: LogEntry[] = [];
     const stdin = mockStdin();
@@ -2213,13 +2214,22 @@ describe("setupKeyboardShortcuts", () => {
     setupKeyboardShortcuts(ac, (e) => logs.push(e), stdin, tuiState);
     (stdin as any)._emit("data", "\x1B[Z"); // Shift+Tab
 
-    expect(tuiState.mergeStrategy).toBe("manual");
-    expect(tuiState.viewOptions.mergeStrategy).toBe("manual");
-    expect(changedStrategies).toEqual(["manual"]);
+    expect(tuiState.mergeStrategy).toBe("auto");
+    expect(tuiState.pendingStrategy).toBe("manual");
+    expect(tuiState.viewOptions.mergeStrategy).toBe("auto");
+    expect(tuiState.viewOptions.pendingStrategy).toBe("manual");
+    expect(changedStrategies).toEqual([]);
     expect(logs.some((l: any) => l.event === "strategy_cycle" && l.oldStrategy === "auto" && l.newStrategy === "manual")).toBe(true);
+
+    vi.advanceTimersByTime(5000);
+    expect(tuiState.mergeStrategy).toBe("manual");
+    expect(tuiState.pendingStrategy).toBeUndefined();
+    expect(changedStrategies).toEqual(["manual"]);
+    vi.useRealTimers();
   });
 
   it("Shift+Tab wraps manual → auto when bypass disabled", () => {
+    vi.useFakeTimers();
     const ac = new AbortController();
     const stdin = mockStdin();
     const tuiState: TuiState = {
@@ -2235,10 +2245,14 @@ describe("setupKeyboardShortcuts", () => {
     setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
     (stdin as any)._emit("data", "\x1B[Z");
 
+    expect(tuiState.pendingStrategy).toBe("auto");
+    vi.advanceTimersByTime(5000);
     expect(tuiState.mergeStrategy).toBe("auto");
+    vi.useRealTimers();
   });
 
   it("Shift+Tab cycles through bypass when bypassEnabled", () => {
+    vi.useFakeTimers();
     const ac = new AbortController();
     const stdin = mockStdin();
     const tuiState: TuiState = {
@@ -2254,18 +2268,26 @@ describe("setupKeyboardShortcuts", () => {
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
 
     (stdin as any)._emit("data", "\x1B[Z"); // auto → manual
+    expect(tuiState.pendingStrategy).toBe("manual");
+    vi.advanceTimersByTime(5000);
     expect(tuiState.mergeStrategy).toBe("manual");
 
     (stdin as any)._emit("data", "\x1B[Z"); // manual → bypass
+    expect(tuiState.pendingStrategy).toBe("bypass");
+    vi.advanceTimersByTime(5000);
     expect(tuiState.mergeStrategy).toBe("bypass");
 
     (stdin as any)._emit("data", "\x1B[Z"); // bypass → auto (wrap)
+    expect(tuiState.pendingStrategy).toBe("auto");
+    vi.advanceTimersByTime(5000);
     expect(tuiState.mergeStrategy).toBe("auto");
 
     cleanup();
+    vi.useRealTimers();
   });
 
   it("bypass excluded from cycle when bypassEnabled is false", () => {
+    vi.useFakeTimers();
     const ac = new AbortController();
     const stdin = mockStdin();
     const tuiState: TuiState = {
@@ -2284,9 +2306,11 @@ describe("setupKeyboardShortcuts", () => {
     const visited: string[] = [];
     for (let i = 0; i < 4; i++) {
       (stdin as any)._emit("data", "\x1B[Z");
+      vi.advanceTimersByTime(5000);
       visited.push(tuiState.mergeStrategy);
     }
     expect(visited).toEqual(["manual", "auto", "manual", "auto"]);
+    vi.useRealTimers();
   });
 
   // ── +/- WIP limit adjustment ──────────────────────────────────────

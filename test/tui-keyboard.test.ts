@@ -10,6 +10,7 @@ import {
   LOG_LEVEL_CYCLE,
   REVIEW_MODE_CYCLE,
   COLLABORATION_MODE_CYCLE,
+  STRATEGY_DEBOUNCE_MS,
   type TuiState,
   type LogLevelFilter,
   type CollaborationMode,
@@ -38,6 +39,8 @@ function makeTuiState(overrides: Partial<TuiState> = {}): TuiState {
     scrollOffset: 0,
     viewOptions: { showBlockerDetail: true },
     mergeStrategy: "manual" as MergeStrategy,
+    pendingStrategy: undefined,
+    pendingStrategyTimer: undefined,
     bypassEnabled: false,
     ctrlCPending: false,
     ctrlCTimestamp: 0,
@@ -315,6 +318,7 @@ describe("controls overlay number-key selection", () => {
   });
 
   it("keys 7-8 change merge strategy", () => {
+    vi.useFakeTimers();
     const ac = new AbortController();
     const stdin = makeFakeStdin();
     const onStrategyChange = vi.fn();
@@ -327,13 +331,22 @@ describe("controls overlay number-key selection", () => {
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "8");
+    expect(state.mergeStrategy).toBe("manual");
+    expect(state.pendingStrategy).toBe("auto");
+    expect(onStrategyChange).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS);
     expect(state.mergeStrategy).toBe("auto");
+    expect(state.pendingStrategy).toBeUndefined();
     expect(onStrategyChange).toHaveBeenCalledWith("auto");
 
     stdin.emit("data", "7");
+    expect(state.pendingStrategy).toBe("manual");
+    vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS);
     expect(state.mergeStrategy).toBe("manual");
     expect(onStrategyChange).toHaveBeenCalledWith("manual");
     cleanup();
+    vi.useRealTimers();
   });
 
   it("key 9 is a no-op when bypass is hidden", () => {
@@ -355,6 +368,7 @@ describe("controls overlay number-key selection", () => {
   });
 
   it("key 9 sets bypass when bypassEnabled", () => {
+    vi.useFakeTimers();
     const ac = new AbortController();
     const stdin = makeFakeStdin();
     const onStrategyChange = vi.fn();
@@ -367,9 +381,15 @@ describe("controls overlay number-key selection", () => {
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "9");
+    expect(state.mergeStrategy).toBe("manual");
+    expect(state.pendingStrategy).toBe("bypass");
+    expect(onStrategyChange).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS);
+    expect(state.pendingStrategy).toBeUndefined();
     expect(state.mergeStrategy).toBe("bypass");
     expect(onStrategyChange).toHaveBeenCalledWith("bypass");
     cleanup();
+    vi.useRealTimers();
   });
 
   it("number keys are not handled when controls overlay is closed", () => {
@@ -427,7 +447,8 @@ describe("controls overlay number-key selection", () => {
 // ── Shift+Tab merge strategy cycle ───────────────────────────────────────────
 
 describe("Shift+Tab merge strategy cycle", () => {
-  it("cycles auto -> manual -> auto when bypass disabled", () => {
+  it("sets pending strategy without applying immediately", () => {
+    vi.useFakeTimers();
     const ac = new AbortController();
     const stdin = makeFakeStdin();
     const onStrategyChange = vi.fn();
@@ -439,15 +460,70 @@ describe("Shift+Tab merge strategy cycle", () => {
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "\x1B[Z"); // Shift+Tab
-    expect(state.mergeStrategy).toBe("manual");
-    expect(onStrategyChange).toHaveBeenCalledWith("manual");
+    expect(state.mergeStrategy).toBe("auto");
+    expect(state.pendingStrategy).toBe("manual");
+    expect(state.viewOptions.pendingStrategy).toBe("manual");
+    expect(onStrategyChange).not.toHaveBeenCalled();
+
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("resets the debounce timer on rapid Shift+Tab presses", () => {
+    vi.useFakeTimers();
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onStrategyChange = vi.fn();
+    const state = makeTuiState({
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      onStrategyChange,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "\x1B[Z");
+    vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS - 1000);
+
+    stdin.emit("data", "\x1B[Z");
+    expect(state.pendingStrategy).toBeUndefined();
     expect(state.mergeStrategy).toBe("auto");
+
+    vi.advanceTimersByTime(1000);
+    expect(onStrategyChange).not.toHaveBeenCalled();
+    expect(state.mergeStrategy).toBe("auto");
+
     cleanup();
+    vi.useRealTimers();
+  });
+
+  it("applies the final strategy after the debounce period", () => {
+    vi.useFakeTimers();
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onStrategyChange = vi.fn();
+    const state = makeTuiState({
+      mergeStrategy: "auto",
+      bypassEnabled: true,
+      onStrategyChange,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1B[Z");
+    stdin.emit("data", "\x1B[Z");
+    expect(state.pendingStrategy).toBe("bypass");
+
+    vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS);
+    expect(state.mergeStrategy).toBe("bypass");
+    expect(state.pendingStrategy).toBeUndefined();
+    expect(onStrategyChange).toHaveBeenCalledTimes(1);
+    expect(onStrategyChange).toHaveBeenCalledWith("bypass");
+
+    cleanup();
+    vi.useRealTimers();
   });
 
   it("includes bypass in cycle when enabled", () => {
+    vi.useFakeTimers();
     const ac = new AbortController();
     const stdin = makeFakeStdin();
     const state = makeTuiState({
@@ -457,11 +533,15 @@ describe("Shift+Tab merge strategy cycle", () => {
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "\x1B[Z");
+    expect(state.pendingStrategy).toBe("bypass");
+    vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS);
     expect(state.mergeStrategy).toBe("bypass");
 
     stdin.emit("data", "\x1B[Z");
+    vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS);
     expect(state.mergeStrategy).toBe("auto");
     cleanup();
+    vi.useRealTimers();
   });
 });
 
@@ -477,6 +557,29 @@ describe("cleanup function", () => {
     cleanup();
     expect(stdin.setRawMode).toHaveBeenCalledWith(false);
     expect(stdin.pause).toHaveBeenCalled();
+  });
+
+  it("clears the pending strategy timer on cleanup", () => {
+    vi.useFakeTimers();
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onStrategyChange = vi.fn();
+    const state = makeTuiState({
+      mergeStrategy: "auto",
+      onStrategyChange,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1B[Z");
+    expect(state.pendingStrategyTimer).toBeDefined();
+
+    cleanup();
+    vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS);
+
+    expect(state.pendingStrategyTimer).toBeUndefined();
+    expect(state.pendingStrategy).toBeUndefined();
+    expect(onStrategyChange).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
 

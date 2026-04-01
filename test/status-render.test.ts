@@ -2332,6 +2332,18 @@ describe("buildStatusLayout", () => {
     expect(footerLine.length).toBeLessThanOrEqual(80);
   });
 
+  it("renders a pending strategy transition during debounce", () => {
+    const items = [makeStatusItem({ id: "A-1" })];
+    const layout = buildStatusLayout(items, 80, undefined, false, {
+      mergeStrategy: "auto",
+      pendingStrategy: "manual",
+    });
+    const footerText = layout.footerLines.map(stripAnsi).join("\n");
+    expect(footerText).toContain("› auto -> ‖ manual (5s...)");
+    expect(footerText).toContain("(shift+tab to cycle)");
+    expect(footerText).toContain("c controls");
+  });
+
   it("renders Ctrl+C confirmation footer when ctrlCPending is true", () => {
     const items = [makeStatusItem({ id: "A-1" })];
     const layout = buildStatusLayout(items, 80, undefined, false, {

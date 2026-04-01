@@ -81,6 +81,9 @@ export const REVIEW_MODE_CYCLE: ReviewMode[] = ["off", "ninthwave-prs", "all-prs
 /** Cycle order for collaboration mode. */
 export const COLLABORATION_MODE_CYCLE: CollaborationMode[] = ["local", "shared", "joined"];
 
+/** Debounce window for merge strategy changes triggered from the TUI. */
+export const STRATEGY_DEBOUNCE_MS = 5000;
+
 // ── TUI keyboard state ────────────────────────────────────────────
 
 /** Shared mutable state for TUI keyboard shortcuts and scroll. */
@@ -89,6 +92,10 @@ export interface TuiState {
   viewOptions: ViewOptions;
   /** Current merge strategy (per-daemon, cycled via Shift+Tab). */
   mergeStrategy: MergeStrategy;
+  /** Pending merge strategy selection waiting for debounce to settle. */
+  pendingStrategy?: MergeStrategy;
+  /** Timer for the pending merge strategy debounce window. */
+  pendingStrategyTimer?: ReturnType<typeof setTimeout>;
   /** Whether bypass is available in the cycle (from --dangerously-bypass). */
   bypassEnabled: boolean;
   /** First Ctrl+C pressed -- waiting for confirmation. */
@@ -121,7 +128,7 @@ export interface TuiState {
   savedLogScrollOffset?: number;
   /** Total content lines in the current detail overlay (set by render loop for clamping). */
   detailContentLines?: number;
-  /** Called when the user cycles the merge strategy via Shift+Tab. */
+  /** Called after a debounced merge strategy change is applied. */
   onStrategyChange?: (strategy: MergeStrategy) => void;
   /** Called when the user cycles panel mode via Tab (for preference persistence). */
   onPanelModeChange?: (mode: PanelMode) => void;
@@ -175,6 +182,46 @@ export function setupKeyboardShortcuts(
 
   // Timer for Ctrl+C double-tap timeout (clear ctrlCPending after ~2s)
   let ctrlCTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearPendingStrategyTimer = () => {
+    if (tuiState?.pendingStrategyTimer) {
+      clearTimeout(tuiState.pendingStrategyTimer);
+      tuiState.pendingStrategyTimer = undefined;
+    }
+  };
+
+  const clearPendingStrategy = () => {
+    clearPendingStrategyTimer();
+    if (tuiState) {
+      tuiState.pendingStrategy = undefined;
+      tuiState.viewOptions.pendingStrategy = undefined;
+    }
+  };
+
+  const queueStrategyChange = (newStrategy: MergeStrategy) => {
+    if (!tuiState) return;
+
+    if (newStrategy === tuiState.mergeStrategy) {
+      clearPendingStrategy();
+      return;
+    }
+
+    clearPendingStrategyTimer();
+    tuiState.pendingStrategy = newStrategy;
+    tuiState.viewOptions.pendingStrategy = newStrategy;
+    tuiState.pendingStrategyTimer = setTimeout(() => {
+      const pendingStrategy = tuiState.pendingStrategy;
+      clearPendingStrategy();
+      if (!pendingStrategy || pendingStrategy === tuiState.mergeStrategy) {
+        tuiState.onUpdate?.();
+        return;
+      }
+      tuiState.mergeStrategy = pendingStrategy;
+      tuiState.viewOptions.mergeStrategy = pendingStrategy;
+      tuiState.onStrategyChange?.(pendingStrategy);
+      tuiState.onUpdate?.();
+    }, STRATEGY_DEBOUNCE_MS);
+  };
 
   const onData = (key: string) => {
     // q still exits immediately (discoverable via ? help overlay)
@@ -264,10 +311,8 @@ export function setupKeyboardShortcuts(
           const strategies: MergeStrategy[] = ["manual", "auto", "bypass"];
           const newStrategy = strategies[num - 7]!;
           if (newStrategy === "bypass" && !tuiState.bypassEnabled) break;
-          if (newStrategy !== tuiState.mergeStrategy) {
-            const oldStrategy = tuiState.mergeStrategy;
-            tuiState.mergeStrategy = newStrategy;
-            tuiState.viewOptions.mergeStrategy = newStrategy;
+          const oldStrategy = tuiState.pendingStrategy ?? tuiState.mergeStrategy;
+          if (newStrategy !== oldStrategy) {
             log({
               ts: new Date().toISOString(),
               level: "info",
@@ -275,8 +320,8 @@ export function setupKeyboardShortcuts(
               oldStrategy,
               newStrategy,
             });
-            tuiState.onStrategyChange?.(newStrategy);
           }
+          queueStrategyChange(newStrategy);
           break;
         }
       }
@@ -426,19 +471,18 @@ export function setupKeyboardShortcuts(
         const strategies: MergeStrategy[] = tuiState.bypassEnabled
           ? ["auto", "manual", "bypass"]
           : ["auto", "manual"];
-        const currentIdx = strategies.indexOf(tuiState.mergeStrategy);
+        const currentIdx = strategies.indexOf(tuiState.pendingStrategy ?? tuiState.mergeStrategy);
         const nextIdx = (currentIdx + 1) % strategies.length;
-        const oldStrategy = tuiState.mergeStrategy;
-        tuiState.mergeStrategy = strategies[nextIdx]!;
-        tuiState.viewOptions.mergeStrategy = tuiState.mergeStrategy;
+        const oldStrategy = tuiState.pendingStrategy ?? tuiState.mergeStrategy;
+        const nextStrategy = strategies[nextIdx]!;
         log({
           ts: new Date().toISOString(),
           level: "info",
           event: "strategy_cycle",
           oldStrategy,
-          newStrategy: tuiState.mergeStrategy,
+          newStrategy: nextStrategy,
         });
-        tuiState.onStrategyChange?.(tuiState.mergeStrategy);
+        queueStrategyChange(nextStrategy);
         break;
       }
       case "+":
@@ -476,6 +520,7 @@ export function setupKeyboardShortcuts(
 
   return () => {
     if (ctrlCTimer) clearTimeout(ctrlCTimer);
+    clearPendingStrategy();
     stdin.removeListener("data", onData);
     process.stdout.removeListener("resize", onResize);
     if (stdin.isTTY && stdin.setRawMode) {
