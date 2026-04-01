@@ -10,7 +10,7 @@ import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
 import type { ConnectionAction } from "./commands/crew.ts";
-import { isCrewCode } from "./commands/crew.ts";
+import { formatInvalidCrewCodeMessage, parseCrewCode } from "./commands/crew.ts";
 import type { AiToolProfile } from "./ai-tools.ts";
 import {
   STARTUP_COLLABORATION_MODE_OPTIONS,
@@ -358,7 +358,7 @@ export async function promptConnectionMode(
   console.log();
   for (let i = 0; i < STARTUP_COLLABORATION_MODE_OPTIONS.length; i++) {
     const option = STARTUP_COLLABORATION_MODE_OPTIONS[i]!;
-    const defaultTag = option.persistedValue === "share" ? ` ${GREEN}(default)${RESET}` : "";
+    const defaultTag = option.persistedValue === "local" ? ` ${GREEN}(default)${RESET}` : "";
     console.log(`  ${BOLD}${i + 1}${RESET}. ${CYAN}${option.startupLabel}${RESET}    ${DIM}-- ${option.startupDescription}${RESET}${defaultTag}`);
   }
   console.log();
@@ -366,24 +366,25 @@ export async function promptConnectionMode(
   while (true) {
     const answer = await prompt(`${BOLD}Choose [1-3]: ${RESET}`);
 
-    // Default to share on empty input
-    if (answer === "" || answer === "1" || answer.toLowerCase() === "share" || answer.toLowerCase() === "connect") {
+    // Default to local on empty input
+    if (answer === "" || answer === "1" || answer.toLowerCase() === "local") {
+      return null;
+    }
+
+    if (answer === "2" || answer.toLowerCase() === "share" || answer.toLowerCase() === "connect") {
       return { type: "connect" };
     }
 
-    if (answer === "2" || answer.toLowerCase() === "join") {
+    if (answer === "3" || answer.toLowerCase() === "join") {
       while (true) {
         const code = await prompt(`${BOLD}Session code: ${RESET}`);
         if (code === "" || code.toLowerCase() === "q") return null;
-        if (isCrewCode(code)) {
-          return { type: "join", code };
+        const normalizedCode = parseCrewCode(code);
+        if (normalizedCode) {
+          return { type: "join", code: normalizedCode };
         }
-        console.log(`  ${YELLOW}Invalid session code.${RESET} Expected format: ${BOLD}XXXX-XXXX-XXXX-XXXX${RESET} (e.g. K2F9-AB3X-7YPL-QM4N).`);
+        console.log(`  ${YELLOW}${formatInvalidCrewCodeMessage(code)}${RESET}`);
       }
-    }
-
-    if (answer === "3" || answer.toLowerCase() === "local") {
-      return null;
     }
 
     console.log(`  ${YELLOW}Enter 1-3 or a mode name (share/join/local).${RESET}`);

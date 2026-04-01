@@ -15,6 +15,8 @@ import { die } from "../output.ts";
 
 /** Crew code pattern: 4 groups of 4 alphanumeric chars, optional hyphens (case-insensitive). */
 export const CREW_CODE_PATTERN = /^[A-Z0-9]{4}-?[A-Z0-9]{4}-?[A-Z0-9]{4}-?[A-Z0-9]{4}$/i;
+export const CREW_CODE_EXAMPLE = "K2F9-AB3X-7YPL-QM4N";
+export const CREW_CODE_FORMAT_HINT = `Expected format: XXXX-XXXX-XXXX-XXXX (e.g. ${CREW_CODE_EXAMPLE})`;
 
 export type ConnectionAction =
   | { type: "connect" }
@@ -31,14 +33,31 @@ export interface CrewDeps {
 // ── Crew code validation ───────────────────────────────────────────
 
 export function isCrewCode(value: string): boolean {
-  return CREW_CODE_PATTERN.test(value);
+  return parseCrewCode(value) !== null;
 }
 
 /** Normalize a crew code to uppercase with hyphens (e.g. "k2f9ab3x7yplqm4n" -> "K2F9-AB3X-7YPL-QM4N"). */
 export function normalizeCrewCode(value: string): string {
-  const upper = value.toUpperCase().replace(/-/g, "");
+  const upper = value.trim().toUpperCase().replace(/-/g, "");
   if (upper.length === 16) return `${upper.slice(0, 4)}-${upper.slice(4, 8)}-${upper.slice(8, 12)}-${upper.slice(12)}`;
-  return value.toUpperCase();
+  return value.trim().toUpperCase();
+}
+
+export function parseCrewCode(value: string): string | null {
+  const normalized = normalizeCrewCode(value);
+  return CREW_CODE_PATTERN.test(normalized) ? normalized : null;
+}
+
+export function formatInvalidCrewCodeMessage(value: string): string {
+  return `Invalid session code: ${value}. ${CREW_CODE_FORMAT_HINT}`;
+}
+
+export function requireCrewCode(value: string): string {
+  const normalized = parseCrewCode(value);
+  if (!normalized) {
+    throw new Error(formatInvalidCrewCodeMessage(value));
+  }
+  return normalized;
 }
 
 // ── Argument parsing ───────────────────────────────────────────────
@@ -63,15 +82,13 @@ export function parseCrewArgs(args: string[]): ConnectionAction | null {
     if (!code) {
       throw new Error("Usage: nw crew join <session-code>");
     }
-    if (!isCrewCode(code)) {
-      throw new Error(`Invalid session code: ${code}. Expected format: XXXX-XXXX-XXXX-XXXX (e.g. K2F9-AB3X-7YPL-QM4N)`);
-    }
-    return { type: "join", code };
+    return { type: "join", code: requireCrewCode(code) };
   }
 
   // Direct join shorthand: nw crew abc-xyz
-  if (isCrewCode(first)) {
-    return { type: "join", code: first };
+  const shorthandCode = parseCrewCode(first);
+  if (shorthandCode) {
+    return { type: "join", code: shorthandCode };
   }
 
   throw new Error(`Unknown crew subcommand: ${first}. Use "nw crew --help" for usage.`);
@@ -111,11 +128,12 @@ export async function promptCrewAction(
       return null;
     }
 
-    if (isCrewCode(answer)) {
-      return { type: "join", code: answer };
+    const normalizedCode = parseCrewCode(answer);
+    if (normalizedCode) {
+      return { type: "join", code: normalizedCode };
     }
 
-    console.log(`  ${YELLOW}Invalid session code.${RESET} Expected format: ${BOLD}XXXX-XXXX-XXXX-XXXX${RESET} (e.g. K2F9-AB3X-7YPL-QM4N).`);
+    console.log(`  ${YELLOW}${formatInvalidCrewCodeMessage(answer)}${RESET}`);
   }
 }
 

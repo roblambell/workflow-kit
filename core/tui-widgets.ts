@@ -7,7 +7,11 @@ import { BOLD, DIM, GREEN, YELLOW, CYAN, RESET, RED } from "./output.ts";
 import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
-import { isCrewCode, type ConnectionAction } from "./commands/crew.ts";
+import {
+  formatInvalidCrewCodeMessage,
+  parseCrewCode,
+  type ConnectionAction,
+} from "./commands/crew.ts";
 import type { AiToolProfile } from "./ai-tools.ts";
 import {
   COLLABORATION_MODE_OPTIONS,
@@ -1030,7 +1034,10 @@ export async function runSelectionScreen(
       const joinCode = await runTextInput(io, {
         title: "Ninthwave · Join session",
         hint: "Format: XXXX-XXXX-XXXX-XXXX (e.g. K2F9-AB3X-7YPL-QM4N)",
-        validate: (value) => isCrewCode(value.trim()) ? null : "Invalid session code",
+        validate: (value) => {
+          const trimmed = value.trim();
+          return parseCrewCode(trimmed) ? null : formatInvalidCrewCodeMessage(trimmed);
+        },
       });
       io.write(SHOW_CURSOR);
 
@@ -1038,7 +1045,7 @@ export async function runSelectionScreen(
         return null;
       }
 
-      connectionAction = { type: "join", code: joinCode.value.trim() };
+      connectionAction = { type: "join", code: parseCrewCode(joinCode.value.trim())! };
     } else {
       connectionAction = null;
     }

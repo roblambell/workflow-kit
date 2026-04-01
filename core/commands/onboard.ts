@@ -35,6 +35,7 @@ import { AI_TOOL_PROFILES } from "../ai-tools.ts";
 import type { AiToolProfile } from "../ai-tools.ts";
 import { detectInstalledAITools } from "../tool-select.ts";
 import { ensureMuxInteractiveOrDie } from "../mux.ts";
+import { requireCrewCode } from "./crew.ts";
 import {
   runCheckboxList,
   createProcessIO,
@@ -418,7 +419,7 @@ export async function cmdNoArgs(
   // Connection action → CLI flags
   if (result.connectionAction) {
     if (result.connectionAction.type === "join") {
-      watchArgs.push("--crew", result.connectionAction.code);
+      watchArgs.push("--crew", requireCrewCode(result.connectionAction.code));
     } else if (result.connectionAction.type === "connect") {
       watchArgs.push("--connect");
     }

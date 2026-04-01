@@ -68,9 +68,9 @@ export const COLLABORATION_MODE_OPTIONS: readonly ChoiceSettingOption<PersistedC
 ] as const;
 
 export const STARTUP_COLLABORATION_MODE_OPTIONS = [
+  COLLABORATION_MODE_OPTIONS[0]!,
   COLLABORATION_MODE_OPTIONS[1]!,
   COLLABORATION_MODE_OPTIONS[2]!,
-  COLLABORATION_MODE_OPTIONS[0]!,
 ] as const;
 
 export const REVIEW_MODE_OPTIONS: readonly ChoiceSettingOption<PersistedReviewMode, ReviewMode>[] = [
@@ -263,9 +263,7 @@ export function resolveTuiSettingsDefaults(userConfig: {
     reviewMode: isPersistedReviewMode(userConfig.review_mode)
       ? userConfig.review_mode
       : TUI_SETTINGS_DEFAULTS.reviewMode,
-    collaborationMode: isPersistedCollaborationMode(userConfig.collaboration_mode)
-      ? userConfig.collaboration_mode
-      : TUI_SETTINGS_DEFAULTS.collaborationMode,
+    collaborationMode: TUI_SETTINGS_DEFAULTS.collaborationMode,
   };
 }
 

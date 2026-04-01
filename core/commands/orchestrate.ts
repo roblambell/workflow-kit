@@ -44,7 +44,6 @@ import { ID_IN_FILENAME, PRIORITY_NUM } from "../types.ts";
 import { loadConfig, saveConfig, loadUserConfig, saveUserConfig } from "../config.ts";
 import type { ProjectConfig, UserConfig } from "../config.ts";
 import {
-  collaborationModeToPersisted,
   mergeStrategyToPersisted,
   persistedCollaborationModeToRuntime,
   resolveTuiSettingsDefaults,
@@ -287,11 +286,6 @@ export function createRuntimeControlHandlers(
         mode,
         source: "keyboard",
       });
-      try {
-        saveUserConfigFn({ collaboration_mode: collaborationModeToPersisted(mode) });
-      } catch {
-        // Best-effort persistence only.
-      }
       // Collaboration mode state is tracked in the TUI only; actual crew
       // connection semantics are still determined at startup.
     },
@@ -2428,11 +2422,6 @@ export async function cmdOrchestrate(
       saveUserConfig({
         merge_strategy: result.mergeStrategy === "auto" ? "auto" : "manual",
         review_mode: result.reviewMode,
-        collaboration_mode: result.connectionAction?.type === "connect"
-          ? "share"
-          : result.connectionAction?.type === "join"
-            ? "join"
-            : "local",
         wip_limit: result.wipLimit,
       });
     } catch {

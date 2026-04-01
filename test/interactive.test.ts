@@ -615,13 +615,18 @@ describe("promptReviewMode", () => {
 // ── promptConnectionMode ───────────────────────────────────────────
 
 describe("promptConnectionMode", () => {
-  it("returns connect for default (empty input)", async () => {
+  it("returns local for default (empty input)", async () => {
     const result = await promptConnectionMode(makePrompt([""]));
-    expect(result).toEqual({ type: "connect" });
+    expect(result).toBeNull();
   });
 
-  it("returns connect on input 1", async () => {
+  it("returns local on input 1", async () => {
     const result = await promptConnectionMode(makePrompt(["1"]));
+    expect(result).toBeNull();
+  });
+
+  it('returns connect on input "2"', async () => {
+    const result = await promptConnectionMode(makePrompt(["2"]));
     expect(result).toEqual({ type: "connect" });
   });
 
@@ -630,18 +635,13 @@ describe("promptConnectionMode", () => {
     expect(result).toEqual({ type: "connect" });
   });
 
-  it('returns null (local) on input "3"', async () => {
-    const result = await promptConnectionMode(makePrompt(["3"]));
-    expect(result).toBeNull();
-  });
-
-  it('returns null (local) on text "local"', async () => {
+  it('returns null (local) on input "local"', async () => {
     const result = await promptConnectionMode(makePrompt(["local"]));
     expect(result).toBeNull();
   });
 
-  it('returns join with code on input "2" then valid code', async () => {
-    const result = await promptConnectionMode(makePrompt(["2", "K2F9-AB3X-7YPL-QM4N"]));
+  it('returns join with normalized code on input "3" then valid code', async () => {
+    const result = await promptConnectionMode(makePrompt(["3", "k2f9ab3x7yplqm4n"]));
     expect(result).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
   });
 
@@ -651,7 +651,7 @@ describe("promptConnectionMode", () => {
   });
 
   it("retries on invalid session code then accepts valid", async () => {
-    const result = await promptConnectionMode(makePrompt(["2", "invalid", "K2F9-AB3X-7YPL-QM4N"]));
+    const result = await promptConnectionMode(makePrompt(["3", "invalid", "K2F9-AB3X-7YPL-QM4N"]));
     expect(result).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
   });
 

@@ -4639,7 +4639,7 @@ describe("crew remote state: last broker update replaces stale snapshots", () =>
 // ── parseWatchArgs (passthrough path) ──────────────────────────────────
 
 describe("resolveInteractiveStartupConfig", () => {
-  it("prefers persisted user defaults over hardcoded local-first fallbacks", () => {
+  it("keeps persisted merge and review defaults but resets collaboration to local", () => {
     const result = resolveInteractiveStartupConfig(
       { review_external: false, schedule_enabled: false, ai_tools: ["claude"] },
       {
@@ -4653,7 +4653,7 @@ describe("resolveInteractiveStartupConfig", () => {
     expect(result.defaults).toEqual({
       mergeStrategy: "auto",
       reviewMode: "all",
-      collaborationMode: "share",
+      collaborationMode: "local",
     });
     expect(result.savedToolIds).toEqual(["opencode", "copilot"]);
     expect(result.skipToolStep).toBe(true);
@@ -4687,7 +4687,7 @@ describe("resolveInteractiveStartupConfig", () => {
 });
 
 describe("createRuntimeControlHandlers", () => {
-  it("persists merge, review, collaboration, and WIP changes", () => {
+  it("persists merge, review, and WIP changes while keeping collaboration runtime-only", () => {
     const savedUpdates: Array<Record<string, unknown>> = [];
     const logs: LogEntry[] = [];
     let currentWipLimit = 3;
@@ -4724,7 +4724,6 @@ describe("createRuntimeControlHandlers", () => {
     expect(savedUpdates).toEqual([
       { merge_strategy: "auto" },
       { review_mode: "all" },
-      { collaboration_mode: "share" },
       { wip_limit: 4 },
     ]);
     expect(logs.map((entry) => entry.event)).toContain("review_mode_changed");

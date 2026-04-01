@@ -3,8 +3,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  formatInvalidCrewCodeMessage,
   isCrewCode,
   normalizeCrewCode,
+  parseCrewCode,
   parseCrewArgs,
   promptCrewAction,
   printCrewUsage,
@@ -94,6 +96,27 @@ describe("normalizeCrewCode", () => {
   it("normalizes mixed-case code", () => {
     expect(normalizeCrewCode("AbCd-EfGh-IjKl-MnOp")).toBe("ABCD-EFGH-IJKL-MNOP");
   });
+
+  it("trims surrounding whitespace before formatting", () => {
+    expect(normalizeCrewCode("  abcd-efgh-ijkl-mnop  ")).toBe("ABCD-EFGH-IJKL-MNOP");
+  });
+});
+
+// ── parseCrewCode / shared validation path ────────────────────────
+
+describe("parseCrewCode", () => {
+  it("returns normalized uppercase code for valid input", () => {
+    expect(parseCrewCode("k2f9ab3x7yplqm4n")).toBe("K2F9-AB3X-7YPL-QM4N");
+  });
+
+  it("returns null for malformed code", () => {
+    expect(parseCrewCode("abc-xyz")).toBeNull();
+  });
+
+  it("formats the shared invalid-code message", () => {
+    expect(formatInvalidCrewCodeMessage("abc-xyz")).toContain("Invalid session code: abc-xyz");
+    expect(formatInvalidCrewCodeMessage("abc-xyz")).toContain("Expected format: XXXX-XXXX-XXXX-XXXX");
+  });
 });
 
 // ── parseCrewArgs ──────────────────────────────────────────────────
@@ -104,7 +127,7 @@ describe("parseCrewArgs", () => {
   });
 
   it("parses direct join shorthand", () => {
-    const result = parseCrewArgs(["ABCD-EFGH-IJKL-MNOP"]);
+    const result = parseCrewArgs(["abcd-efgh-ijkl-mnop"]);
     expect(result).toEqual({ type: "join", code: "ABCD-EFGH-IJKL-MNOP" });
   });
 
@@ -114,7 +137,7 @@ describe("parseCrewArgs", () => {
   });
 
   it("parses explicit join subcommand", () => {
-    const result = parseCrewArgs(["join", "ABCD-EFGH-IJKL-MNOP"]);
+    const result = parseCrewArgs(["join", "abcd-efgh-ijkl-mnop"]);
     expect(result).toEqual({ type: "join", code: "ABCD-EFGH-IJKL-MNOP" });
   });
 
@@ -144,7 +167,7 @@ describe("parseCrewArgs", () => {
 
 describe("promptCrewAction", () => {
   it("returns join action for valid crew code input", async () => {
-    const prompt = mockPrompt(["ABCD-EFGH-IJKL-MNOP"]);
+    const prompt = mockPrompt(["abcd-efgh-ijkl-mnop"]);
     const result = await promptCrewAction(prompt);
     expect(result).toEqual({ type: "join", code: "ABCD-EFGH-IJKL-MNOP" });
   });
@@ -205,7 +228,7 @@ describe("cmdCrew", () => {
       runWatch: async (args) => { watchArgs.push(args); },
     };
 
-    await cmdCrew(["ABCD-EFGH-IJKL-MNOP"], workDir, worktreeDir, projectRoot, deps);
+    await cmdCrew(["abcd-efgh-ijkl-mnop"], workDir, worktreeDir, projectRoot, deps);
     expect(watchArgs).toEqual([["--crew", "ABCD-EFGH-IJKL-MNOP"]]);
   });
 
@@ -225,7 +248,7 @@ describe("cmdCrew", () => {
       runWatch: async (args) => { watchArgs.push(args); },
     };
 
-    await cmdCrew(["join", "K2F9-AB3X-7YPL-QM4N"], workDir, worktreeDir, projectRoot, deps);
+    await cmdCrew(["join", "k2f9ab3x7yplqm4n"], workDir, worktreeDir, projectRoot, deps);
     expect(watchArgs).toEqual([["--crew", "K2F9-AB3X-7YPL-QM4N"]]);
   });
 

@@ -647,7 +647,7 @@ describe("cmdNoArgs", () => {
         wipLimit: 4,
         allSelected: false,
         reviewMode: "mine" as const,
-        connectionAction: { type: "join" as const, code: "K2F9-AB3X-7YPL-QM4N" },
+        connectionAction: { type: "join" as const, code: "k2f9ab3x7yplqm4n" },
       }),
       runWatch: async (args) => { watchArgs = args; },
     });
