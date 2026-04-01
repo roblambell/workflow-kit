@@ -12,7 +12,9 @@ Running `ninthwave init` (or `nw init`) configures Copilot CLI support:
 
 2. **Managed copies** are refreshed when you run `nw init`, so the Copilot agent files stay aligned with the canonical prompts in this repo.
 
-3. **Auto-detection** -- `ninthwave init` detects Copilot CLI if `.github/copilot-instructions.md` exists in the project root, and records it in `.ninthwave/config` under `AI_TOOLS`.
+3. **Auto-detection** -- `ninthwave init` detects Copilot CLI if `.github/agents/` exists, or if a user-managed `.github/copilot-instructions.md` already exists in the project root, and records it in `.ninthwave/config` under `AI_TOOLS`.
+
+`CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md` are project-owned instruction files. ninthwave reads them as inputs, but only manages generated agent artifacts under `.github/agents/`.
 
 No additional configuration is required. If you have `copilot` in your `PATH`, ninthwave will find and use it.
 
@@ -139,4 +141,4 @@ No executable launcher script is created.
 
 **Symptom:** `nw init` doesn't list Copilot under detected AI tools.
 
-**Fix:** `nw init` looks for `.github/copilot-instructions.md` in the project root. Create this file if it doesn't exist -- it's Copilot CLI's project instruction file (equivalent to `CLAUDE.md` for Claude Code).
+**Fix:** `nw init` looks for either `.github/agents/` or a user-managed `.github/copilot-instructions.md` in the project root. Create whichever Copilot expects in your repo, then rerun `nw init`. ninthwave will detect the tool and manage only the generated agent files under `.github/agents/`.

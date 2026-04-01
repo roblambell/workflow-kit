@@ -294,7 +294,6 @@ export const AGENT_TARGET_DIRS = AI_TOOL_PROFILES.map((p) => ({
 }));
 
 export const MANAGED_SKILLS_DIR = ".claude/skills";
-export const LEGACY_MANAGED_FILE_PATHS = [".github/copilot-instructions.md"] as const;
 
 /** Agent selection result: which agents to install and which tool directories to target. */
 export interface AgentSelection {
@@ -452,11 +451,37 @@ function removeManagedEntry(path: string): void {
   rmSync(path, { recursive: true, force: true });
 }
 
+function buildOwnedEntryPredicates(
+  bundleDir: string,
+  selection: AgentSelection,
+): Map<string, (entry: string) => boolean> {
+  const predicates = new Map<string, (entry: string) => boolean>();
+  const skillNames = new Set(discoverSkillSources(bundleDir));
+  if (skillNames.size > 0) {
+    predicates.set(MANAGED_SKILLS_DIR, (entry) => skillNames.has(entry));
+  }
+
+  const canonicalAgents = discoverAgentSources(bundleDir);
+  for (const toolDir of selection.toolDirs) {
+    const ownedEntries = new Set(canonicalAgents.map((agent) => agentTargetFilename(agent, toolDir)));
+    if (toolDir.dir === ".github/agents") {
+      predicates.set(toolDir.dir, (entry) =>
+        ownedEntries.has(entry) || (entry.startsWith("ninthwave-") && entry.endsWith(toolDir.suffix))
+      );
+      continue;
+    }
+
+    predicates.set(toolDir.dir, (entry) => ownedEntries.has(entry));
+  }
+
+  return predicates;
+}
+
 /**
- * Prune legacy/orphaned generated outputs within ninthwave-managed target paths.
+ * Prune orphaned generated outputs within narrowly owned target paths.
  *
- * Cleanup is intentionally narrow: only `.claude/skills/*`, selected agent target
- * directories, and the legacy `.github/copilot-instructions.md` symlink are touched.
+ * Cleanup only removes entries ninthwave can clearly identify as its own managed
+ * outputs. User instruction files and unrelated user-created files are preserved.
  */
 export function pruneManagedGeneratedEntries(
   projectDir: string,
@@ -472,12 +497,9 @@ export function pruneManagedGeneratedEntries(
   }
 
   const removed: string[] = [];
-  const managedRoots = new Set<string>([
-    MANAGED_SKILLS_DIR,
-    ...selection.toolDirs.map((toolDir) => toolDir.dir),
-  ]);
+  const ownedEntryPredicates = buildOwnedEntryPredicates(bundleDir, selection);
 
-  for (const root of managedRoots) {
+  for (const [root, ownsEntry] of ownedEntryPredicates) {
     const absRoot = join(projectDir, root);
     if (!lstatExists(absRoot)) continue;
 
@@ -490,28 +512,14 @@ export function pruneManagedGeneratedEntries(
     if (!stat.isDirectory()) continue;
 
     for (const entry of readSortedDir(absRoot)) {
+      if (!ownsEntry(entry)) continue;
+
       const displayPath = `${root}/${entry}`;
       if (expected.has(displayPath)) continue;
 
       removeManagedEntry(join(absRoot, entry));
       removed.push(displayPath);
     }
-  }
-
-  for (const legacyPath of LEGACY_MANAGED_FILE_PATHS) {
-    if (expected.has(legacyPath)) continue;
-
-    const absPath = join(projectDir, legacyPath);
-    if (!lstatExists(absPath)) continue;
-
-    try {
-      if (!lstatSync(absPath).isSymbolicLink()) continue;
-    } catch {
-      continue;
-    }
-
-    removeManagedEntry(absPath);
-    removed.push(legacyPath);
   }
 
   return removed;

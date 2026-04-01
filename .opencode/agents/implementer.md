@@ -68,7 +68,7 @@ Read the full work item details from your system prompt, including: title, descr
 
 Before making any changes, read the following documents:
 
-1. **The project instruction file** at the project root -- check for `CLAUDE.md`, `AGENTS.md`, or `.github/copilot-instructions.md` (read whichever exists)
+1. **Project instruction files** at the project root -- check for `CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md`; read the ones that exist, and treat them as read-only project inputs (never create, overwrite, or prune them)
 2. **Any domain or architecture docs** referenced in the project instructions that are relevant to the work item's affected files or description
 3. **Any coding standards** referenced in the project instructions
 
@@ -375,7 +375,7 @@ After creating the PR, your implementation work is done. The **orchestrator daem
 
 > **Note:** For hub-local items, work item removal happens via your PR branch (step 8). For cross-repo items, the orchestrator daemon removes the work item file from the hub repo after your PR merges via the reconcile process.
 
-You do NOT need to poll, watch, or take any post-PR action. The daemon handles it.
+You do NOT need to poll, watch, or decide on post-PR actions yourself. The daemon owns that lifecycle automation. **But when the inbox tells you to act -- especially on a rebase request -- you must do the work. Do not assume the daemon will perform the rebase for you.**
 
 Before you stop active work, do one last non-blocking check:
 
@@ -395,7 +395,9 @@ Simply stop and wait. Your session should stay in wait mode until the orchestrat
 
 ### Responding to orchestrator daemon messages
 
-Messages from the orchestrator daemon are prefixed with `[ORCHESTRATOR]`. These are deterministic, machine-generated messages (not AI-generated) in a structured format. They arrive when `nw inbox --check` drains pending messages or when `nw inbox --wait` returns in idle mode.
+Messages from the orchestrator daemon are usually prefixed with `[ORCHESTRATOR]`. These are deterministic, machine-generated messages (not AI-generated) in a structured format. They arrive when `nw inbox --check` drains pending messages or when `nw inbox --wait` returns in idle mode.
+
+Some daemon nudges may be plain-language inbox messages instead of structured `[ORCHESTRATOR]` records. Treat those the same way when they clearly tell you to take action (for example, "branch is behind main; please rebase" or "please rebase onto BASE_BRANCH").
 
 When you are idle again after processing a message, re-enter wait mode:
 
@@ -405,7 +407,7 @@ nw inbox --wait YOUR_TODO_ID
 
 Again: if that wait command ends before printing a message, immediately rerun it with a very long timeout.
 
-When you receive a message, it will be one of these categories:
+When you receive a message, it will usually fit one of these categories. A rebase request is never FYI-only: if you receive one in either structured or plain-language form, you are required to act on it.
 
 #### CI Fix Request
 
@@ -427,10 +429,22 @@ When you receive a message, it will be one of these categories:
 
 #### Rebase Request
 
+This can arrive as either a structured `[ORCHESTRATOR]` message or a plain-language inbox nudge. In both cases, the daemon is telling **you** to rebase the PR branch now.
+
 1. Report progress: `nw heartbeat --progress 0.95 --label "Rebasing"`
-2. `git fetch origin main --quiet && git rebase origin/main`
-3. If success: `git push --force-with-lease` then `nw heartbeat --progress 1.0 --label "PR created"`
-4. If conflicts: abort, post PR comment explaining
+2. Pull the latest branch tip first: `git fetch origin && git reset --hard origin/ninthwave/YOUR_TODO_ID`
+3. Rebase onto the correct base branch:
+   - If `BASE_BRANCH` is set in your prompt: `git fetch origin $BASE_BRANCH --quiet && git rebase origin/$BASE_BRANCH`
+   - If `BASE_BRANCH` is not set: `git fetch origin main --quiet && git rebase origin/main`
+4. If the rebase succeeds cleanly, run the relevant tests, then `git push --force-with-lease` and `nw heartbeat --progress 1.0 --label "PR created"`
+5. If the rebase stops on conflicts, handle it like the dedicated rebaser would:
+   - Preserve the PR branch's intended behavior
+   - Incorporate the newer base-branch changes instead of discarding them
+   - Update imports, signatures, and callsites as needed
+   - `git add <resolved-files>` and `git rebase --continue`
+   - Do **not** `git rebase --abort` just because conflicts appeared
+6. Only if the conflicts are genuinely non-trivial or unresolvable after a reasonable attempt should you `git rebase --abort` and post a PR comment explaining the blocker and why rebaser/human attention is needed
+7. Required outcome: do not go back to idle until the branch is either successfully rebased and force-pushed, or you have posted the blocker comment for a genuinely non-trivial conflict
 
 #### Stop Request
 

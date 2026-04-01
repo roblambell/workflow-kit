@@ -3,10 +3,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { join } from "path";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync, rmSync, symlinkSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import type { SeedAgentFilesDeps } from "../core/agent-files.ts";
-import { readAgentFileContent, seedAgentFiles, syncCopilotInstructionsFromClaude } from "../core/agent-files.ts";
+import { readAgentFileContent, seedAgentFiles } from "../core/agent-files.ts";
 import type { RunResult } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -155,41 +155,6 @@ describe("readAgentFileContent", () => {
     expect(result).toBe(remoteContent);
 
     rmSync(hubRoot, { recursive: true, force: true });
-  });
-});
-
-describe("syncCopilotInstructionsFromClaude", () => {
-  it("copies CLAUDE.md into .github/copilot-instructions.md", () => {
-    const projectRoot = makeTmpDir();
-
-    writeFileSync(join(projectRoot, "CLAUDE.md"), "# Project instructions\n");
-
-    const written = syncCopilotInstructionsFromClaude(projectRoot);
-
-    expect(written).toBe(join(".github", "copilot-instructions.md"));
-    expect(readFileSync(join(projectRoot, ".github", "copilot-instructions.md"), "utf-8")).toBe(
-      "# Project instructions\n",
-    );
-
-    rmSync(projectRoot, { recursive: true, force: true });
-  });
-
-  it("replaces a legacy copilot-instructions symlink with a managed copy", () => {
-    const projectRoot = makeTmpDir();
-
-    writeFileSync(join(projectRoot, "CLAUDE.md"), "# Project instructions\n");
-    mkdirSync(join(projectRoot, ".github"), { recursive: true });
-    symlinkSync("../CLAUDE.md", join(projectRoot, ".github", "copilot-instructions.md"));
-
-    const written = syncCopilotInstructionsFromClaude(projectRoot);
-
-    expect(written).toBe(join(".github", "copilot-instructions.md"));
-    expect(lstatSync(join(projectRoot, ".github", "copilot-instructions.md")).isSymbolicLink()).toBe(false);
-    expect(readFileSync(join(projectRoot, ".github", "copilot-instructions.md"), "utf-8")).toBe(
-      "# Project instructions\n",
-    );
-
-    rmSync(projectRoot, { recursive: true, force: true });
   });
 });
 
@@ -423,12 +388,18 @@ describe("seedAgentFiles", () => {
     rmSync(worktree, { recursive: true, force: true });
   });
 
-  it("seeds Copilot instructions from the worktree CLAUDE.md", () => {
+  it("does not create or overwrite user instruction files while seeding agents", () => {
     const hubRoot = makeTmpDir();
     const worktree = makeTmpDir();
 
     writeAgentFile(hubRoot, "implementer.md");
     writeFileSync(join(worktree, "CLAUDE.md"), "# Worktree instructions\n");
+    writeFileSync(join(worktree, "AGENTS.md"), "# Agent instructions\n");
+    mkdirSync(join(worktree, ".github"), { recursive: true });
+    writeFileSync(
+      join(worktree, ".github", "copilot-instructions.md"),
+      "# Copilot instructions\nKeep this user-managed file.\n",
+    );
 
     const deps = createDeps({
       run: mockRun({
@@ -438,9 +409,13 @@ describe("seedAgentFiles", () => {
 
     const seeded = seedAgentFiles(worktree, hubRoot, deps);
 
-    expect(seeded).toContain(join(".github", "copilot-instructions.md"));
+    expect(seeded).not.toContain(join(".github", "copilot-instructions.md"));
+    expect(seeded).not.toContain("CLAUDE.md");
+    expect(seeded).not.toContain("AGENTS.md");
+    expect(readFileSync(join(worktree, "CLAUDE.md"), "utf-8")).toBe("# Worktree instructions\n");
+    expect(readFileSync(join(worktree, "AGENTS.md"), "utf-8")).toBe("# Agent instructions\n");
     expect(readFileSync(join(worktree, ".github", "copilot-instructions.md"), "utf-8")).toBe(
-      "# Worktree instructions\n",
+      "# Copilot instructions\nKeep this user-managed file.\n",
     );
 
     rmSync(hubRoot, { recursive: true, force: true });

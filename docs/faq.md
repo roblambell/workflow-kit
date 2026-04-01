@@ -48,7 +48,8 @@ This auto-detects your project structure (CI system, AI tools, monorepo layout) 
 - `.ninthwave/` directory with configuration
 - Managed skill copies for `/decompose`
 - Managed agent files (implementer, reviewer, forward-fixer) in your AI tool directories
-- `.github/copilot-instructions.md` as a managed copy of `CLAUDE.md` when Copilot is configured
+
+Project instruction files such as `CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md` are read-only inputs. ninthwave reads them for context and tool detection, but does not create, overwrite, or prune them.
 
 No manual configuration is needed for the common case.
 
@@ -273,7 +274,7 @@ nw logs --item H-1   # Filter to one item
 
 ### How do I use ninthwave with different AI tools?
 
-ninthwave supports Claude Code, OpenCode, and GitHub Copilot CLI. When you run `nw init`, it auto-detects which tools are configured in your project (for example via `.claude/`, `.opencode/`, `.github/agents/`, or `.github/copilot-instructions.md`) and writes managed copies for each.
+ninthwave supports Claude Code, OpenCode, and GitHub Copilot CLI. When you run `nw init`, it auto-detects which tools are configured in your project (for example via `.claude/`, `.opencode/`, `.github/agents/`, or a user-managed `.github/copilot-instructions.md`) and writes managed agent/skill copies for each.
 
 Switching tools doesn't require code changes -- ninthwave orchestrates at the session level, launching whichever tool is configured and sending it the work item prompt.
 

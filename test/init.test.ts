@@ -1545,11 +1545,17 @@ describe("initProject -- prerequisite checking", () => {
 // --- Agent selection ---
 
 describe("initProject -- agent selection", () => {
-  it("writes .github/copilot-instructions.md from the project's CLAUDE.md", () => {
+  it("does not create or overwrite user instruction files", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
     writeFileSync(join(projectDir, "CLAUDE.md"), "# Project instructions\nUse the project file.\n");
+    writeFileSync(join(projectDir, "AGENTS.md"), "# Shared agent instructions\n");
+    mkdirSync(join(projectDir, ".github"), { recursive: true });
+    writeFileSync(
+      join(projectDir, ".github", "copilot-instructions.md"),
+      "# Copilot instructions\nThis file is user-managed.\n",
+    );
 
     const deps: InitDeps = {
       commandExists: (() => false) as CommandChecker,
@@ -1558,8 +1564,14 @@ describe("initProject -- agent selection", () => {
 
     initProject(projectDir, bundleDir, deps);
 
-    expect(readFileSync(join(projectDir, ".github", "copilot-instructions.md"), "utf-8")).toBe(
+    expect(readFileSync(join(projectDir, "CLAUDE.md"), "utf-8")).toBe(
       "# Project instructions\nUse the project file.\n",
+    );
+    expect(readFileSync(join(projectDir, "AGENTS.md"), "utf-8")).toBe(
+      "# Shared agent instructions\n",
+    );
+    expect(readFileSync(join(projectDir, ".github", "copilot-instructions.md"), "utf-8")).toBe(
+      "# Copilot instructions\nThis file is user-managed.\n",
     );
   });
 
@@ -1586,7 +1598,7 @@ describe("initProject -- agent selection", () => {
     expect(existsSync(join(projectDir, ".github/agents/ninthwave-rebaser.agent.md"))).toBe(true);
   });
 
-  it("skips Copilot instructions when Copilot is not selected", () => {
+  it("does not create copilot-instructions.md during init", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -1597,16 +1609,10 @@ describe("initProject -- agent selection", () => {
       getEnv: () => undefined,
     };
 
-    const opts: InitProjectOpts = {
-      agentSelection: {
-        agents: ["implementer.md"],
-        toolDirs: [AGENT_TARGET_DIRS[0]!],
-      },
-    };
-
-    initProject(projectDir, bundleDir, deps, opts);
+    initProject(projectDir, bundleDir, deps);
 
     expect(existsSync(join(projectDir, ".github", "copilot-instructions.md"))).toBe(false);
+    expect(existsSync(join(projectDir, ".github", "agents", "ninthwave-implementer.agent.md"))).toBe(true);
   });
 
   it("installs newly discovered bundle agents by default", () => {
@@ -1935,7 +1941,7 @@ describe("initProject -- idempotency", () => {
     );
   });
 
-  it("replaces broken symlinks and prunes orphaned managed outputs on rerun", () => {
+  it("replaces broken managed copies and preserves user-owned instruction files on rerun", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -1959,7 +1965,10 @@ describe("initProject -- idempotency", () => {
     writeFileSync(join(projectDir, ".claude", "agents", "orphan.md"), "# orphan\n");
     writeFileSync(join(projectDir, ".opencode", "agents", "orphan.md"), "# orphan\n");
     writeFileSync(join(projectDir, ".github", "agents", "ninthwave-orphan.agent.md"), "# orphan\n");
-    symlinkSync("../CLAUDE.md", join(projectDir, ".github", "copilot-instructions.md"));
+    mkdirSync(join(projectDir, ".github"), { recursive: true });
+    writeFileSync(join(projectDir, "CLAUDE.md"), "# Project instructions\n");
+    writeFileSync(join(projectDir, "AGENTS.md"), "# Shared agent instructions\n");
+    writeFileSync(join(projectDir, ".github", "copilot-instructions.md"), "# User Copilot instructions\n");
     mkdirSync(join(projectDir, ".github", "workflows"), { recursive: true });
     writeFileSync(join(projectDir, ".github", "workflows", "ci.yml"), "name: CI\n");
 
@@ -1977,11 +1986,15 @@ describe("initProject -- idempotency", () => {
       "set the timeout to the longest practical value available",
     );
 
-    expect(existsSync(join(projectDir, ".claude", "skills", "orphan-skill"))).toBe(false);
-    expect(existsSync(join(projectDir, ".claude", "agents", "orphan.md"))).toBe(false);
-    expect(existsSync(join(projectDir, ".opencode", "agents", "orphan.md"))).toBe(false);
+    expect(existsSync(join(projectDir, ".claude", "skills", "orphan-skill"))).toBe(true);
+    expect(existsSync(join(projectDir, ".claude", "agents", "orphan.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".opencode", "agents", "orphan.md"))).toBe(true);
     expect(existsSync(join(projectDir, ".github", "agents", "ninthwave-orphan.agent.md"))).toBe(false);
-    expect(existsSync(join(projectDir, ".github", "copilot-instructions.md"))).toBe(false);
+    expect(readFileSync(join(projectDir, "CLAUDE.md"), "utf-8")).toBe("# Project instructions\n");
+    expect(readFileSync(join(projectDir, "AGENTS.md"), "utf-8")).toBe("# Shared agent instructions\n");
+    expect(readFileSync(join(projectDir, ".github", "copilot-instructions.md"), "utf-8")).toBe(
+      "# User Copilot instructions\n",
+    );
     expect(existsSync(join(projectDir, ".github", "workflows", "ci.yml"))).toBe(true);
   });
 });

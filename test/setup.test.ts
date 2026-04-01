@@ -723,7 +723,7 @@ describe("executeCopyPlan", () => {
 });
 
 describe("pruneManagedGeneratedEntries", () => {
-  it("removes orphaned managed outputs while preserving unrelated files", () => {
+  it("prunes only clearly owned generated outputs", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -737,9 +737,11 @@ describe("pruneManagedGeneratedEntries", () => {
     writeFileSync(join(projectDir, ".github", "agents", "ninthwave-orphan.agent.md"), "# orphan\n");
     mkdirSync(join(projectDir, ".github", "workflows"), { recursive: true });
     writeFileSync(join(projectDir, ".github", "workflows", "ci.yml"), "name: CI\n");
+    writeFileSync(join(projectDir, "CLAUDE.md"), "# Project instructions\n");
+    writeFileSync(join(projectDir, "AGENTS.md"), "# Shared agent instructions\n");
+    mkdirSync(join(projectDir, ".github"), { recursive: true });
+    writeFileSync(join(projectDir, ".github", "copilot-instructions.md"), "# User Copilot instructions\n");
     writeFileSync(join(projectDir, ".claude", "README.md"), "keep me\n");
-    const { symlinkSync: symlink } = require("fs");
-    symlink("../CLAUDE.md", join(projectDir, ".github", "copilot-instructions.md"));
 
     const removed = pruneManagedGeneratedEntries(projectDir, bundleDir, {
       agents: ["implementer.md"],
@@ -747,19 +749,49 @@ describe("pruneManagedGeneratedEntries", () => {
     });
 
     expect(removed).toEqual(expect.arrayContaining([
-      ".claude/skills/orphan-skill",
-      ".claude/agents/orphan.md",
-      ".opencode/agents/orphan.md",
       ".github/agents/ninthwave-orphan.agent.md",
-      ".github/copilot-instructions.md",
     ]));
-    expect(existsSync(join(projectDir, ".claude", "skills", "orphan-skill"))).toBe(false);
-    expect(existsSync(join(projectDir, ".claude", "agents", "orphan.md"))).toBe(false);
-    expect(existsSync(join(projectDir, ".opencode", "agents", "orphan.md"))).toBe(false);
+    expect(existsSync(join(projectDir, ".claude", "skills", "orphan-skill"))).toBe(true);
+    expect(existsSync(join(projectDir, ".claude", "agents", "orphan.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".opencode", "agents", "orphan.md"))).toBe(true);
     expect(existsSync(join(projectDir, ".github", "agents", "ninthwave-orphan.agent.md"))).toBe(false);
-    expect(existsSync(join(projectDir, ".github", "copilot-instructions.md"))).toBe(false);
+    expect(existsSync(join(projectDir, "CLAUDE.md"))).toBe(true);
+    expect(existsSync(join(projectDir, "AGENTS.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".github", "copilot-instructions.md"))).toBe(true);
     expect(existsSync(join(projectDir, ".github", "workflows", "ci.yml"))).toBe(true);
     expect(existsSync(join(projectDir, ".claude", "README.md"))).toBe(true);
+  });
+
+  it("removes deselected canonical agent copies while preserving unrelated files", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+    const claudeTarget = AGENT_TARGET_DIRS.find((target) => target.dir === ".claude/agents");
+    const githubTarget = AGENT_TARGET_DIRS.find((target) => target.dir === ".github/agents");
+
+    mkdirSync(join(projectDir, ".claude", "agents"), { recursive: true });
+    writeFileSync(join(projectDir, ".claude", "agents", "implementer.md"), "# keep\n");
+    writeFileSync(join(projectDir, ".claude", "agents", "reviewer.md"), "# remove\n");
+    writeFileSync(join(projectDir, ".claude", "agents", "notes.md"), "# keep\n");
+    mkdirSync(join(projectDir, ".github", "agents"), { recursive: true });
+    writeFileSync(join(projectDir, ".github", "agents", "ninthwave-implementer.agent.md"), "# keep\n");
+    writeFileSync(join(projectDir, ".github", "agents", "ninthwave-reviewer.agent.md"), "# remove\n");
+    writeFileSync(join(projectDir, ".github", "agents", "custom.agent.md"), "# keep\n");
+
+    const removed = pruneManagedGeneratedEntries(projectDir, bundleDir, {
+      agents: ["implementer.md"],
+      toolDirs: [claudeTarget!, githubTarget!],
+    });
+
+    expect(removed).toEqual(expect.arrayContaining([
+      ".claude/agents/reviewer.md",
+      ".github/agents/ninthwave-reviewer.agent.md",
+    ]));
+    expect(existsSync(join(projectDir, ".claude", "agents", "implementer.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".claude", "agents", "reviewer.md"))).toBe(false);
+    expect(existsSync(join(projectDir, ".claude", "agents", "notes.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".github", "agents", "ninthwave-implementer.agent.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".github", "agents", "ninthwave-reviewer.agent.md"))).toBe(false);
+    expect(existsSync(join(projectDir, ".github", "agents", "custom.agent.md"))).toBe(true);
   });
 });
 
