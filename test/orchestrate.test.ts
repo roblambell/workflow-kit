@@ -25,6 +25,8 @@ import {
   filterLogsByLevel,
   crewStatusToRemoteItemSnapshots,
   filterCrewRemoteWriteActions,
+  getItemCount,
+  getSelectedItemId,
   formatExitSummary,
   formatCompletionBanner,
   waitForCompletionKey,
@@ -53,6 +55,7 @@ import {
   type OrchestratorDeps,
 } from "../core/orchestrator.ts";
 import type { WorkItem } from "../core/types.ts";
+import type { StatusItem } from "../core/status-render.ts";
 import type { Multiplexer } from "../core/mux.ts";
 import {
   pidFilePath,
@@ -87,6 +90,18 @@ function makeWorkItem(id: string, deps: string[] = []): WorkItem {
     filePaths: [],
     testPlan: "",
     bootstrap: false,
+  };
+}
+
+function makeStatusItem(overrides: Partial<StatusItem> = {}): StatusItem {
+  return {
+    id: "TEST-1",
+    title: "Test item",
+    state: "implementing",
+    prNumber: null,
+    ageMs: 5 * 60 * 1000,
+    repoLabel: "",
+    ...overrides,
   };
 }
 
@@ -991,6 +1006,31 @@ describe("orchestrateLoop", () => {
     for (const s of summaries) {
       expect(s.states).toBeDefined();
     }
+  });
+});
+
+describe("TUI item selection helpers", () => {
+  it("getItemCount includes queued items", () => {
+    const items = [
+      makeStatusItem({ id: "H-TI-1", state: "implementing" }),
+      makeStatusItem({ id: "H-TI-2", state: "queued" }),
+      makeStatusItem({ id: "H-TI-3", state: "review" }),
+    ];
+
+    expect(getItemCount(items)).toBe(3);
+  });
+
+  it("getSelectedItemId returns queued item ids at the correct indices", () => {
+    const items = [
+      makeStatusItem({ id: "H-TI-1", state: "implementing" }),
+      makeStatusItem({ id: "H-TI-2", state: "queued" }),
+      makeStatusItem({ id: "H-TI-3", state: "review" }),
+    ];
+
+    expect(getSelectedItemId(items, 0)).toBe("H-TI-1");
+    expect(getSelectedItemId(items, 1)).toBe("H-TI-2");
+    expect(getSelectedItemId(items, 2)).toBe("H-TI-3");
+    expect(getSelectedItemId(items, 3)).toBeUndefined();
   });
 });
 

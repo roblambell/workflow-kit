@@ -786,18 +786,16 @@ describe("buildStatusLayout with selectedItemId", () => {
     }
   });
 
-  it("queued items are never highlighted", () => {
+  it("queued items can be highlighted when selected", () => {
     const items = [
       makeStatusItem({ id: "A-1", state: "implementing" }),
       makeStatusItem({ id: "A-2", state: "queued" }),
     ];
-    // Even if we pass the queued item's id, it should not be highlighted
-    // (queued items use formatQueuedItemRow which doesn't support isSelected)
     const layout = buildStatusLayout(items, 80, undefined, false, undefined, "A-2");
     const stripped = layout.itemLines.map(stripAnsi);
     const queuedRow = stripped.find(l => l.includes("A-2"));
     expect(queuedRow).toBeDefined();
-    expect(queuedRow!).not.toMatch(/^>/);
+    expect(queuedRow!).toMatch(/^> /);
   });
 });
 
@@ -3523,6 +3521,32 @@ describe("renderDetailOverlay", () => {
     expect(text).toContain("1");
   });
 
+  it("renders queued item metadata without PR details", () => {
+    const item = makeStatusItem({
+      id: "H-TI-3",
+      title: "Queued item",
+      state: "queued",
+      prNumber: null,
+    });
+
+    const lines = renderDetailOverlay(item, 100, 40, {
+      priority: "high",
+      dependencies: ["H-TI-1", "H-TI-2"],
+    });
+
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("H-TI-3");
+    expect(text).toContain("Queued item");
+    expect(text).toContain("Queued");
+    expect(text).toContain("Priority:");
+    expect(text).toContain("high");
+    expect(text).toContain("Depends:");
+    expect(text).toContain("H-TI-1, H-TI-2");
+    expect(text).toContain("PR:");
+    expect(text).toContain("--");
+    expect(text).not.toContain("#");
+  });
+
   it("shows descriptionSnippet content when available", () => {
     const item = makeStatusItem({
       id: "H-DS-1",
@@ -4197,5 +4221,23 @@ describe("buildPanelLayout queueStartIndex passthrough", () => {
     });
     expect(layout.statusPanel).not.toBeNull();
     expect(layout.statusPanel!.queueStartIndex).toBeDefined();
+  });
+
+  it("highlights queued rows when selectedIndex points at a queued item", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing" }),
+      makeStatusItem({ id: "A-2", state: "queued", title: "Queued item" }),
+    ];
+
+    const layout = buildPanelLayout("status-only", items, [], 80, 50, {
+      selectedIndex: 1,
+    });
+
+    const queuedRow = layout.statusPanel!.itemLines
+      .map(stripAnsi)
+      .find((line) => line.includes("A-2"));
+
+    expect(queuedRow).toBeDefined();
+    expect(queuedRow!).toMatch(/^> /);
   });
 });

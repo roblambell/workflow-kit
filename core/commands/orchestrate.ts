@@ -323,6 +323,15 @@ export function orchestratorItemsToStatusItems(
   });
 }
 
+export function getSelectedItemId(items: StatusItem[], index: number): string | undefined {
+  if (index < 0) return undefined;
+  return items[index]?.id;
+}
+
+export function getItemCount(items: StatusItem[]): number {
+  return items.length;
+}
+
 /**
  * Render the status table to stdout using ANSI cursor control for flicker-free updates.
  * Uses cursor-home + clear-line + clear-to-end to replace content in-place.
@@ -515,12 +524,11 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     savedLogScrollOffset: 0,
     getSelectedItemId: (index: number) => {
       const data = getItems();
-      const nonQueued = data.items.filter((i) => i.state !== "queued");
-      return nonQueued[index]?.id;
+      return getSelectedItemId(data.items, index);
     },
     getItemCount: () => {
       const data = getItems();
-      return data.items.filter((i) => i.state !== "queued").length;
+      return getItemCount(data.items);
     },
     onUpdate: () => {
       try { render(); } catch { /* non-fatal */ }
@@ -2653,12 +2661,11 @@ export async function cmdOrchestrate(
     savedLogScrollOffset: 0,
     getSelectedItemId: (index: number) => {
       const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
-      const nonQueued = items.filter((i) => i.state !== "queued");
-      return nonQueued[index]?.id;
+      return getSelectedItemId(items, index);
     },
     getItemCount: () => {
       const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
-      return items.filter((i) => i.state !== "queued").length;
+      return getItemCount(items);
     },
     onExtendTimeout: (itemId) => orch.extendTimeout(itemId),
     onStrategyChange: (strategy) => {

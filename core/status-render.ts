@@ -687,6 +687,7 @@ export function formatQueuedItemRow(
   titleWidth: number,
   depIndicator?: string,
   stateColWidth: number = 14,
+  isSelected?: boolean,
 ): string {
   const icon = stateIcon(item.state);
   const id = pad(item.id, 12);
@@ -695,8 +696,9 @@ export function formatQueuedItemRow(
   const depCol = depIndicator ?? "";
   const title = truncateTitle(item.title || item.id, titleWidth);
   const repo = item.repoLabel ? ` [${item.repoLabel}]` : "";
+  const prefix = isSelected ? `${BOLD}>${RESET} ` : "  ";
 
-  return `  ${DIM}${icon} ${id}${stateCell} ${duration} ${depCol}${title}${repo}${RESET}`;
+  return `${prefix}${DIM}${icon} ${id}${stateCell} ${duration} ${depCol}${title}${repo}${RESET}`;
 }
 
 // ─── Dependency tree building ─────────────────────────────────────────────────
@@ -1531,7 +1533,7 @@ export function buildStatusLayout(
       itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
       itemLines.push(sep);
       for (const item of queuedItems) {
-        itemLines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth));
+        itemLines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, item.id === selectedItemId));
         const blockers = blockedBy!.get(item.id) ?? [];
         if (opts.showBlockerDetail && blockers.length > 0) {
           itemLines.push(formatBlockerSubline(blockers, titleWidth, true, blockerColOffset));
@@ -1559,7 +1561,7 @@ export function buildStatusLayout(
       itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
       itemLines.push(sep);
       for (const item of queuedItems) {
-        itemLines.push(formatQueuedItemRow(item, titleWidth, undefined, stateColWidth));
+        itemLines.push(formatQueuedItemRow(item, titleWidth, undefined, stateColWidth, item.id === selectedItemId));
       }
     }
   }
@@ -1794,12 +1796,12 @@ export function buildPanelLayout(
 ): PanelLayout {
   const logScrollOffset = opts?.logScrollOffset ?? 0;
 
-  // Resolve selectedIndex → selectedItemId using the non-queued item list
+  // Resolve selectedIndex → selectedItemId using the full item list so queued
+  // rows participate in keyboard navigation and selection.
   const selectedIndex = opts?.selectedIndex;
   let selectedItemId: string | undefined;
   if (selectedIndex != null && selectedIndex >= 0) {
-    const nonQueued = items.filter((i) => i.state !== "queued");
-    selectedItemId = nonQueued[selectedIndex]?.id;
+    selectedItemId = items[selectedIndex]?.id;
   }
 
   // Below MIN_FULLSCREEN_ROWS: legacy flat rendering, no panels
