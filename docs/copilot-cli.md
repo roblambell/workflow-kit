@@ -38,27 +38,31 @@ The selection is persisted to `.ninthwave/config.json` as `ai_tool`.
 
 ### Prompt delivery
 
-Copilot CLI receives its initial prompt differently from Claude Code and OpenCode. Because multiline prompts can break when piped through terminal multiplexers, ninthwave uses a **launcher script** approach:
+Copilot CLI receives its initial prompt differently from Claude Code and OpenCode. Because multiline prompts can break when piped through terminal multiplexers, ninthwave writes the full prompt to a temporary data file under its own state directory and launches Copilot with an **inline shell command**:
 
-1. The full prompt is written to a temporary file at `/tmp/nw-prompt-{id}-{timestamp}`
-2. A launcher script is created at `/tmp/nw-launch-{id}-{timestamp}.sh`
-3. The launcher script reads the prompt, cleans up both temp files, and launches Copilot CLI:
+1. The full prompt is written to `~/.ninthwave/projects/{slug}/tmp/nw-prompt-{id}-{timestamp}`
+2. The launch command reads the prompt, deletes the temp file, and execs Copilot CLI
+3. Interactive workers use `-i` with Copilot's broad approval shortcut:
    ```bash
-   #!/bin/bash
-   PROMPT=$(cat '/tmp/nw-prompt-{id}-{timestamp}')
-   rm -f '/tmp/nw-prompt-{id}-{timestamp}' '/tmp/nw-launch-{id}-{timestamp}.sh'
+   PROMPT=$(cat '~/.ninthwave/projects/{slug}/tmp/nw-prompt-{id}-{timestamp}')
+   rm -f '~/.ninthwave/projects/{slug}/tmp/nw-prompt-{id}-{timestamp}'
    exec copilot --agent=ninthwave-implementer --allow-all -i "$PROMPT"
    ```
-4. The `-i` flag passes the prompt as initial input to Copilot CLI
+4. Headless workers use non-interactive prompt mode with the current approval flags explicitly spelled out:
+   ```bash
+   PROMPT=$(cat '~/.ninthwave/projects/{slug}/tmp/nw-prompt-{id}-{timestamp}')
+   rm -f '~/.ninthwave/projects/{slug}/tmp/nw-prompt-{id}-{timestamp}'
+   exec copilot -p "$PROMPT" --agent=ninthwave-implementer --allow-all-tools --allow-all-paths --allow-all-urls --no-ask-user
+   ```
 
-Both temp files are deleted by the launcher script before the session starts -- they don't persist on disk.
+No executable launcher script is created.
 
 ### Session lifecycle
 
 | Phase | What happens |
 |-------|-------------|
-| **Launch** | Launcher script runs inside a cmux/tmux workspace |
-| **Prompt delivery** | Embedded in the launch command via `-i` (no post-launch send) |
+| **Launch** | Inline shell command runs inside the selected backend |
+| **Prompt delivery** | Embedded in the launch command via `-i` (interactive) or `-p` (headless) |
 | **Working** | Copilot CLI operates normally -- reads/writes files, runs commands |
 | **Idle** | Worker waits for orchestrator messages via `cmux send` |
 | **Cleanup** | `ninthwave clean-single` tears down the workspace |
@@ -67,12 +71,12 @@ Both temp files are deleted by the launcher script before the session starts -- 
 
 | Aspect | Claude Code | Copilot CLI |
 |--------|-------------|-------------|
-| **Prompt delivery** | `--append-system-prompt "$(cat file)"` | Launcher script with `-i` flag |
-| **Permissions** | `--permission-mode bypassPermissions` | `--allow-all` |
+| **Prompt delivery** | `--append-system-prompt "$(cat file)"` | Inline temp-file command with `-i` (interactive) or `-p` (headless) |
+| **Permissions** | `--permission-mode bypassPermissions` | `--allow-all` interactively; `--allow-all-tools --allow-all-paths --allow-all-urls --no-ask-user` in headless mode |
 | **Agent flag** | `--agent ninthwave-implementer` (space) | `--agent=ninthwave-implementer` (equals) |
 | **Agent directory** | `.claude/agents/*.md` | `.github/agents/*.agent.md` |
 | **Session detection** | Interactive prompt or `--tool` flag | Interactive prompt or `--tool` flag |
-| **Post-launch send** | Not needed (prompt embedded) | Not needed (prompt embedded via `-i`) |
+| **Post-launch send** | Not needed (prompt embedded) | Not needed (prompt embedded via `-i` or `-p`) |
 
 ### What's the same
 
@@ -103,8 +107,8 @@ Both temp files are deleted by the launcher script before the session starts -- 
 **Symptom:** Worker session launches but doesn't start implementing the work item.
 
 **Possible causes:**
-- **`/tmp` permissions** -- The launcher script and prompt file are written to `/tmp`. On shared systems, verify your user can write to `/tmp`.
-- **Copilot CLI not installed** -- The launcher script calls `exec copilot ...`. If the binary isn't available, the session will exit silently.
+- **State dir permissions** -- The prompt file is written under `~/.ninthwave/projects/{slug}/tmp/`. Verify your user can write there.
+- **Copilot CLI not installed** -- The inline launch command calls `exec copilot ...`. If the binary isn't available, the session will exit silently.
 - **Multiplexer issues** -- Verify cmux or tmux is running: `nw doctor`
 
 ### Session exits immediately
@@ -113,8 +117,9 @@ Both temp files are deleted by the launcher script before the session starts -- 
 
 **Fix:**
 1. Check that `copilot` is installed and authenticated
-2. Try running the command manually: `copilot --agent=ninthwave-implementer --allow-all -i "hello"`
-3. Check cmux/tmux logs for error output
+2. Try the interactive form manually: `copilot --agent=ninthwave-implementer --allow-all -i "hello"`
+3. Try the headless form manually: `copilot -p "hello" --agent=ninthwave-implementer --allow-all-tools --allow-all-paths --allow-all-urls --no-ask-user`
+4. Check cmux/tmux logs for error output
 
 ### Init doesn't detect Copilot
 

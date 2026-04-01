@@ -149,6 +149,9 @@ function writePromptDataFile(opts: LaunchOpts, deps: LaunchDeps): string {
   return promptDataFile;
 }
 
+const OPENCODE_ALLOW_ALL_PERMISSION =
+  `export OPENCODE_PERMISSION='{"$schema":"https://opencode.ai/config.json","permission":"allow"}'`;
+
 // ── Profiles ──────────────────────────────────────────────────────────────────
 
 /** The canonical list of AI tool profiles -- one entry per supported tool. */
@@ -177,9 +180,10 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
     },
     buildHeadlessCmd(opts, _deps): LaunchCmdResult {
       const cmd =
-        `claude -p "Start" --permission-mode bypassPermissions` +
+        `claude --print --permission-mode bypassPermissions` +
         ` --agent ${opts.agentName}` +
-        ` --append-system-prompt "$(cat '.ninthwave/.prompt')"`;
+        ` --append-system-prompt "$(cat '.ninthwave/.prompt')"` +
+        ` "Start"`;
       return { cmd, initialPrompt: "" };
     },
   },
@@ -200,7 +204,7 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
       // Avoids creating executable .sh scripts (which trigger EDR alerts).
       const promptDataFile = writePromptDataFile(opts, deps);
       const cmd =
-        `export OPENCODE_PERMISSION='{"$schema":"https://opencode.ai/config.json","permission":"allow"}'` +
+        `${OPENCODE_ALLOW_ALL_PERMISSION}` +
         ` && PROMPT=$(cat '${promptDataFile}')` +
         ` && rm -f '${promptDataFile}'` +
         ` && exec opencode --agent ${opts.agentName} --prompt "$PROMPT"`;
@@ -209,7 +213,8 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
     buildHeadlessCmd(opts, deps): LaunchCmdResult {
       const promptDataFile = writePromptDataFile(opts, deps);
       const cmd =
-        `PROMPT=$(cat '${promptDataFile}')` +
+        `${OPENCODE_ALLOW_ALL_PERMISSION}` +
+        ` && PROMPT=$(cat '${promptDataFile}')` +
         ` && rm -f '${promptDataFile}'` +
         ` && exec opencode run "$PROMPT" --agent ${opts.agentName}`;
       return { cmd, initialPrompt: "" };
@@ -243,7 +248,8 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
       const cmd =
         `PROMPT=$(cat '${promptDataFile}')` +
         ` && rm -f '${promptDataFile}'` +
-        ` && exec copilot -p "$PROMPT" --agent=${runtimeAgentName} --allow-all --no-ask-user`;
+        ` && exec copilot -p "$PROMPT" --agent=${runtimeAgentName}` +
+        ` --allow-all-tools --allow-all-paths --allow-all-urls --no-ask-user`;
       return { cmd, initialPrompt: "" };
     },
   },

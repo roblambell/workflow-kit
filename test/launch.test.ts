@@ -1329,8 +1329,49 @@ describe("launchAiSession agentName", () => {
     const launchCall = mockMux.launchWorkspace.mock.calls[0]!;
     expect(launchCall).toBeDefined();
     const cmd = launchCall[1] as string;
-    expect(cmd).toContain("claude -p \"Start\"");
+    expect(cmd).toContain("claude --print");
+    expect(cmd).toContain('"Start"');
     expect(cmd).not.toContain("--name 'T-1 Test'");
+  });
+
+  it("uses the supported headless opencode command shape", () => {
+    const mockMux = createMockMux("headless");
+    const repo = setupTempRepo();
+    const promptFile = join(repo, "prompt.txt");
+    writeFileSync(promptFile, "test prompt");
+
+    launchAiSession("opencode", repo, "T-1", "Test", promptFile, mockMux, {
+      agentName: "ninthwave-reviewer",
+    });
+
+    const launchCall = mockMux.launchWorkspace.mock.calls[0]!;
+    expect(launchCall).toBeDefined();
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain("OPENCODE_PERMISSION");
+    expect(cmd).toContain('exec opencode run "$PROMPT" --agent ninthwave-reviewer');
+  });
+
+  it("uses the supported headless copilot command shape", () => {
+    const mockMux = createMockMux("headless");
+    const repo = setupTempRepo();
+    const promptFile = join(repo, "prompt.txt");
+    writeFileSync(promptFile, "test prompt");
+    const expectedAgent = runtimeAgentNameForTool("copilot", "ninthwave-reviewer");
+
+    launchAiSession("copilot", repo, "T-1", "Test", promptFile, mockMux, {
+      agentName: "ninthwave-reviewer",
+    });
+
+    const launchCall = mockMux.launchWorkspace.mock.calls[0]!;
+    expect(launchCall).toBeDefined();
+    const cmd = launchCall[1] as string;
+    expect(cmd).toContain('exec copilot -p "$PROMPT"');
+    expect(cmd).toContain(`--agent=${expectedAgent}`);
+    expect(cmd).toContain("--allow-all-tools");
+    expect(cmd).toContain("--allow-all-paths");
+    expect(cmd).toContain("--allow-all-urls");
+    expect(cmd).toContain("--no-ask-user");
+    expect(cmd).not.toContain("-i ");
   });
 
   it.each(["cmux", "tmux"] as const)(

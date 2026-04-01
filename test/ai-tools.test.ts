@@ -258,10 +258,11 @@ describe("claude profile buildLaunchCmd", () => {
 // ── buildHeadlessCmd: claude ──────────────────────────────────────────────────
 
 describe("claude profile buildHeadlessCmd", () => {
-  it("returns a cmd with -p Start", () => {
+  it("returns a cmd with --print and a positional Start prompt", () => {
     const profile = getToolProfile("claude");
     const result = profile.buildHeadlessCmd(stubOpts(), stubDeps());
-    expect(result.cmd).toContain('claude -p "Start"');
+    expect(result.cmd).toContain("claude --print");
+    expect(result.cmd).toContain('"Start"');
   });
 
   it("returns a cmd with --permission-mode bypassPermissions", () => {
@@ -391,6 +392,13 @@ describe("opencode profile buildHeadlessCmd", () => {
     const result = profile.buildHeadlessCmd(stubOpts({ id: "H-X-HEADLESS", agentName: "ninthwave-implementer" }), stubDeps());
     expect(result.cmd).toContain("exec opencode run \"$PROMPT\" --agent ninthwave-implementer");
   });
+
+  it("sets OPENCODE_PERMISSION for non-interactive auto-approval", () => {
+    const profile = getToolProfile("opencode");
+    const result = profile.buildHeadlessCmd(stubOpts({ id: "H-X-HEADLESS" }), stubDeps());
+    expect(result.cmd).toContain("OPENCODE_PERMISSION");
+    expect(result.cmd).toContain('"permission":"allow"');
+  });
 });
 
 // ── buildLaunchCmd: copilot ───────────────────────────────────────────────────
@@ -477,13 +485,16 @@ describe("copilot profile buildHeadlessCmd", () => {
     expect(calls[0]![1]).toContain("Start implementing this work item now.");
   });
 
-  it("uses -p, --allow-all, and --no-ask-user", () => {
+  it("uses -p plus the current non-interactive approval flags", () => {
     const profile = getToolProfile("copilot");
     const result = profile.buildHeadlessCmd(stubOpts({ id: "H-X-HEADLESS", agentName: "ninthwave-implementer" }), stubDeps());
     expect(result.cmd).toContain('exec copilot -p "$PROMPT"');
     expect(result.cmd).toContain("--agent=ninthwave-implementer");
-    expect(result.cmd).toContain("--allow-all");
+    expect(result.cmd).toContain("--allow-all-tools");
+    expect(result.cmd).toContain("--allow-all-paths");
+    expect(result.cmd).toContain("--allow-all-urls");
     expect(result.cmd).toContain("--no-ask-user");
+    expect(result.cmd).not.toContain("--allow-all ");
   });
 });
 
