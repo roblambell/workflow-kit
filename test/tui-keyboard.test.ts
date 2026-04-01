@@ -51,6 +51,8 @@ function makeTuiState(overrides: Partial<TuiState> = {}): TuiState {
     logLevelFilter: "all" as LogLevelFilter,
     selectedIndex: 0,
     detailItemId: null,
+    detailScrollOffset: 0,
+    detailContentLines: 0,
     savedLogScrollOffset: 0,
     ...overrides,
   };
@@ -462,5 +464,173 @@ describe("cleanup function", () => {
     cleanup();
     expect(stdin.setRawMode).toHaveBeenCalledWith(false);
     expect(stdin.pause).toHaveBeenCalled();
+  });
+});
+
+// ── Detail overlay scroll ────────────────────────────────────────────────────
+
+describe("detail overlay scroll keys", () => {
+  it("down arrow scrolls detail content when overlay is open", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      detailItemId: "X-1",
+      detailScrollOffset: 0,
+      detailContentLines: 500, // enough to overflow any terminal
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b[B"); // Down arrow
+    expect(state.detailScrollOffset).toBe(1);
+    // Selection should NOT have moved
+    expect(state.selectedIndex).toBe(0);
+    cleanup();
+  });
+
+  it("up arrow scrolls detail content up when overlay is open", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      detailItemId: "X-1",
+      detailScrollOffset: 5,
+      detailContentLines: 500,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b[A"); // Up arrow
+    expect(state.detailScrollOffset).toBe(4);
+    cleanup();
+  });
+
+  it("up arrow does not scroll below 0", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      detailItemId: "X-1",
+      detailScrollOffset: 0,
+      detailContentLines: 500,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b[A");
+    expect(state.detailScrollOffset).toBe(0);
+    cleanup();
+  });
+
+  it("j scrolls detail content down when overlay is open", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      detailItemId: "X-1",
+      detailScrollOffset: 2,
+      detailContentLines: 500,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "j");
+    expect(state.detailScrollOffset).toBe(3);
+    // Log panel should not have scrolled
+    expect(state.logScrollOffset).toBe(0);
+    cleanup();
+  });
+
+  it("k scrolls detail content up when overlay is open", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      detailItemId: "X-1",
+      detailScrollOffset: 3,
+      detailContentLines: 500,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "k");
+    expect(state.detailScrollOffset).toBe(2);
+    cleanup();
+  });
+
+  it("G jumps to end of detail content when overlay is open", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      detailItemId: "X-1",
+      detailScrollOffset: 0,
+      detailContentLines: 500,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "G");
+    expect(state.detailScrollOffset).toBeGreaterThan(0);
+    cleanup();
+  });
+
+  it("Escape closes detail overlay and resets scroll offset", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      detailItemId: "X-1",
+      detailScrollOffset: 10,
+      savedLogScrollOffset: 5,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b");
+    expect(state.detailItemId).toBeNull();
+    expect(state.detailScrollOffset).toBe(0);
+    expect(state.logScrollOffset).toBe(5); // restored
+    cleanup();
+  });
+
+  it("Enter opens detail and resets detailScrollOffset to 0", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      selectedIndex: 0,
+      detailItemId: null,
+      detailScrollOffset: 5, // stale from previous open
+      getSelectedItemId: () => "X-2",
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\r");
+    expect(state.detailItemId).toBe("X-2");
+    expect(state.detailScrollOffset).toBe(0);
+    cleanup();
+  });
+
+  it("closing overlay restores list navigation (arrows move selection, not detail scroll)", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      detailItemId: "X-1",
+      detailScrollOffset: 3,
+      selectedIndex: 1,
+      getItemCount: () => 5,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    // Close overlay
+    stdin.emit("data", "\x1b");
+    expect(state.detailItemId).toBeNull();
+
+    // Now arrows should move selection
+    stdin.emit("data", "\x1b[B"); // Down
+    expect(state.selectedIndex).toBe(2);
+    cleanup();
+  });
+
+  it("down arrow does not scroll if content fits in viewport (no overflow)", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      detailItemId: "X-1",
+      detailScrollOffset: 0,
+      detailContentLines: 5, // very short, fits in any terminal
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b[B");
+    expect(state.detailScrollOffset).toBe(0);
+    cleanup();
   });
 });

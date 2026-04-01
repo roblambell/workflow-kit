@@ -58,6 +58,8 @@ import {
   reviewModeLabel,
   formatModeIndicator,
   formatQueueSummary,
+  wrapDetailText,
+  detailOverlayMaxScroll,
   type CollaborationMode,
   type ReviewMode,
 } from "../core/status-render.ts";
@@ -3283,6 +3285,117 @@ describe("renderDetailOverlay", () => {
     const text = lines.map(stripAnsi).join("\n");
     expect(text).not.toContain("CI fails");
     expect(text).not.toContain("Retries");
+  });
+
+  it("renders descriptionBody as a wrapped scrollable region", () => {
+    const item = makeStatusItem({ id: "H-DB-1", state: "implementing" });
+    const body = "This is a detailed description of the work item that should be word-wrapped and rendered inside the overlay box.";
+    const lines = renderDetailOverlay(item, 80, 40, { descriptionBody: body });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Description");
+    expect(text).toContain("detailed description");
+  });
+
+  it("renders empty descriptionBody without crashing", () => {
+    const item = makeStatusItem({ id: "H-EB-1", state: "implementing" });
+    const lines = renderDetailOverlay(item, 80, 40, { descriptionBody: "" });
+    const text = lines.map(stripAnsi).join("\n");
+    // Should not show Description section for empty body
+    expect(text).not.toContain("Description");
+  });
+
+  it("scrolls long descriptionBody with scrollOffset", () => {
+    const item = makeStatusItem({ id: "H-SL-1", state: "implementing" });
+    // Build a long body that exceeds a small terminal
+    const body = Array.from({ length: 60 }, (_, i) => `Line number ${i + 1} of the description.`).join(" ");
+    const linesAtTop = renderDetailOverlay(item, 80, 20, { descriptionBody: body, scrollOffset: 0 });
+    const linesScrolled = renderDetailOverlay(item, 80, 20, { descriptionBody: body, scrollOffset: 5 });
+    const textTop = linesAtTop.map(stripAnsi).join("\n");
+    const textScrolled = linesScrolled.map(stripAnsi).join("\n");
+    // Scrolled view should differ from top view
+    expect(textTop).not.toEqual(textScrolled);
+  });
+
+  it("shows scroll-down indicator when content overflows", () => {
+    const item = makeStatusItem({ id: "H-SD-1", state: "implementing" });
+    const body = Array.from({ length: 60 }, (_, i) => `Line ${i + 1} with enough text to fill multiple wrapped lines.`).join(" ");
+    const lines = renderDetailOverlay(item, 80, 20, { descriptionBody: body, scrollOffset: 0 });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("▼ scroll down");
+  });
+
+  it("shows scroll-up indicator when scrolled past top", () => {
+    const item = makeStatusItem({ id: "H-SU-1", state: "implementing" });
+    const body = Array.from({ length: 60 }, (_, i) => `Line ${i + 1} with enough text to fill.`).join(" ");
+    const lines = renderDetailOverlay(item, 80, 20, { descriptionBody: body, scrollOffset: 3 });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("▲ scroll up");
+  });
+
+  it("shows scroll hint in footer when content needs scrolling", () => {
+    const item = makeStatusItem({ id: "H-SH-1", state: "implementing" });
+    const body = Array.from({ length: 60 }, (_, i) => `Line ${i + 1} enough to overflow.`).join(" ");
+    const lines = renderDetailOverlay(item, 80, 20, { descriptionBody: body, scrollOffset: 0 });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("scroll");
+    expect(text).toContain("Escape to close");
+  });
+
+  it("short content shows standard footer without scroll hint", () => {
+    const item = makeStatusItem({ id: "H-SF-1", state: "implementing" });
+    const lines = renderDetailOverlay(item, 80, 40);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Press Escape to close");
+    expect(text).not.toContain("▼ scroll down");
+    expect(text).not.toContain("▲ scroll up");
+  });
+});
+
+// ── wrapDetailText ──────────────────────────────────────────────────
+
+describe("wrapDetailText", () => {
+  it("wraps long text at maxWidth", () => {
+    const text = "This is a long description that should be wrapped at the specified maximum width boundary.";
+    const lines = wrapDetailText(text, 30);
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(30);
+    }
+    expect(lines.length).toBeGreaterThan(1);
+  });
+
+  it("returns empty array for empty text", () => {
+    expect(wrapDetailText("", 40)).toEqual([]);
+    expect(wrapDetailText("   ", 40)).toEqual([]);
+  });
+
+  it("preserves single-word longer than maxWidth", () => {
+    const lines = wrapDetailText("superlongwordthatexceedswidth", 10);
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toBe("superlongwordthatexceedswidth");
+  });
+
+  it("normalizes whitespace", () => {
+    const lines = wrapDetailText("hello   world\n\nnewline", 40);
+    expect(lines.length).toBe(1);
+    expect(lines[0]).toBe("hello world newline");
+  });
+});
+
+// ── detailOverlayMaxScroll ──────────────────────────────────────────
+
+describe("detailOverlayMaxScroll", () => {
+  it("returns 0 when content fits in viewport", () => {
+    expect(detailOverlayMaxScroll(5, 40)).toBe(0);
+  });
+
+  it("returns overflow count when content exceeds viewport", () => {
+    // termRows=20, chrome=6, margin=2 => viewport=12
+    const max = detailOverlayMaxScroll(20, 20);
+    expect(max).toBe(8); // 20 - 12
+  });
+
+  it("returns 0 for zero content lines", () => {
+    expect(detailOverlayMaxScroll(0, 40)).toBe(0);
   });
 });
 
