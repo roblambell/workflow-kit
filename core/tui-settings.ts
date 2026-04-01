@@ -8,10 +8,18 @@ export type ReviewMode = "off" | "ninthwave-prs" | "all-prs";
 export type StartupCollaborationMode = "local" | "share" | "join";
 export type CollaborationIntent = StartupCollaborationMode;
 export type CollaborationMode = "local" | "shared" | "joined";
+export type PersistedBackendMode = "auto" | "tmux" | "cmux" | "headless";
 
 export type PersistedMergeStrategy = Extract<MergeStrategy, "auto" | "manual">;
 export type PersistedReviewMode = StartupReviewMode;
 export type PersistedCollaborationMode = StartupCollaborationMode;
+
+const PERSISTED_BACKEND_MODES: readonly PersistedBackendMode[] = [
+  "auto",
+  "tmux",
+  "cmux",
+  "headless",
+] as const;
 
 export interface TuiSettingsDefaults {
   mergeStrategy: PersistedMergeStrategy;
@@ -203,6 +211,10 @@ function getByPersistedValue<PersistedValue extends string, RuntimeValue extends
 
 export function isPersistedMergeStrategy(value: unknown): value is PersistedMergeStrategy {
   return hasPersistedValue(MERGE_STRATEGY_OPTIONS, value);
+}
+
+export function isPersistedBackendMode(value: unknown): value is PersistedBackendMode {
+  return PERSISTED_BACKEND_MODES.includes(value as PersistedBackendMode);
 }
 
 export function isPersistedReviewMode(value: unknown): value is PersistedReviewMode {

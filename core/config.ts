@@ -4,9 +4,11 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { homedir } from "os";
 import {
+  isPersistedBackendMode,
   isPersistedCollaborationMode,
   isPersistedMergeStrategy,
   isPersistedReviewMode,
+  type PersistedBackendMode,
   type PersistedCollaborationMode,
   type PersistedMergeStrategy,
   type PersistedReviewMode,
@@ -89,6 +91,7 @@ export function saveConfig(
 export interface UserConfig {
   ai_tools?: string[];
   wip_limit?: number;
+  backend_mode?: PersistedBackendMode;
   merge_strategy?: PersistedMergeStrategy;
   review_mode?: PersistedReviewMode;
   collaboration_mode?: PersistedCollaborationMode;
@@ -119,6 +122,9 @@ export function loadUserConfig(homeOverride?: string): UserConfig {
     }
     if (typeof parsed.wip_limit === "number" && Number.isFinite(parsed.wip_limit) && parsed.wip_limit >= 1) {
       result.wip_limit = Math.floor(parsed.wip_limit);
+    }
+    if (isPersistedBackendMode(parsed.backend_mode)) {
+      result.backend_mode = parsed.backend_mode;
     }
     if (isPersistedMergeStrategy(parsed.merge_strategy)) {
       result.merge_strategy = parsed.merge_strategy;
@@ -190,6 +196,12 @@ export function saveUserConfig(
     if (key === "wip_limit") {
       if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
         merged[key] = Math.floor(value);
+      }
+      continue;
+    }
+    if (key === "backend_mode") {
+      if (isPersistedBackendMode(value)) {
+        merged[key] = value;
       }
       continue;
     }
