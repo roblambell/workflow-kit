@@ -2497,6 +2497,7 @@ export function renderControlsOverlay(
   opts: {
     collaborationMode: CollaborationMode;
     collaborationIntent?: CollaborationIntent;
+    sessionCode?: string;
     collaborationJoinInputActive?: boolean;
     collaborationJoinInputValue?: string;
     collaborationBusy?: boolean;
@@ -2511,6 +2512,7 @@ export function renderControlsOverlay(
   const {
     collaborationMode,
     collaborationIntent,
+    sessionCode,
     collaborationJoinInputActive: _collaborationJoinInputActive = false,
     collaborationJoinInputValue: _collaborationJoinInputValue = "",
     collaborationBusy: _collaborationBusy = false,
@@ -2534,10 +2536,51 @@ export function renderControlsOverlay(
       : `${DIM}${baseLabel}${RESET}`;
   };
 
-  const contentLines: string[] = [
+  const introLines: string[] = [
     `${DIM}↑/↓ choose row  ←/→ change value  Enter/Esc close${RESET}`,
     "",
   ];
+
+  const selectedCollaborationMode = collaborationIntent ? collaborationIntentToMode(collaborationIntent) : collaborationMode;
+  const joinInputActive = _collaborationJoinInputActive || collaborationIntent === "join";
+  const collaborationDetailLines: string[] = [];
+  const joinCommand = sessionCode ? `nw watch --crew ${sessionCode}` : undefined;
+
+  if (sessionCode) {
+    collaborationDetailLines.push(
+      `  ${DIM}Code:${RESET}    ${BRAND}${sessionCode}${RESET}`,
+      `  ${DIM}Command:${RESET}`,
+      `    ${joinCommand}`,
+    );
+  }
+
+  if (joinInputActive) {
+    const joinInputDisplay = _collaborationJoinInputValue.trim() || "enter code";
+    collaborationDetailLines.push(`  ${DIM}Join code:${RESET} ${BOLD}[${joinInputDisplay}]${RESET}`);
+  }
+
+  if (_collaborationBusy) {
+    const busyLabel = selectedCollaborationMode === "shared"
+      ? "Starting shared session..."
+      : selectedCollaborationMode === "joined"
+        ? "Joining session..."
+        : "Returning to local mode...";
+    collaborationDetailLines.push(`  ${DIM}Status:${RESET}  ${CYAN}${busyLabel}${RESET}`);
+  }
+
+  if (_collaborationError) {
+    collaborationDetailLines.push(`  ${DIM}Error:${RESET}   ${RED}${_collaborationError}${RESET}`);
+  }
+
+  if (collaborationDetailLines.length === 0) {
+    collaborationDetailLines.push(
+      `  ${DIM}Share creates a live session code and invite command.${RESET}`,
+      `  ${DIM}Join opens a session-code prompt in this overlay.${RESET}`,
+    );
+  }
+
+  const settingsLines: string[] = [];
+  let collaborationInsertIndex = 0;
 
   for (const [rowIndex, row] of TUI_SETTINGS_ROWS.entries()) {
     const active = rowIndex === clampedActiveRowIndex;
@@ -2549,24 +2592,50 @@ export function renderControlsOverlay(
 
     if (row.kind === "choice") {
       const selectedValue = row.id === "collaboration_mode"
-        ? (collaborationIntent ? collaborationIntentToMode(collaborationIntent) : collaborationMode)
+        ? selectedCollaborationMode
         : row.id === "review_mode"
           ? reviewMode
           : mergeStrategy;
       const choiceLine = runtimeOptionsForSettingsRow(row, bypassEnabled)
         .map((option) => renderChoiceValue(row.id, option, option.runtimeValue === selectedValue))
         .join("  ");
-      contentLines.push(`${rowPrefix} ${titleCell}  ${choiceLine}`);
+      settingsLines.push(`${rowPrefix} ${titleCell}  ${choiceLine}`);
+      if (row.id === "collaboration_mode") {
+        collaborationInsertIndex = settingsLines.length;
+      }
       continue;
     }
 
     const wipDisplay = wipLimit !== undefined ? `${wipLimit}` : "auto";
     const value = `${BOLD}[${wipDisplay}]${RESET}`;
-    contentLines.push(`${rowPrefix} ${titleCell}  ${value}`);
+    settingsLines.push(`${rowPrefix} ${titleCell}  ${value}`);
   }
+
+  const fixedBoxLines = 6;
+  const maxDetailLines = Math.max(0, termRows - fixedBoxLines - introLines.length - settingsLines.length);
+  const visibleCollaborationDetailLines = collaborationDetailLines.length <= maxDetailLines
+    ? collaborationDetailLines
+    : maxDetailLines <= 0
+      ? []
+      : [
+          ...collaborationDetailLines.slice(0, Math.max(0, maxDetailLines - 1)),
+          `  ${DIM}...${RESET}`,
+        ];
+
+  const contentLines: string[] = [
+    ...introLines,
+    ...settingsLines.slice(0, collaborationInsertIndex),
+    ...visibleCollaborationDetailLines,
+    ...settingsLines.slice(collaborationInsertIndex),
+  ];
+
+  const overlayTitle = "Controls";
+  const overlayHint = "Press Enter or Escape to close";
 
   // Compute box dimensions
   const maxContentWidth = Math.max(
+    overlayTitle.length,
+    overlayHint.length,
     ...contentLines.map((l) => stripAnsiForWidth(l).length),
   );
   const innerWidth = Math.min(maxContentWidth + 4, termWidth - 4);
@@ -2579,9 +2648,8 @@ export function renderControlsOverlay(
 
   boxLines.push(`${marginPad}┌${"─".repeat(innerWidth)}┐`);
 
-  const title = "Controls";
-  const titlePad = Math.max(0, Math.floor((innerWidth - title.length) / 2));
-  boxLines.push(`${marginPad}│${" ".repeat(titlePad)}${BOLD}${title}${RESET}${" ".repeat(Math.max(0, innerWidth - titlePad - title.length))}│`);
+  const titlePad = Math.max(0, Math.floor((innerWidth - overlayTitle.length) / 2));
+  boxLines.push(`${marginPad}│${" ".repeat(titlePad)}${BOLD}${overlayTitle}${RESET}${" ".repeat(Math.max(0, innerWidth - titlePad - overlayTitle.length))}│`);
   boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
 
   const maxContentDisplay = innerWidth - 2;
@@ -2604,9 +2672,8 @@ export function renderControlsOverlay(
   }
 
   boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
-  const hint = "Press Enter or Escape to close";
-  const hintPad = Math.max(0, Math.floor((innerWidth - hint.length) / 2));
-  boxLines.push(`${marginPad}│${" ".repeat(hintPad)}${DIM}${hint}${RESET}${" ".repeat(Math.max(0, innerWidth - hintPad - hint.length))}│`);
+  const hintPad = Math.max(0, Math.floor((innerWidth - overlayHint.length) / 2));
+  boxLines.push(`${marginPad}│${" ".repeat(hintPad)}${DIM}${overlayHint}${RESET}${" ".repeat(Math.max(0, innerWidth - hintPad - overlayHint.length))}│`);
   boxLines.push(`${marginPad}└${"─".repeat(innerWidth)}┘`);
 
   // Vertically center
@@ -2621,7 +2688,7 @@ export function renderControlsOverlay(
   while (output.length < termRows) {
     output.push("");
   }
-  return output;
+  return output.slice(0, termRows);
 }
 
 // ─── Detail overlay ─────────────────────────────────────────────────────────
