@@ -443,31 +443,96 @@ describe("setMergeStrategy", () => {
     expect(orch.config.mergeStrategy).toBe("bypass");
   });
 
-  it("is forward-only: existing items keep their state", () => {
+  it("re-evaluates review-pending items when switching from manual to auto", () => {
     const orch = new Orchestrator({ mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.addItem(makeWorkItem("H-1-2"));
-    orch.getItem("H-1-2")!.reviewCompleted = true;
-    orch.hydrateState("H-1-1", "ci-passed");
-    orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.getItem("H-1-1")!.prNumber = 10;
-    orch.hydrateState("H-1-2", "review-pending");
-    orch.getItem("H-1-2")!.prNumber = 20;
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
 
-    // Switch to auto -- H-1-1 (ci-passed) will be affected, H-1-2 (review-pending) stays
     orch.setMergeStrategy("auto");
     const actions = orch.processTransitions(
       snapshotWith([
-        { id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true },
-        { id: "H-1-2", ciStatus: "pass", prState: "open", isMergeable: true },
+        { id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true, reviewDecision: "APPROVED" },
       ]),
     );
 
-    // H-1-1 should merge (ci-passed + auto)
     expect(orch.getItem("H-1-1")!.state).toBe("merging");
-    // H-1-2 was already in review-pending -- stays there (not re-evaluated for merge in that state)
-    expect(orch.getItem("H-1-2")!.state).toBe("review-pending");
+    expect(actions.some((a) => a.type === "merge" && a.itemId === "H-1-1" && a.prNumber === 42)).toBe(true);
+  });
+
+  it("keeps review-pending items in place when switching from auto to manual", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    orch.setMergeStrategy("manual");
+    const actions = orch.processTransitions(
+      snapshotWith([
+        { id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true, reviewDecision: "APPROVED" },
+      ]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+    expect(actions.some((a) => a.type === "merge")).toBe(false);
+  });
+
+  it("re-evaluates review-pending items with admin merge when switching to bypass", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual", bypassEnabled: true });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    orch.setMergeStrategy("bypass");
+    const actions = orch.processTransitions(
+      snapshotWith([
+        { id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true, reviewDecision: "APPROVED" },
+      ]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("merging");
+    const mergeAction = actions.find((a) => a.type === "merge" && a.itemId === "H-1-1");
+    expect(mergeAction).toBeDefined();
+    expect(mergeAction!.admin).toBe(true);
+  });
+
+  it("keeps CHANGES_REQUESTED items in review-pending after switching to auto", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    orch.setMergeStrategy("auto");
+    const actions = orch.processTransitions(
+      snapshotWith([
+        { id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true, reviewDecision: "CHANGES_REQUESTED" },
+      ]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+    expect(actions.some((a) => a.type === "merge")).toBe(false);
+  });
+
+  it("does not re-queue items already in merging when strategy changes", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto", bypassEnabled: true });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "merging");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    orch.setMergeStrategy("bypass");
+    const actions = orch.processTransitions(
+      snapshotWith([
+        { id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true, reviewDecision: "APPROVED" },
+      ]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("merging");
+    expect(actions.some((a) => a.type === "merge")).toBe(false);
   });
 });
 
