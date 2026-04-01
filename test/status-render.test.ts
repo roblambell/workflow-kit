@@ -2294,6 +2294,7 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("› auto");
+    expect(footerText).toContain("(shift+tab to cycle)");
     expect(footerText).toContain("c controls");
     expect(footerText).toContain("? help");
     // Old shortcuts should NOT appear
@@ -2308,6 +2309,7 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("‖ manual");
+    expect(footerText).toContain("(shift+tab to cycle)");
     expect(footerText).toContain("c controls");
   });
 
@@ -2318,7 +2320,18 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("» bypass");
+    expect(footerText).toContain("(shift+tab to cycle)");
     expect(footerText).toContain("c controls");
+  });
+
+  it("keeps the strategy footer within 80 columns", () => {
+    const items = [makeStatusItem({ id: "A-1" })];
+    const layout = buildStatusLayout(items, 80, undefined, false, {
+      mergeStrategy: "bypass",
+    });
+    const footerLine = stripAnsi(layout.footerLines[2] ?? "");
+    expect(footerLine).toContain("» bypass (shift+tab to cycle)");
+    expect(footerLine.length).toBeLessThanOrEqual(80);
   });
 
   it("renders Ctrl+C confirmation footer when ctrlCPending is true", () => {
