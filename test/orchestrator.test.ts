@@ -559,6 +559,7 @@ describe("Orchestrator", () => {
   // ── 10. Merged → Done ─────────────────────────────────────────
 
   it("merged transitions to done without emitting mark-done action", () => {
+    orch = new Orchestrator({ fixForward: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "merged");
@@ -572,7 +573,7 @@ describe("Orchestrator", () => {
   // ── 11. Batch complete → launch next ───────────────────────────
 
   it("launches next batch when previous items complete", () => {
-    orch = new Orchestrator({ wipLimit: 1 });
+    orch = new Orchestrator({ fixForward: false, wipLimit: 1 });
 
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -809,7 +810,7 @@ describe("Orchestrator", () => {
   // ── 21. Multiple items complete end-to-end ─────────────────────
 
   it("handles full lifecycle across multiple items", () => {
-    orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
 
     orch.addItem(makeWorkItem("A-1-1"));
     orch.getItem("A-1-1")!.reviewCompleted = true;
@@ -2884,12 +2885,12 @@ describe("Orchestrator", () => {
     // ── merged ─────────────────────────────────────────────────────
 
     describe("merged →", () => {
-      it("→ done (always, unconditionally) without mark-done action", () => {
+      it("holds in merged while merge commit metadata is still pending", () => {
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
         orch.hydrateState("X-1-1", "merged");
         const actions = orch.processTransitions(emptySnapshot());
-        expect(orch.getItem("X-1-1")!.state).toBe("done");
+        expect(orch.getItem("X-1-1")!.state).toBe("merged");
         expect(actions.every((a) => a.type !== "mark-done")).toBe(true);
       });
     });
@@ -3221,6 +3222,7 @@ describe("Orchestrator", () => {
     });
 
     it("merged does not go back to ci-passed", () => {
+      orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("X-1-1"));
       orch.getItem("X-1-1")!.reviewCompleted = true;
       orch.hydrateState("X-1-1", "merged");
@@ -3366,7 +3368,7 @@ describe("Orchestrator", () => {
     });
 
     it("WIP slot freed by done transition allows new launch in same tick", () => {
-      orch = new Orchestrator({ wipLimit: 1 });
+      orch = new Orchestrator({ fixForward: false, wipLimit: 1 });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("A-1-2"));
@@ -3450,6 +3452,7 @@ describe("Orchestrator", () => {
 
   describe("State transition deduplication (M-EVT-1)", () => {
     it("same-state transition is a no-op -- timestamps unchanged", () => {
+      orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.hydrateState("H-1-1", "merged");
@@ -3469,6 +3472,7 @@ describe("Orchestrator", () => {
     });
 
     it("consecutive polls with merged snapshot emit exactly one merged transition", () => {
+      orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.hydrateState("H-1-1", "merging");
@@ -3514,6 +3518,7 @@ describe("Orchestrator", () => {
     it("item-merged event fires only for merged state, not done (daemon parity)", () => {
       // Simulates the daemon's event logic: only "merged" state
       // should trigger an "item-merged" event, not the subsequent "done" state.
+      orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.hydrateState("H-1-1", "merging");
@@ -3578,7 +3583,7 @@ describe("Orchestrator", () => {
     });
 
     it("merged items free WIP slots for ready items in the same tick", () => {
-      orch = new Orchestrator({ wipLimit: 1 });
+      orch = new Orchestrator({ fixForward: false, wipLimit: 1 });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("B-1-1"));

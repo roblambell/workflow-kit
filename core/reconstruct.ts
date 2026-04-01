@@ -30,7 +30,7 @@ export function reconstructState(
   daemonState?: DaemonState | null,
 ): void {
   // Build a lookup map from saved daemon state for restoring persisted counters and review fields
-  const savedItems = new Map<string, { state: string; ciFailCount: number; retryCount: number; prNumber: number | null; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; rebaserWorkspaceRef?: string; mergeCommitSha?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string; aiTool?: string }>();
+  const savedItems = new Map<string, { state: string; ciFailCount: number; retryCount: number; prNumber: number | null; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; rebaserWorkspaceRef?: string; mergeCommitSha?: string; defaultBranch?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string; aiTool?: string }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
       // Backward compat: map old field names to new names
@@ -52,6 +52,7 @@ export function reconstructState(
         ciFailureNotifiedAt: si.ciFailureNotifiedAt,
         rebaserWorkspaceRef: rebaserRef,
         mergeCommitSha: si.mergeCommitSha,
+        defaultBranch: si.defaultBranch,
         fixForwardFailCount,
         fixForwardWorkspaceRef,
         aiTool: si.aiTool,
@@ -81,6 +82,7 @@ export function reconstructState(
       if (saved.ciFailureNotifiedAt) item.ciFailureNotifiedAt = saved.ciFailureNotifiedAt;
       if (saved.rebaserWorkspaceRef) item.rebaserWorkspaceRef = saved.rebaserWorkspaceRef;
       if (saved.mergeCommitSha) item.mergeCommitSha = saved.mergeCommitSha;
+      if (saved.defaultBranch) item.defaultBranch = saved.defaultBranch;
       if (saved.fixForwardFailCount) item.fixForwardFailCount = saved.fixForwardFailCount;
       if (saved.fixForwardWorkspaceRef) item.fixForwardWorkspaceRef = saved.fixForwardWorkspaceRef;
       if (saved.aiTool) item.aiTool = saved.aiTool;

@@ -295,6 +295,13 @@ export class Orchestrator {
     snap: ItemSnapshot | undefined,
     now: Date,
   ): Action[] {
+    if (snap?.mergeCommitSha) {
+      item.mergeCommitSha = snap.mergeCommitSha;
+    }
+    if (snap?.defaultBranch) {
+      item.defaultBranch = snap.defaultBranch;
+    }
+
     const prevState = item.state;
     let actions: Action[];
 
@@ -366,10 +373,12 @@ export class Orchestrator {
         break;
 
       case "merged":
-        if (this.config.fixForward && item.mergeCommitSha) {
+        if (!this.config.fixForward) {
+          this.transition(item, "done");
+        } else if (item.mergeCommitSha) {
           this.transition(item, "forward-fix-pending");
         } else {
-          this.transition(item, "done");
+          // Hold in merged until later polls can discover the merge commit SHA.
         }
         actions = [];
         break;

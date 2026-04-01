@@ -115,7 +115,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
   // ── Test 1: Happy path -- PR auto-merges between polls ──────────
   describe("1. Happy path: PR auto-merges between polls", () => {
     it("worker creates PR → PR auto-merges → buildSnapshot returns merged → handleImplementing transitions to merged → clean action emitted", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("MRG-1", "Implement feature X"));
       orch.getItem("MRG-1")!.reviewCompleted = true;
       orch.hydrateState("MRG-1", "implementing");
@@ -163,7 +163,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
   // ── Test 2: PR merges while in ci-pending state ────────────────
   describe("2. PR merges while in ci-pending state", () => {
     it("item in ci-pending → PR merges externally → handlePrLifecycle detects merged → transitions correctly", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("MRG-2", "Fix parsing bug"));
       orch.getItem("MRG-2")!.reviewCompleted = true;
       orch.hydrateState("MRG-2", "ci-pending");
@@ -194,7 +194,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
   // ── Test 3: PR merges while in ci-passed state ─────────────────
   describe("3. PR merges while in ci-passed state", () => {
     it("item in ci-passed → PR merges → handlePrLifecycle detects → transitions to done", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("MRG-3", "Add new endpoint"));
       orch.getItem("MRG-3")!.reviewCompleted = true;
       orch.hydrateState("MRG-3", "ci-passed");
@@ -223,7 +223,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
   });
 
   describe("3b. Externally merged PR metadata recovery", () => {
-    it("backfills merge metadata on later polls without losing merged recovery state", () => {
+    it("backfills delayed squash-merge metadata and verifies against the default branch", () => {
       const orch = new Orchestrator({ fixForward: true });
       orch.addItem(makeWorkItem("MRG-3B", "External merge recovery"));
       orch.getItem("MRG-3B")!.reviewCompleted = true;
@@ -247,14 +247,14 @@ describe("Merge detection pipeline (end-to-end)", () => {
         undefined,
         undefined,
         getMergeCommitSha,
-        () => "main",
+        () => "develop",
       );
 
       const firstSnap = firstSnapshot.items.find((s) => s.id === "MRG-3B");
       expect(firstSnap).toBeDefined();
       expect(firstSnap!.prState).toBe("merged");
       expect(firstSnap!.mergeCommitSha).toBeUndefined();
-      expect(firstSnap!.defaultBranch).toBe("main");
+      expect(firstSnap!.defaultBranch).toBe("develop");
 
       orch.processTransitions(firstSnapshot, NOW);
       expect(orch.getItem("MRG-3B")!.state).toBe("merged");
@@ -270,25 +270,31 @@ describe("Merge detection pipeline (end-to-end)", () => {
         undefined,
         undefined,
         getMergeCommitSha,
-        () => "main",
+        () => "develop",
       );
 
       const secondSnap = secondSnapshot.items.find((s) => s.id === "MRG-3B");
       expect(secondSnap).toBeDefined();
       expect(secondSnap!.mergeCommitSha).toBe("merge-sha-61");
-      expect(secondSnap!.defaultBranch).toBe("main");
+      expect(secondSnap!.defaultBranch).toBe("develop");
 
       orch.processTransitions(secondSnapshot, NOW);
       expect(orch.getItem("MRG-3B")!.mergeCommitSha).toBe("merge-sha-61");
-      expect(orch.getItem("MRG-3B")!.defaultBranch).toBe("main");
+      expect(orch.getItem("MRG-3B")!.defaultBranch).toBe("develop");
       expect(orch.getItem("MRG-3B")!.state).toBe("forward-fix-pending");
+
+      orch.processTransitions(
+        snapshotWith([{ id: "MRG-3B", mergeCommitCIStatus: "pass" }]),
+        NOW,
+      );
+      expect(orch.getItem("MRG-3B")!.state).toBe("done");
     });
   });
 
   // ── Test 4: Title collision -- reused item ID with stale merged PR ──
   describe("4. Title collision: reused item ID with stale merged PR", () => {
     it("old PR merged → new item with same ID → buildSnapshot ignores stale merged PR (title mismatch) → returns no prState", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       // New item with same ID but different title
       orch.addItem(makeWorkItem("H-FOO-1", "Brand new feature for v2"));
       orch.getItem("H-FOO-1")!.reviewCompleted = true;
@@ -324,7 +330,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
   // ── Test 5: Title collision -- tracked PR number matches ────────
   describe("5. Title collision: tracked PR number matches", () => {
     it("orchestrator tracks PR #42 → buildSnapshot sees merged PR #42 → trusts it regardless of title → returns merged", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("H-FOO-2", "Original item title"));
       orch.getItem("H-FOO-2")!.reviewCompleted = true;
       orch.hydrateState("H-FOO-2", "ci-passed");
@@ -363,7 +369,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
   // ── Test 6: Merge conflict detection in ci-pending ─────────────
   describe("6. Merge conflict detection: CONFLICTING in ci-pending", () => {
     it("item in ci-pending → snapshot shows isMergeable: false → daemon-rebase action emitted", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("MRG-6", "Update config"));
       orch.getItem("MRG-6")!.reviewCompleted = true;
       orch.hydrateState("MRG-6", "ci-pending");
@@ -394,7 +400,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
     });
 
     it("does not send duplicate rebase requests when rebaseRequested is already true", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("MRG-6B", "Update config v2"));
       orch.getItem("MRG-6B")!.reviewCompleted = true;
       orch.hydrateState("MRG-6B", "ci-pending");
@@ -492,7 +498,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
   // ── Test 8: Branch deleted after squash merge ──────────────────
   describe("8. Branch deleted after squash merge", () => {
     it("PR squash-merged → branch auto-deleted → prList(open) empty → prList(merged) returns PR → snapshot has prState: merged", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("MRG-8", "Cleanup dead code"));
       orch.getItem("MRG-8")!.reviewCompleted = true;
       orch.hydrateState("MRG-8", "ci-passed");
@@ -533,7 +539,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
   // ── Additional edge cases ──────────────────────────────────────
   describe("Edge cases", () => {
     it("PR merges while in ci-failed state → handlePrLifecycle detects merged → clean action", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("MRG-E1", "Fix flaky test"));
       orch.getItem("MRG-E1")!.reviewCompleted = true;
       orch.hydrateState("MRG-E1", "ci-failed");
@@ -590,7 +596,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
     });
 
     it("CI fails due to merge conflicts → daemon-rebase emitted instead of generic CI failure", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("MRG-E3", "Conflict CI scenario"));
       orch.getItem("MRG-E3")!.reviewCompleted = true;
       orch.hydrateState("MRG-E3", "ci-pending");
@@ -622,7 +628,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
 
     it("buildSnapshot integration: checkPr returns open PR with various CI states", () => {
       // Verify buildSnapshot correctly translates checkPr status strings
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       orch.addItem(makeWorkItem("MRG-E4-P", "Pending PR"));
       orch.getItem("MRG-E4-P")!.reviewCompleted = true;
       orch.hydrateState("MRG-E4-P", "implementing");
@@ -690,7 +696,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
     });
 
     it("rejects merged PR with mismatched title from a previous cycle (prNumber never tracked)", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       const item = makeWorkItem("MRG-RR-1", "New implementation of feature Y");
       orch.addItem(item);
 
@@ -708,7 +714,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
     });
 
     it("accepts merged PR with matching title when prNumber was never tracked", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       const item = makeWorkItem("MRG-RR-2", "New implementation of feature Y");
       orch.addItem(item);
 
@@ -724,7 +730,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
     });
 
     it("accepts merged PR with mismatched title when prNumber WAS already tracked", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       const item = makeWorkItem("MRG-RR-3", "Improve error handling");
       orch.addItem(item);
       orch.getItem("MRG-RR-3")!.prNumber = 77;
@@ -740,7 +746,7 @@ describe("Merge detection pipeline (end-to-end)", () => {
     });
 
     it("accepts merged PR with mismatched title when daemon state already tracked the PR number", () => {
-      const orch = new Orchestrator();
+      const orch = new Orchestrator({ fixForward: false });
       const item = makeWorkItem("MRG-RR-4", "Improve error handling");
       orch.addItem(item);
 

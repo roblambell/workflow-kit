@@ -7,7 +7,7 @@ import { spawnSync } from "child_process";
 import { setupTempRepo, cleanupTempRepos, captureOutputAsync } from "./helpers.ts";
 import type { Multiplexer } from "../core/mux.ts";
 import { runtimeAgentNameForTool } from "../core/ai-tools.ts";
-import { type LaunchGitDeps, launchSingleItem, launchAiSession, launchReviewWorker, launchRebaserWorker, sanitizeTitle, extractItemText } from "../core/commands/launch.ts";
+import { type LaunchGitDeps, launchSingleItem, launchAiSession, launchReviewWorker, launchRebaserWorker, launchForwardFixerWorker, sanitizeTitle, extractItemText } from "../core/commands/launch.ts";
 import { cmdStart, cmdRunItems, WORK_ITEM_ID_CLI_PATTERN } from "../core/commands/run-items.ts";
 import { cleanStaleBranchForReuse } from "../core/branch-cleanup.ts";
 import { parseWorkItems } from "../core/parser.ts";
@@ -659,6 +659,68 @@ describe("launchSingleItem stacked fallback on fetch failure", () => {
       "ninthwave/M-CI-1",
       "origin/ninthwave/A-1",
     );
+  });
+});
+
+describe("launchForwardFixerWorker", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanupTempRepos();
+  });
+
+  it("creates the forward-fixer worktree from the repo default branch", async () => {
+    const mockMux = createMockMux();
+    const deps = createMockLaunchDeps();
+    const repo = setupTempRepo();
+
+    await captureOutput(() => {
+      const result = launchForwardFixerWorker(
+        "H-PMV-2",
+        "merge-sha-123",
+        repo,
+        "claude",
+        mockMux,
+        { defaultBranch: "develop" },
+        deps,
+      );
+      expect(result).not.toBeNull();
+    });
+
+    expect(deps.fetchOrigin).toHaveBeenCalledWith(repo, "develop");
+    expect(deps.createWorktree).toHaveBeenCalledWith(
+      repo,
+      join(repo, ".ninthwave", ".worktrees", "ninthwave-fix-forward-H-PMV-2"),
+      "ninthwave/fix-forward-H-PMV-2",
+      "origin/develop",
+    );
+  });
+
+  it("writes the resolved default branch into the forward-fixer prompt", async () => {
+    const mockMux = createMockMux();
+    const deps = createMockLaunchDeps();
+    const repo = setupTempRepo();
+
+    await captureOutput(() => {
+      const result = launchForwardFixerWorker(
+        "H-PMV-2",
+        "merge-sha-123",
+        repo,
+        "claude",
+        mockMux,
+        { defaultBranch: "develop" },
+        deps,
+      );
+      expect(result).not.toBeNull();
+    });
+
+    const prompt = readFileSync(
+      join(repo, ".ninthwave", ".worktrees", "ninthwave-fix-forward-H-PMV-2", ".ninthwave", ".prompt"),
+      "utf-8",
+    );
+    expect(prompt).toContain("REPO_DEFAULT_BRANCH: develop");
   });
 });
 

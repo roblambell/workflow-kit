@@ -97,7 +97,7 @@ export interface OrchestratorItem {
   needsCiFix?: boolean;
   /** Absolute path to the worktree directory. Preserved for stuck items so users can inspect partial work. */
   worktreePath?: string;
-  /** SHA of the merge commit on main after PR is merged. Used to poll CI on main. */
+  /** SHA of the merge commit on the repo default branch after PR is merged. */
   mergeCommitSha?: string;
   /** Repository default branch where the PR merged (usually "main"). */
   defaultBranch?: string;
@@ -394,16 +394,18 @@ export interface OrchestratorDeps {
    */
   getMergeCommitSha?: (repoRoot: string, prNumber: number) => string | null;
   /**
-   * Check CI status on a specific commit (e.g., merge commit on main).
+   * Check CI status on a specific commit (e.g., merge commit on the default branch).
    * Returns "pass", "fail", or "pending".
    */
   checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending";
+  /** Get the repository default branch name (e.g. "main" or "develop"). */
+  getDefaultBranch?: (repoRoot: string) => string | null;
   /**
    * Launch a forward-fixer worker for post-merge CI failure diagnosis and fix-forward.
-   * Creates a worktree from main and launches the forward-fixer agent.
+   * Creates a worktree from the repo default branch and launches the forward-fixer agent.
    * Returns a workspace reference and worktree path on success.
    */
-  launchForwardFixer?: (itemId: string, mergeCommitSha: string, repoRoot: string, aiTool?: string) => { worktreePath: string; workspaceRef: string } | null;
+  launchForwardFixer?: (itemId: string, mergeCommitSha: string, repoRoot: string, aiTool?: string, defaultBranch?: string) => { worktreePath: string; workspaceRef: string } | null;
   /**
    * Clean up a forward-fixer worker session and worktree.
    */

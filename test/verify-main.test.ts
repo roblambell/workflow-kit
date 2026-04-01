@@ -1,7 +1,7 @@
 // Tests for post-merge CI fix-forward state machine (H-VF-1).
 // No vi.mock -- all isolation via dependency injection.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   Orchestrator,
   statusDisplayForState,
@@ -64,16 +64,16 @@ describe("merged → forward-fix-pending transition (fixForward=true)", () => {
     expect(orch.getItem("H-1-1")!.state).toBe("forward-fix-pending");
   });
 
-  it("transitions merged → done when fixForward=true but no mergeCommitSha", () => {
+  it("stays in merged when fixForward=true but mergeCommitSha is still unknown", () => {
     const orch = new Orchestrator({ fixForward: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "merged");
-    // No mergeCommitSha set -- graceful fallback to done
+    // No mergeCommitSha set yet -- later polls should retry metadata discovery
 
     orch.processTransitions(emptySnapshot(), NOW);
 
-    expect(orch.getItem("H-1-1")!.state).toBe("done");
+    expect(orch.getItem("H-1-1")!.state).toBe("merged");
   });
 });
 
@@ -345,7 +345,7 @@ describe("merge commit SHA retrieval in executeMerge", () => {
     expect(orch.getItem("H-1-1")!.state).toBe("merged");
   });
 
-  it("falls back to done when getMergeCommitSha returns null", () => {
+  it("holds in merged when getMergeCommitSha returns null", () => {
     const orch = new Orchestrator({ fixForward: true, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -379,15 +379,15 @@ describe("merge commit SHA retrieval in executeMerge", () => {
       deps,
     );
 
-    // mergeCommitSha not set -- when processTransitions runs, it goes merged → done
+    // mergeCommitSha not set yet -- later polls should retry discovery
     expect(orch.getItem("H-1-1")!.mergeCommitSha).toBeUndefined();
 
-    // Now run processTransitions to trigger merged → done
+    // Stay in merged until a later poll discovers the merge commit SHA
     orch.processTransitions(emptySnapshot(), NOW);
-    expect(orch.getItem("H-1-1")!.state).toBe("done");
+    expect(orch.getItem("H-1-1")!.state).toBe("merged");
   });
 
-  it("falls back to done when getMergeCommitSha throws", () => {
+  it("holds in merged when getMergeCommitSha throws", () => {
     const orch = new Orchestrator({ fixForward: true, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -421,11 +421,54 @@ describe("merge commit SHA retrieval in executeMerge", () => {
       deps,
     );
 
-    // mergeCommitSha not set due to error -- falls back to done
+    // mergeCommitSha not set due to error -- later polls should retry discovery
     expect(orch.getItem("H-1-1")!.mergeCommitSha).toBeUndefined();
 
     orch.processTransitions(emptySnapshot(), NOW);
-    expect(orch.getItem("H-1-1")!.state).toBe("done");
+    expect(orch.getItem("H-1-1")!.state).toBe("merged");
+  });
+
+  it("refreshes the merged repo on the real default branch", () => {
+    const orch = new Orchestrator({ fixForward: true, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "merging");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    const ctx: ExecutionContext = {
+      projectRoot: "/tmp/proj",
+      worktreeDir: "/tmp/proj/.ninthwave/.worktrees",
+      workDir: "/tmp/proj/.ninthwave/work",
+      aiTool: "test",
+    };
+
+    const fetchOrigin = vi.fn();
+    const ffMerge = vi.fn();
+    const deps: OrchestratorDeps = {
+      launchSingleItem: () => null,
+      cleanSingleWorktree: () => true,
+      prMerge: () => true,
+      prComment: () => true,
+      sendMessage: () => true,
+      writeInbox: () => {},
+      closeWorkspace: () => true,
+      fetchOrigin,
+      ffMerge,
+      getDefaultBranch: () => "develop",
+      getMergeCommitSha: () => "sha-merge-abc",
+      checkCommitCI: () => "pending",
+    };
+
+    const result = orch.executeAction(
+      { type: "merge", itemId: "H-1-1", prNumber: 42 },
+      ctx,
+      deps,
+    );
+
+    expect(result.success).toBe(true);
+    expect(orch.getItem("H-1-1")!.defaultBranch).toBe("develop");
+    expect(fetchOrigin).toHaveBeenCalledWith("/tmp/proj", "develop");
+    expect(ffMerge).toHaveBeenCalledWith("/tmp/proj", "develop");
   });
 });
 
@@ -547,22 +590,32 @@ describe("dependency resolution with fix-forward", () => {
 // ── End-to-end: merge → fix-forward → done flow ──────────────────────────
 
 describe("end-to-end: merge → fix-forward → done flow", () => {
-  it("complete flow: merging → merged (first cycle) → done (second cycle, no SHA)", () => {
+  it("complete flow with delayed SHA discovery: merged holds, then verifies, then completes", () => {
     const orch = new Orchestrator({ fixForward: true, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
-    orch.hydrateState("H-1-1", "merging");
-    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.hydrateState("H-1-1", "merged");
 
-    // Cycle 1: PR gets merged externally -- merging → merged
+    // Cycle 1: merge commit SHA is still unavailable, so the item must hold in merged.
     orch.processTransitions(
-      snapshotWith([{ id: "H-1-1", prState: "merged" }]),
+      snapshotWith([{ id: "H-1-1", prState: "merged", defaultBranch: "develop" }]),
       NOW,
     );
     expect(orch.getItem("H-1-1")!.state).toBe("merged");
+    expect(orch.getItem("H-1-1")!.defaultBranch).toBe("develop");
 
-    // Cycle 2: merged → done (no mergeCommitSha, falls back to done)
-    orch.processTransitions(emptySnapshot(), NOW);
+    // Cycle 2: later polling discovers the merge commit SHA.
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "merged", mergeCommitSha: "sha-later", defaultBranch: "develop" }]),
+      NOW,
+    );
+    expect(orch.getItem("H-1-1")!.state).toBe("forward-fix-pending");
+
+    // Cycle 3: merge-commit CI passes, so the item can finally complete.
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", mergeCommitCIStatus: "pass" }]),
+      NOW,
+    );
     expect(orch.getItem("H-1-1")!.state).toBe("done");
   });
 
@@ -814,13 +867,17 @@ describe("executeLaunchForwardFixer action", () => {
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "fixing-forward");
     orch.getItem("H-1-1")!.mergeCommitSha = "sha-merge";
+    orch.getItem("H-1-1")!.defaultBranch = "develop";
 
     const deps: OrchestratorDeps = {
       ...baseDeps,
-      launchForwardFixer: (_itemId, _sha, _repoRoot) => ({
+      launchForwardFixer: (_itemId, _sha, _repoRoot, _aiTool, defaultBranch) => {
+        expect(defaultBranch).toBe("develop");
+        return ({
         worktreePath: "/tmp/proj/.ninthwave/.worktrees/ninthwave-fix-forward-H-1-1",
         workspaceRef: "workspace:7",
-      }),
+        });
+      },
     };
 
     const result = orch.executeAction(

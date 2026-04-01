@@ -25,6 +25,25 @@ function inboxProjectRoot(item: OrchestratorItem, ctx: ExecutionContext): string
   return item.worktreePath ?? item.resolvedRepoRoot ?? ctx.projectRoot;
 }
 
+function resolveDefaultBranch(
+  item: OrchestratorItem,
+  repoRoot: string,
+  deps: OrchestratorDeps,
+  fallback: string = "main",
+): string {
+  if (item.defaultBranch) return item.defaultBranch;
+  try {
+    const branch = deps.getDefaultBranch?.(repoRoot) ?? fallback;
+    if (branch) {
+      item.defaultBranch = branch;
+      return branch;
+    }
+  } catch {
+    // Non-fatal -- fall back to the historical default.
+  }
+  return fallback;
+}
+
 /**
  * Bootstrap a target repo for a cross-repo item.
  * On success, sets resolvedRepoRoot and transitions to launching.
@@ -173,6 +192,7 @@ export function executeMerge(
   }
 
   const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
+  const defaultBranch = resolveDefaultBranch(item, repoRoot, deps);
 
   // Resolve the dependency branch SHA before merge. After merge, GitHub may
   // auto-delete the branch, making the ref unresolvable. The SHA is used as
@@ -190,7 +210,7 @@ export function executeMerge(
 
   const merged = deps.prMerge(repoRoot, prNum, { admin: action.admin });
   if (!merged) {
-    // Check if the failure is due to merge conflicts (another PR merged to main while CI ran).
+    // Check if the failure is due to merge conflicts (another PR merged to the default branch while CI ran).
     // If conflicting, rebase and re-enter CI instead of blindly retrying the same failing merge.
     const isMergeable = deps.checkPrMergeable?.(repoRoot, prNum) ?? true;
     if (!isMergeable) {
@@ -215,7 +235,7 @@ export function executeMerge(
       }
       // Daemon rebase unavailable or failed -- send worker a rebase message
       if (item.workspaceRef) {
-        const rebaseMsg = `[ORCHESTRATOR] Rebase Required: merge failed due to conflicts with main. Please rebase onto latest main and push.`;
+        const rebaseMsg = `[ORCHESTRATOR] Rebase Required: merge failed due to conflicts with ${defaultBranch}. Please rebase onto latest ${defaultBranch} and push.`;
         deps.writeInbox(inboxProjectRoot(item, ctx), item.id, rebaseMsg);
       }
       orch.transition(item, "ci-pending");
@@ -249,7 +269,7 @@ export function executeMerge(
         item.mergeCommitSha = sha;
       }
     } catch {
-      // Non-fatal -- fall back to done (skip verification)
+      // Non-fatal -- metadata recovery is retried on later polls.
     }
   }
 
@@ -260,19 +280,20 @@ export function executeMerge(
     deps.prComment(repoRoot, prNum, `**[Orchestrator](${ORCHESTRATOR_LINK})** Auto-merged PR #${prNum} for ${item.id}.`);
   }
 
-  // Pull latest main in the target repo (where the PR was merged)
+  // Pull latest default branch in the target repo (where the PR was merged)
   try {
-    deps.fetchOrigin(repoRoot, "main");
-    deps.ffMerge(repoRoot, "main");
+    deps.fetchOrigin(repoRoot, defaultBranch);
+    deps.ffMerge(repoRoot, defaultBranch);
   } catch {
-    // Non-fatal -- main will be pulled on next cycle
+    // Non-fatal -- default branch will be pulled on next cycle
   }
 
-  // Also pull latest main in the hub repo if this was cross-repo
+  // Also pull the latest hub default branch if this was cross-repo
   if (repoRoot !== ctx.projectRoot) {
+    const hubDefaultBranch = deps.getDefaultBranch?.(ctx.projectRoot) ?? "main";
     try {
-      deps.fetchOrigin(ctx.projectRoot, "main");
-      deps.ffMerge(ctx.projectRoot, "main");
+      deps.fetchOrigin(ctx.projectRoot, hubDefaultBranch);
+      deps.ffMerge(ctx.projectRoot, hubDefaultBranch);
     } catch {
       // Non-fatal
     }
@@ -280,7 +301,7 @@ export function executeMerge(
 
   // Restack stacked dependents using rebaseOnto (squash-merge safe).
   // These items had baseBranch set to the merged dep's branch -- replay only
-  // their unique commits onto main, avoiding duplicate commits from squash merge.
+  // their unique commits onto the default branch, avoiding duplicate commits from squash merge.
   // Use depBranchRef (SHA resolved before merge) as oldBase so restacking
   // survives GitHub auto-deleting the merged branch.
   const restackedIds = new Set<string>();
@@ -308,14 +329,14 @@ export function executeMerge(
     if (!deps.rebaseOnto || !deps.forcePush) {
       // rebaseOnto or forcePush not available -- send worker manual rebase instructions
       if (other.workspaceRef) {
-        const restackMsg = `[ORCHESTRATOR] Restack Required: dependency ${item.id} was squash-merged. Run: git rebase --onto main ${depBranch} ${otherBranch} && git push --force-with-lease`;
+        const restackMsg = `[ORCHESTRATOR] Restack Required: dependency ${item.id} was squash-merged. Run: git rebase --onto ${defaultBranch} ${depBranch} ${otherBranch} && git push --force-with-lease`;
         deps.writeInbox(otherWorktreePath, other.id, restackMsg);
       }
       continue;
     }
 
     try {
-      const success = deps.rebaseOnto(otherWorktreePath, "main", depBranchRef, otherBranch);
+      const success = deps.rebaseOnto(otherWorktreePath, defaultBranch, depBranchRef, otherBranch);
       if (success) {
         deps.forcePush(otherWorktreePath);
         other.baseBranch = undefined; // no longer stacked
@@ -323,14 +344,14 @@ export function executeMerge(
       } else {
         // Conflict -- send worker manual rebase instructions
         if (other.workspaceRef) {
-          const conflictMsg = `[ORCHESTRATOR] Restack Conflict: dependency ${item.id} was squash-merged but rebase --onto had conflicts. Run manually: git rebase --onto main ${depBranch} ${otherBranch}`;
+          const conflictMsg = `[ORCHESTRATOR] Restack Conflict: dependency ${item.id} was squash-merged but rebase --onto had conflicts. Run manually: git rebase --onto ${defaultBranch} ${depBranch} ${otherBranch}`;
           deps.writeInbox(otherWorktreePath, other.id, conflictMsg);
         }
       }
     } catch {
       // Unexpected error -- fall back to worker message
       if (other.workspaceRef) {
-        const restackMsg2 = `[ORCHESTRATOR] Restack Required: dependency ${item.id} was squash-merged. Run: git rebase --onto main ${depBranch} ${otherBranch} && git push --force-with-lease`;
+        const restackMsg2 = `[ORCHESTRATOR] Restack Required: dependency ${item.id} was squash-merged. Run: git rebase --onto ${defaultBranch} ${depBranch} ${otherBranch} && git push --force-with-lease`;
         deps.writeInbox(otherWorktreePath, other.id, restackMsg2);
       }
     }
@@ -346,7 +367,7 @@ export function executeMerge(
     if (other.workspaceRef) {
       const otherWorktreePath = other.worktreePath
         ?? join(other.resolvedRepoRoot ?? ctx.projectRoot, ".ninthwave", ".worktrees", `ninthwave-${other.id}`);
-      const rebaseMsg2 = `Dependency ${item.id} merged. Please rebase onto latest main.`;
+      const rebaseMsg2 = `Dependency ${item.id} merged. Please rebase onto latest ${defaultBranch}.`;
       deps.writeInbox(otherWorktreePath, other.id, rebaseMsg2);
     }
   }
@@ -354,7 +375,7 @@ export function executeMerge(
   // Post-merge daemon-rebase: proactively rebase in-flight sibling PRs in the same repo.
   // This eliminates most conflicts before workers notice, reducing CI churn.
   // Skip restacked items -- they were already rebased with --onto above.
-  // Skip items in different repos -- their main didn't change from this merge.
+  // Skip items in different repos -- their default branch didn't change from this merge.
   for (const other of orch.getAllItems()) {
     if (other.id === item.id) continue;
     if (!WIP_STATES.has(other.state)) continue;
@@ -362,7 +383,7 @@ export function executeMerge(
     if (restackedIds.has(other.id)) continue;
 
     // Only rebase siblings in the same target repo -- a merge in repo-B
-    // doesn't affect main in repo-A
+    // doesn't affect the default branch in repo-A
     const otherRepoRoot2 = other.resolvedRepoRoot ?? ctx.projectRoot;
     if (otherRepoRoot2 !== repoRoot) continue;
 
@@ -390,7 +411,7 @@ export function executeMerge(
       if (!mergeable) {
         // Actually conflicting -- send worker rebase message as fallback
         if (other.workspaceRef) {
-          const siblingMsg = `Sibling PR #${other.prNumber} has merge conflicts after ${item.id} was merged. Please rebase onto latest main.`;
+          const siblingMsg = `Sibling PR #${other.prNumber} has merge conflicts after ${item.id} was merged. Please rebase onto latest ${defaultBranch}.`;
           deps.writeInbox(otherWorktreePath, other.id, siblingMsg);
         } else {
           deps.warn?.(
@@ -412,7 +433,7 @@ export function executeMerge(
       const rootKey = chain[0]!.id;
       if (synced.has(rootKey)) continue; // already synced this chain
       synced.add(rootKey);
-      deps.syncStackComments("main", chain);
+      deps.syncStackComments(defaultBranch, chain);
     }
   }
 
@@ -917,8 +938,15 @@ export function executeLaunchForwardFixer(
   }
 
   const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
+  const defaultBranch = resolveDefaultBranch(item, repoRoot, deps);
   try {
-    const result = deps.launchForwardFixer(item.id, item.mergeCommitSha, repoRoot, item.aiTool ?? ctx.aiTool);
+    const result = deps.launchForwardFixer(
+      item.id,
+      item.mergeCommitSha,
+      repoRoot,
+      item.aiTool ?? ctx.aiTool,
+      defaultBranch,
+    );
     if (result) {
       item.fixForwardWorkspaceRef = result.workspaceRef;
     }
