@@ -435,7 +435,7 @@ describe("formatTelemetrySuffix", () => {
 
   it("shows worktree path for stuck items", () => {
     const item = makeStatusItem({
-      state: "stuck",
+      state: "stuck" as any,
       worktreePath: "/tmp/project/.ninthwave/.worktrees/ninthwave-H-FOO-1",
     });
     const result = stripAnsi(formatTelemetrySuffix(item));
@@ -443,7 +443,7 @@ describe("formatTelemetrySuffix", () => {
   });
 
   it("does not show worktree path for stuck items without worktreePath", () => {
-    const item = makeStatusItem({ state: "stuck" });
+    const item = makeStatusItem({ state: "stuck" as any });
     expect(formatTelemetrySuffix(item)).toBe("");
   });
 
@@ -1294,6 +1294,40 @@ describe("daemonStateToStatusItems", () => {
     expect(items[0]!.stderrTail).toBe("Error: test failed");
   });
 
+  it("maps descriptionSnippet when present and tolerates older state when absent", () => {
+    const now = new Date().toISOString();
+    const state: DaemonState = {
+      pid: 1,
+      startedAt: now,
+      updatedAt: now,
+      items: [
+        {
+          id: "C-1-5",
+          state: "implementing",
+          prNumber: null,
+          title: "Snippet item",
+          descriptionSnippet: "Compact status detail summary.",
+          lastTransition: now,
+          ciFailCount: 0,
+          retryCount: 0,
+        },
+        {
+          id: "C-1-6",
+          state: "implementing",
+          prNumber: null,
+          title: "Legacy item",
+          lastTransition: now,
+          ciFailCount: 0,
+          retryCount: 0,
+        },
+      ],
+    };
+
+    const items = daemonStateToStatusItems(state);
+    expect(items[0]!.descriptionSnippet).toBe("Compact status detail summary.");
+    expect(items[1]!.descriptionSnippet).toBeUndefined();
+  });
+
   it("maps rebaseRequested flag to rebasing display state", () => {
     const now = new Date().toISOString();
     const state: DaemonState = {
@@ -1386,7 +1420,7 @@ describe("orchestratorItemsToStatusItems", () => {
       ["merging", "ci-pending"],
       ["review-pending", "review"],
       ["ci-passed", "review"],
-      ["pr-open", "in-progress"],
+      ["pr-open" as any, "in-progress"],
       ["queued", "queued"],
       ["ready", "queued"],
     ];
@@ -1429,6 +1463,16 @@ describe("orchestratorItemsToStatusItems", () => {
     expect(result!.endedAt).toBe("2024-01-01T01:00:00Z");
     expect(result!.exitCode).toBe(2);
     expect(result!.stderrTail).toBe("npm ERR!");
+  });
+
+  it("passes through descriptionSnippet from live orchestrator items", () => {
+    const item = makeOrchestratorItem("C-1-2", "implementing");
+    item.workItem.descriptionSnippet = "Surface markdown body text in the detail overlay.";
+
+    const [result] = orchestratorItemsToStatusItems([item]);
+    expect(result!.descriptionSnippet).toBe(
+      "Surface markdown body text in the detail overlay.",
+    );
   });
 
   it("passes through timeout grace fields", () => {
@@ -1571,7 +1615,7 @@ describe("getTerminalWidth", () => {
       if (original) {
         Object.defineProperty(process.stdout, "columns", original);
       } else {
-        delete (process.stdout as Record<string, unknown>)["columns"];
+        delete (process.stdout as unknown as Record<string, unknown>)["columns"];
       }
     }
   });
@@ -2684,7 +2728,7 @@ describe("renderTuiFrame with showHelp", () => {
   function makeOrchestratorItem(overrides: Partial<OrchestratorItem> = {}): OrchestratorItem {
     return {
       id: "T-1",
-      workItem: { id: "T-1", title: "Test item", priority: "medium", source: "test", domain: "test", affectedFiles: [] } as WorkItem,
+      workItem: makeWorkItem("T-1"),
       state: "implementing",
       prNumber: null,
       lastTransition: new Date().toISOString(),
@@ -3040,6 +3084,18 @@ describe("formatItemDetail", () => {
     expect(text).toContain("Duration:");
   });
 
+  it("renders a wrapped summary when descriptionSnippet is present", () => {
+    const item = makeStatusItem({
+      id: "H-SM-1",
+      descriptionSnippet: "Carry a compact description snippet from work item markdown into the detail panel so operators can see meaningful context without opening the file.",
+    });
+
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Summary:");
+    expect(text).toContain("Carry a compact description snippet");
+  });
+
   it("renders ci-failed state with failure reason", () => {
     const item = makeStatusItem({
       id: "H-CI-1",
@@ -3185,6 +3241,18 @@ describe("renderDetailOverlay", () => {
     expect(text).toContain("H-EX-0, H-EX-2");
     expect(text).toContain("3");
     expect(text).toContain("1");
+  });
+
+  it("shows descriptionSnippet content when available", () => {
+    const item = makeStatusItem({
+      id: "H-DS-1",
+      descriptionSnippet: "Show markdown-derived context in the detail overlay.",
+    });
+
+    const lines = renderDetailOverlay(item, 100, 40);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Summary:");
+    expect(text).toContain("Show markdown-derived context in the detail overlay.");
   });
 
   it("shows worktree path for stuck items", () => {

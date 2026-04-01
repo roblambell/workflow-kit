@@ -11,6 +11,7 @@ export {
   normalizeDomain,
   truncateSlug,
   extractTestPlan,
+  extractDescriptionSnippet,
   extractFilePaths,
   expandWildcardDeps,
   extractBody,

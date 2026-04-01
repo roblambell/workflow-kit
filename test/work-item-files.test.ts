@@ -14,6 +14,7 @@ import {
   priorityNum,
   isPriority,
   extractBody,
+  extractDescriptionSnippet,
 } from "../core/work-item-files.ts";
 import type { WorkItem, Priority } from "../core/types.ts";
 
@@ -137,6 +138,7 @@ describe("parseWorkItemFile", () => {
     expect(item!.testPlan).toContain("Run unit tests");
     expect(item!.filePaths).toContain("core/worker.ts");
     expect(item!.filePaths).toContain("core/retry.ts");
+    expect(item!.descriptionSnippet).toBe("Description of the work to do.");
   });
 
   it("extracts dependencies", () => {
@@ -255,6 +257,70 @@ Just a description.
     writeFileSync(fp, content);
 
     expect(parseWorkItemFile(fp)).toBeNull();
+  });
+});
+
+describe("extractDescriptionSnippet", () => {
+  it("returns undefined when the body has no descriptive text", () => {
+    const raw = [
+      "# Title (H-T-1)",
+      "",
+      "**Priority:** High",
+      "**Source:** local",
+      "**Depends on:** None",
+      "**Domain:** test",
+      "",
+      "**Test plan:**",
+      "- Run tests",
+      "",
+      "Acceptance: it works",
+    ].join("\n");
+
+    expect(extractDescriptionSnippet(raw)).toBeUndefined();
+  });
+
+  it("returns the descriptive body without trailing sections", () => {
+    const raw = [
+      "# Title (H-T-2)",
+      "",
+      "**Priority:** High",
+      "**Source:** local",
+      "**Depends on:** None",
+      "**Domain:** test",
+      "",
+      "Add description data to the detail model.",
+      "Keep daemon payloads compact.",
+      "",
+      "**Test plan:**",
+      "- Run parser tests",
+      "",
+      "Acceptance: status shows description",
+    ].join("\n");
+
+    expect(extractDescriptionSnippet(raw)).toBe(
+      "Add description data to the detail model. Keep daemon payloads compact.",
+    );
+  });
+
+  it("truncates long bodies to a stable snippet", () => {
+    const longSentence = "This description sentence is intentionally long so the snippet extractor has to trim it cleanly at a word boundary without pulling in structured sections.";
+    const raw = [
+      "# Title (H-T-3)",
+      "",
+      "**Priority:** High",
+      "**Source:** local",
+      "**Depends on:** None",
+      "**Domain:** test",
+      "",
+      longSentence,
+      longSentence,
+      longSentence,
+    ].join("\n");
+
+    const snippet = extractDescriptionSnippet(raw, 120);
+    expect(snippet).toBeDefined();
+    expect(snippet!.length).toBeLessThanOrEqual(120);
+    expect(snippet).toMatch(/\.\.\.$/);
   });
 });
 

@@ -110,6 +110,8 @@ export type ItemState =
 export interface StatusItem {
   id: string;
   title: string;
+  /** Compact description snippet shown in the detail overlay when available. */
+  descriptionSnippet?: string;
   state: ItemState;
   prNumber: number | null;
   ageMs: number; // milliseconds since worktree created
@@ -1087,6 +1089,7 @@ export function daemonStateToStatusItems(state: DaemonState): StatusItem[] {
   return state.items.map((item) => ({
     id: item.id,
     title: item.title,
+    ...(item.descriptionSnippet ? { descriptionSnippet: item.descriptionSnippet } : {}),
     state: mapDaemonItemState(item.state, { rebaseRequested: item.rebaseRequested }),
     prNumber: item.prNumber,
     ageMs: Date.now() - new Date(item.lastTransition).getTime(),
@@ -1100,6 +1103,33 @@ export function daemonStateToStatusItems(state: DaemonState): StatusItem[] {
     worktreePath: item.worktreePath,
     workspaceRef: item.workspaceRef,
   }));
+}
+
+function wrapDetailText(text: string, maxWidth: number): string[] {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+
+  const words = normalized.split(" ");
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+
+    if ((current + " " + word).length <= maxWidth) {
+      current += " " + word;
+      continue;
+    }
+
+    lines.push(current);
+    current = word;
+  }
+
+  if (current) lines.push(current);
+  return lines;
 }
 
 // ─── Terminal width detection ─────────────────────────────────────────────────
@@ -2065,6 +2095,16 @@ export function formatItemDetail(
     }
   } else {
     lines.push(`  ${DIM}PR:${RESET}        ${DIM}--${RESET}`);
+  }
+
+  if (item.descriptionSnippet) {
+    const wrappedSummary = wrapDetailText(item.descriptionSnippet, 72);
+    if (wrappedSummary.length > 0) {
+      lines.push(`  ${DIM}Summary:${RESET}   ${wrappedSummary[0]}`);
+      for (const line of wrappedSummary.slice(1)) {
+        lines.push(`             ${line}`);
+      }
+    }
   }
 
   // CI status / failure reason

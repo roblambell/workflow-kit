@@ -43,6 +43,8 @@ function makeWorkItem(id: string): WorkItem {
     repoAlias: "",
     rawText: `## ${id}\nTest item`,
     filePaths: [],
+    testPlan: "",
+    bootstrap: false,
   };
 }
 
@@ -67,32 +69,36 @@ function createMockIO(): DaemonIO & { files: Map<string, string> } {
   const files = new Map<string, string>();
   return {
     files,
-    writeFileSync: vi.fn((path: string, content: string, optionsOrEncoding?: any) => {
+    writeFileSync: vi.fn((path: any, content: string, optionsOrEncoding?: any) => {
+      const key = String(path);
       // Simulate exclusive create (flag: 'wx') -- throws EEXIST if file exists
       if (typeof optionsOrEncoding === "object" && optionsOrEncoding?.flag === "wx") {
-        if (files.has(path)) {
-          const err = new Error(`EEXIST: file already exists, open '${path}'`) as NodeJS.ErrnoException;
+        if (files.has(key)) {
+          const err = new Error(`EEXIST: file already exists, open '${key}'`) as NodeJS.ErrnoException;
           err.code = "EEXIST";
           throw err;
         }
       }
-      files.set(path, content);
-    }),
-    readFileSync: vi.fn((path: string) => {
-      const content = files.get(path);
-      if (content === undefined) throw new Error(`ENOENT: ${path}`);
+      files.set(key, content);
+    }) as any,
+    readFileSync: vi.fn((path: any) => {
+      const key = String(path);
+      const content = files.get(key);
+      if (content === undefined) throw new Error(`ENOENT: ${key}`);
       return content;
+    }) as any,
+    unlinkSync: vi.fn((path: any) => {
+      files.delete(String(path));
     }),
-    unlinkSync: vi.fn((path: string) => {
-      files.delete(path);
-    }),
-    existsSync: vi.fn((path: string) => files.has(path)),
+    existsSync: vi.fn((path: any) => files.has(String(path))),
     mkdirSync: vi.fn(),
-    renameSync: vi.fn((from: string, to: string) => {
-      const content = files.get(from);
-      if (content === undefined) throw new Error(`ENOENT: ${from}`);
-      files.set(to, content);
-      files.delete(from);
+    renameSync: vi.fn((from: any, to: any) => {
+      const fromKey = String(from);
+      const toKey = String(to);
+      const content = files.get(fromKey);
+      if (content === undefined) throw new Error(`ENOENT: ${fromKey}`);
+      files.set(toKey, content);
+      files.delete(fromKey);
     }),
   };
 }
@@ -541,6 +547,24 @@ describe("serializeOrchestratorState", () => {
     expect(restored!.items[0]!.ciFailureNotified).toBe(true);
     expect(restored!.items[0]!.ciFailureNotifiedAt).toBe("2026-03-27T14:30:00.000Z");
   });
+
+  it("includes descriptionSnippet when present and omits it otherwise", () => {
+    const withSnippet = makeOrchestratorItem("D-1-1", "implementing");
+    withSnippet.workItem.descriptionSnippet = "Show a compact work item summary in the detail pane.";
+
+    const withoutSnippet = makeOrchestratorItem("D-1-2", "implementing");
+
+    const state = serializeOrchestratorState(
+      [withSnippet, withoutSnippet],
+      42,
+      "2026-03-27T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.descriptionSnippet).toBe(
+      "Show a compact work item summary in the detail pane.",
+    );
+    expect(state.items[1]!.descriptionSnippet).toBeUndefined();
+  });
 });
 
 // ── migrateRuntimeState ─────────────────────────────────────────────
@@ -767,16 +791,16 @@ describe("rotateLogs", () => {
     files.set("/log", "x".repeat(200));
 
     const io: LogRotateIO = {
-      existsSync: (p: string) => files.has(p as string),
-      statSync: (p: string) => ({ size: files.get(p as string)?.length ?? 0 }) as any,
-      renameSync: (from: string, to: string) => {
-        const content = files.get(from as string);
+      existsSync: (p: any) => files.has(String(p)),
+      statSync: (p: any) => ({ size: files.get(String(p))?.length ?? 0 }) as any,
+      renameSync: (from: any, to: any) => {
+        const content = files.get(String(from));
         if (content !== undefined) {
-          files.set(to as string, content);
-          files.delete(from as string);
+          files.set(String(to), content);
+          files.delete(String(from));
         }
       },
-      unlinkSync: (p: string) => { files.delete(p as string); },
+      unlinkSync: (p: any) => { files.delete(String(p)); },
     };
 
     const result = rotateLogs("/log", 100, 3, io);

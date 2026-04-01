@@ -24,6 +24,8 @@ export interface DaemonStateItem {
   state: string;
   prNumber: number | null;
   title: string;
+  /** Compact description snippet for status detail views (omitted when unavailable). */
+  descriptionSnippet?: string;
   lastTransition: string;
   ciFailCount: number;
   retryCount: number;
@@ -555,6 +557,9 @@ export function serializeOrchestratorState(
       state: item.state,
       prNumber: item.prNumber ?? null,
       title: item.workItem.title,
+      ...(item.workItem.descriptionSnippet
+        ? { descriptionSnippet: item.workItem.descriptionSnippet }
+        : {}),
       lastTransition: item.lastTransition,
       ciFailCount: item.ciFailCount,
       retryCount: item.retryCount,

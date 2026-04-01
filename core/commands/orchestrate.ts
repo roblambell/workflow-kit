@@ -211,6 +211,9 @@ export function orchestratorItemsToStatusItems(
   return items.map((item) => ({
     id: item.id,
     title: item.workItem.title,
+    ...(item.workItem.descriptionSnippet
+      ? { descriptionSnippet: item.workItem.descriptionSnippet }
+      : {}),
     state: remoteItemIds?.has(item.id) ? "implementing" : mapDaemonItemState(item.state),
     prNumber: item.prNumber ?? null,
     ageMs: now - new Date(item.lastTransition).getTime(),

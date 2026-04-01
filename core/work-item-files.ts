@@ -120,6 +120,46 @@ export function extractTestPlan(rawText: string): string {
   return planLines.join("\n");
 }
 
+const DESCRIPTION_SECTION_BOUNDARY = /^(?:\*\*Test plan:\*\*|\*\*Acceptance:\*\*|Acceptance:|Key files:|## |### )/;
+
+function truncateSnippet(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+
+  const slice = text.slice(0, Math.max(1, maxLength - 3)).trimEnd();
+  const lastSpace = slice.lastIndexOf(" ");
+  const clipped = lastSpace >= Math.floor(slice.length * 0.6)
+    ? slice.slice(0, lastSpace)
+    : slice;
+
+  return `${clipped}...`;
+}
+
+/**
+ * Extract a compact description snippet from the human-written body text.
+ * Reuses extractBody() to skip the title + metadata, then stops before
+ * structured sections like test plan, acceptance, or key files.
+ */
+export function extractDescriptionSnippet(
+  rawText: string,
+  maxLength: number = 280,
+): string | undefined {
+  const descriptionLines: string[] = [];
+
+  for (const line of extractBody(rawText)) {
+    if (DESCRIPTION_SECTION_BOUNDARY.test(line)) break;
+
+    const trimmed = line.trim();
+    if (trimmed) {
+      descriptionLines.push(trimmed);
+    }
+  }
+
+  const summary = descriptionLines.join(" ").replace(/\s+/g, " ").trim();
+  if (!summary) return undefined;
+
+  return truncateSnippet(summary, maxLength);
+}
+
 /**
  * Extract file paths from a WorkItem's rawText.
  * Only scans lines starting with "Key files:" to avoid false positives
@@ -448,6 +488,7 @@ export function parseWorkItemFile(filePath: string): WorkItem | null {
     rawText,
     filePaths: [],
     testPlan: extractTestPlan(rawText),
+    descriptionSnippet: extractDescriptionSnippet(rawText),
     bootstrap,
   };
 
