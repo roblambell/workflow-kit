@@ -461,16 +461,17 @@ function buildOwnedEntryPredicates(
     predicates.set(MANAGED_SKILLS_DIR, (entry) => skillNames.has(entry));
   }
 
-  const canonicalAgents = new Set(discoverAgentSources(bundleDir));
+  const canonicalAgents = discoverAgentSources(bundleDir);
   for (const toolDir of selection.toolDirs) {
+    const ownedEntries = new Set(canonicalAgents.map((agent) => agentTargetFilename(agent, toolDir)));
     if (toolDir.dir === ".github/agents") {
       predicates.set(toolDir.dir, (entry) =>
-        entry.startsWith("ninthwave-") && entry.endsWith(toolDir.suffix)
+        ownedEntries.has(entry) || (entry.startsWith("ninthwave-") && entry.endsWith(toolDir.suffix))
       );
       continue;
     }
 
-    predicates.set(toolDir.dir, (entry) => canonicalAgents.has(entry));
+    predicates.set(toolDir.dir, (entry) => ownedEntries.has(entry));
   }
 
   return predicates;

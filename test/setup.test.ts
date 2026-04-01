@@ -765,6 +765,8 @@ describe("pruneManagedGeneratedEntries", () => {
   it("removes deselected canonical agent copies while preserving unrelated files", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+    const claudeTarget = AGENT_TARGET_DIRS.find((target) => target.dir === ".claude/agents");
+    const githubTarget = AGENT_TARGET_DIRS.find((target) => target.dir === ".github/agents");
 
     mkdirSync(join(projectDir, ".claude", "agents"), { recursive: true });
     writeFileSync(join(projectDir, ".claude", "agents", "implementer.md"), "# keep\n");
@@ -777,7 +779,7 @@ describe("pruneManagedGeneratedEntries", () => {
 
     const removed = pruneManagedGeneratedEntries(projectDir, bundleDir, {
       agents: ["implementer.md"],
-      toolDirs: [AGENT_TARGET_DIRS[0]!, AGENT_TARGET_DIRS[2]!],
+      toolDirs: [claudeTarget!, githubTarget!],
     });
 
     expect(removed).toEqual(expect.arrayContaining([
