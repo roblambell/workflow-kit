@@ -21,9 +21,9 @@ function stubDeps(promptContent = "PROMPT_CONTENT"): LaunchDeps & {
 } {
   return {
     readFileSync: vi.fn((_path: string, _enc: BufferEncoding) => promptContent) as any,
-    writeFileSync: vi.fn(),
-    mkdirSync: vi.fn(),
-    run: vi.fn(),
+    writeFileSync: vi.fn() as any,
+    mkdirSync: vi.fn() as any,
+    run: vi.fn() as any,
   };
 }
 
@@ -223,6 +223,47 @@ describe("claude profile buildLaunchCmd", () => {
   });
 });
 
+// ── buildHeadlessCmd: claude ──────────────────────────────────────────────────
+
+describe("claude profile buildHeadlessCmd", () => {
+  it("returns a cmd with -p Start", () => {
+    const profile = getToolProfile("claude");
+    const result = profile.buildHeadlessCmd(stubOpts(), stubDeps());
+    expect(result.cmd).toContain('claude -p "Start"');
+  });
+
+  it("returns a cmd with --permission-mode bypassPermissions", () => {
+    const profile = getToolProfile("claude");
+    const result = profile.buildHeadlessCmd(stubOpts(), stubDeps());
+    expect(result.cmd).toContain("--permission-mode bypassPermissions");
+  });
+
+  it("returns a cmd containing the agent name", () => {
+    const profile = getToolProfile("claude");
+    const result = profile.buildHeadlessCmd(stubOpts({ agentName: "ninthwave-implementer" }), stubDeps());
+    expect(result.cmd).toContain("--agent ninthwave-implementer");
+  });
+
+  it("returns a cmd with --append-system-prompt referencing .ninthwave/.prompt", () => {
+    const profile = getToolProfile("claude");
+    const result = profile.buildHeadlessCmd(stubOpts(), stubDeps());
+    expect(result.cmd).toContain("--append-system-prompt");
+    expect(result.cmd).toContain(".ninthwave/.prompt");
+  });
+
+  it("does not include --name in headless mode", () => {
+    const profile = getToolProfile("claude");
+    const result = profile.buildHeadlessCmd(stubOpts(), stubDeps());
+    expect(result.cmd).not.toContain("--name");
+  });
+
+  it("returns empty initialPrompt", () => {
+    const profile = getToolProfile("claude");
+    const result = profile.buildHeadlessCmd(stubOpts(), stubDeps());
+    expect(result.initialPrompt).toBe("");
+  });
+});
+
 // ── buildLaunchCmd: opencode ──────────────────────────────────────────────────
 
 describe("opencode profile buildLaunchCmd", () => {
@@ -293,6 +334,33 @@ describe("opencode profile buildLaunchCmd", () => {
   });
 });
 
+// ── buildHeadlessCmd: opencode ────────────────────────────────────────────────
+
+describe("opencode profile buildHeadlessCmd", () => {
+  it("returns empty initialPrompt", () => {
+    const profile = getToolProfile("opencode");
+    const result = profile.buildHeadlessCmd(stubOpts(), stubDeps());
+    expect(result.initialPrompt).toBe("");
+  });
+
+  it("writes and references a temp prompt file", () => {
+    const profile = getToolProfile("opencode");
+    const deps = stubDeps("OPENCODE PROMPT");
+    profile.buildHeadlessCmd(stubOpts({ id: "H-X-HEADLESS" }), deps);
+
+    const calls = (deps.writeFileSync as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![0]).toMatch(/^\/fake\/state\/tmp\/nw-prompt-H-X-HEADLESS-\d+$/);
+    expect(calls[0]![1]).toContain("OPENCODE PROMPT");
+    expect(calls[0]![1]).toContain("Start implementing this work item now.");
+  });
+
+  it("uses the run subcommand with the prompt and agent", () => {
+    const profile = getToolProfile("opencode");
+    const result = profile.buildHeadlessCmd(stubOpts({ id: "H-X-HEADLESS", agentName: "ninthwave-implementer" }), stubDeps());
+    expect(result.cmd).toContain("exec opencode run \"$PROMPT\" --agent ninthwave-implementer");
+  });
+});
+
 // ── buildLaunchCmd: copilot ───────────────────────────────────────────────────
 
 describe("copilot profile buildLaunchCmd", () => {
@@ -357,6 +425,36 @@ describe("copilot profile buildLaunchCmd", () => {
   });
 });
 
+// ── buildHeadlessCmd: copilot ─────────────────────────────────────────────────
+
+describe("copilot profile buildHeadlessCmd", () => {
+  it("returns empty initialPrompt", () => {
+    const profile = getToolProfile("copilot");
+    const result = profile.buildHeadlessCmd(stubOpts(), stubDeps());
+    expect(result.initialPrompt).toBe("");
+  });
+
+  it("writes and references a temp prompt file", () => {
+    const profile = getToolProfile("copilot");
+    const deps = stubDeps("COPILOT PROMPT");
+    profile.buildHeadlessCmd(stubOpts({ id: "H-X-HEADLESS" }), deps);
+
+    const calls = (deps.writeFileSync as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![0]).toMatch(/^\/fake\/state\/tmp\/nw-prompt-H-X-HEADLESS-\d+$/);
+    expect(calls[0]![1]).toContain("COPILOT PROMPT");
+    expect(calls[0]![1]).toContain("Start implementing this work item now.");
+  });
+
+  it("uses -p, --allow-all, and --no-ask-user", () => {
+    const profile = getToolProfile("copilot");
+    const result = profile.buildHeadlessCmd(stubOpts({ id: "H-X-HEADLESS", agentName: "ninthwave-implementer" }), stubDeps());
+    expect(result.cmd).toContain('exec copilot -p "$PROMPT"');
+    expect(result.cmd).toContain("--agent=ninthwave-implementer");
+    expect(result.cmd).toContain("--allow-all");
+    expect(result.cmd).toContain("--no-ask-user");
+  });
+});
+
 // ── AI_TOOL_PROFILES integrity ────────────────────────────────────────────────
 
 describe("AI_TOOL_PROFILES", () => {
@@ -379,6 +477,12 @@ describe("AI_TOOL_PROFILES", () => {
   it("all profiles have a buildLaunchCmd function", () => {
     for (const profile of AI_TOOL_PROFILES) {
       expect(typeof profile.buildLaunchCmd).toBe("function");
+    }
+  });
+
+  it("all profiles have a buildHeadlessCmd function", () => {
+    for (const profile of AI_TOOL_PROFILES) {
+      expect(typeof profile.buildHeadlessCmd).toBe("function");
     }
   });
 });

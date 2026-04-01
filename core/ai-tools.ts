@@ -14,7 +14,7 @@ import { run as defaultRun } from "./shell.ts";
 export type AiToolId = "claude" | "opencode" | "copilot";
 
 /**
- * Injectable dependencies for buildLaunchCmd.
+ * Injectable dependencies for launch command builders.
  * Keeping these injectable enables unit tests without touching the real filesystem
  * or spawning processes (especially important for Copilot's temp-file creation).
  */
@@ -25,7 +25,7 @@ export interface LaunchDeps {
   run: (cmd: string, args: string[]) => unknown;
 }
 
-/** Options passed to buildLaunchCmd. */
+/** Options passed to launch command builders. */
 export interface LaunchOpts {
   /** Workspace name shown in the multiplexer tab title. */
   wsName: string;
@@ -39,7 +39,7 @@ export interface LaunchOpts {
   stateDir: string;
 }
 
-/** Result of buildLaunchCmd. */
+/** Result of a launch command builder. */
 export interface LaunchCmdResult {
   /** Shell command to execute via the multiplexer. */
   cmd: string;
@@ -101,6 +101,21 @@ export interface AiToolProfile {
    * Receives injectable deps so Copilot's temp-file creation is testable.
    */
   buildLaunchCmd: (opts: LaunchOpts, deps: LaunchDeps) => LaunchCmdResult;
+  /**
+   * Build the headless launch command and initial prompt for this tool.
+   * Headless commands must embed the prompt in cmd and return initialPrompt: "".
+   */
+  buildHeadlessCmd: (opts: LaunchOpts, deps: LaunchDeps) => LaunchCmdResult;
+}
+
+function writePromptDataFile(opts: LaunchOpts, deps: LaunchDeps): string {
+  const ts = Date.now();
+  const tmpDir = join(opts.stateDir, "tmp");
+  deps.mkdirSync(tmpDir, { recursive: true });
+  const promptDataFile = join(tmpDir, `nw-prompt-${opts.id}-${ts}`);
+  const promptContent = deps.readFileSync(opts.promptFile, "utf-8");
+  deps.writeFileSync(promptDataFile, `${promptContent}\n\nStart implementing this work item now.`);
+  return promptDataFile;
 }
 
 // ── Profiles ──────────────────────────────────────────────────────────────────
@@ -129,6 +144,13 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
         ` --append-system-prompt "$(cat '.ninthwave/.prompt')" -- Start`;
       return { cmd, initialPrompt: "" };
     },
+    buildHeadlessCmd(opts, _deps): LaunchCmdResult {
+      const cmd =
+        `claude -p "Start" --permission-mode bypassPermissions` +
+        ` --agent ${opts.agentName}` +
+        ` --append-system-prompt "$(cat '.ninthwave/.prompt')"`;
+      return { cmd, initialPrompt: "" };
+    },
   },
   {
     id: "opencode",
@@ -145,17 +167,20 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
       // Inline command pattern: write prompt to a plain-text data file, then
       // construct a shell command that reads it, cleans up, and execs the tool.
       // Avoids creating executable .sh scripts (which trigger EDR alerts).
-      const ts = Date.now();
-      const tmpDir = join(opts.stateDir, "tmp");
-      deps.mkdirSync(tmpDir, { recursive: true });
-      const promptDataFile = join(tmpDir, `nw-prompt-${opts.id}-${ts}`);
-      const promptContent = deps.readFileSync(opts.promptFile, "utf-8");
-      deps.writeFileSync(promptDataFile, `${promptContent}\n\nStart implementing this work item now.`);
+      const promptDataFile = writePromptDataFile(opts, deps);
       const cmd =
         `export OPENCODE_PERMISSION='{"$schema":"https://opencode.ai/config.json","permission":"allow"}'` +
         ` && PROMPT=$(cat '${promptDataFile}')` +
         ` && rm -f '${promptDataFile}'` +
         ` && exec opencode --agent ${opts.agentName} --prompt "$PROMPT"`;
+      return { cmd, initialPrompt: "" };
+    },
+    buildHeadlessCmd(opts, deps): LaunchCmdResult {
+      const promptDataFile = writePromptDataFile(opts, deps);
+      const cmd =
+        `PROMPT=$(cat '${promptDataFile}')` +
+        ` && rm -f '${promptDataFile}'` +
+        ` && exec opencode run "$PROMPT" --agent ${opts.agentName}`;
       return { cmd, initialPrompt: "" };
     },
   },
@@ -173,16 +198,19 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
       // Inline command pattern: write prompt to a plain-text data file, then
       // construct a shell command that reads it, cleans up, and execs the tool.
       // Avoids creating executable .sh scripts (which trigger EDR alerts).
-      const ts = Date.now();
-      const tmpDir = join(opts.stateDir, "tmp");
-      deps.mkdirSync(tmpDir, { recursive: true });
-      const promptDataFile = join(tmpDir, `nw-prompt-${opts.id}-${ts}`);
-      const promptContent = deps.readFileSync(opts.promptFile, "utf-8");
-      deps.writeFileSync(promptDataFile, `${promptContent}\n\nStart implementing this work item now.`);
+      const promptDataFile = writePromptDataFile(opts, deps);
       const cmd =
         `PROMPT=$(cat '${promptDataFile}')` +
         ` && rm -f '${promptDataFile}'` +
         ` && exec copilot --agent=${opts.agentName} --allow-all -i "$PROMPT"`;
+      return { cmd, initialPrompt: "" };
+    },
+    buildHeadlessCmd(opts, deps): LaunchCmdResult {
+      const promptDataFile = writePromptDataFile(opts, deps);
+      const cmd =
+        `PROMPT=$(cat '${promptDataFile}')` +
+        ` && rm -f '${promptDataFile}'` +
+        ` && exec copilot -p "$PROMPT" --agent=${opts.agentName} --allow-all --no-ask-user`;
       return { cmd, initialPrompt: "" };
     },
   },

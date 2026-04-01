@@ -1341,6 +1341,7 @@ function makeToolProfile(id: string, displayName: string, targetDir: string): Ai
     projectIndicators: [],
     processNames: [],
     buildLaunchCmd: () => ({ cmd: "", initialPrompt: "" }),
+    buildHeadlessCmd: () => ({ cmd: "", initialPrompt: "" }),
   };
 }
 
