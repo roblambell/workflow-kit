@@ -1370,6 +1370,78 @@ describe("reconstructState", () => {
     require("fs").rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  it("keeps daemon-tracked PRs in ci-pending when checkPr returns empty", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("WR-1B"));
+    orch.getItem("WR-1B")!.reviewCompleted = true;
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-wr1b-${Date.now()}`);
+    const wtDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const wtPath = join(wtDir, "ninthwave-WR-1B");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T01:00:00Z",
+      items: [
+        {
+          id: "WR-1B",
+          state: "ci-pending",
+          prNumber: 271,
+          title: "Test item",
+          lastTransition: "2026-01-01T00:30:00Z",
+          ciFailCount: 0,
+          retryCount: 0,
+        },
+      ],
+    };
+
+    reconstructState(orch, tmpDir, wtDir, undefined, () => null, daemonState);
+
+    const item = orch.getItem("WR-1B")!;
+    expect(item.state).toBe("ci-pending");
+    expect(item.prNumber).toBe(271);
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("keeps daemon-tracked PRs in ci-pending when checkPr returns no-pr", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("WR-1C"));
+    orch.getItem("WR-1C")!.reviewCompleted = true;
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-wr1c-${Date.now()}`);
+    const wtDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const wtPath = join(wtDir, "ninthwave-WR-1C");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T01:00:00Z",
+      items: [
+        {
+          id: "WR-1C",
+          state: "ci-pending",
+          prNumber: 272,
+          title: "Test item",
+          lastTransition: "2026-01-01T00:30:00Z",
+          ciFailCount: 0,
+          retryCount: 0,
+        },
+      ],
+    };
+
+    reconstructState(orch, tmpDir, wtDir, undefined, () => "WR-1C\t\tno-pr", daemonState);
+
+    const item = orch.getItem("WR-1C")!;
+    expect(item.state).toBe("ci-pending");
+    expect(item.prNumber).toBe(272);
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
   it("detects existing open PR with failing CI and sets ci-failed (H-WR-1)", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("WR-2"));

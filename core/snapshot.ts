@@ -37,6 +37,22 @@ function summarizeApiErrors(byKind: Record<string, number>): PollSnapshot["apiEr
   };
 }
 
+function isBlindPrPoll(statusLine: string): boolean {
+  if (!statusLine) return true;
+  return statusLine.split("\t")[2] === "no-pr";
+}
+
+function restoreTrackedPrSnapshot(
+  snap: ItemSnapshot,
+  orchItem: OrchestratorItem,
+  statusLine: string,
+): void {
+  if (!snap.prNumber && orchItem.prNumber != null && isBlindPrPoll(statusLine)) {
+    snap.prNumber = orchItem.prNumber;
+    snap.prState = "open";
+  }
+}
+
 // ── Worktree commit tracking ──────────────────────────────────────
 
 /**
@@ -215,6 +231,10 @@ export function buildSnapshot(
         snap.eventTime = eventTimeStr;
       }
     }
+
+    // If GitHub is temporarily blind after we've already learned the PR number,
+    // keep the item in PR-tracking flow instead of regressing to implementing.
+    restoreTrackedPrSnapshot(snap, orchItem, statusLine);
 
     // Check review worker health and verdict file for items in reviewing state
     if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {
@@ -417,6 +437,10 @@ export async function buildSnapshotAsync(
         snap.eventTime = eventTimeStr;
       }
     }
+
+    // If GitHub is temporarily blind after we've already learned the PR number,
+    // keep the item in PR-tracking flow instead of regressing to implementing.
+    restoreTrackedPrSnapshot(snap, orchItem, statusLine);
 
     // Review worker health
     if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {

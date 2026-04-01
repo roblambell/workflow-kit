@@ -276,6 +276,30 @@ describe("buildSnapshotAsync", () => {
     expect(snapshot.items[0]!.prNumber).toBeUndefined();
   });
 
+  it("preserves tracked PR state when async PR lookup is temporarily blind", async () => {
+    for (const result of [null, "", "BA-4-2\t\tno-pr"] as const) {
+      const orch = new Orchestrator();
+      orch.addItem(makeWorkItem("BA-4-2"));
+      orch.getItem("BA-4-2")!.reviewCompleted = true;
+      orch.hydrateState("BA-4-2", "implementing");
+      orch.getItem("BA-4-2")!.prNumber = 41;
+
+      const snapshot = await buildSnapshotAsync(
+        orch,
+        "/project",
+        "/project/.ninthwave/.worktrees",
+        fakeMux,
+        () => null,
+        async () => result,
+      );
+
+      expect(snapshot.items).toHaveLength(1);
+      expect(snapshot.items[0]!.prNumber).toBe(41);
+      expect(snapshot.items[0]!.prState).toBe("open");
+      expect(snapshot.items[0]!.ciStatus).toBeUndefined();
+    }
+  });
+
   it("processes merged PR status", async () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("BA-5-1"));

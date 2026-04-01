@@ -30,17 +30,18 @@ export function reconstructState(
   daemonState?: DaemonState | null,
 ): void {
   // Build a lookup map from saved daemon state for restoring persisted counters and review fields
-  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; rebaserWorkspaceRef?: string; mergeCommitSha?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string; aiTool?: string }>();
+  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; prNumber: number | null; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; rebaserWorkspaceRef?: string; mergeCommitSha?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string; aiTool?: string }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
       // Backward compat: map old field names to new names
-      const raw = si as Record<string, unknown>;
-      const rebaserRef = (si as Record<string, unknown>).rebaserWorkspaceRef as string | undefined ?? (raw.repairWorkspaceRef as string | undefined);
+      const raw = si as unknown as Record<string, unknown>;
+      const rebaserRef = raw.rebaserWorkspaceRef as string | undefined ?? (raw.repairWorkspaceRef as string | undefined);
       const fixForwardFailCount = si.fixForwardFailCount ?? (raw.verifyFailCount as number | undefined);
       const fixForwardWorkspaceRef = si.fixForwardWorkspaceRef ?? (raw.verifyWorkspaceRef as string | undefined);
       savedItems.set(si.id, {
         ciFailCount: si.ciFailCount,
         retryCount: si.retryCount,
+        prNumber: si.prNumber,
         reviewWorkspaceRef: si.reviewWorkspaceRef,
         reviewCompleted: si.reviewCompleted,
         reviewRound: si.reviewRound,
@@ -69,6 +70,7 @@ export function reconstructState(
     if (saved) {
       item.ciFailCount = saved.ciFailCount;
       item.retryCount = saved.retryCount;
+      if (saved.prNumber != null) item.prNumber = saved.prNumber;
       if (saved.reviewWorkspaceRef) item.reviewWorkspaceRef = saved.reviewWorkspaceRef;
       if (saved.reviewCompleted) item.reviewCompleted = saved.reviewCompleted;
       if (saved.reviewRound != null) item.reviewRound = saved.reviewRound;
@@ -105,7 +107,7 @@ export function reconstructState(
     // Item has a worktree -- check PR status in the correct repo
     const statusLine = checkPr(item.id, repoRoot);
     if (!statusLine) {
-      orch.hydrateState(item.id, "implementing");
+      hydrateKnownPrTrackingOrImplementing(orch, item.id);
       recoverWorkspaceRef(orch, item.id, workspaceList);
       continue;
     }
@@ -163,11 +165,25 @@ export function reconstructState(
         break;
       case "no-pr":
       default:
-        orch.hydrateState(item.id, "implementing");
+        hydrateKnownPrTrackingOrImplementing(orch, item.id);
         recoverWorkspaceRef(orch, item.id, workspaceList);
         break;
     }
   }
+}
+
+function hydrateKnownPrTrackingOrImplementing(
+  orch: Orchestrator,
+  itemId: string,
+): void {
+  const item = orch.getItem(itemId);
+  if (item?.prNumber != null) {
+    // GitHub can briefly return empty/no-pr after we've already tracked a PR.
+    // Preserve PR-tracking flow on restart instead of regressing to implementing.
+    orch.hydrateState(itemId, "ci-pending");
+    return;
+  }
+  orch.hydrateState(itemId, "implementing");
 }
 
 /**

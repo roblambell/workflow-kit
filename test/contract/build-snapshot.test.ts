@@ -10,7 +10,7 @@ import { FakeGitHub } from "../fakes/fake-github.ts";
 import { FakeMux } from "../fakes/fake-mux.ts";
 import { makeWorkItem } from "../scenario/helpers.ts";
 import { writeHeartbeat, userStateDir, type DaemonIO } from "../../core/daemon.ts";
-import { rmSync } from "fs";
+import { rmSync, type PathLike, type PathOrFileDescriptor, type WriteFileOptions } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -24,24 +24,25 @@ function makeMemoryIO(): DaemonIO & { files: Map<string, string> } {
   const files = new Map<string, string>();
   return {
     files,
-    existsSync: (p: string) => files.has(p),
-    readFileSync: (p: string, _enc: string) => {
-      const content = files.get(p);
-      if (content === undefined) throw new Error(`ENOENT: ${p}`);
+    existsSync: (p: PathLike) => files.has(String(p)),
+    readFileSync: ((p: PathOrFileDescriptor, _options?: BufferEncoding | { encoding?: BufferEncoding | null; flag?: string } | null) => {
+      const key = String(p);
+      const content = files.get(key);
+      if (content === undefined) throw new Error(`ENOENT: ${key}`);
       return content;
-    },
-    writeFileSync: (p: string, data: string) => {
-      files.set(p, data);
+    }) as any,
+    writeFileSync: (p: PathOrFileDescriptor, data: string | ArrayBufferView<ArrayBufferLike>, _opts?: WriteFileOptions) => {
+      files.set(String(p), typeof data === "string" ? data : Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString());
     },
     mkdirSync: () => {},
-    unlinkSync: (p: string) => {
-      files.delete(p);
+    unlinkSync: (p: PathLike) => {
+      files.delete(String(p));
     },
     readdirSync: () => [],
     rmSync: () => {},
     renameSync: () => {},
     statSync: () => ({ mtimeMs: Date.now() }) as any,
-  };
+  } as any;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -402,6 +403,44 @@ describe("buildSnapshot contract", () => {
       expect(item!.prNumber).toBeUndefined();
       expect(item!.ciStatus).toBeUndefined();
       expect(item!.prState).toBeUndefined();
+    });
+
+    it("preserves tracked prNumber when checkPr returns null", () => {
+      orch.addItem(makeWorkItem("E-3"));
+      orch.hydrateState("E-3", "implementing");
+      const orchItem = orch.getItem("E-3")!;
+      orchItem.prNumber = 77;
+      orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "E-3")!;
+
+      const result = snap(orch, {
+        mux: fakeMux,
+        checkPr: () => null,
+      });
+
+      const item = findItem(result.items, "E-3");
+      expect(item).toBeDefined();
+      expect(item!.prNumber).toBe(77);
+      expect(item!.prState).toBe("open");
+      expect(item!.ciStatus).toBeUndefined();
+    });
+
+    it("preserves tracked prNumber when checkPr returns no-pr status line", () => {
+      orch.addItem(makeWorkItem("E-4"));
+      orch.hydrateState("E-4", "implementing");
+      const orchItem = orch.getItem("E-4")!;
+      orchItem.prNumber = 88;
+      orchItem.workspaceRef = fakeMux.launchWorkspace("/tmp/wt", "claude", "E-4")!;
+
+      const result = snap(orch, {
+        mux: fakeMux,
+        checkPr: () => "E-4\t\tno-pr",
+      });
+
+      const item = findItem(result.items, "E-4");
+      expect(item).toBeDefined();
+      expect(item!.prNumber).toBe(88);
+      expect(item!.prState).toBe("open");
+      expect(item!.ciStatus).toBeUndefined();
     });
   });
 

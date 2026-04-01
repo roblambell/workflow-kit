@@ -29,6 +29,7 @@ import {
 } from "../core/commands/orchestrate.ts";
 import type { Multiplexer } from "../core/mux.ts";
 import type { WorkItem, Priority } from "../core/types.ts";
+import type { DaemonState } from "../core/daemon.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -673,6 +674,39 @@ describe("Merge detection pipeline (end-to-end)", () => {
       reconstructState(orch, tmpDir, wtDir, stubMux(), checkPr);
 
       expect(orch.getItem("MRG-RR-3")!.state).toBe("merged");
+    });
+
+    it("accepts merged PR with mismatched title when daemon state already tracked the PR number", () => {
+      const orch = new Orchestrator();
+      const item = makeWorkItem("MRG-RR-4", "Improve error handling");
+      orch.addItem(item);
+
+      const daemonState: DaemonState = {
+        pid: 1234,
+        startedAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T01:00:00Z",
+        items: [
+          {
+            id: "MRG-RR-4",
+            state: "ci-pending",
+            prNumber: 78,
+            title: "Improve error handling",
+            lastTransition: "2026-01-01T00:30:00Z",
+            ciFailCount: 0,
+            retryCount: 0,
+          },
+        ],
+      };
+
+      mkdirSync(join(wtDir, "ninthwave-MRG-RR-4"), { recursive: true });
+
+      const checkPr = (_id: string, _root: string) =>
+        "MRG-RR-4\t78\tmerged\t\t\trefactor: completely rewrite error paths";
+
+      reconstructState(orch, tmpDir, wtDir, stubMux(), checkPr, daemonState);
+
+      expect(orch.getItem("MRG-RR-4")!.state).toBe("merged");
+      expect(orch.getItem("MRG-RR-4")!.prNumber).toBe(78);
     });
   });
 });
