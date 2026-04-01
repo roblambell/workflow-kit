@@ -26,6 +26,7 @@ import {
 import { parseWorkItems } from "../parser.ts";
 import { resolveRepo, bootstrapRepo } from "../cross-repo.ts";
 import { scanExternalPRs } from "./pr-monitor.ts";
+import type { ConnectionAction } from "./crew.ts";
 import { launchSingleItem, launchReviewWorker, launchRebaserWorker, launchForwardFixerWorker } from "./launch.ts";
 import { cleanStaleBranchForReuse } from "../branch-cleanup.ts";
 import { selectAiTools, detectInstalledAITools } from "../tool-select.ts";
@@ -556,6 +557,33 @@ export function buildInteractiveEngineChildArgs(
 }
 
 const DEFAULT_CREW_URL = "wss://ninthwave.sh";
+
+export function resolveStartupCollaborationAction(
+  current: {
+    connectMode: boolean;
+    crewCode?: string;
+    crewUrl?: string;
+  },
+  connectionAction: ConnectionAction | null | undefined,
+): {
+  connectMode: boolean;
+  crewCode?: string;
+  crewUrl?: string;
+} {
+  if (!connectionAction) return current;
+  if (connectionAction.type === "connect") {
+    return {
+      connectMode: true,
+      crewCode: undefined,
+      crewUrl: current.crewUrl,
+    };
+  }
+  return {
+    connectMode: false,
+    crewCode: connectionAction.code,
+    crewUrl: current.crewUrl ?? DEFAULT_CREW_URL,
+  };
+}
 
 export interface CollaborationSessionState {
   mode: "local" | "shared" | "joined";
@@ -2172,130 +2200,6 @@ export function waitForEngineRecoveryKey(
   });
 }
 
-// ── Arming window ────────────────────────────────────────────────────
-
-/** Default arming window duration (ms). */
-export const ARMING_WINDOW_MS = 4000;
-
-/** User intent chosen during the arming window. */
-export type StartupIntent = "local" | "share" | "join" | "paused";
-
-export function shouldShowStartupArmingWindow(
-  tuiMode: boolean,
-  hasExplicitCollabIntent: boolean,
-  futureOnlyStartup: boolean,
-): boolean {
-  return tuiMode && !hasExplicitCollabIntent && !futureOnlyStartup;
-}
-
-/**
- * Format the arming window banner lines for the TUI.
- * Displayed as a compact overlay at the bottom of the live status UI.
- */
-export function formatArmingBanner(remainingMs: number): string[] {
-  const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
-  const lines: string[] = [];
-  lines.push("");
-  lines.push(`  \x1B[1mLocal by default in ${remainingSec}s\x1B[0m`);
-  lines.push("");
-  lines.push("  \x1B[2m[J]\x1B[0m Join session   \x1B[2m[S]\x1B[0m Share session   \x1B[2m[P]\x1B[0m Pause   \x1B[2m[Enter]\x1B[0m Start now");
-  lines.push("");
-  return lines;
-}
-
-/**
- * Wait for an arming window keypress or timeout.
- *
- * @param stdin - Readable stream (must already be in raw mode)
- * @param signal - Optional abort signal
- * @param durationMs - Arming window duration (default: ARMING_WINDOW_MS)
- * @param now - Injectable clock for testing
- */
-export function waitForArmingKey(
-  stdin: NodeJS.ReadStream,
-  signal?: AbortSignal,
-  durationMs: number = ARMING_WINDOW_MS,
-  now: () => number = Date.now,
-  onTick?: (remainingMs: number) => void,
-): Promise<StartupIntent> {
-  return new Promise<StartupIntent>((resolve) => {
-    if (signal?.aborted) {
-      resolve("local");
-      return;
-    }
-
-    let paused = false;
-    const startMs = now();
-    let lastRemainingSec = Math.max(0, Math.ceil(durationMs / 1000));
-
-    const tickTimer = onTick
-      ? setInterval(() => {
-          if (paused) return;
-          const remainingMs = Math.max(0, durationMs - (now() - startMs));
-          const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
-          if (remainingSec !== lastRemainingSec) {
-            lastRemainingSec = remainingSec;
-            onTick(remainingMs);
-          }
-        }, 1000)
-      : undefined;
-
-    const timer = setTimeout(() => {
-      if (!paused) {
-        if (onTick && lastRemainingSec !== 0) {
-          lastRemainingSec = 0;
-          onTick(0);
-        }
-        cleanup();
-        resolve("local");
-      }
-    }, durationMs);
-
-    const onAbort = () => {
-      cleanup();
-      resolve("local");
-    };
-
-    const onData = (key: string) => {
-      switch (key.toLowerCase()) {
-        case "j":
-          cleanup();
-          resolve("join");
-          break;
-        case "s":
-          cleanup();
-          resolve("share");
-          break;
-        case "p":
-          // Pause cancels the auto-start timer; user must press Enter/J/S
-          paused = true;
-          clearTimeout(timer);
-          if (tickTimer) clearInterval(tickTimer);
-          break;
-        case "\r": // Enter
-        case "\x1b": // Escape
-          cleanup();
-          resolve("local");
-          break;
-        case "\x03": // Ctrl-C
-          cleanup();
-          resolve("local");
-          break;
-      }
-    };
-
-    function cleanup() {
-      clearTimeout(timer);
-      if (tickTimer) clearInterval(tickTimer);
-      stdin.removeListener("data", onData);
-      signal?.removeEventListener("abort", onAbort);
-    }
-
-    stdin.on("data", onData);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
 /**
  * Execute a single orchestrator action with logging, telemetry capture, and reconcile.
  * Extracted from orchestrateLoop for readability.
@@ -2616,7 +2520,7 @@ export interface OrchestrateLoopConfig {
   /**
    * Duration (ms) to gate claims at the start of the loop. During this window,
    * launch actions are suppressed (items reverted to ready) so the daemon runs
-   * but does not start work. Used by the arming window at startup.
+   * but does not start work.
    * 0 or undefined = no gating.
    */
   claimsGatedMs?: number;
@@ -3502,12 +3406,10 @@ export async function cmdOrchestrate(
     } catch {
       // best-effort persistence only
     }
-    if (result.connectionAction?.type === "connect") {
-      connectMode = true;
-    } else if (result.connectionAction?.type === "join") {
-      crewCode = result.connectionAction.code;
-      if (!crewUrl) crewUrl = "wss://ninthwave.sh";
-    }
+    ({ connectMode, crewCode, crewUrl } = resolveStartupCollaborationAction(
+      { connectMode, crewCode, crewUrl },
+      result.connectionAction,
+    ));
     // Capture AI tool choice from TUI -- flows to selectAiTools via toolOverride
     if (result.aiTools && result.aiTools.length > 0) {
       toolOverride = result.aiTools.join(",");
@@ -4383,96 +4285,6 @@ export async function cmdOrchestrate(
     if (tuiMode) process.stdout.write(ALT_SCREEN_OFF);
   };
   process.on("exit", exitAltScreen);
-
-  // ── Arming window: local-first startup with collaboration options ──
-  // Shown in TUI mode when no explicit collaboration intent (no --crew, no --connect).
-  // Renders an initial TUI frame with a startup banner overlay.
-  // Defaults to local after ARMING_WINDOW_MS; J/S/P/Enter resolve immediately.
-  const hasExplicitCollabIntent = !!(crewCode || connectMode);
-  if (shouldShowStartupArmingWindow(tuiMode, hasExplicitCollabIntent, futureOnlyStartup)) {
-    // Render initial TUI frame so the status table is visible behind the banner
-    const initialItems = orch.getAllItems();
-    try {
-      renderTuiPanelFrame(initialItems, wipLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions);
-    } catch { /* non-fatal */ }
-
-    // Overlay arming banner at the bottom of the screen
-    const renderArmingBanner = (remainingMs: number) => {
-      const termRows = getTerminalHeight();
-      const bannerLines = formatArmingBanner(remainingMs);
-      const startRow = Math.max(1, termRows - bannerLines.length);
-      process.stdout.write(`\x1B[${startRow};1H`);
-      for (const line of bannerLines) {
-        process.stdout.write(line + "\x1B[K\n");
-      }
-    };
-    renderArmingBanner(ARMING_WINDOW_MS);
-
-    // Wait for user choice or timeout
-    const armingIntent = await waitForArmingKey(
-      process.stdin,
-      abortController.signal,
-      ARMING_WINDOW_MS,
-      Date.now,
-      renderArmingBanner,
-    );
-
-    log({
-      ts: new Date().toISOString(),
-      level: "info",
-      event: "arming_window_resolved",
-      intent: armingIntent,
-    });
-
-    // Handle arming window result
-    if (armingIntent === "share") {
-      try {
-        const result = await applyLocalRuntimeCollaborationAction({ action: "share", source: "arming" });
-        if (result.code) {
-          log({ ts: new Date().toISOString(), level: "info", event: "arming_share_created", crewCode });
-        }
-        if (result.error) {
-          log({ ts: new Date().toISOString(), level: "warn", event: "arming_share_failed", error: result.error });
-        }
-      } catch (error) {
-        log({
-          ts: new Date().toISOString(),
-          level: "warn",
-          event: "arming_share_unreachable",
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    } else if (armingIntent === "join") {
-      // Join flow: prompt for crew code
-      // Temporarily leave alt screen and raw mode to collect input
-      cleanupKeyboard();
-      process.stdout.write(ALT_SCREEN_OFF);
-      const readline = await import("readline");
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-      const joinCode = await new Promise<string>((resolve) => {
-        rl.question("Enter session code: ", (answer: string) => {
-          rl.close();
-          resolve(answer.trim());
-        });
-      });
-      process.stdout.write(ALT_SCREEN_ON);
-      cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
-      if (joinCode) {
-        const result = await applyLocalRuntimeCollaborationAction({ action: "join", code: joinCode, source: "arming" });
-        if (result.error) {
-          log({ ts: new Date().toISOString(), level: "warn", event: "arming_crew_connect_failed", error: result.error });
-        } else {
-          log({ ts: new Date().toISOString(), level: "info", event: "arming_join_code", crewCode });
-        }
-      }
-    }
-    // "local" and "paused" intents: proceed without crew broker.
-    // "paused" will be handled by the claimsGatedMs mechanism if needed in the future.
-
-    if (crewBroker && crewCode) {
-      log({ ts: new Date().toISOString(), level: "info", event: "arming_crew_connected", crewCode });
-    }
-  }
 
   // Show session splash screen on startup (auto-dismisses after 3s or any keypress)
   if (tuiMode && crewCode) {

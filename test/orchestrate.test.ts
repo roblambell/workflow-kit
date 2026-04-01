@@ -32,10 +32,8 @@ import {
   formatExitSummary,
   formatCompletionBanner,
   waitForCompletionKey,
-  formatArmingBanner,
-  waitForArmingKey,
-  shouldShowStartupArmingWindow,
   applyRuntimeCollaborationAction,
+  resolveStartupCollaborationAction,
   createRuntimeControlHandlers,
   runInteractiveWatchOperatorSession,
   spawnInteractiveEngineChild,
@@ -45,7 +43,6 @@ import {
   renderTuiPanelFrameFromStatusItems,
   resolveInteractiveStartupConfig,
   INTERACTIVE_WATCH_STAGE_WARN_MS,
-  ARMING_WINDOW_MS,
   LOG_BUFFER_MAX,
   TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE,
   type LogEntry,
@@ -56,7 +53,6 @@ import {
   type TuiState,
   type CompletionAction,
   type InteractiveEngineChildProcess,
-  type StartupIntent,
   type WatchEngineSnapshotEvent,
 } from "../core/commands/orchestrate.ts";
 import type { LogEntry as PanelLogEntry } from "../core/status-render.ts";
@@ -4933,6 +4929,37 @@ describe("applyRuntimeCollaborationAction", () => {
     });
   });
 
+  it("returns a broker connection failure without mutating startup collaboration state", async () => {
+    const state = {
+      mode: "local" as const,
+      connectMode: false,
+    };
+    const rejectedBroker = makeBroker({
+      connect: vi.fn(async () => {
+        throw new Error("Broker offline");
+      }),
+    });
+
+    const result = await applyRuntimeCollaborationAction(state, { action: "share" }, {
+      projectRoot: "/project",
+      crewRepoUrl: "git@github.com:test/repo.git",
+      log: () => {},
+      fetchFn: vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ code: "ABCD-1234" }),
+      })) as unknown as typeof fetch,
+      createBroker: vi.fn(() => rejectedBroker),
+      saveCrewCodeFn: vi.fn(),
+      onBrokerChanged: vi.fn(),
+    });
+
+    expect(result).toEqual({ error: "Broker offline" });
+    expect(state).toEqual({
+      mode: "local",
+      connectMode: false,
+    });
+  });
+
   it("keeps the current session intact on a rejected join", async () => {
     const currentBroker = makeBroker();
     const rejectedBroker = makeBroker({
@@ -7207,237 +7234,48 @@ describe("log closure ring buffer integration", () => {
   });
 });
 
-// ── Arming window tests ──────────────────────────────────────────────
-
-describe("formatArmingBanner", () => {
-  it("shows remaining seconds", () => {
-    const lines = formatArmingBanner(3500);
-    const joined = lines.join("\n");
-    expect(joined).toContain("4s");
-    expect(joined).toContain("Join");
-    expect(joined).toContain("Share");
-    expect(joined).toContain("Pause");
-    expect(joined).toContain("Start now");
-  });
-
-  it("shows 0s when time expired", () => {
-    const lines = formatArmingBanner(0);
-    const joined = lines.join("\n");
-    expect(joined).toContain("0s");
-  });
-});
-
-describe("waitForArmingKey", () => {
-  function mockStdinForArming(): {
-    stream: NodeJS.ReadStream;
-    emit: (key: string) => void;
-    listeners: Map<string, Function>;
-  } {
-    const listeners = new Map<string, Function>();
-    const stream = {
-      isTTY: true,
-      on: vi.fn((event: string, handler: Function) => {
-        listeners.set(event, handler);
-      }),
-      removeListener: vi.fn((event: string, _handler: Function) => {
-        listeners.delete(event);
-      }),
-    } as unknown as NodeJS.ReadStream;
-    return {
-      stream,
-      emit: (key: string) => {
-        const handler = listeners.get("data") as ((k: string) => void) | undefined;
-        handler?.(key);
+describe("resolveStartupCollaborationAction", () => {
+  it("keeps the current startup collaboration state when local is selected", () => {
+    expect(resolveStartupCollaborationAction(
+      {
+        connectMode: false,
+        crewCode: "KEEP-1234",
+        crewUrl: "wss://custom.example",
       },
-      listeners,
-    };
-  }
-
-  it("resolves to 'local' on Enter key", async () => {
-    const { stream, emit } = mockStdinForArming();
-    const promise = waitForArmingKey(stream, undefined, 10_000);
-    emit("\r");
-    expect(await promise).toBe("local");
+      null,
+    )).toEqual({
+      connectMode: false,
+      crewCode: "KEEP-1234",
+      crewUrl: "wss://custom.example",
+    });
   });
 
-  it("resolves to 'local' on Escape key", async () => {
-    const { stream, emit } = mockStdinForArming();
-    const promise = waitForArmingKey(stream, undefined, 10_000);
-    emit("\x1b");
-    expect(await promise).toBe("local");
+  it("maps startup share directly into connect mode", () => {
+    expect(resolveStartupCollaborationAction(
+      {
+        connectMode: false,
+        crewCode: "OLD-1234",
+        crewUrl: "wss://custom.example",
+      },
+      { type: "connect" },
+    )).toEqual({
+      connectMode: true,
+      crewCode: undefined,
+      crewUrl: "wss://custom.example",
+    });
   });
 
-  it("resolves to 'join' on J key", async () => {
-    const { stream, emit } = mockStdinForArming();
-    const promise = waitForArmingKey(stream, undefined, 10_000);
-    emit("j");
-    expect(await promise).toBe("join");
-  });
-
-  it("resolves to 'share' on S key", async () => {
-    const { stream, emit } = mockStdinForArming();
-    const promise = waitForArmingKey(stream, undefined, 10_000);
-    emit("s");
-    expect(await promise).toBe("share");
-  });
-
-  it("resolves to 'local' on timeout", async () => {
-    const { stream } = mockStdinForArming();
-    const result = await waitForArmingKey(stream, undefined, 50);
-    expect(result).toBe("local");
-  });
-
-  it("resolves to 'local' when signal is already aborted", async () => {
-    const { stream } = mockStdinForArming();
-    const ac = new AbortController();
-    ac.abort();
-    const result = await waitForArmingKey(stream, ac.signal, 10_000);
-    expect(result).toBe("local");
-  });
-
-  it("pause (P) prevents auto-start timeout", async () => {
-    const { stream, emit } = mockStdinForArming();
-    // Use a very short timeout -- without P, this would resolve to "local"
-    const promise = waitForArmingKey(stream, undefined, 50);
-    // Press P immediately to pause
-    emit("p");
-    // Wait longer than the timeout
-    await new Promise((r) => setTimeout(r, 100));
-    // Should NOT have resolved yet (timer was cancelled by P)
-    // Now press Enter to resolve
-    emit("\r");
-    expect(await promise).toBe("local");
-  });
-
-  it("reports a once-per-second countdown while arming", async () => {
-    vi.useFakeTimers();
-    try {
-      const { stream } = mockStdinForArming();
-      const ticks: number[] = [];
-      let currentTime = 0;
-
-      const promise = waitForArmingKey(
-        stream,
-        undefined,
-        4000,
-        () => currentTime,
-        (remainingMs) => ticks.push(Math.ceil(remainingMs / 1000)),
-      );
-
-      currentTime = 1000;
-      vi.advanceTimersByTime(1000);
-      currentTime = 2000;
-      vi.advanceTimersByTime(1000);
-      currentTime = 3000;
-      vi.advanceTimersByTime(1000);
-      currentTime = 4000;
-      vi.advanceTimersByTime(1000);
-
-      expect(ticks).toEqual([3, 2, 1, 0]);
-      expect(await promise).toBe("local");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("stops countdown updates after pause", async () => {
-    vi.useFakeTimers();
-    try {
-      const { stream, emit } = mockStdinForArming();
-      const ticks: number[] = [];
-      let currentTime = 0;
-
-      const promise = waitForArmingKey(
-        stream,
-        undefined,
-        4000,
-        () => currentTime,
-        (remainingMs) => ticks.push(Math.ceil(remainingMs / 1000)),
-      );
-
-      currentTime = 1000;
-      vi.advanceTimersByTime(1000);
-      emit("p");
-      currentTime = 4000;
-      vi.advanceTimersByTime(3000);
-
-      expect(ticks).toEqual([3]);
-
-      emit("\r");
-      expect(await promise).toBe("local");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("clears countdown updates after resolving immediately", async () => {
-    vi.useFakeTimers();
-    try {
-      const { stream, emit } = mockStdinForArming();
-      const ticks: number[] = [];
-      let currentTime = 0;
-
-      const promise = waitForArmingKey(
-        stream,
-        undefined,
-        4000,
-        () => currentTime,
-        (remainingMs) => ticks.push(Math.ceil(remainingMs / 1000)),
-      );
-
-      emit("j");
-      currentTime = 4000;
-      vi.advanceTimersByTime(4000);
-
-      expect(await promise).toBe("join");
-      expect(ticks).toEqual([]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("clears countdown updates after abort", async () => {
-    vi.useFakeTimers();
-    try {
-      const { stream } = mockStdinForArming();
-      const ac = new AbortController();
-      const ticks: number[] = [];
-      let currentTime = 0;
-
-      const promise = waitForArmingKey(
-        stream,
-        ac.signal,
-        4000,
-        () => currentTime,
-        (remainingMs) => ticks.push(Math.ceil(remainingMs / 1000)),
-      );
-
-      ac.abort();
-      currentTime = 4000;
-      vi.advanceTimersByTime(4000);
-
-      expect(await promise).toBe("local");
-      expect(ticks).toEqual([]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe("shouldShowStartupArmingWindow", () => {
-  it("skips the arming window for future-only startup", () => {
-    expect(shouldShowStartupArmingWindow(true, false, true)).toBe(false);
-  });
-
-  it("shows the arming window for normal local startup", () => {
-    expect(shouldShowStartupArmingWindow(true, false, false)).toBe(true);
-  });
-});
-
-describe("ARMING_WINDOW_MS", () => {
-  it("is between 3000 and 5000ms", () => {
-    expect(ARMING_WINDOW_MS).toBeGreaterThanOrEqual(3000);
-    expect(ARMING_WINDOW_MS).toBeLessThanOrEqual(5000);
+  it("maps startup join directly into crew setup with a default broker URL", () => {
+    expect(resolveStartupCollaborationAction(
+      {
+        connectMode: true,
+      },
+      { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
+    )).toEqual({
+      connectMode: false,
+      crewCode: "K2F9-AB3X-7YPL-QM4N",
+      crewUrl: "wss://ninthwave.sh",
+    });
   });
 });
 
@@ -7525,9 +7363,9 @@ describe("orchestrateLoop claims gating", () => {
     expect(launchCalls).toContain("T-UNGATE-1");
   });
 
-  it("explicit join/share skips arming window -- joined daemons gate on broker connection", async () => {
-    // When a crew broker is provided (explicit join/share), claims are gated
-    // by broker connectivity, not by claimsGatedMs.
+  it("collaboration startup gates joined daemons on broker connection", async () => {
+    // When a crew broker is provided, claims are gated by broker connectivity,
+    // not by the local-only startup path.
     const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-JOIN-1"));
     orch.getItem("T-JOIN-1")!.reviewCompleted = true;
@@ -7611,9 +7449,9 @@ describe("session lifecycle", () => {
   });
 
   it("saved crew code is written only on explicit share/join, not plain startup", () => {
-    // The only calls to saveCrewCode in orchestrate.ts are:
-    // 1. After explicit --crew/--connect broker setup
-    // 2. After arming window share/join resolution
+    // The only calls to saveCrewCode in orchestrate.ts are after broker setup:
+    // 1. Explicit --crew/--connect flows
+    // 2. Startup settings share/join flows
     // There is no automatic re-activation of saved crew codes on plain startup.
     const tmpDir = mkdtempSync(join(tmpdir(), "nw-session-test-"));
     try {
@@ -7629,8 +7467,8 @@ describe("session lifecycle", () => {
       expect(readCrewCode(tmpDir)).toBe("old-session-xyz");
 
       // But in the new code, cmdOrchestrate never reads it.
-      // The arming window starts local by default.
-      // Only explicit --crew <code> or arming window J/S choices set up crew mode.
+      // Plain startup stays local unless the user explicitly selects share/join.
+      // Only explicit --crew <code> or startup collaboration choices set up crew mode.
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
       try { rmSync(userStateDir(tmpDir), { recursive: true, force: true }); } catch { /* best-effort */ }

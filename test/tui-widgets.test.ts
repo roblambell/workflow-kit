@@ -949,6 +949,37 @@ describe("runSelectionScreen", () => {
     expect(getOutput()).toContain("No work items queued");
   });
 
+  it("supports future-only startup with direct share selection", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+
+    const resultPromise = runSelectionScreen(io, [], 4);
+    sendKeyBatches(
+      ["\r"],
+      ["\x1B[B", "\x1B[B", "\x1B[C", "\r"],
+    );
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.futureOnly).toBe(true);
+    expect(result!.connectionAction).toEqual({ type: "connect" });
+  });
+
+  it("keeps future-only startup local when join code entry is cancelled", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+
+    const resultPromise = runSelectionScreen(io, [], 4);
+    sendKeyBatches(
+      ["\r"],
+      ["\x1B[B", "\x1B[B", "\x1B[C", "\x1B[C", "\r"],
+      ["\x1B"],
+    );
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.futureOnly).toBe(true);
+    expect(result!.connectionAction).toBeNull();
+  });
+
   it("completes full flow: select items → confirm with local-first defaults", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [
