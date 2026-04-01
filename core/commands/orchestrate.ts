@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readdirSync, appendFileSync } from "fs";
 import { join, basename, dirname } from "path";
 import { totalmem, freemem } from "os";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { getAvailableMemory } from "../memory.ts";
 import {
   Orchestrator,
@@ -72,7 +72,8 @@ import {
   migrateRuntimeState,
   readLayoutPreference,
   writeLayoutPreference,
-  type DaemonState,
+   type DaemonState,
+   type DaemonStateItem,
   type DaemonCrewStatus,
   type ExternalReviewItem,
   type WorkerProgress,
@@ -80,6 +81,7 @@ import {
 import type { TokenUsage } from "../crew.ts";
 import {
   buildVisibleStatusLayoutMetadata,
+  daemonStateToStatusItems,
   formatStatusTable,
   mapDaemonItemState,
   getTerminalWidth,
@@ -413,6 +415,147 @@ export function detectTuiMode(isDaemonChild: boolean, jsonFlag: boolean, isTTY: 
   return !isDaemonChild && !jsonFlag && isTTY;
 }
 
+export interface InteractiveEngineTransportRuntime {
+  mergeStrategy: MergeStrategy;
+  wipLimit: number;
+  reviewMode: "off" | "ninthwave-prs" | "all-prs";
+  collaborationMode: "local" | "shared" | "joined";
+}
+
+export interface InteractiveEngineSnapshotRenderState {
+  daemonState: DaemonState;
+  runtime: InteractiveEngineTransportRuntime;
+  pollIntervalMs?: number;
+  interactiveTiming?: InteractiveWatchTiming;
+}
+
+export type InteractiveEngineTransportMessage =
+  | { type: "snapshot"; event: WatchEngineSnapshotEvent }
+  | { type: "log"; entry: LogEntry }
+  | { type: "result"; result: OrchestrateLoopResult }
+  | { type: "fatal"; error: string };
+
+export interface InteractiveEngineChildProcess {
+  stdout?: NodeJS.ReadableStream | null;
+  stdin?: NodeJS.WritableStream | null;
+  on(event: "close", listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
+  on(event: "error", listener: (error: Error) => void): this;
+  kill(signal?: NodeJS.Signals | number): boolean;
+}
+
+export function buildInteractiveEngineChildArgs(
+  parsed: ParsedWatchArgs,
+  resolved: {
+    itemIds: string[];
+    mergeStrategy: MergeStrategy;
+    wipLimit: number;
+    toolOverride?: string;
+    skipReview: boolean;
+    reviewMode: "off" | "ninthwave-prs" | "all-prs";
+    watchMode: boolean;
+    futureOnlyStartup: boolean;
+    crewCode?: string;
+    connectMode: boolean;
+    crewUrl?: string;
+    crewName?: string;
+    bypassEnabled: boolean;
+  },
+): string[] {
+  const childArgs: string[] = [
+    "--_interactive-engine-child",
+    "--skip-preflight",
+    "--items",
+    ...resolved.itemIds,
+    "--merge-strategy",
+    resolved.mergeStrategy,
+    "--wip-limit",
+    String(resolved.wipLimit),
+  ];
+
+  if (parsed.pollIntervalOverride !== undefined) {
+    childArgs.push("--poll-interval", String(Math.max(1, Math.round(parsed.pollIntervalOverride / 1000))));
+  }
+  if (parsed.clickupListId) childArgs.push("--clickup-list", parsed.clickupListId);
+  if (parsed.reviewAutoFix) childArgs.push("--review-auto-fix", parsed.reviewAutoFix);
+  if (parsed.reviewExternal || resolved.reviewMode === "all-prs") childArgs.push("--review-external");
+  if (parsed.reviewWipLimit !== undefined) childArgs.push("--review-wip-limit", String(parsed.reviewWipLimit));
+  childArgs.push(resolved.skipReview ? "--no-review" : "--review");
+  childArgs.push(parsed.fixForward ? "--fix-forward" : "--no-fix-forward");
+  if (resolved.watchMode) childArgs.push("--watch");
+  if (resolved.futureOnlyStartup) childArgs.push("--future-only-startup");
+  if (parsed.noWatch) childArgs.push("--no-watch");
+  if (parsed.watchIntervalSecs !== undefined) childArgs.push("--watch-interval", String(parsed.watchIntervalSecs));
+  if (resolved.crewCode) childArgs.push("--crew", resolved.crewCode);
+  if (resolved.connectMode) childArgs.push("--connect");
+  if (parsed.crewPort) childArgs.push("--crew-port", String(parsed.crewPort));
+  if (resolved.crewUrl) childArgs.push("--crew-url", resolved.crewUrl);
+  if (resolved.crewName) childArgs.push("--crew-name", resolved.crewName);
+  if (resolved.bypassEnabled) childArgs.push("--dangerously-bypass");
+  if (resolved.toolOverride) childArgs.push("--tool", resolved.toolOverride);
+  if (parsed.frictionDir) childArgs.push("--friction-log", parsed.frictionDir);
+
+  return childArgs;
+}
+
+export function spawnInteractiveEngineChild(
+  childArgs: string[],
+  projectRoot: string,
+  spawnFn: typeof spawn = spawn,
+): InteractiveEngineChildProcess {
+  return spawnFn(process.argv[0]!, [process.argv[1]!, "orchestrate", ...childArgs], {
+    cwd: projectRoot,
+    stdio: ["pipe", "pipe", "inherit"],
+  }) as unknown as InteractiveEngineChildProcess;
+}
+
+export function writeInteractiveEngineControl(
+  stdin: NodeJS.WritableStream | null | undefined,
+  command: WatchEngineControlCommand,
+): void {
+  if (!stdin) return;
+  stdin.write(JSON.stringify(command) + "\n");
+}
+
+export function terminateInteractiveEngineChild(
+  child: InteractiveEngineChildProcess,
+  opts: {
+    setTimeoutFn?: typeof setTimeout;
+    clearTimeoutFn?: typeof clearTimeout;
+    timeoutMs?: number;
+  } = {},
+): Promise<void> {
+  const setTimeoutFn = opts.setTimeoutFn ?? setTimeout;
+  const clearTimeoutFn = opts.clearTimeoutFn ?? clearTimeout;
+  const timeoutMs = opts.timeoutMs ?? 500;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeoutFn(timeout);
+      resolve();
+    };
+
+    child.on("close", () => finish());
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      finish();
+      return;
+    }
+    timeout = setTimeoutFn(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // best-effort
+      }
+      finish();
+    }, timeoutMs);
+  });
+}
+
 /**
  * Convert OrchestratorItem[] to StatusItem[] for TUI rendering.
  * When broker-fed remote snapshots are provided, use them as the source of truth
@@ -594,6 +737,114 @@ function syncStatusLayout(tuiState: TuiState, panelLayout: ReturnType<typeof bui
   );
 }
 
+export interface TuiDetailSnapshot {
+  priority?: string;
+  dependencies?: string[];
+  ciFailCount?: number;
+  retryCount?: number;
+  descriptionBody?: string;
+}
+
+export function renderTuiPanelFrameFromStatusItems(
+  statusItems: StatusItem[],
+  wipLimit: number | undefined,
+  tuiState: TuiState,
+  write: (s: string) => void = (s) => process.stdout.write(s),
+  detailSnapshots?: ReadonlyMap<string, TuiDetailSnapshot>,
+): void {
+  const termWidth = getTerminalWidth();
+  const termRows = getTerminalHeight();
+  const fullScreenViewOptions = termRows >= MIN_FULLSCREEN_ROWS
+    ? { ...(tuiState.viewOptions ?? {}), inlineModeIndicatorOnTitle: true }
+    : tuiState.viewOptions;
+
+  write("\x1B[H");
+
+  if (tuiState.viewOptions.showHelp) {
+    const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
+    const content = helpLines.join("\n");
+    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+  } else if (tuiState.showControls) {
+    const controlsLines = renderControlsOverlay(termWidth, termRows, {
+      collaborationMode: tuiState.collaborationMode,
+      collaborationIntent: tuiState.collaborationIntent,
+      sessionCode: tuiState.sessionCode,
+      collaborationJoinInputActive: tuiState.collaborationJoinInputActive,
+      collaborationJoinInputValue: tuiState.collaborationJoinInputValue,
+      collaborationBusy: tuiState.collaborationBusy,
+      collaborationError: tuiState.collaborationError,
+      reviewMode: tuiState.reviewMode,
+      mergeStrategy: tuiState.pendingStrategy ?? tuiState.mergeStrategy,
+      bypassEnabled: tuiState.bypassEnabled,
+      wipLimit,
+      activeRowIndex: tuiState.controlsRowIndex,
+    });
+    const content = controlsLines.join("\n");
+    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+  } else if (tuiState.detailItemId) {
+    const detailStatusItem = statusItems.find((item) => item.id === tuiState.detailItemId);
+    if (detailStatusItem) {
+      const detailSnapshot = detailSnapshots?.get(tuiState.detailItemId);
+      const overlayLines = renderDetailOverlay(detailStatusItem, termWidth, termRows, {
+        repoUrl: tuiState.viewOptions.repoUrl,
+        priority: detailSnapshot?.priority,
+        dependencies: detailSnapshot?.dependencies,
+        ciFailCount: detailSnapshot?.ciFailCount,
+        retryCount: detailSnapshot?.retryCount,
+        scrollOffset: tuiState.detailScrollOffset ?? 0,
+        descriptionBody: detailSnapshot?.descriptionBody,
+      });
+      const content = overlayLines.join("\n");
+      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+    } else {
+      tuiState.detailItemId = null;
+      const filteredLogs = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
+      prepareStatusSelection(tuiState, statusItems);
+      const panelLayout = buildPanelLayout(
+        tuiState.panelMode,
+        statusItems,
+        filteredLogs,
+        termWidth,
+        termRows,
+        {
+          wipLimit,
+          viewOptions: fullScreenViewOptions,
+          logScrollOffset: tuiState.logScrollOffset,
+          statusScrollOffset: tuiState.scrollOffset,
+          selectedItemId: tuiState.selectedItemId,
+        },
+      );
+      syncStatusLayout(tuiState, panelLayout, termRows);
+      const frameLines = renderPanelFrame(panelLayout, termRows, termWidth, tuiState.scrollOffset);
+      const content = frameLines.join("\n");
+      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+    }
+  } else {
+    const filteredLogs = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
+    prepareStatusSelection(tuiState, statusItems);
+    const panelLayout = buildPanelLayout(
+      tuiState.panelMode,
+      statusItems,
+      filteredLogs,
+      termWidth,
+      termRows,
+      {
+        wipLimit,
+        viewOptions: fullScreenViewOptions,
+        logScrollOffset: tuiState.logScrollOffset,
+        statusScrollOffset: tuiState.scrollOffset,
+        selectedItemId: tuiState.selectedItemId,
+      },
+    );
+    syncStatusLayout(tuiState, panelLayout, termRows);
+    const frameLines = renderPanelFrame(panelLayout, termRows, termWidth, tuiState.scrollOffset);
+    const content = frameLines.join("\n");
+    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+  }
+
+  write("\x1B[J");
+}
+
 /**
  * Render the status table to stdout using ANSI cursor control for flicker-free updates.
  * Uses cursor-home + clear-line + clear-to-end to replace content in-place.
@@ -657,92 +908,199 @@ export function renderTuiPanelFrame(
   heartbeats?: ReadonlyMap<string, WorkerProgress>,
 ): void {
   const statusItems = orchestratorItemsToStatusItems(items, remoteItems, maxTimeoutExtensions, heartbeats);
-  const termWidth = getTerminalWidth();
-  const termRows = getTerminalHeight();
-  const fullScreenViewOptions = termRows >= MIN_FULLSCREEN_ROWS
-    ? { ...(tuiState.viewOptions ?? {}), inlineModeIndicatorOnTitle: true }
-    : tuiState.viewOptions;
+  const detailSnapshots = new Map<string, TuiDetailSnapshot>(
+    items.map((item) => [item.id, {
+      priority: item.workItem.priority,
+      dependencies: item.workItem.dependencies,
+      ciFailCount: item.ciFailCount,
+      retryCount: item.retryCount,
+      descriptionBody: item.workItem.rawText,
+    }]),
+  );
+  renderTuiPanelFrameFromStatusItems(statusItems, wipLimit, tuiState, write, detailSnapshots);
+}
 
-  write("\x1B[H");
+function daemonStateToDetailSnapshots(state: DaemonState): Map<string, TuiDetailSnapshot> {
+  return new Map<string, TuiDetailSnapshot>(
+    state.items.map((item) => [item.id, {
+      priority: item.priority,
+      dependencies: item.dependencies,
+      ciFailCount: item.ciFailCount,
+      retryCount: item.retryCount,
+      descriptionBody: item.descriptionBody,
+    }]),
+  );
+}
 
-  if (tuiState.viewOptions.showHelp) {
-    // Render help overlay instead of the panel frame
-    const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
-    const content = helpLines.join("\n");
-    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-  } else if (tuiState.showControls) {
-    // Render controls overlay for runtime settings
-    const controlsLines = renderControlsOverlay(termWidth, termRows, {
-      collaborationMode: tuiState.collaborationMode,
-      collaborationIntent: tuiState.collaborationIntent,
-      sessionCode: tuiState.sessionCode,
-      collaborationJoinInputActive: tuiState.collaborationJoinInputActive,
-      collaborationJoinInputValue: tuiState.collaborationJoinInputValue,
-      collaborationBusy: tuiState.collaborationBusy,
-      collaborationError: tuiState.collaborationError,
-      reviewMode: tuiState.reviewMode,
-      mergeStrategy: tuiState.pendingStrategy ?? tuiState.mergeStrategy,
-      bypassEnabled: tuiState.bypassEnabled,
-      wipLimit,
-      activeRowIndex: tuiState.controlsRowIndex,
-    });
-    const content = controlsLines.join("\n");
-    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-  } else if (tuiState.detailItemId) {
-    // Render detail overlay for the selected item
-    const detailStatusItem = statusItems.find((i) => i.id === tuiState.detailItemId);
-    if (detailStatusItem) {
-      const orchItem = items.find((i) => i.id === tuiState.detailItemId);
-      const overlayLines = renderDetailOverlay(detailStatusItem, termWidth, termRows, {
-        repoUrl: tuiState.viewOptions.repoUrl,
-        priority: orchItem?.workItem.priority,
-        dependencies: orchItem?.workItem.dependencies,
-        ciFailCount: orchItem?.ciFailCount,
-        retryCount: orchItem?.retryCount,
-        scrollOffset: tuiState.detailScrollOffset ?? 0,
-        descriptionBody: orchItem?.workItem.rawText,
-      });
-      const content = overlayLines.join("\n");
-      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-    } else {
-      // Item no longer exists -- clear detail view and render normal frame
-      tuiState.detailItemId = null;
-      const filteredLogs = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
-      prepareStatusSelection(tuiState, statusItems);
-      const panelLayout = buildPanelLayout(
-        tuiState.panelMode, statusItems, filteredLogs, termWidth, termRows,
-        { wipLimit, viewOptions: fullScreenViewOptions, logScrollOffset: tuiState.logScrollOffset, statusScrollOffset: tuiState.scrollOffset, selectedItemId: tuiState.selectedItemId },
-      );
-      syncStatusLayout(tuiState, panelLayout, termRows);
-      const frameLines = renderPanelFrame(panelLayout, termRows, termWidth, tuiState.scrollOffset);
-      const content = frameLines.join("\n");
-      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-    }
-  } else {
-    const filteredLogs = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
+export interface InteractiveWatchOperatorSessionOptions {
+  projectRoot: string;
+  childArgs: string[];
+  tuiState: TuiState;
+  log: (entry: LogEntry) => void;
+  initialSnapshot: InteractiveEngineSnapshotRenderState;
+  watchMode: boolean;
+  manageTerminal?: boolean;
+  abortController?: AbortController;
+  stdin?: NodeJS.ReadStream;
+  stdout?: NodeJS.WriteStream;
+  spawnChild?: (childArgs: string[], projectRoot: string) => InteractiveEngineChildProcess;
+  setupKeyboardShortcutsFn?: typeof setupKeyboardShortcuts;
+  waitForCompletionKeyFn?: typeof waitForCompletionKey;
+  renderFrame?: typeof renderTuiPanelFrameFromStatusItems;
+}
 
-    prepareStatusSelection(tuiState, statusItems);
-    const panelLayout = buildPanelLayout(
-      tuiState.panelMode,
-      statusItems,
-      filteredLogs,
-      termWidth,
-      termRows,
-      {
-        wipLimit,
-        viewOptions: fullScreenViewOptions,
-        logScrollOffset: tuiState.logScrollOffset,
-        statusScrollOffset: tuiState.scrollOffset,
-        selectedItemId: tuiState.selectedItemId,
-      },
+export interface InteractiveWatchOperatorSessionResult {
+  completionAction?: CompletionAction;
+  lastSnapshot: InteractiveEngineSnapshotRenderState;
+}
+
+export async function runInteractiveWatchOperatorSession(
+  opts: InteractiveWatchOperatorSessionOptions,
+): Promise<InteractiveWatchOperatorSessionResult> {
+  const stdin = opts.stdin ?? process.stdin;
+  const stdout = opts.stdout ?? process.stdout;
+  const spawnChild = opts.spawnChild ?? spawnInteractiveEngineChild;
+  const setupKeyboardShortcutsFn = opts.setupKeyboardShortcutsFn ?? setupKeyboardShortcuts;
+  const waitForCompletionKeyFn = opts.waitForCompletionKeyFn ?? waitForCompletionKey;
+  const renderFrame = opts.renderFrame ?? renderTuiPanelFrameFromStatusItems;
+  const manageTerminal = opts.manageTerminal ?? true;
+
+  let lastSnapshot = opts.initialSnapshot;
+  let childResult: OrchestrateLoopResult | undefined;
+
+  const write = (chunk: string) => stdout.write(chunk);
+  const render = () => {
+    renderFrame(
+      daemonStateToStatusItems(lastSnapshot.daemonState),
+      lastSnapshot.runtime.wipLimit,
+      opts.tuiState,
+      write,
+      daemonStateToDetailSnapshots(lastSnapshot.daemonState),
     );
-    syncStatusLayout(tuiState, panelLayout, termRows);
-    const frameLines = renderPanelFrame(panelLayout, termRows, termWidth, tuiState.scrollOffset);
-    const content = frameLines.join("\n");
-    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+  };
+
+  opts.tuiState.onUpdate = () => {
+    try {
+      render();
+    } catch {
+      // Non-fatal.
+    }
+  };
+
+  const abortController = opts.abortController ?? new AbortController();
+  let cleanupKeyboard = () => {};
+  let altScreenActive = false;
+
+  const child = spawnChild(opts.childArgs, opts.projectRoot);
+  const closePromise = new Promise<void>((resolve, reject) => {
+    child.on("close", () => resolve());
+    child.on("error", reject);
+  });
+
+  let stdoutBuffer = "";
+  const onChildData = (chunk: Buffer | string) => {
+    stdoutBuffer += chunk.toString();
+    const lines = stdoutBuffer.split("\n");
+    stdoutBuffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let message: InteractiveEngineTransportMessage;
+      try {
+        message = JSON.parse(trimmed) as InteractiveEngineTransportMessage;
+      } catch {
+        continue;
+      }
+      if (message.type === "snapshot") {
+        lastSnapshot = {
+          daemonState: message.event.state,
+          runtime: message.event.runtime,
+          ...(message.event.pollIntervalMs !== undefined ? { pollIntervalMs: message.event.pollIntervalMs } : {}),
+          ...(message.event.interactiveTiming ? { interactiveTiming: message.event.interactiveTiming } : {}),
+        };
+        opts.tuiState.mergeStrategy = message.event.runtime.mergeStrategy;
+        opts.tuiState.viewOptions.mergeStrategy = message.event.runtime.mergeStrategy;
+        opts.tuiState.reviewMode = message.event.runtime.reviewMode;
+        opts.tuiState.viewOptions.reviewMode = message.event.runtime.reviewMode;
+        opts.tuiState.collaborationMode = message.event.runtime.collaborationMode;
+        opts.tuiState.viewOptions.collaborationMode = message.event.runtime.collaborationMode;
+        render();
+        continue;
+      }
+      if (message.type === "log") {
+        opts.log(message.entry);
+        continue;
+      }
+      if (message.type === "result") {
+        childResult = message.result;
+        continue;
+      }
+      if (message.type === "fatal") {
+        throw new Error(message.error);
+      }
+    }
+  };
+
+  if (child.stdout) {
+    child.stdout.setEncoding?.("utf8");
+    child.stdout.on("data", onChildData);
   }
 
-  write("\x1B[J");
+  try {
+    if (manageTerminal) {
+      write(ALT_SCREEN_ON);
+      altScreenActive = true;
+      cleanupKeyboard = setupKeyboardShortcutsFn(abortController, opts.log, stdin, opts.tuiState);
+    }
+    render();
+
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = async () => {
+        try {
+          await terminateInteractiveEngineChild(child);
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      abortController.signal.addEventListener("abort", () => {
+        void onAbort();
+      }, { once: true });
+
+      void closePromise.then(resolve, reject);
+    });
+
+    if (abortController.signal.aborted) {
+      return { completionAction: "quit", lastSnapshot };
+    }
+
+    if (!opts.watchMode && childResult) {
+      const bannerLines = formatCompletionBanner(lastSnapshot.daemonState.items, lastSnapshot.daemonState.startedAt);
+      write("\x1B[H");
+      render();
+      const termRows = getTerminalHeight();
+      const startRow = Math.max(1, termRows - bannerLines.length);
+      write(`\x1B[${startRow};1H`);
+      for (const line of bannerLines) {
+        write(line + "\x1B[K\n");
+      }
+      return {
+        completionAction: await waitForCompletionKeyFn(stdin, abortController.signal),
+        lastSnapshot,
+      };
+    }
+
+    return { completionAction: childResult?.completionAction, lastSnapshot };
+  } finally {
+    if (child.stdout) {
+      child.stdout.removeListener("data", onChildData);
+    }
+    if (manageTerminal) cleanupKeyboard();
+    if (altScreenActive) {
+      write(ALT_SCREEN_OFF);
+    }
+  }
 }
 
 // ── Reusable TUI runner ─────────────────────────────────────────────
@@ -1209,8 +1567,14 @@ function handleRunComplete(
  *
  * Format: "ninthwave: N merged, M stuck, K queued (Xm Ys) | Lead time: p50 Xm, p95 Ym"
  */
+export interface CompletionSummaryItem {
+  state: string;
+  startedAt?: string;
+  endedAt?: string;
+}
+
 export function formatExitSummary(
-  allItems: OrchestratorItem[],
+  allItems: CompletionSummaryItem[],
   runStartTime: string,
 ): string {
   const merged = allItems.filter((i) => i.state === "done").length;
@@ -1258,7 +1622,7 @@ export type CompletionAction = "run-more" | "clean" | "quit";
  * Returns the banner text as an array of lines.
  */
 export function formatCompletionBanner(
-  allItems: OrchestratorItem[],
+  allItems: CompletionSummaryItem[],
   runStartTime: string,
 ): string[] {
   const merged = allItems.filter((i) => i.state === "done").length;
@@ -2488,7 +2852,7 @@ export async function cmdOrchestrate(
   } = parsed;
   const {
     wipLimitOverride, pollIntervalOverride, frictionDir,
-    daemonMode, isDaemonChild, clickupListId, remoteFlag,
+    daemonMode, isDaemonChild, isInteractiveEngineChild, clickupListId, remoteFlag,
     reviewAutoFix, reviewExternal: parsedReviewExternal, reviewWipLimit,
     fixForward, skipReview: cliSkipReview, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewName,
@@ -2576,7 +2940,7 @@ export async function cmdOrchestrate(
   // ── TUI mode setup ─────────────────────────────────────────────────
   // TUI mode: render live status table to stdout; redirect JSON logs to log file.
   // Enabled when stdout is a TTY and neither --json nor --_daemon-child is set.
-  const tuiMode = detectTuiMode(isDaemonChild, jsonFlag, process.stdout.isTTY === true);
+  const tuiMode = detectTuiMode(isDaemonChild || isInteractiveEngineChild, jsonFlag, process.stdout.isTTY === true);
 
   // Shared log ring buffer for the TUI log panel.
   // Created here so the log closure can push entries before tuiState is constructed.
@@ -2599,6 +2963,10 @@ export async function cmdOrchestrate(
         message: `${levelTag}${entry.event}${entry.message ? ": " + entry.message : ""}`,
       });
     };
+  } else if (isInteractiveEngineChild) {
+    log = (entry: LogEntry) => {
+      process.stdout.write(JSON.stringify({ type: "log", entry } satisfies InteractiveEngineTransportMessage) + "\n");
+    };
   }
 
   // Migrate runtime state from old .ninthwave/ to ~/.ninthwave/projects/<slug>/
@@ -2606,7 +2974,7 @@ export async function cmdOrchestrate(
 
   // Prevent duplicate orchestrator instances (foreground or daemon-child)
   const existingPid = isDaemonRunning(projectRoot);
-  if (existingPid !== null && existingPid !== process.pid) {
+  if (!isInteractiveEngineChild && existingPid !== null && existingPid !== process.pid) {
     die(`Another watch daemon is already running (PID ${existingPid}). Use 'ninthwave stop' first, or kill the stale process.`);
   }
 
@@ -2704,13 +3072,13 @@ export async function cmdOrchestrate(
   // Create orchestrator
   // skipReview: CLI --no-review, interactive "off" mode, or --review-wip-limit 0 disables AI review gate
   const skipReview = cliSkipReview || interactiveSkipReview || reviewWipLimit === 0;
-  const orch = new Orchestrator({
+  let orch = new Orchestrator({
     wipLimit,
     mergeStrategy,
     bypassEnabled,
     fixForward,
     skipReview,
-    ...(tuiMode ? {} : { gracePeriodMs: 0 }),
+    ...((tuiMode || isInteractiveEngineChild) ? {} : { gracePeriodMs: 0 }),
     ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
   });
   for (const id of itemIds) {
@@ -3039,6 +3407,15 @@ export async function cmdOrchestrate(
   const initialReviewMode = orch.config.skipReview
     ? "off" as const
     : reviewExternalEnabled ? "all-prs" as const : "ninthwave-prs" as const;
+  let operatorLastSnapshot: InteractiveEngineSnapshotRenderState = {
+    daemonState: initialState,
+    runtime: {
+      mergeStrategy: orch.config.mergeStrategy,
+      wipLimit,
+      reviewMode: initialReviewMode,
+      collaborationMode: initialCollaborationMode,
+    },
+  };
 
   let lastTuiItems: OrchestratorItem[] = orch.getAllItems();
   let lastTuiHeartbeats = new Map<string, WorkerProgress>();
@@ -3108,7 +3485,25 @@ export async function cmdOrchestrate(
     tmuxSessionName: tmuxOutsideSession ? tmuxSessionName : undefined,
   };
 
-  const handleEngineSnapshot = ({ state, pollSnapshot: snapshot, runtime, interactiveTiming }: WatchEngineSnapshotEvent) => {
+  const handleEngineSnapshot = ({ state, pollSnapshot: snapshot, runtime, pollIntervalMs, interactiveTiming }: WatchEngineSnapshotEvent) => {
+    if (isInteractiveEngineChild) {
+      try {
+        writeStateFile(projectRoot, state);
+      } catch {
+        // Non-fatal.
+      }
+      process.stdout.write(JSON.stringify({
+        type: "snapshot",
+        event: {
+          state,
+          pollSnapshot: snapshot,
+          runtime,
+          ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
+          ...(interactiveTiming ? { interactiveTiming } : {}),
+        },
+      } satisfies InteractiveEngineTransportMessage) + "\n");
+      return;
+    }
     lastTuiItems = orch.getAllItems();
     lastTuiHeartbeats = new Map(
       state.items
@@ -3326,7 +3721,11 @@ export async function cmdOrchestrate(
     });
   };
 
-  const engineRunner = (isDaemonChild ? createDetachedDaemonEngineRunner : createWatchEngineRunner)({
+  const engineRunner = (isInteractiveEngineChild
+    ? createInteractiveChildEngineRunner
+    : isDaemonChild
+      ? createDetachedDaemonEngineRunner
+      : createWatchEngineRunner)({
     orch,
     ctx,
     loopDeps,
@@ -3343,6 +3742,27 @@ export async function cmdOrchestrate(
     },
   });
   sendRuntimeControl = engineRunner.sendControl;
+
+  if (isInteractiveEngineChild) {
+    process.stdin.setEncoding("utf8");
+    process.stdin.resume();
+    let controlBuffer = "";
+    process.stdin.on("data", (chunk: string | Buffer) => {
+      controlBuffer += chunk.toString();
+      const lines = controlBuffer.split("\n");
+      controlBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const command = JSON.parse(trimmed) as WatchEngineControlCommand;
+          sendRuntimeControl(command);
+        } catch {
+          // Ignore malformed control commands.
+        }
+      }
+    });
+  }
 
   // Set up keyboard shortcuts in TUI mode (q, Ctrl-C, m, d, ?, ↑/↓)
   let cleanupKeyboard = () => {};
@@ -3535,7 +3955,7 @@ export async function cmdOrchestrate(
   }
 
   // Write PID file for foreground mode too (prevents duplicate instances)
-  if (!isDaemonChild) {
+  if (!isDaemonChild && !isInteractiveEngineChild) {
     writePidFile(projectRoot, process.pid);
   }
 
@@ -3543,7 +3963,113 @@ export async function cmdOrchestrate(
     // Run-more loop: re-enter interactive flow when the user picks [r] at the completion prompt
     let keepRunning = true;
     while (keepRunning) {
+      if (tuiMode) {
+        const childArgs = buildInteractiveEngineChildArgs(parsed, {
+          itemIds: orch.getAllItems().map((item) => item.id),
+          mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
+          wipLimit: operatorLastSnapshot.runtime.wipLimit,
+          toolOverride,
+          skipReview: operatorLastSnapshot.runtime.reviewMode === "off",
+          reviewMode: operatorLastSnapshot.runtime.reviewMode,
+          watchMode,
+          futureOnlyStartup,
+          crewCode,
+          connectMode,
+          crewUrl,
+          crewName,
+          bypassEnabled,
+        });
+        const operatorResult = await runInteractiveWatchOperatorSession({
+          projectRoot,
+          childArgs,
+          tuiState,
+          log,
+          initialSnapshot: operatorLastSnapshot,
+          watchMode,
+          manageTerminal: false,
+          abortController,
+        });
+        operatorLastSnapshot = operatorResult.lastSnapshot;
+
+        if (operatorResult.completionAction === "run-more") {
+          cleanupKeyboard();
+          const freshItems = parseWorkItems(workDir, worktreeDir, projectRoot);
+          const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.wipLimit, {
+            showConnectionStep: false,
+            skipToolStep: true,
+          });
+          if (!interactiveResult) {
+            cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
+            break;
+          }
+
+          const freshMap = new Map<string, WorkItem>();
+          for (const item of freshItems) freshMap.set(item.id, item);
+          const nextIds: string[] = [];
+          const nextItems: WorkItem[] = [];
+          const newDomains = new Set<string>();
+          for (const id of interactiveResult.itemIds) {
+            const wi = freshMap.get(id);
+            if (!wi) continue;
+            nextIds.push(id);
+            nextItems.push(wi);
+            newDomains.add(wi.domain);
+          }
+          if (newDomains.size > 0) ensureDomainLabels(projectRoot, [...newDomains]);
+          if (nextItems.length === 0) {
+            cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
+            break;
+          }
+          const nextOrch = new Orchestrator({
+            wipLimit: operatorLastSnapshot.runtime.wipLimit,
+            mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
+            bypassEnabled,
+            fixForward,
+            skipReview: operatorLastSnapshot.runtime.reviewMode === "off",
+            ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
+          });
+          for (const item of nextItems) nextOrch.addItem(item);
+          const nextState = serializeOrchestratorState(nextOrch.getAllItems(), process.pid, daemonStartedAt, {
+            wipLimit: operatorLastSnapshot.runtime.wipLimit,
+            operatorId,
+            ...(futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
+          });
+          operatorLastSnapshot = {
+            daemonState: nextState,
+            runtime: operatorLastSnapshot.runtime,
+          };
+          orch = nextOrch;
+          cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
+          log({
+            ts: new Date().toISOString(),
+            level: "info",
+            event: "run_more_restart",
+            newItems: nextIds,
+          });
+          continue;
+        }
+
+        if (operatorResult.completionAction === "clean") {
+          for (const item of operatorLastSnapshot.daemonState.items) {
+            if (item.state !== "done") continue;
+            try {
+              if (item.workspaceRef) mux.closeWorkspace(item.workspaceRef);
+              cleanSingleWorktree(item.id, ctx.worktreeDir, ctx.projectRoot);
+            } catch {
+              // Best-effort cleanup.
+            }
+          }
+        }
+
+        keepRunning = false;
+        continue;
+      }
+
       const result = await engineRunner.run(abortController.signal);
+
+      if (isInteractiveEngineChild) {
+        process.stdout.write(JSON.stringify({ type: "result", result } satisfies InteractiveEngineTransportMessage) + "\n");
+      }
 
       if (result.completionAction === "run-more" && tuiMode) {
         // Release keyboard shortcuts so TUI widgets can handle raw keys
@@ -3625,9 +4151,9 @@ export async function cmdOrchestrate(
 
     // Print exit summary to stdout (persists in terminal scrollback)
     if (tuiMode) {
-      const allItems = orch.getAllItems();
+      const allItems = operatorLastSnapshot.daemonState.items;
       if (allItems.length > 0) {
-        const summary = formatExitSummary(allItems, daemonStartedAt);
+        const summary = formatExitSummary(allItems, operatorLastSnapshot.daemonState.startedAt);
         console.log(summary);
       }
     }
@@ -3644,7 +4170,9 @@ export async function cmdOrchestrate(
     cleanStateFile(projectRoot);
 
     // Clean up PID file on exit (both foreground and daemon child)
-    cleanPidFile(projectRoot);
+    if (!isInteractiveEngineChild) {
+      cleanPidFile(projectRoot);
+    }
     if (isDaemonChild) {
       log({
         ts: new Date().toISOString(),

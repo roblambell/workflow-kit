@@ -5,6 +5,7 @@ import { describe, it, expect, vi } from "vitest";
 import { join } from "path";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
+import { EventEmitter } from "events";
 import {
   orchestrateLoop,
   adaptivePollInterval,
@@ -34,6 +35,7 @@ import {
   waitForArmingKey,
   shouldShowStartupArmingWindow,
   createRuntimeControlHandlers,
+  runInteractiveWatchOperatorSession,
   createWatchEngineRunner,
   createDetachedDaemonEngineRunner,
   createInteractiveChildEngineRunner,
@@ -48,6 +50,7 @@ import {
   type ParsedWatchArgs,
   type TuiState,
   type CompletionAction,
+  type InteractiveEngineChildProcess,
   type StartupIntent,
   type WatchEngineSnapshotEvent,
 } from "../core/commands/orchestrate.ts";
@@ -5105,6 +5108,206 @@ describe("shared engine wrappers", () => {
     expect(createRunner).toHaveBeenCalledTimes(2);
     expect(createRunner).toHaveBeenNthCalledWith(1, deps);
     expect(createRunner).toHaveBeenNthCalledWith(2, deps);
+  });
+});
+
+describe("interactive watch operator session", () => {
+  function makeOperatorStdin() {
+    const listeners: Record<string, Function[]> = {};
+    return {
+      isTTY: true as const,
+      setRawMode: vi.fn(),
+      resume: vi.fn(),
+      pause: vi.fn(),
+      setEncoding: vi.fn(),
+      on: vi.fn((event: string, cb: Function) => { (listeners[event] ??= []).push(cb); }),
+      removeListener: vi.fn((event: string, cb: Function) => {
+        const arr = listeners[event];
+        if (!arr) return;
+        const index = arr.indexOf(cb);
+        if (index >= 0) arr.splice(index, 1);
+      }),
+      _emit(event: string, payload: unknown) {
+        for (const cb of listeners[event] ?? []) cb(payload);
+      },
+    } as unknown as NodeJS.ReadStream;
+  }
+
+  function makeOperatorStdout() {
+    const writes: string[] = [];
+    return {
+      writes,
+      stream: {
+        write: vi.fn((chunk: string) => {
+          writes.push(chunk);
+          return true;
+        }),
+      } as unknown as NodeJS.WriteStream,
+    };
+  }
+
+  function makeOperatorTuiState(): TuiState {
+    return {
+      scrollOffset: 0,
+      viewOptions: { showBlockerDetail: true, mergeStrategy: "manual" },
+      mergeStrategy: "manual",
+      pendingStrategy: undefined,
+      pendingStrategyDeadlineMs: undefined,
+      pendingStrategyTimer: undefined,
+      pendingStrategyCountdownTimer: undefined,
+      bypassEnabled: false,
+      ctrlCPending: false,
+      ctrlCTimestamp: 0,
+      showHelp: false,
+      showControls: false,
+      controlsRowIndex: 0,
+      collaborationMode: "local",
+      collaborationIntent: "local",
+      collaborationJoinInputActive: false,
+      collaborationJoinInputValue: "",
+      collaborationBusy: false,
+      reviewMode: "ninthwave-prs",
+      panelMode: "status-only",
+      logBuffer: [],
+      logScrollOffset: 0,
+      logLevelFilter: "all",
+      selectedItemId: undefined,
+      visibleItemIds: [],
+      detailItemId: null,
+      detailScrollOffset: 0,
+      detailContentLines: 0,
+      savedLogScrollOffset: 0,
+      statusLayout: null,
+    };
+  }
+
+  function makeOperatorSnapshot(title = "Snapshot item"): WatchEngineSnapshotEvent {
+    return {
+      state: {
+        pid: 1,
+        startedAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:01.000Z",
+        wipLimit: 2,
+        items: [
+          {
+            id: "H-TRS-3",
+            state: "implementing",
+            prNumber: null,
+            title,
+            priority: "high",
+            descriptionBody: "Snapshot-driven description body",
+            lastTransition: "2026-04-01T00:00:01.000Z",
+            ciFailCount: 1,
+            retryCount: 2,
+            dependencies: ["H-TRS-2"],
+          },
+        ],
+      },
+      pollSnapshot: { items: [], readyIds: [] },
+      runtime: {
+        mergeStrategy: "manual",
+        wipLimit: 2,
+        reviewMode: "ninthwave-prs",
+        collaborationMode: "local",
+      },
+    };
+  }
+
+  function makeOperatorChild() {
+    const child = new EventEmitter() as EventEmitter & InteractiveEngineChildProcess & {
+      stdout: EventEmitter & NodeJS.ReadableStream & { setEncoding: ReturnType<typeof vi.fn> };
+      stdin: { write: ReturnType<typeof vi.fn> };
+      emitLine: (message: unknown) => void;
+    };
+    const stdout = new EventEmitter() as EventEmitter & NodeJS.ReadableStream & { setEncoding: ReturnType<typeof vi.fn> };
+    stdout.setEncoding = vi.fn();
+    const stdin = { write: vi.fn(() => true) };
+    child.stdout = stdout;
+    child.stdin = stdin as any;
+    child.kill = vi.fn(() => {
+      queueMicrotask(() => child.emit("close", null, "SIGTERM"));
+      return true;
+    });
+    child.emitLine = (message: unknown) => {
+      stdout.emit("data", JSON.stringify(message) + "\n");
+    };
+    return child;
+  }
+
+  it("re-renders from snapshot payloads while the engine is blocked", async () => {
+    const stdin = makeOperatorStdin();
+    const { stream: stdout, writes } = makeOperatorStdout();
+    const tuiState = makeOperatorTuiState();
+    const child = makeOperatorChild();
+    const renderFrame = vi.fn();
+
+    const sessionPromise = runInteractiveWatchOperatorSession({
+      projectRoot: "/project",
+      childArgs: ["--items", "H-TRS-3"],
+      tuiState,
+      log: () => {},
+      initialSnapshot: {
+        daemonState: makeOperatorSnapshot("Initial snapshot").state,
+        runtime: makeOperatorSnapshot("Initial snapshot").runtime,
+      },
+      watchMode: true,
+      stdin,
+      stdout,
+      spawnChild: () => child,
+      renderFrame,
+    });
+
+    await Promise.resolve();
+    child.emitLine({ type: "snapshot", event: makeOperatorSnapshot("Blocked snapshot") });
+    await Promise.resolve();
+
+    const renderCountAfterSnapshot = renderFrame.mock.calls.length;
+    const latestStatusItems = renderFrame.mock.calls.at(-1)?.[0] as StatusItem[];
+    expect(latestStatusItems[0]!.title).toBe("Blocked snapshot");
+
+    (stdin as any)._emit("data", "?");
+    expect(tuiState.showHelp).toBe(true);
+    expect(renderFrame.mock.calls.length).toBeGreaterThan(renderCountAfterSnapshot);
+
+    (stdin as any)._emit("data", "q");
+    const result = await sessionPromise;
+
+    expect(result.completionAction).toBe("quit");
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect((stdin.setRawMode as any).mock.calls).toContainEqual([false]);
+    expect(writes.some((chunk) => chunk.includes("\x1B[?1049l"))).toBe(true);
+  });
+
+  it("restores terminal state after the child completes", async () => {
+    const stdin = makeOperatorStdin();
+    const { stream: stdout, writes } = makeOperatorStdout();
+    const tuiState = makeOperatorTuiState();
+    const child = makeOperatorChild();
+
+    const sessionPromise = runInteractiveWatchOperatorSession({
+      projectRoot: "/project",
+      childArgs: ["--items", "H-TRS-3"],
+      tuiState,
+      log: () => {},
+      initialSnapshot: {
+        daemonState: makeOperatorSnapshot().state,
+        runtime: makeOperatorSnapshot().runtime,
+      },
+      watchMode: false,
+      stdin,
+      stdout,
+      spawnChild: () => child,
+      waitForCompletionKeyFn: vi.fn(async () => "quit"),
+    });
+
+    await Promise.resolve();
+    child.emitLine({ type: "result", result: {} });
+    child.emit("close", 0, null);
+
+    const result = await sessionPromise;
+    expect(result.completionAction).toBe("quit");
+    expect((stdin.setRawMode as any).mock.calls).toContainEqual([false]);
+    expect(writes.some((chunk) => chunk.includes("\x1B[?1049l"))).toBe(true);
   });
 });
 

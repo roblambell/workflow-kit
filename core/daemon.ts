@@ -25,8 +25,12 @@ export interface DaemonStateItem {
   state: string;
   prNumber: number | null;
   title: string;
+  /** Work item priority for snapshot-driven detail rendering. */
+  priority?: string;
   /** Compact description snippet for status detail views (omitted when unavailable). */
   descriptionSnippet?: string;
+  /** Full work item markdown body for snapshot-driven detail rendering. */
+  descriptionBody?: string;
   lastTransition: string;
   ciFailCount: number;
   retryCount: number;
@@ -606,9 +610,11 @@ export function serializeOrchestratorState(
         state: item.state,
         prNumber: item.prNumber ?? null,
         title: item.workItem.title,
+        ...(item.workItem.priority ? { priority: item.workItem.priority } : {}),
         ...(item.workItem.descriptionSnippet
           ? { descriptionSnippet: item.workItem.descriptionSnippet }
           : {}),
+        ...(item.workItem.rawText ? { descriptionBody: item.workItem.rawText } : {}),
         lastTransition: item.lastTransition,
         ciFailCount: item.ciFailCount,
         retryCount: item.retryCount,
