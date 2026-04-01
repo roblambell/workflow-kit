@@ -69,6 +69,7 @@ import {
   orchestratorItemsToStatusItems,
   renderTuiFrame,
 } from "../core/commands/orchestrate.ts";
+import type { PassiveUpdateState } from "../core/update-check.ts";
 import type { OrchestratorItem } from "../core/orchestrator.ts";
 import type { DaemonState } from "../core/daemon.ts";
 import type { CrewRemoteItemSnapshot } from "../core/crew.ts";
@@ -120,6 +121,16 @@ function makeStatusItem(overrides: Partial<StatusItem> = {}): StatusItem {
     prNumber: null,
     ageMs: 5 * 60 * 1000, // 5 minutes
     repoLabel: "",
+    ...overrides,
+  };
+}
+
+function makeUpdateState(overrides: Partial<PassiveUpdateState> = {}): PassiveUpdateState {
+  return {
+    status: "update-available",
+    currentVersion: "0.4.0",
+    latestVersion: "0.5.0",
+    checkedAt: 1_000,
     ...overrides,
   };
 }
@@ -2491,6 +2502,34 @@ describe("buildStatusLayout", () => {
     expect(footerText).toContain("GitHub auth error (2)");
   });
 
+  it("footer shows a passive update notice when an update is available", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const layout = buildStatusLayout(items, 100, undefined, false, {
+      mergeStrategy: "auto",
+      updateState: makeUpdateState({ latestVersion: "0.5.1" }),
+    });
+    const footerText = layout.footerLines.map(stripAnsi).join("\n");
+    expect(footerText).toContain("update available");
+    expect(footerText).toContain("v0.5.1");
+  });
+
+  it("keeps GitHub API warnings ahead of the update notice", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const layout = buildStatusLayout(items, 100, undefined, false, {
+      mergeStrategy: "auto",
+      updateState: makeUpdateState({ latestVersion: "0.5.1" }),
+      apiErrorCount: 2,
+      apiErrorSummary: {
+        total: 2,
+        byKind: { auth: 2 },
+        primaryKind: "auth",
+      },
+    });
+    const footerText = layout.footerLines.map(stripAnsi).join("\n");
+    expect(footerText).toContain("GitHub auth error (2)");
+    expect(footerText).not.toContain("update available");
+  });
+
   it("footer does not show GitHub API warning when apiErrorCount is 0", () => {
     const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
     const layout = buildStatusLayout(items, 100, undefined, false, {
@@ -2643,12 +2682,38 @@ describe("buildStatusLayout", () => {
     const items = [makeStatusItem({ id: "A-1" })];
     const layout = buildStatusLayout(items, 80, undefined, false, {
       mergeStrategy: "auto",
+      updateState: makeUpdateState(),
       ctrlCPending: true,
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("Press Ctrl-C again to exit");
     // Strategy indicator should NOT appear during Ctrl+C pending
     expect(footerText).not.toContain("c controls");
+    expect(footerText).not.toContain("update available");
+  });
+
+  it("truncates the update notice when the footer is narrow", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const layout = buildStatusLayout(items, 28, undefined, false, {
+      mergeStrategy: "auto",
+      updateState: makeUpdateState({ latestVersion: "123.456.789.1011" }),
+    });
+    const footerText = layout.footerLines.map(stripAnsi);
+    expect(footerText[2]).toContain("shift+tab to cycle");
+    expect(footerText[3]).toContain("update");
+    expect(footerText[3]).toContain("...");
+  });
+
+  it("does not show the update notice in logs-only mode", () => {
+    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
+    const layout = buildPanelLayout("logs-only", items, [], 100, 20, {
+      viewOptions: {
+        mergeStrategy: "auto",
+        updateState: makeUpdateState({ latestVersion: "0.5.1" }),
+      },
+    });
+    const footerText = layout.footerLines.map(stripAnsi).join("\n");
+    expect(footerText).not.toContain("update available");
   });
 });
 

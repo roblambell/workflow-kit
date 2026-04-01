@@ -29,6 +29,11 @@ export interface PassiveUpdateState {
   checkedAt: number;
 }
 
+export interface PassiveUpdateStartupState {
+  cachedState: PassiveUpdateState | null;
+  shouldRefresh: boolean;
+}
+
 export interface FetchLatestPublishedVersionDeps {
   fetchImpl?: typeof fetch;
   setTimeoutImpl?: typeof setTimeout;
@@ -167,6 +172,44 @@ function writeUpdateCheckCache(
 
 export function getUpdateCheckCachePath(home: string = homedir()): string {
   return join(home, ".ninthwave", "update-check.json");
+}
+
+export function getPassiveUpdateStartupState(
+  deps: UpdateCheckDeps = {},
+): PassiveUpdateStartupState {
+  const now = deps.now ?? Date.now;
+  const homeDir = deps.homeDir ?? homedir;
+  const fileExists = deps.fileExists ?? existsSync;
+  const readTextFile = deps.readTextFile ?? defaultReadTextFile;
+  const loadUserConfigFn = deps.loadUserConfig ?? loadUserConfig;
+
+  if (loadUserConfigFn().update_checks_enabled === false) {
+    return { cachedState: null, shouldRefresh: false };
+  }
+
+  const currentVersion = normalizeVersion(
+    deps.getCurrentVersion?.() ?? readInstalledVersion(fileExists, readTextFile, deps.getBundleDir ?? getBundleDir),
+  );
+  if (!currentVersion) {
+    return { cachedState: null, shouldRefresh: false };
+  }
+
+  const cachePath = getUpdateCheckCachePath(homeDir());
+  const cached = readUpdateCheckCache(cachePath, fileExists, readTextFile);
+  if (cached.kind === "malformed") {
+    return { cachedState: null, shouldRefresh: false };
+  }
+  if (cached.kind === "missing") {
+    return { cachedState: null, shouldRefresh: true };
+  }
+  if (cached.cache.currentVersion !== currentVersion) {
+    return { cachedState: null, shouldRefresh: true };
+  }
+
+  return {
+    cachedState: buildPassiveUpdateState(cached.cache),
+    shouldRefresh: !isFreshCache(cached.cache, currentVersion, now()),
+  };
 }
 
 export async function fetchLatestPublishedVersion(

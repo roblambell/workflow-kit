@@ -120,6 +120,12 @@ import {
 } from "../schedule-runner.ts";
 import { listScheduledTasks as listScheduledTasksFromDir } from "../schedule-files.ts";
 import { classifyPrMetadataMatch, type PrMetadataMatchMode } from "../work-item-files.ts";
+import {
+  getPassiveUpdateState,
+  getPassiveUpdateStartupState,
+  type PassiveUpdateState,
+  type PassiveUpdateStartupState,
+} from "../update-check.ts";
 // ── Extracted subsystems ─────────────────────────────────────────────
 import {
   buildSnapshot as _buildSnapshot,
@@ -1774,6 +1780,33 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     exitAltScreen();
     process.removeListener("exit", exitAltScreen);
   }
+}
+
+export interface BootstrapTuiUpdateNoticeDeps {
+  getStartupState?: () => PassiveUpdateStartupState;
+  refreshUpdateState?: () => Promise<PassiveUpdateState | null>;
+  onUpdate?: () => void;
+}
+
+export function bootstrapTuiUpdateNotice(
+  viewOptions: ViewOptions,
+  deps: BootstrapTuiUpdateNoticeDeps = {},
+): Promise<void> | null {
+  const startupState = (deps.getStartupState ?? getPassiveUpdateStartupState)();
+  viewOptions.updateState = startupState.cachedState ?? undefined;
+  if (!startupState.shouldRefresh) {
+    return null;
+  }
+
+  return (deps.refreshUpdateState ?? getPassiveUpdateState)()
+    .then((refreshedState) => {
+      if (!refreshedState) return;
+      viewOptions.updateState = refreshedState;
+      deps.onUpdate?.();
+    })
+    .catch(() => {
+      // Best-effort only. Keep any cached notice already shown.
+    });
 }
 
 // ── Sidebar display sync ──────────────────────────────────────────
@@ -4074,6 +4107,18 @@ export async function cmdOrchestrate(
     tmuxSessionName: tmuxOutsideSession ? tmuxSessionName : undefined,
     engineDisconnected: false,
   };
+
+  if (tuiMode) {
+    void bootstrapTuiUpdateNotice(tuiState.viewOptions, {
+      onUpdate: () => {
+        try {
+          renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
+        } catch {
+          // Non-fatal.
+        }
+      },
+    });
+  }
 
   const handleEngineSnapshot = ({ state, pollSnapshot: snapshot, runtime, pollIntervalMs, interactiveTiming }: WatchEngineSnapshotEvent) => {
     if (isInteractiveEngineChild) {

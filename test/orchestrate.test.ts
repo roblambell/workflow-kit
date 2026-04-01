@@ -40,6 +40,7 @@ import {
   createWatchEngineRunner,
   createDetachedDaemonEngineRunner,
   createInteractiveChildEngineRunner,
+  bootstrapTuiUpdateNotice,
   renderTuiPanelFrameFromStatusItems,
   resolveInteractiveStartupConfig,
   pruneMergedStartupReplayItems,
@@ -67,7 +68,7 @@ import {
   type OrchestratorDeps,
 } from "../core/orchestrator.ts";
 import type { WorkItem } from "../core/types.ts";
-import type { StatusItem } from "../core/status-render.ts";
+import type { StatusItem, ViewOptions } from "../core/status-render.ts";
 import type { Multiplexer } from "../core/mux.ts";
 import {
   pidFilePath,
@@ -211,6 +212,81 @@ describe("pruneMergedStartupReplayItems", () => {
     expect(result.prunedItems).toEqual([
       { id: "H-LEGACY-1", prNumber: 45, matchMode: "legacy-empty" },
     ]);
+  });
+});
+
+describe("bootstrapTuiUpdateNotice", () => {
+  it("hydrates cached update state during startup", async () => {
+    const cachedState = {
+      status: "update-available" as const,
+      currentVersion: "0.4.0",
+      latestVersion: "0.5.0",
+      checkedAt: 1_000,
+    };
+    const viewOptions: ViewOptions = { showBlockerDetail: true };
+    const refreshUpdateState = vi.fn(async () => cachedState);
+    const onUpdate = vi.fn();
+
+    const refreshPromise = bootstrapTuiUpdateNotice(viewOptions, {
+      getStartupState: () => ({ cachedState, shouldRefresh: false }),
+      refreshUpdateState,
+      onUpdate,
+    });
+
+    expect(viewOptions.updateState).toEqual(cachedState);
+    expect(refreshPromise).toBeNull();
+    expect(refreshUpdateState).not.toHaveBeenCalled();
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("starts one background refresh when cached state is stale", async () => {
+    const cachedState = {
+      status: "update-available" as const,
+      currentVersion: "0.4.0",
+      latestVersion: "0.5.0",
+      checkedAt: 1_000,
+    };
+    const refreshedState = {
+      status: "update-available" as const,
+      currentVersion: "0.4.0",
+      latestVersion: "0.5.1",
+      checkedAt: 2_000,
+    };
+    const viewOptions: ViewOptions = { showBlockerDetail: true };
+    const refreshUpdateState = vi.fn(async () => refreshedState);
+    const onUpdate = vi.fn();
+
+    const refreshPromise = bootstrapTuiUpdateNotice(viewOptions, {
+      getStartupState: () => ({ cachedState, shouldRefresh: true }),
+      refreshUpdateState,
+      onUpdate,
+    });
+
+    expect(viewOptions.updateState).toEqual(cachedState);
+    expect(refreshUpdateState).toHaveBeenCalledTimes(1);
+    expect(refreshPromise).not.toBeNull();
+
+    await refreshPromise;
+
+    expect(viewOptions.updateState).toEqual(refreshedState);
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips startup hydration and refresh when update checks are disabled", async () => {
+    const viewOptions: ViewOptions = { showBlockerDetail: true };
+    const refreshUpdateState = vi.fn(async () => null);
+    const onUpdate = vi.fn();
+
+    const refreshPromise = bootstrapTuiUpdateNotice(viewOptions, {
+      getStartupState: () => ({ cachedState: null, shouldRefresh: false }),
+      refreshUpdateState,
+      onUpdate,
+    });
+
+    expect(viewOptions.updateState).toBeUndefined();
+    expect(refreshPromise).toBeNull();
+    expect(refreshUpdateState).not.toHaveBeenCalled();
+    expect(onUpdate).not.toHaveBeenCalled();
   });
 });
 

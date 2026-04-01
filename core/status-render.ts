@@ -25,6 +25,7 @@ import {
   type ReviewMode,
 } from "./tui-settings.ts";
 import { muxTypeForWorkspaceRef } from "./mux.ts";
+import type { PassiveUpdateState } from "./update-check.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,8 @@ export interface ViewOptions {
   apiErrorCount?: number;
   /** Optional summary of GitHub PR polling failure causes for footer copy. */
   apiErrorSummary?: PollSnapshot["apiErrorSummary"];
+  /** Passive startup update-check state for the TUI footer notice. */
+  updateState?: PassiveUpdateState;
   /** Alternate empty-state copy for watch flows that are already armed. */
   emptyState?: EmptyStateMode;
   /** When true, render the mode indicator inline on the title line. */
@@ -160,6 +163,15 @@ function formatGitHubApiWarningText(
 
 function renderGitHubApiWarning(text: string): string {
   return text ? `${RED}${text}${RESET}` : "";
+}
+
+function formatUpdateNoticeText(updateState?: PassiveUpdateState): string {
+  if (updateState?.status !== "update-available") return "";
+  return `↑ update available: v${updateState.latestVersion}`;
+}
+
+function renderUpdateNotice(text: string): string {
+  return text ? `${CYAN}${text}${RESET}` : "";
 }
 
 export interface SessionMetrics {
@@ -1819,6 +1831,8 @@ export function buildStatusLayout(
   // Strategy indicator footer (or Ctrl+C confirmation)
   const apiWarningText = formatGitHubApiWarningText(viewOptions?.apiErrorCount, viewOptions?.apiErrorSummary);
   const apiWarning = renderGitHubApiWarning(apiWarningText);
+  const updateNoticeText = formatUpdateNoticeText(viewOptions?.updateState);
+  const updateNotice = renderUpdateNotice(updateNoticeText);
   const safeWidth = Math.max(0, termWidth - 1);
   if (viewOptions?.ctrlCPending) {
     footerLines.push(`  ${YELLOW}Press Ctrl-C again to exit${RESET}`);
@@ -1839,6 +1853,18 @@ export function buildStatusLayout(
         const maxWarningWidth = Math.max(0, safeWidth - 2);
         const warningLine = truncateTitle(apiWarningText, maxWarningWidth);
         footerLines.push(`  ${renderGitHubApiWarning(warningLine)}`);
+      }
+    } else if (updateNotice) {
+      const leftLen = stripAnsiForWidth(left).length;
+      const noticeLen = stripAnsiForWidth(updateNotice).length;
+      if (leftLen + 2 + noticeLen <= safeWidth) {
+        const pad = Math.max(2, safeWidth - leftLen - noticeLen);
+        footerLines.push(`${left}${" ".repeat(pad)}${updateNotice}`);
+      } else {
+        footerLines.push(left);
+        const maxNoticeWidth = Math.max(0, safeWidth - 2);
+        const noticeLine = truncateTitle(updateNoticeText, maxNoticeWidth);
+        footerLines.push(`  ${renderUpdateNotice(noticeLine)}`);
       }
     } else {
       footerLines.push(left);
