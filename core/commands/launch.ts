@@ -14,7 +14,7 @@ import {
   removeWorktree as defaultRemoveWorktree,
   findWorktreeForBranch as defaultFindWorktreeForBranch,
 } from "../git.ts";
-import { type Multiplexer, getMux, waitForReady } from "../mux.ts";
+import { type Multiplexer, getMux } from "../mux.ts";
 import { sendWithReadyWait } from "../worker-health.ts";
 import { allocatePartition, getPartitionFor, releasePartition } from "../partitions.ts";
 import { resolveRepo, writeCrossRepoIndex, removeCrossRepoIndex, ensureWorktreeExcluded } from "../cross-repo.ts";
@@ -64,6 +64,34 @@ export function sanitizeTitle(title: string): string {
   return title.replace(/[^a-zA-Z0-9 _-]/g, "_");
 }
 
+function waitForStableScreen(
+  mux: Pick<Multiplexer, "readScreen">,
+  ref: string,
+  sleep: (ms: number) => void = process.env.NODE_ENV === "test"
+    ? () => {}
+    : (ms) => Bun.sleepSync(ms),
+  maxAttempts: number = 30,
+  pollMs: number = 500,
+): boolean {
+  let lastScreen = "";
+
+  for (let i = 0; i < maxAttempts; i++) {
+    sleep(pollMs);
+    const screen = mux.readScreen(ref, 10);
+    const lines = screen.split("\n").filter((line) => line.trim().length > 0);
+    if (lines.length >= 3 && screen === lastScreen) {
+      return true;
+    }
+    lastScreen = screen;
+  }
+
+  return false;
+}
+
+type LaunchMux = Multiplexer & {
+  sendMessage?: (ref: string, message: string) => boolean;
+};
+
 /** Result of launching a single work item. */
 export interface LaunchResult {
   worktreePath: string;
@@ -86,7 +114,7 @@ export function launchAiSession(
   id: string,
   safeTitle: string,
   promptFile: string,
-  mux: Multiplexer,
+  mux: LaunchMux,
   options: { projectRoot?: string; agentName?: string } = {},
   deps: LaunchDeps = defaultLaunchDeps,
 ): string | null {
@@ -133,12 +161,12 @@ export function launchAiSession(
     warn(
       `Prompt-aware delivery failed for ${id} (${wsRef}) -- falling back to legacy send`,
     );
-    if (!waitForReady(mux, wsRef)) {
+    if (!waitForStableScreen(mux, wsRef)) {
       warn(
         `Workspace ${wsRef} did not become ready within timeout for ${id} -- sending prompt anyway`,
       );
     }
-    if (!mux.sendMessage(wsRef, initialPrompt + "\n")) {
+    if (typeof mux.sendMessage !== "function" || !mux.sendMessage(wsRef, initialPrompt + "\n")) {
       warn(`Failed to send initial prompt to ${wsRef} for ${id}`);
     }
   }

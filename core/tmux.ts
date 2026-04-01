@@ -5,9 +5,14 @@
 
 import { basename } from "path";
 import type { Multiplexer, MuxType } from "./mux.ts";
-import { tmuxSendMessage } from "./tmux-send.ts";
-import type { TmuxRunner } from "./tmux-send.ts";
-export type { TmuxRunner } from "./tmux-send.ts";
+import type { RunResult } from "./types.ts";
+
+/** Tmux-aware runner: supports optional stdin input for command execution. */
+export type TmuxRunner = (
+  cmd: string,
+  args: string[],
+  opts?: { input?: string },
+) => RunResult;
 
 /**
  * Sanitize a name for tmux session/window usage.
@@ -131,13 +136,6 @@ export class TmuxAdapter implements Multiplexer {
   splitPane(_command: string): string | null {
     // Not supported in tmux adapter
     return null;
-  }
-
-  sendMessage(ref: string, message: string): boolean {
-    return tmuxSendMessage(ref, message, {
-      runner: this.deps.runner,
-      sleep: this.deps.sleep,
-    });
   }
 
   readScreen(ref: string, lines?: number): string {

@@ -2512,7 +2512,7 @@ export async function cmdOrchestrate(
     },
     upsertOrchestratorComment: (repoRoot, prNumber, itemId, eventLine) =>
       upsertOrchestratorComment(repoRoot, prNumber, itemId, eventLine),
-    sendMessage: (ref, msg) => mux.sendMessage(ref, msg),
+    sendMessage: () => false,
     writeInbox: (targetRoot, itemId, msg) => writeInbox(targetRoot, itemId, msg),
     closeWorkspace: (ref) => mux.closeWorkspace(ref),
     readScreen: (ref, lines) => mux.readScreen(ref, lines),

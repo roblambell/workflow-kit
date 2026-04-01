@@ -1,10 +1,7 @@
 import { run } from "./shell.ts";
-import { sendMessageImpl } from "./send-message.ts";
 import { setStatusImpl, setProgressImpl } from "./cmux-status.ts";
 import { resolveCmuxBinary } from "./cmux-resolve.ts";
 import type { RunResult } from "./types.ts";
-export type { SendMessageDeps, Runner, Sleeper } from "./send-message.ts";
-export { verifyDelivery } from "./send-message.ts";
 
 /** Shell runner signature for dependency injection. */
 export type ShellRunner = (cmd: string, args: string[]) => RunResult;
@@ -40,23 +37,6 @@ export function launchWorkspace(
   if (result.exitCode !== 0) return null;
   const match = result.stdout.match(/workspace:\d+/);
   return match ? match[0] : null;
-}
-
-/**
- * Send a message to a cmux workspace. Returns true on success.
- *
- * Uses paste-then-submit to avoid the race condition where `cmux send`
- * types text character-by-character and fires Return before the text is
- * fully entered. Verifies delivery and retries with exponential backoff.
- */
-export function sendMessage(
-  workspaceRef: string,
-  message: string,
-): boolean {
-  return sendMessageImpl(workspaceRef, message, {
-    runner: (_cmd, args) => run(cmuxBin(), args),
-    sleep: (ms) => Bun.sleepSync(ms),
-  });
 }
 
 /** Read screen content from a cmux workspace. Returns raw text or "" on failure. */

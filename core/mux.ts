@@ -27,8 +27,6 @@ export interface Multiplexer {
   launchWorkspace(cwd: string, command: string, todoId?: string): string | null;
   /** Split a pane in the current workspace. Returns a ref or null on failure. */
   splitPane(command: string): string | null;
-  /** Send a message to a workspace. Returns true on success. */
-  sendMessage(ref: string, message: string): boolean;
   /** Read screen content from a workspace. Returns raw text or "" on failure. */
   readScreen(ref: string, lines?: number): string;
   /** List all workspaces. Returns raw output string. */
@@ -58,9 +56,6 @@ export class CmuxAdapter implements Multiplexer {
   splitPane(command: string): string | null {
     return cmux.splitPane(command);
   }
-  sendMessage(ref: string, message: string): boolean {
-    return cmux.sendMessage(ref, message);
-  }
   readScreen(ref: string, lines?: number): string {
     return cmux.readScreen(ref, lines);
   }
@@ -79,7 +74,7 @@ export class CmuxAdapter implements Multiplexer {
 }
 
 /** Supported multiplexer backends. */
-export type MuxType = "cmux" | "tmux";
+export type MuxType = "cmux" | "tmux" | "headless";
 
 /** Valid values for the NINTHWAVE_MUX environment variable. */
 const VALID_MUX_VALUES: readonly MuxType[] = ["cmux", "tmux"] as const;
@@ -209,6 +204,7 @@ export function checkAutoLaunch(deps: AutoLaunchDeps): AutoLaunchResult {
       return {
         action: "error",
         message: "NINTHWAVE_MUX=cmux but not inside a cmux session. Open cmux and run nw there.",
+        reason: "cmux-not-in-session",
       };
     }
     // Invalid value -- warn and fall through to auto-detect
@@ -270,8 +266,11 @@ export function ensureMuxOrAutoLaunch(
 
 // ── Interactive mux install ──────────────────────────────────────────
 
-/** Injectable deps for interactive mux install (extends AutoLaunchDeps). */
-export interface InteractiveMuxDeps extends AutoLaunchDeps {
+/** Injectable deps for interactive mux install. */
+export interface InteractiveMuxDeps {
+  env?: Record<string, string | undefined>;
+  checkBinary?: (name: string) => boolean;
+  warn?: (message: string) => void;
   isTTY?: boolean;
   platform?: string;
   prompt?: (question: string) => Promise<string>;
@@ -423,39 +422,4 @@ export async function ensureMuxInteractiveOrDie(
     process.stdout.write("Run `nw` in a new cmux workspace.\n\n");
     process.exit(0);
   }
-}
-
-/**
- * Poll a workspace until it shows stable, substantial content (agent is ready).
- *
- * Checks `readScreen` every `pollMs` milliseconds. Returns true once the screen
- * has >= 3 non-empty lines and the content is the same for two consecutive polls
- * (indicating the agent has finished loading and the UI is stable).
- *
- * @param sleep -- injectable for testing; defaults to Bun.sleepSync
- */
-export function waitForReady(
-  mux: Multiplexer,
-  ref: string,
-  sleep: (ms: number) => void = process.env.NODE_ENV === "test"
-    ? () => {}
-    : (ms) => Bun.sleepSync(ms),
-  maxAttempts: number = 30,
-  pollMs: number = 500,
-): boolean {
-  let lastScreen = "";
-
-  for (let i = 0; i < maxAttempts; i++) {
-    sleep(pollMs);
-    const screen = mux.readScreen(ref, 10);
-    const lines = screen.split("\n").filter((l) => l.trim().length > 0);
-
-    // Stable, substantial content = ready
-    if (lines.length >= 3 && screen === lastScreen) {
-      return true;
-    }
-    lastScreen = screen;
-  }
-
-  return false;
 }

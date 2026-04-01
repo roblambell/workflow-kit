@@ -20,6 +20,14 @@ export type WorkerHealthStatus =
 /** Sleep function signature for dependency injection. */
 export type Sleeper = (ms: number) => void;
 
+/** Minimal mux surface needed for screen inspection. */
+export type ScreenReadableMux = Pick<Multiplexer, "readScreen">;
+
+/** Minimal mux surface needed for prompt delivery flows. */
+export type PromptDeliveryMux = ScreenReadableMux & {
+  sendMessage?: (ref: string, message: string) => boolean;
+};
+
 // ── Indicator lists ──────────────────────────────────────────────────
 
 /** Tool-agnostic prompt indicators (apply regardless of which AI tool is in use). */
@@ -142,7 +150,7 @@ export function getWorkerHealthStatus(
  * Returns the health status derived from the current screen content.
  */
 export function checkWorkerHealth(
-  mux: Multiplexer,
+  mux: ScreenReadableMux,
   workspaceRef: string,
   lines: number = 30,
 ): WorkerHealthStatus {
@@ -161,7 +169,7 @@ export function checkWorkerHealth(
  * @returns true if the prompt was detected within the timeout
  */
 export function waitForInputPrompt(
-  mux: Multiplexer,
+  mux: ScreenReadableMux,
   ref: string,
   sleep: Sleeper,
   maxAttempts: number = 60,
@@ -192,7 +200,7 @@ export function waitForInputPrompt(
  * @returns true if processing was detected, false on timeout
  */
 export function verifySendProcessing(
-  mux: Multiplexer,
+  mux: ScreenReadableMux,
   ref: string,
   sleep: Sleeper,
   maxAttempts: number = 10,
@@ -227,7 +235,7 @@ export function verifySendProcessing(
  * @returns true if the message was successfully delivered and processing started
  */
 export function sendWithReadyWait(
-  mux: Multiplexer,
+  mux: PromptDeliveryMux,
   ref: string,
   message: string,
   sleep: Sleeper,
@@ -257,6 +265,10 @@ export function sendWithReadyWait(
   );
   // If prompt never appeared, still try sending (the worker might be in
   // an unexpected state that sendMessage can handle)
+
+  if (typeof mux.sendMessage !== "function") {
+    return false;
+  }
 
   // Phase 2+3: Send with post-send verification and retry
   for (let attempt = 0; attempt < maxSendRetries; attempt++) {
