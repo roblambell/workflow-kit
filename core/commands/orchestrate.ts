@@ -38,7 +38,7 @@ import { run } from "../shell.ts";
 import { type Multiplexer, createMux, muxTypeForWorkspaceRef, resolveBackend } from "../mux.ts";
 import { resolveCmuxBinary } from "../cmux-resolve.ts";
 import { resolveSessionName } from "../tmux.ts";
-import { reconcile } from "./reconcile.ts";
+import { reconcile, completeMergedWorkItemCleanup } from "./reconcile.ts";
 import { die, warn, info, ALT_SCREEN_ON, ALT_SCREEN_OFF, BOLD, RED, RESET } from "../output.ts";
 import { confirmPrompt } from "../prompt.ts";
 import { shouldEnterInteractive, runInteractiveFlow } from "../interactive.ts";
@@ -3831,6 +3831,7 @@ export async function cmdOrchestrate(
       } catch { /* best-effort -- forward-fixer worktree may already be cleaned */ }
       return true;
     },
+    completeMergedWorkItem: (item, workDir, root) => completeMergedWorkItemCleanup(item, workDir, root),
   };
 
   // ── Crew mode setup ──────────────────────────────────────────────
