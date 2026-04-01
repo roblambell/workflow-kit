@@ -63,6 +63,8 @@ export class Orchestrator {
   private items: Map<string, OrchestratorItem> = new Map();
   /** Memory-adjusted WIP limit. When set, takes precedence over config.wipLimit for slot calculation. */
   private _effectiveWipLimit?: number;
+  /** One-shot flag: re-run evaluateMerge for review-pending items on the next poll. */
+  private forceReviewPendingReevaluation = false;
 
   constructor(config: Partial<OrchestratorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -97,14 +99,18 @@ export class Orchestrator {
   /**
    * Change the merge strategy at runtime.
    * "bypass" is only allowed when config.bypassEnabled is true (set via --dangerously-bypass).
-   * Forward-only: existing items keep their current state; only subsequent evaluateMerge calls
-   * are affected by the new strategy.
+   * Existing review-pending items are re-evaluated on the next poll cycle so strategy
+   * changes take effect without waiting for another PR state transition.
    */
   setMergeStrategy(strategy: MergeStrategy): void {
     if (strategy === "bypass" && !this.config.bypassEnabled) {
       throw new Error('Cannot set merge strategy to "bypass" without --dangerously-bypass flag');
     }
+    if (strategy === this.config.mergeStrategy) {
+      return;
+    }
     (this.config as { mergeStrategy: MergeStrategy }).mergeStrategy = strategy;
+    this.forceReviewPendingReevaluation = true;
   }
 
   /**
@@ -194,6 +200,16 @@ export class Orchestrator {
       const snap = snapshotMap.get(item.id);
       const newActions = this.transitionItem(item, snap, now);
       actions.push(...newActions);
+    }
+
+    if (this.forceReviewPendingReevaluation) {
+      this.forceReviewPendingReevaluation = false;
+      for (const item of this.getItemsByState("review-pending")) {
+        const snap = snapshotMap.get(item.id);
+        if (snap?.ciStatus === "pass") {
+          actions.push(...this.evaluateMerge(item, snap, snap?.eventTime));
+        }
+      }
     }
 
     // Promote queued → ready for items whose deps are met
