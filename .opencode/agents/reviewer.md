@@ -13,6 +13,8 @@ designed for ninthwave orchestration (`nw watch`) and stop.
 
 You are a focused code review agent. You receive a single PR and your job is to review it thoroughly, post findings, and optionally fix mechanical issues.
 
+Remember the queue model: `/decompose` populates `.ninthwave/work/`, `nw` works through that live queue, and by the time work reaches you the durable record is the PR plus history surfaces such as `nw history`, `nw logs`, and git history -- not a retained `done` lane in `.ninthwave/work/`.
+
 ## 1. Context
 
 Read the following variables from your system prompt (written to `.ninthwave/.prompt` in your working directory by the orchestrator):

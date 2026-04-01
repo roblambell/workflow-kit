@@ -341,7 +341,9 @@ export function launchSingleItem(
       info(`Runtime backend resolver selected ${launchMux.type}; overriding ${mux.type} for ${item.id}.`);
     }
 
-    // Build system prompt
+    // Build system prompt.
+    // Protocol boundary: seeded worker prompts still read YOUR_TODO_ID by name,
+    // so keep this key stable until the launcher, agents, and tests migrate together.
     const itemText = extractItemText(workDir, item.id);
     const baseBranchLine = options.baseBranch ? `BASE_BRANCH: ${options.baseBranch}\n` : "";
     const hubRepoNwoLine = options.hubRepoNwo ? `HUB_REPO_NWO: ${options.hubRepoNwo}\n` : "";
@@ -476,7 +478,9 @@ export function launchReviewWorker(
     }
   }
 
-  // Build system prompt
+  // Build system prompt.
+  // Protocol boundary: reviewType="todo" and REVIEW_TYPE: todo are consumed by
+  // the seeded reviewer prompt, so treat them as a coordinated migration surface.
   const reviewType = options.reviewType ?? "todo";
   const tmpDir = join(userStateDir(repoRoot), "tmp");
   mkdirSync(tmpDir, { recursive: true });

@@ -633,6 +633,8 @@ function scaffold(
   mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
 
   // --- Migrate .ninthwave/todos/ → .ninthwave/work/ (if legacy directory exists) ---
+  // Compatibility boundary: keep the legacy path name until support for pre-rename
+  // repos is intentionally removed.
   const legacyTodosDir = join(projectDir, ".ninthwave", "todos");
   const workDir = join(projectDir, ".ninthwave", "work");
   if (existsSync(legacyTodosDir) && !existsSync(workDir)) {

@@ -12,6 +12,9 @@ import { userStateDir } from "./daemon.ts";
 
 // ── Shared message types ────────────────────────────────────────────
 // Imported by mock-broker.ts for type-safe server implementation.
+// Protocol boundary: the todo* JSON field names below are serialized over the
+// crew websocket protocol, so later terminology cleanup should not rename them
+// without a coordinated broker/client migration.
 
 export interface SyncItem {
   id: string;

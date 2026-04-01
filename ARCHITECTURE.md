@@ -89,7 +89,7 @@ User runs /decompose
 
 User runs nw
   └─→ CLI handles selection/settings, then launches orchestration
-      ├─ git worktree create .worktrees/todo-<ID>
+      ├─ git worktree create .ninthwave/.worktrees/ninthwave-<ID>
       ├─ allocate partition (port/DB isolation) via core/partitions.ts
       ├─ seed agent files into worktree (core/commands/launch.ts seedAgentFiles)
       └─ launch AI session in multiplexer workspace, send worker prompt
@@ -129,6 +129,8 @@ Key files: [`core/parser.ts`](core/parser.ts) (read work items), [`core/commands
 ### `Multiplexer` -- `core/mux.ts`
 
 Abstracts terminal multiplexer operations behind a clean interface.
+
+> **Terminology boundary:** the remaining `todoId` names in this interface are part of backend identity and prompt-launch contracts, not preferred user-facing terminology. See [docs/work-item-terminology.md](docs/work-item-terminology.md).
 
 ```typescript
 interface Multiplexer {
@@ -234,5 +236,16 @@ Timeout thresholds (configurable via `OrchestratorConfig`): 30 minutes for a wor
 `cleanSingleWorktree(id, ...)` in [`core/commands/clean.ts`](core/commands/clean.ts):
 
 1. `mux.closeWorkspace(workspaceRef)` -- closes the terminal session.
-2. `git worktree remove .worktrees/todo-<ID>` -- removes the checkout.
+2. `git worktree remove .ninthwave/.worktrees/ninthwave-<ID>` -- removes the checkout.
 3. `releasePartition(id)` -- frees the port/DB allocation.
+
+---
+
+## Terminology Boundaries
+
+`work item` is the preferred product term. Remaining `todo` names fall into two buckets:
+
+- **Safe to rename later:** internal comments, locals, helper names, tests, and docs that do not cross a process/file/history boundary.
+- **Must stay for now:** prompt keys like `YOUR_TODO_ID`, crew/broker JSON fields like `todoId`, reviewer mode values like `reviewType: "todo"`, mux identity parameters like `todoId`, and legacy migration paths like `.ninthwave/todos/`.
+
+The full audited keep-list lives in [docs/work-item-terminology.md](docs/work-item-terminology.md). Treat that document as the source of truth for follow-up cleanup work.

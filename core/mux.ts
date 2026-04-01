@@ -26,7 +26,11 @@ export interface Multiplexer {
   isAvailable(): boolean;
   /** Return a human-readable message explaining why isAvailable() returned false. */
   diagnoseUnavailable(): string;
-  /** Launch a new workspace. Returns a ref (e.g., "workspace:1") or null on failure. */
+  /**
+   * Launch a new workspace. Returns a ref (e.g., "workspace:1") or null on failure.
+   * `todoId` is part of the current workspace-identity contract (tmux window names,
+   * headless refs, tests), so keep the parameter name stable until that boundary moves.
+   */
   launchWorkspace(cwd: string, command: string, todoId?: string): string | null;
   /** Split a pane in the current workspace. Returns a ref or null on failure. */
   splitPane(command: string): string | null;
