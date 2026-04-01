@@ -99,6 +99,8 @@ export interface OrchestratorItem {
   worktreePath?: string;
   /** SHA of the merge commit on main after PR is merged. Used to poll CI on main. */
   mergeCommitSha?: string;
+  /** Repository default branch where the PR merged (usually "main"). */
+  defaultBranch?: string;
   /** Number of times CI fix-forward on main has failed for this item. */
   fixForwardFailCount?: number;
   /** Multiplexer workspace reference for the forward-fixer worker session. */
@@ -185,6 +187,10 @@ export interface ItemSnapshot {
   newComments?: Array<{ body: string; author: string; createdAt: string }>;
   /** Worker heartbeat data read from the heartbeat file. Null if no heartbeat file exists. */
   lastHeartbeat?: import("./daemon.ts").WorkerProgress | null;
+  /** Best-effort merge commit SHA for merged PRs, backfilled by polling. */
+  mergeCommitSha?: string;
+  /** Repository default branch for merged PRs, backfilled by polling. */
+  defaultBranch?: string;
   /** CI status of the merge commit on main (for post-merge verification). */
   mergeCommitCIStatus?: "pass" | "fail" | "pending";
   /** Structured verdict from the review worker (read from verdict file). */

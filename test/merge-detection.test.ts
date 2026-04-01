@@ -222,6 +222,69 @@ describe("Merge detection pipeline (end-to-end)", () => {
     });
   });
 
+  describe("3b. Externally merged PR metadata recovery", () => {
+    it("backfills merge metadata on later polls without losing merged recovery state", () => {
+      const orch = new Orchestrator({ fixForward: true });
+      orch.addItem(makeWorkItem("MRG-3B", "External merge recovery"));
+      orch.getItem("MRG-3B")!.reviewCompleted = true;
+      orch.hydrateState("MRG-3B", "ci-passed");
+      orch.getItem("MRG-3B")!.prNumber = 61;
+
+      let mergeCommitPolls = 0;
+      const checkPr = () => "MRG-3B\t61\tmerged\t\t\tExternal merge recovery";
+      const getMergeCommitSha = () => {
+        mergeCommitPolls += 1;
+        return mergeCommitPolls === 1 ? null : "merge-sha-61";
+      };
+
+      const firstSnapshot = buildSnapshot(
+        orch,
+        PROJECT_ROOT,
+        join(PROJECT_ROOT, ".ninthwave", ".worktrees"),
+        stubMux(),
+        () => null,
+        checkPr,
+        undefined,
+        undefined,
+        getMergeCommitSha,
+        () => "main",
+      );
+
+      const firstSnap = firstSnapshot.items.find((s) => s.id === "MRG-3B");
+      expect(firstSnap).toBeDefined();
+      expect(firstSnap!.prState).toBe("merged");
+      expect(firstSnap!.mergeCommitSha).toBeUndefined();
+      expect(firstSnap!.defaultBranch).toBe("main");
+
+      orch.processTransitions(firstSnapshot, NOW);
+      expect(orch.getItem("MRG-3B")!.state).toBe("merged");
+      expect(orch.getItem("MRG-3B")!.mergeCommitSha).toBeUndefined();
+
+      const secondSnapshot = buildSnapshot(
+        orch,
+        PROJECT_ROOT,
+        join(PROJECT_ROOT, ".ninthwave", ".worktrees"),
+        stubMux(),
+        () => null,
+        checkPr,
+        undefined,
+        undefined,
+        getMergeCommitSha,
+        () => "main",
+      );
+
+      const secondSnap = secondSnapshot.items.find((s) => s.id === "MRG-3B");
+      expect(secondSnap).toBeDefined();
+      expect(secondSnap!.mergeCommitSha).toBe("merge-sha-61");
+      expect(secondSnap!.defaultBranch).toBe("main");
+
+      orch.processTransitions(secondSnapshot, NOW);
+      expect(orch.getItem("MRG-3B")!.mergeCommitSha).toBe("merge-sha-61");
+      expect(orch.getItem("MRG-3B")!.defaultBranch).toBe("main");
+      expect(orch.getItem("MRG-3B")!.state).toBe("forward-fix-pending");
+    });
+  });
+
   // ── Test 4: Title collision -- reused item ID with stale merged PR ──
   describe("4. Title collision: reused item ID with stale merged PR", () => {
     it("old PR merged → new item with same ID → buildSnapshot ignores stale merged PR (title mismatch) → returns no prState", () => {

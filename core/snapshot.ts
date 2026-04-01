@@ -16,7 +16,12 @@ import {
   type PrStatusPollResult,
 } from "./commands/pr-monitor.ts";
 import { prTitleMatchesWorkItem } from "./work-item-files.ts";
-import type { PrComment } from "./gh.ts";
+import {
+  getDefaultBranch as defaultGetDefaultBranch,
+  getDefaultBranchAsync as defaultGetDefaultBranchAsync,
+  getMergeCommitSha as defaultGetMergeCommitSha,
+  type PrComment,
+} from "./gh.ts";
 
 function normalizePrStatusResult(result: string | null | PrStatusPollResult): PrStatusPollResult {
   if (typeof result === "string" || result == null) {
@@ -50,6 +55,94 @@ function restoreTrackedPrSnapshot(
   if (!snap.prNumber && orchItem.prNumber != null && isBlindPrPoll(statusLine)) {
     snap.prNumber = orchItem.prNumber;
     snap.prState = "open";
+  }
+}
+
+function enrichMergedMetadata(
+  snap: ItemSnapshot,
+  orchItem: OrchestratorItem,
+  repoRoot: string,
+  getMergeCommitSha: (repoRoot: string, prNumber: number) => string | null = defaultGetMergeCommitSha,
+  getDefaultBranch: (repoRoot: string) => string | null = defaultGetDefaultBranch,
+): void {
+  const shouldEnrich = snap.prState === "merged" || orchItem.state === "merged";
+  if (!shouldEnrich) return;
+
+  const prNumber = snap.prNumber ?? orchItem.prNumber;
+  if (prNumber != null) {
+    snap.prNumber = prNumber;
+  }
+
+  if (orchItem.mergeCommitSha) {
+    snap.mergeCommitSha = orchItem.mergeCommitSha;
+  } else if (prNumber != null) {
+    try {
+      const mergeCommitSha = getMergeCommitSha(repoRoot, prNumber);
+      if (mergeCommitSha) {
+        orchItem.mergeCommitSha = mergeCommitSha;
+        snap.mergeCommitSha = mergeCommitSha;
+      }
+    } catch {
+      // Non-fatal -- merged metadata is best-effort and retried next cycle.
+    }
+  }
+
+  if (orchItem.defaultBranch) {
+    snap.defaultBranch = orchItem.defaultBranch;
+  } else {
+    try {
+      const defaultBranch = getDefaultBranch(repoRoot);
+      if (defaultBranch) {
+        orchItem.defaultBranch = defaultBranch;
+        snap.defaultBranch = defaultBranch;
+      }
+    } catch {
+      // Non-fatal -- merged metadata is best-effort and retried next cycle.
+    }
+  }
+}
+
+async function enrichMergedMetadataAsync(
+  snap: ItemSnapshot,
+  orchItem: OrchestratorItem,
+  repoRoot: string,
+  getMergeCommitSha: (repoRoot: string, prNumber: number) => string | null | Promise<string | null> = defaultGetMergeCommitSha,
+  getDefaultBranch: (repoRoot: string) => string | null | Promise<string | null> = defaultGetDefaultBranchAsync,
+): Promise<void> {
+  const shouldEnrich = snap.prState === "merged" || orchItem.state === "merged";
+  if (!shouldEnrich) return;
+
+  const prNumber = snap.prNumber ?? orchItem.prNumber;
+  if (prNumber != null) {
+    snap.prNumber = prNumber;
+  }
+
+  if (orchItem.mergeCommitSha) {
+    snap.mergeCommitSha = orchItem.mergeCommitSha;
+  } else if (prNumber != null) {
+    try {
+      const mergeCommitSha = await getMergeCommitSha(repoRoot, prNumber);
+      if (mergeCommitSha) {
+        orchItem.mergeCommitSha = mergeCommitSha;
+        snap.mergeCommitSha = mergeCommitSha;
+      }
+    } catch {
+      // Non-fatal -- merged metadata is best-effort and retried next cycle.
+    }
+  }
+
+  if (orchItem.defaultBranch) {
+    snap.defaultBranch = orchItem.defaultBranch;
+  } else {
+    try {
+      const defaultBranch = await getDefaultBranch(repoRoot);
+      if (defaultBranch) {
+        orchItem.defaultBranch = defaultBranch;
+        snap.defaultBranch = defaultBranch;
+      }
+    } catch {
+      // Non-fatal -- merged metadata is best-effort and retried next cycle.
+    }
   }
 }
 
@@ -113,6 +206,8 @@ export function buildSnapshot(
   checkPr: (id: string, projectRoot: string) => string | null | PrStatusPollResult = checkPrStatusDetailed,
   fetchComments?: (repoRoot: string, prNumber: number, since: string) => Array<{ body: string; author: string; createdAt: string }>,
   checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending",
+  getMergeCommitSha: (repoRoot: string, prNumber: number) => string | null = defaultGetMergeCommitSha,
+  getDefaultBranch: (repoRoot: string) => string | null = defaultGetDefaultBranch,
 ): PollSnapshot {
   const items: ItemSnapshot[] = [];
   const readyIds: string[] = [];
@@ -236,6 +331,8 @@ export function buildSnapshot(
     // keep the item in PR-tracking flow instead of regressing to implementing.
     restoreTrackedPrSnapshot(snap, orchItem, statusLine);
 
+    enrichMergedMetadata(snap, orchItem, repoRoot, getMergeCommitSha, getDefaultBranch);
+
     // Check review worker health and verdict file for items in reviewing state
     if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {
       snap.workerAlive = isWorkerAliveWithCache(
@@ -331,6 +428,8 @@ export async function buildSnapshotAsync(
   checkPr: (id: string, projectRoot: string) => Promise<string | null | PrStatusPollResult> = checkPrStatusDetailedAsync,
   fetchComments?: (repoRoot: string, prNumber: number, since: string) => PrComment[] | Promise<PrComment[]>,
   checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending" | Promise<"pass" | "fail" | "pending">,
+  getMergeCommitSha: (repoRoot: string, prNumber: number) => string | null | Promise<string | null> = defaultGetMergeCommitSha,
+  getDefaultBranch: (repoRoot: string) => string | null | Promise<string | null> = defaultGetDefaultBranchAsync,
 ): Promise<PollSnapshot> {
   const items: ItemSnapshot[] = [];
   const readyIds: string[] = [];
@@ -441,6 +540,8 @@ export async function buildSnapshotAsync(
     // If GitHub is temporarily blind after we've already learned the PR number,
     // keep the item in PR-tracking flow instead of regressing to implementing.
     restoreTrackedPrSnapshot(snap, orchItem, statusLine);
+
+    await enrichMergedMetadataAsync(snap, orchItem, repoRoot, getMergeCommitSha, getDefaultBranch);
 
     // Review worker health
     if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {

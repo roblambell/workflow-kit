@@ -55,6 +55,8 @@ function snap(
     checkPr?: (id: string, pr: string) => string | null;
     fetchComments?: (repoRoot: string, prNumber: number, since: string) => Array<{ body: string; author: string; createdAt: string }>;
     checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending";
+    getMergeCommitSha?: (repoRoot: string, prNumber: number) => string | null;
+    getDefaultBranch?: (repoRoot: string) => string | null;
   } = {},
 ) {
   return buildSnapshot(
@@ -66,6 +68,8 @@ function snap(
     opts.checkPr ?? (() => null),
     opts.fetchComments,
     opts.checkCommitCI,
+    opts.getMergeCommitSha,
+    opts.getDefaultBranch,
   );
 }
 
@@ -316,6 +320,61 @@ describe("buildSnapshot contract", () => {
       const item = findItem(result.items, "D-4");
       expect(item).toBeDefined();
       expect(item!.prState).toBe("merged");
+    });
+
+    it("keeps merged items recoverable when mergeCommitSha is not visible on first poll", () => {
+      orch.addItem(makeWorkItem("D-4B"));
+      orch.hydrateState("D-4B", "merged");
+      const orchItem = orch.getItem("D-4B")!;
+      orchItem.prNumber = 42;
+
+      const result = snap(orch, {
+        checkPr: () => "D-4B\t42\tmerged\t\t\tItem D-4B",
+        getMergeCommitSha: () => null,
+        getDefaultBranch: () => "main",
+      });
+
+      const item = findItem(result.items, "D-4B");
+      expect(item).toBeDefined();
+      expect(item!.prState).toBe("merged");
+      expect(item!.prNumber).toBe(42);
+      expect(item!.mergeCommitSha).toBeUndefined();
+      expect(item!.defaultBranch).toBe("main");
+      expect(orchItem.mergeCommitSha).toBeUndefined();
+      expect(orchItem.defaultBranch).toBe("main");
+    });
+
+    it("backfills merged metadata on later polls for externally merged PRs", () => {
+      orch.addItem(makeWorkItem("D-4C"));
+      orch.hydrateState("D-4C", "merged");
+      const orchItem = orch.getItem("D-4C")!;
+      orchItem.prNumber = 43;
+
+      let mergeCommitPolls = 0;
+      const checkPr = () => "D-4C\t43\tmerged\t\t\tItem D-4C";
+      const getMergeCommitSha = () => {
+        mergeCommitPolls += 1;
+        return mergeCommitPolls === 1 ? null : "sha-later";
+      };
+
+      const first = snap(orch, {
+        checkPr,
+        getMergeCommitSha,
+        getDefaultBranch: () => "main",
+      });
+      expect(findItem(first.items, "D-4C")!.mergeCommitSha).toBeUndefined();
+
+      const second = snap(orch, {
+        checkPr,
+        getMergeCommitSha,
+        getDefaultBranch: () => "main",
+      });
+      const item = findItem(second.items, "D-4C");
+      expect(item).toBeDefined();
+      expect(item!.mergeCommitSha).toBe("sha-later");
+      expect(item!.defaultBranch).toBe("main");
+      expect(orchItem.mergeCommitSha).toBe("sha-later");
+      expect(orchItem.defaultBranch).toBe("main");
     });
 
     it("preserves partial open PR knowledge when CI details are unavailable", () => {

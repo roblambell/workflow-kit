@@ -30,7 +30,7 @@ export function reconstructState(
   daemonState?: DaemonState | null,
 ): void {
   // Build a lookup map from saved daemon state for restoring persisted counters and review fields
-  const savedItems = new Map<string, { ciFailCount: number; retryCount: number; prNumber: number | null; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; rebaserWorkspaceRef?: string; mergeCommitSha?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string; aiTool?: string }>();
+  const savedItems = new Map<string, { state: string; ciFailCount: number; retryCount: number; prNumber: number | null; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; rebaserWorkspaceRef?: string; mergeCommitSha?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string; aiTool?: string }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
       // Backward compat: map old field names to new names
@@ -39,6 +39,7 @@ export function reconstructState(
       const fixForwardFailCount = si.fixForwardFailCount ?? (raw.verifyFailCount as number | undefined);
       const fixForwardWorkspaceRef = si.fixForwardWorkspaceRef ?? (raw.verifyWorkspaceRef as string | undefined);
       savedItems.set(si.id, {
+        state: si.state,
         ciFailCount: si.ciFailCount,
         retryCount: si.retryCount,
         prNumber: si.prNumber,
@@ -85,9 +86,15 @@ export function reconstructState(
       if (saved.aiTool) item.aiTool = saved.aiTool;
     }
 
+    // Preserve merged waiting state across restart even when the clean action
+    // already removed the worktree and mergeCommitSha was not captured yet.
+    if (saved?.state === "merged" && restoreMergedWaitingState(orch, item, item.resolvedRepoRoot ?? projectRoot, checkPr)) {
+      continue;
+    }
+
     // Restore post-merge fix-forward states from daemon state (these items have no worktree)
     if (saved && item.mergeCommitSha) {
-      let savedState = daemonState?.items.find((si) => si.id === item.id)?.state;
+      let savedState = saved.state;
       // Backward compat: map old state names to new names
       if (savedState === "verifying") savedState = "forward-fix-pending";
       if (savedState === "verify-failed") savedState = "fix-forward-failed";
@@ -170,6 +177,47 @@ export function reconstructState(
         break;
     }
   }
+}
+
+function restoreMergedWaitingState(
+  orch: Orchestrator,
+  item: OrchestratorItem,
+  repoRoot: string,
+  checkPr: (id: string, root: string) => string | null,
+): boolean {
+  const statusLine = checkPr(item.id, repoRoot);
+  if (!statusLine) {
+    if (item.prNumber != null || item.mergeCommitSha) {
+      orch.hydrateState(item.id, "merged");
+      return true;
+    }
+    return false;
+  }
+
+  const parts = statusLine.split("\t");
+  const prNumStr = parts[1];
+  const status = parts[2];
+  const previousPrNumber = item.prNumber;
+
+  if (prNumStr) {
+    item.prNumber = parseInt(prNumStr, 10);
+  }
+
+  if (status === "merged") {
+    const mergedPrTitle = parts[5] ?? "";
+    const trackedPrMatches = prNumStr ? previousPrNumber === parseInt(prNumStr, 10) : false;
+    if (trackedPrMatches || !mergedPrTitle || prTitleMatchesWorkItem(mergedPrTitle, item.workItem.title)) {
+      orch.hydrateState(item.id, "merged");
+      return true;
+    }
+  }
+
+  if (status === "no-pr" && item.prNumber != null) {
+    orch.hydrateState(item.id, "merged");
+    return true;
+  }
+
+  return false;
 }
 
 function hydrateKnownPrTrackingOrImplementing(

@@ -328,6 +328,44 @@ async function getRepoOwnerAsync(repoRoot: string): Promise<string> {
   return result.stdout;
 }
 
+/** Get the repository default branch name (e.g. "main"). */
+export function getDefaultBranch(repoRoot: string): string | null {
+  const result = ghInRepo(repoRoot, [
+    "repo",
+    "view",
+    "--json",
+    "defaultBranchRef",
+  ]);
+  if (result.exitCode !== 0 || !result.stdout) {
+    return null;
+  }
+  try {
+    const data = JSON.parse(result.stdout) as { defaultBranchRef?: { name?: string } };
+    return data.defaultBranchRef?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Async variant of getDefaultBranch. Uses ghInRepoAsync to avoid blocking. */
+export async function getDefaultBranchAsync(repoRoot: string): Promise<string | null> {
+  const result = await ghInRepoAsync(repoRoot, [
+    "repo",
+    "view",
+    "--json",
+    "defaultBranchRef",
+  ]);
+  if (result.exitCode !== 0 || !result.stdout) {
+    return null;
+  }
+  try {
+    const data = JSON.parse(result.stdout) as { defaultBranchRef?: { name?: string } };
+    return data.defaultBranchRef?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Merge a PR by number. Returns true on success, false on failure. */
 export function prMerge(
   repoRoot: string,

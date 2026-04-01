@@ -2224,6 +2224,73 @@ describe("reconstructState merge detection", () => {
 
     require("fs").rmSync(tmpDir, { recursive: true, force: true });
   });
+
+  it("preserves merged waiting state across restart when mergeCommitSha is still missing", () => {
+    const orch = new Orchestrator({ fixForward: true });
+    orch.addItem(makeWorkItem("MRG-4-1"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-mrg-test3-${Date.now()}`);
+    const wtDir = join(tmpDir, ".ninthwave", ".worktrees");
+    require("fs").mkdirSync(wtDir, { recursive: true });
+
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T01:00:00Z",
+      items: [
+        {
+          id: "MRG-4-1",
+          state: "merged",
+          prNumber: 42,
+          title: "Item MRG-4-1",
+          lastTransition: "2026-01-01T00:30:00Z",
+          ciFailCount: 0,
+          retryCount: 0,
+        },
+      ],
+    };
+
+    const checkPr = () => "MRG-4-1\t42\tmerged\t\t\tItem MRG-4-1";
+    reconstructState(orch, tmpDir, wtDir, undefined, checkPr, daemonState);
+
+    const item = orch.getItem("MRG-4-1")!;
+    expect(item.state).toBe("merged");
+    expect(item.prNumber).toBe(42);
+    expect(item.mergeCommitSha).toBeUndefined();
+
+    const snapshot = buildSnapshot(
+      orch,
+      tmpDir,
+      wtDir,
+      {
+        type: "cmux" as const,
+        isAvailable: () => false,
+        diagnoseUnavailable: () => "not available",
+        launchWorkspace: () => null,
+        splitPane: () => null,
+        readScreen: () => "",
+        listWorkspaces: () => "",
+        closeWorkspace: () => true,
+        setStatus: () => true,
+        setProgress: () => true,
+      } as Multiplexer,
+      () => null,
+      checkPr,
+      undefined,
+      undefined,
+      () => "merge-after-restart",
+      () => "main",
+    );
+
+    const snapItem = snapshot.items.find((entry) => entry.id === "MRG-4-1");
+    expect(snapItem).toBeDefined();
+    expect(snapItem!.mergeCommitSha).toBe("merge-after-restart");
+    expect(snapItem!.defaultBranch).toBe("main");
+    expect(item.mergeCommitSha).toBe("merge-after-restart");
+    expect(item.defaultBranch).toBe("main");
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
 });
 
 // ── Keyboard shortcuts (TUI mode) ────────────────────────────────────
