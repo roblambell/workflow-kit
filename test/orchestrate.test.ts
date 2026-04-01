@@ -1808,6 +1808,89 @@ describe("reconstructState review fields", () => {
   });
 });
 
+describe("reconstructState rebase persistence", () => {
+  it("restores rebase nudge bookkeeping and saved worktree targeting state", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("RBT-1"));
+    orch.getItem("RBT-1")!.reviewCompleted = true;
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-rbt-${Date.now()}`);
+    const wtDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const savedWorktreePath = join(tmpDir, "custom-worktrees", "ninthwave-RBT-1");
+    require("fs").mkdirSync(savedWorktreePath, { recursive: true });
+
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-01T01:00:00Z",
+      items: [
+        {
+          id: "RBT-1",
+          state: "ci-pending",
+          prNumber: 88,
+          title: "Test item",
+          lastTransition: "2026-04-01T00:30:00Z",
+          ciFailCount: 1,
+          retryCount: 2,
+          lastRebaseNudgeAt: "2026-04-01T00:45:00Z",
+          rebaseNudgeCount: 3,
+          worktreePath: savedWorktreePath,
+          resolvedRepoRoot: "/tmp/target-repo",
+        },
+      ],
+    };
+
+    reconstructState(orch, tmpDir, wtDir, undefined, () => null, daemonState);
+
+    const item = orch.getItem("RBT-1")!;
+    expect(item.state).toBe("ci-pending");
+    expect(item.lastRebaseNudgeAt).toBe("2026-04-01T00:45:00Z");
+    expect(item.rebaseNudgeCount).toBe(3);
+    expect(item.worktreePath).toBe(savedWorktreePath);
+    expect(item.resolvedRepoRoot).toBe("/tmp/target-repo");
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("remains backward compatible when older daemon state omits new fields", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("RBT-2"));
+    orch.getItem("RBT-2")!.reviewCompleted = true;
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-rbt-old-${Date.now()}`);
+    const wtDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const wtPath = join(wtDir, "ninthwave-RBT-2");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-01T01:00:00Z",
+      items: [
+        {
+          id: "RBT-2",
+          state: "ci-pending",
+          prNumber: 89,
+          title: "Test item",
+          lastTransition: "2026-04-01T00:30:00Z",
+          ciFailCount: 0,
+          retryCount: 0,
+        },
+      ],
+    };
+
+    reconstructState(orch, tmpDir, wtDir, undefined, () => null, daemonState);
+
+    const item = orch.getItem("RBT-2")!;
+    expect(item.state).toBe("ci-pending");
+    expect(item.lastRebaseNudgeAt).toBeUndefined();
+    expect(item.rebaseNudgeCount).toBeUndefined();
+    expect(item.worktreePath).toBe(wtPath);
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
 describe("reconstructState cross-repo", () => {
   it("uses cross-repo index to find worktree paths", () => {
     const orch = new Orchestrator();

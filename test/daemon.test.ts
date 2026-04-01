@@ -592,6 +592,32 @@ describe("serializeOrchestratorState", () => {
     expect(state.items[0]!.progressLabel).toBe("Updating tests");
     expect(state.items[0]!.progressTs).toBe("2026-04-01T12:00:00.000Z");
   });
+
+  it("roundtrips rebase nudge bookkeeping and worktreePath", () => {
+    const io = createMockIO();
+    const item = makeOrchestratorItem("RB-1-1", "ci-pending", 88);
+    item.lastRebaseNudgeAt = "2026-04-01T15:30:00.000Z";
+    item.rebaseNudgeCount = 2;
+    item.worktreePath = "/tmp/test/.ninthwave/.worktrees/ninthwave-RB-1-1";
+
+    const state = serializeOrchestratorState(
+      [item],
+      42,
+      "2026-04-01T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.lastRebaseNudgeAt).toBe("2026-04-01T15:30:00.000Z");
+    expect(state.items[0]!.rebaseNudgeCount).toBe(2);
+    expect(state.items[0]!.worktreePath).toBe("/tmp/test/.ninthwave/.worktrees/ninthwave-RB-1-1");
+
+    writeStateFile("/project", state, io);
+    const restored = readStateFile("/project", io);
+
+    expect(restored).not.toBeNull();
+    expect(restored!.items[0]!.lastRebaseNudgeAt).toBe("2026-04-01T15:30:00.000Z");
+    expect(restored!.items[0]!.rebaseNudgeCount).toBe(2);
+    expect(restored!.items[0]!.worktreePath).toBe("/tmp/test/.ninthwave/.worktrees/ninthwave-RB-1-1");
+  });
 });
 
 // ── migrateRuntimeState ─────────────────────────────────────────────

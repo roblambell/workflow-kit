@@ -96,6 +96,10 @@ export interface OrchestratorItem {
   lastCommentCheck?: string;
   /** Number of consecutive rebaser worker launches for rebase conflict resolution. Resets when conflicts resolve (isMergeable !== false). */
   rebaseAttemptCount?: number;
+  /** ISO timestamp of the last orchestrator-issued rebase nudge to the worker. */
+  lastRebaseNudgeAt?: string;
+  /** Number of rebase nudges sent for the current conflict episode. */
+  rebaseNudgeCount?: number;
   /** Set when a CI failure notification failed because no worker was running. Signals executeLaunch to force-launch a worker even when an existing PR is found. Cleared after launch. */
   needsCiFix?: boolean;
   /** Absolute path to the worktree directory. Preserved for stuck items so users can inspect partial work. */

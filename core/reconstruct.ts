@@ -158,7 +158,30 @@ export function reconstructState(
   daemonState?: DaemonState | null,
 ): void {
   // Build a lookup map from saved daemon state for restoring persisted counters and review fields
-  const savedItems = new Map<string, { state: string; ciFailCount: number; retryCount: number; prNumber: number | null; priorPrNumbers?: number[]; reviewWorkspaceRef?: string; reviewCompleted?: boolean; reviewRound?: number; lastCommentCheck?: string; rebaseRequested?: boolean; ciFailureNotified?: boolean; ciFailureNotifiedAt?: string | null; rebaserWorkspaceRef?: string; mergeCommitSha?: string; defaultBranch?: string; fixForwardFailCount?: number; fixForwardWorkspaceRef?: string; aiTool?: string }>();
+  const savedItems = new Map<string, {
+    state: string;
+    ciFailCount: number;
+    retryCount: number;
+    prNumber: number | null;
+    priorPrNumbers?: number[];
+    reviewWorkspaceRef?: string;
+    reviewCompleted?: boolean;
+    reviewRound?: number;
+    lastCommentCheck?: string;
+    rebaseRequested?: boolean;
+    lastRebaseNudgeAt?: string;
+    rebaseNudgeCount?: number;
+    ciFailureNotified?: boolean;
+    ciFailureNotifiedAt?: string | null;
+    rebaserWorkspaceRef?: string;
+    mergeCommitSha?: string;
+    defaultBranch?: string;
+    fixForwardFailCount?: number;
+    fixForwardWorkspaceRef?: string;
+    worktreePath?: string;
+    resolvedRepoRoot?: string;
+    aiTool?: string;
+  }>();
   if (daemonState?.items) {
     for (const si of daemonState.items) {
       // Backward compat: map old field names to new names
@@ -177,6 +200,8 @@ export function reconstructState(
         reviewRound: si.reviewRound,
         lastCommentCheck: si.lastCommentCheck,
         rebaseRequested: si.rebaseRequested,
+        lastRebaseNudgeAt: si.lastRebaseNudgeAt,
+        rebaseNudgeCount: si.rebaseNudgeCount,
         ciFailureNotified: si.ciFailureNotified,
         ciFailureNotifiedAt: si.ciFailureNotifiedAt,
         rebaserWorkspaceRef: rebaserRef,
@@ -184,6 +209,8 @@ export function reconstructState(
         defaultBranch: si.defaultBranch,
         fixForwardFailCount,
         fixForwardWorkspaceRef,
+        worktreePath: si.worktreePath,
+        resolvedRepoRoot: si.resolvedRepoRoot,
         aiTool: si.aiTool,
       });
     }
@@ -208,6 +235,8 @@ export function reconstructState(
       if (saved.reviewRound != null) item.reviewRound = saved.reviewRound;
       if (saved.lastCommentCheck) item.lastCommentCheck = saved.lastCommentCheck;
       if (saved.rebaseRequested) item.rebaseRequested = saved.rebaseRequested;
+      if (saved.lastRebaseNudgeAt) item.lastRebaseNudgeAt = saved.lastRebaseNudgeAt;
+      if (saved.rebaseNudgeCount != null) item.rebaseNudgeCount = saved.rebaseNudgeCount;
       if (saved.ciFailureNotified) item.ciFailureNotified = saved.ciFailureNotified;
       if (saved.ciFailureNotifiedAt) item.ciFailureNotifiedAt = saved.ciFailureNotifiedAt;
       if (saved.rebaserWorkspaceRef) item.rebaserWorkspaceRef = saved.rebaserWorkspaceRef;
@@ -215,6 +244,8 @@ export function reconstructState(
       if (saved.defaultBranch) item.defaultBranch = saved.defaultBranch;
       if (saved.fixForwardFailCount) item.fixForwardFailCount = saved.fixForwardFailCount;
       if (saved.fixForwardWorkspaceRef) item.fixForwardWorkspaceRef = saved.fixForwardWorkspaceRef;
+      if (saved.worktreePath) item.worktreePath = saved.worktreePath;
+      if (saved.resolvedRepoRoot) item.resolvedRepoRoot = saved.resolvedRepoRoot;
       if (saved.aiTool) item.aiTool = saved.aiTool;
     }
 
@@ -253,8 +284,16 @@ export function reconstructState(
     // Check for worktree: cross-repo index first, then hub-local fallback
     const repoRoot = item.resolvedRepoRoot ?? projectRoot;
     const wtInfo = getWorktreeInfo(item.id, crossRepoIndex, worktreeDir);
-    const wtPath = wtInfo?.worktreePath ?? join(worktreeDir, `ninthwave-${item.id}`);
-    if (!existsSync(wtPath)) continue;
+    const fallbackWtPath = join(worktreeDir, `ninthwave-${item.id}`);
+    let wtPath: string | undefined;
+    for (const candidate of [wtInfo?.worktreePath, item.worktreePath, fallbackWtPath]) {
+      if (candidate && existsSync(candidate)) {
+        wtPath = candidate;
+        break;
+      }
+    }
+    if (!wtPath) continue;
+    item.worktreePath = wtPath;
 
     // Item has a worktree -- check PR status in the correct repo
     const statusLine = resolveTrackedPrStatus(item, repoRoot, checkPr);

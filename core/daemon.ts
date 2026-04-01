@@ -56,6 +56,10 @@ export interface DaemonStateItem {
   lastCommentCheck?: string;
   /** Whether a rebase request is in progress for this item. */
   rebaseRequested?: boolean;
+  /** ISO timestamp of the last orchestrator-issued rebase nudge to the worker. */
+  lastRebaseNudgeAt?: string;
+  /** Number of rebase nudges sent for the current conflict episode. */
+  rebaseNudgeCount?: number;
   /** Number of review rounds completed. */
   reviewRound?: number;
   /** Whether a CI failure notification has been sent for the current failure. */
@@ -633,6 +637,8 @@ export function serializeOrchestratorState(
         ...(item.stderrTail ? { stderrTail: item.stderrTail } : {}),
         ...(item.lastCommentCheck ? { lastCommentCheck: item.lastCommentCheck } : {}),
         ...(item.rebaseRequested ? { rebaseRequested: item.rebaseRequested } : {}),
+        ...(item.lastRebaseNudgeAt ? { lastRebaseNudgeAt: item.lastRebaseNudgeAt } : {}),
+        ...(item.rebaseNudgeCount != null ? { rebaseNudgeCount: item.rebaseNudgeCount } : {}),
         ...(item.ciFailureNotified ? { ciFailureNotified: item.ciFailureNotified } : {}),
         ...(item.ciFailureNotifiedAt ? { ciFailureNotifiedAt: item.ciFailureNotifiedAt } : {}),
         ...(item.rebaserWorkspaceRef ? { rebaserWorkspaceRef: item.rebaserWorkspaceRef } : {}),
