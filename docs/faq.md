@@ -137,12 +137,12 @@ Wildcard patterns are also supported (e.g., `H-AUTH-*` depends on all auth items
 ### What does the full workflow look like?
 
 1. **Decompose** -- Break your feature into work items (`/decompose` or write them manually)
-2. **Start orchestration** -- Run `nw` and let the CLI handle item selection and settings
+2. **Start orchestration** -- Run `nw`, select work items (and an AI tool when needed), then confirm the single startup settings screen
 3. **Orchestrate** -- `nw` launches parallel AI sessions, each in an isolated worktree
 4. **Workers implement** -- Each AI session reads its work item, writes code, runs tests, and creates a PR
 5. **CI runs** -- The orchestrator monitors CI checks on each PR
 6. **Review** -- Optional review workers (or humans) review PRs
-7. **Merge** -- PRs are auto-merged when CI passes and review gates are met
+7. **Merge** -- CI must pass in every mode; after that, `manual` waits for a human merge, `auto` lets ninthwave merge, and `bypass` is an explicit admin-only override
 8. **Next batch** -- Newly unblocked items launch automatically
 
 ---
@@ -194,15 +194,23 @@ The `--wip-limit` flag controls how many workers run simultaneously (default is 
 nw --items H-AUTH-1,H-AUTH-2 --wip-limit 3
 ```
 
+### What happens when I run `nw`?
+
+After you pick work items (and choose an AI tool if more than one is configured), `nw` shows one startup settings screen before the live status UI. That screen lets you set merge strategy, review mode, collaboration mode, WIP limit, and backend selection in one place.
+
+There is no separate arming step after that screen. Once you confirm the startup settings, orchestration starts and the live status UI takes over.
+
 ### What merge strategies are available?
+
+All merge strategies are CI-first. The difference is what happens after CI passes.
 
 | Strategy | Behavior |
 |----------|----------|
-| `auto` | Merge automatically when CI passes and review gates are met |
-| `manual` | Never auto-merge; wait for human to merge each PR |
-| `bypass` | Admin override that skips branch protection (requires `--dangerously-bypass`) |
+| `auto` | CI must pass, then ninthwave auto-merges the PR |
+| `manual` | CI must pass, then a human merges the PR |
+| `bypass` | CI must pass, then ninthwave admin-merges without human approval requirements (`--dangerously-bypass` only) |
 
-Set via the `--merge-strategy` flag, or let the `nw` interactive flow collect it:
+Set via the `--merge-strategy` flag, or choose it from the startup settings screen:
 
 ```bash
 nw --items H-AUTH-1 --merge-strategy auto

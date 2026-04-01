@@ -2,7 +2,7 @@
 
 ## Summary
 
-`nw` should start as a frictionless local daemon by default. Collaboration, AI reviews, merge policy, and WIP tuning should not be part of the startup funnel. The user should get to a live status page quickly, start from safe defaults, and then discover richer controls from the running UI.
+`nw` should start with one clear setup step and then land in the live status UI. Work-item selection and startup settings are the only pre-status decisions. Merge strategy, AI reviews, collaboration mode, WIP limit, and backend selection should all be visible in that one startup surface and remain adjustable from the running UI.
 
 The product center of gravity is local orchestration. `ninthwave.sh` is thin active-session coordination infrastructure, not the product's front door.
 
@@ -11,15 +11,15 @@ The product center of gravity is local orchestration. `ninthwave.sh` is thin act
 1. Local first.
 2. Safe by default.
 3. No spooky carry-over state between plain runs.
-4. Runtime controls instead of startup policy questions.
-5. Persist only personal operator preferences, not per-run policy choices.
+4. One startup settings surface before status.
+5. The same controls stay available at runtime.
 
 ## Goals
 
 1. Make plain `nw` feel immediate, local, and understandable.
-2. Remove non-essential decisions from the initial startup flow.
-3. Let users enable collaboration, AI reviews, and merge automation from the live status page.
-4. Make WIP easy to tune from the live UI without asking about it up front.
+2. Replace follow-up prompts and delays with a single startup settings screen.
+3. Let users choose collaboration, AI reviews, merge behavior, and WIP from that startup screen.
+4. Keep those same controls adjustable from the live status page after startup.
 5. Keep CLI flags as explicit per-run overrides for power users and scripts.
 6. Reframe `ninthwave.sh` around active coordination rather than delivery metrics.
 
@@ -33,59 +33,45 @@ The product center of gravity is local orchestration. `ninthwave.sh` is thin act
 
 ## Default Run State
 
-For plain `nw`, start with:
+When there are no persisted preferences or CLI overrides, seed startup settings with:
 
 1. Collaboration: `Local`
 2. AI reviews: `Off`
 3. Merge strategy: `Manual`
 4. WIP limit: `User override if present, otherwise computed default`
 
-These are per-run defaults except WIP, which may come from persisted user preference.
+These are the initial startup selections. Users can change them before orchestration begins, and the live UI can adjust them again after startup.
 
 ## Startup Flow
 
-The startup flow should only ask for inputs required to begin useful work.
+The startup flow should collect all pre-status choices in one place.
 
 Startup should ask for:
 
 1. Work items
 2. AI tool selection when multiple tools are available
+3. A single startup settings screen containing:
+   - `Merge`
+   - `Reviews`
+   - `Collaboration`
+   - `WIP limit`
+   - `Backend`
 
-Startup should not ask for:
-
-1. Collaboration mode
-2. AI review mode
-3. Merge strategy
-4. WIP limit
-
-## Startup Arming Window
+## Startup Settings Screen
 
 For plain `nw`:
 
-1. Show the live status UI immediately.
-2. Block claims for a short arming window of about `3-5s`.
-3. Render a lightweight startup banner with:
-   - `J` Join session
-   - `S` Share
-   - `P` Stay paused
-   - `Enter` or `Esc` Start now
-   - Timeout Start local automatically
-4. If the user does nothing, the daemon starts claiming local work when the timer expires.
+1. Show work-item selection first
+2. Show AI tool selection when multiple tools are available
+3. Show one startup settings screen before the live status UI
+4. Start orchestration immediately after the user confirms that screen
+5. If the user selected `Join`, collect the session code as a direct follow-up before entering the live status UI
 
-This is not a paused daemon. The daemon is running. Claims are temporarily gated.
-
-## When The Arming Window Appears
-
-Show the arming window only when:
-
-1. The user did not provide explicit collaboration intent via CLI
-2. There is no already-active collaboration state for this run
-
-Do not show the arming window when the user started with explicit `join` or `share` intent.
+There is no separate arming step or claim-gating delay. The startup settings screen is the only pre-status control surface.
 
 ## Collaboration Model
 
-Collaboration is a runtime capability with three states:
+Collaboration is available both at startup and at runtime with three states:
 
 1. `Local`
 2. `Shared`
@@ -95,7 +81,7 @@ Collaboration is a runtime capability with three states:
 
 In v1, host-side collaboration control is `Share` only:
 
-1. User chooses `Share`
+1. User chooses `Share` from startup settings or runtime controls
 2. A new active session is created
 3. The UI shows the invite code for the current active session
 4. Other machines can join with that code
@@ -103,7 +89,7 @@ In v1, host-side collaboration control is `Share` only:
 
 ### Join
 
-1. User chooses `Join`
+1. User chooses `Join` from startup settings or runtime controls
 2. User enters an active invite code
 3. The daemon joins the shared session before claiming work
 4. Joined daemons must not claim locally until broker connection succeeds
@@ -116,11 +102,11 @@ Sessions are ephemeral:
 2. No previous-session resume
 3. No silent reconnection on plain `nw`
 4. If sharing stops or the daemon disconnects, that collaboration state is gone
-5. The next plain `nw` run starts local again unless the user explicitly chooses `join` or `share`
+5. The next plain `nw` run returns to the startup settings screen; it does not silently resume an old session
 
 ## AI Review Model
 
-AI reviews are a runtime capability with three states:
+AI reviews are available both at startup and at runtime with three states:
 
 1. `Off`
 2. `Ninthwave PRs`
@@ -128,14 +114,14 @@ AI reviews are a runtime capability with three states:
 
 ### Default Review Behavior
 
-1. Plain `nw` starts with AI reviews `Off`
-2. Users can enable reviews from the live status UI
-3. Review mode is per-run
-4. CLI flags can override the initial review mode for that run
+1. When no saved default or CLI override is present, startup preselects AI reviews `Off`
+2. Users can choose reviews from the startup settings screen
+3. Users can change review mode from the live status UI after startup
+4. CLI flags can preselect the initial review mode for that run
 
 ## Merge Strategy Model
 
-Merge strategy is a runtime capability with these states:
+Merge strategy is available both at startup and at runtime with these states:
 
 1. `Manual`
 2. `Auto`
@@ -143,20 +129,29 @@ Merge strategy is a runtime capability with these states:
 
 ### Default Merge Behavior
 
-1. Plain `nw` starts in `Manual`
-2. Users can change merge strategy from the live status UI
-3. Merge strategy is per-run
-4. CLI flags can override the initial strategy for that run
+1. When no saved default or CLI override is present, startup preselects `Manual`
+2. Users can choose merge strategy from the startup settings screen
+3. Users can change merge strategy from the live status UI after startup
+4. CLI flags can preselect the initial strategy for that run
+
+### Merge Semantics
+
+All merge strategies are CI-first. The difference is what happens after CI passes:
+
+1. `Manual` -- CI must pass, then a human merges the PR
+2. `Auto` -- CI must pass, then ninthwave auto-merges the PR
+3. `Bypass` -- CI must pass, then ninthwave admin-merges without human approval requirements
 
 ## WIP Model
 
-WIP should move out of startup entirely.
+WIP is part of the startup settings screen and remains adjustable from the live status UI.
 
 ### Default WIP Behavior
 
-1. Plain `nw` does not prompt for WIP during startup
+1. Plain `nw` includes `WIP limit` in the startup settings screen
 2. When no user override exists, `nw` computes a default WIP value
 3. The computed default should generally land in the `2-4` range
+4. Users can change WIP before startup and again from the live status UI
 
 ### Runtime WIP Controls
 
@@ -184,17 +179,9 @@ The persisted WIP preference overrides the computed default only. It does not re
 
 WIP is a personal operator preference tied to machine capacity and working style. It should persist.
 
-By contrast, these should not persist:
-
-1. Collaboration mode
-2. AI review mode
-3. Merge strategy
-
-Those are per-run policy choices and should reset on plain startup.
-
 ## Runtime Controls UI
 
-The live status page should expose a lightweight settings or actions surface containing:
+The live status page should continue exposing a lightweight settings or actions surface containing:
 
 1. `Collaboration`
 2. `Reviews`
@@ -234,9 +221,9 @@ The live UI should make these controls easy to find:
 
 ## CLI Override Rules
 
-Plain `nw` should always start from the safe defaults unless the user provides explicit CLI overrides.
+Plain `nw` should open the startup settings screen seeded from persisted defaults and any explicit CLI overrides.
 
-CLI flags should override only the current run's starting state.
+CLI flags should preselect only the current run's starting state.
 
 Examples of explicit override intent include:
 
@@ -293,38 +280,32 @@ Toward:
 
 ## Behavioral Contract
 
-1. Plain `nw` never silently becomes remote
-2. Previous collaboration state never affects a new plain run
-3. Plain `nw` never silently enables AI reviews
-4. Plain `nw` never silently enables auto-merge
-5. Plain `nw` never asks for WIP at startup
-6. Only explicit user action or explicit CLI flags change collaboration, reviews, merge policy, or per-run WIP
-7. Only user-driven WIP changes persist between plain runs
+1. Plain `nw` always goes through one startup settings screen before the live status UI
+2. There is no separate arming step or claim-gating delay after that screen
+3. Plain `nw` never silently resumes an old collaboration session
+4. Merge labels always mean CI must pass first
+5. `Manual`, `Auto`, and `Bypass` differ only in what happens after CI passes
+6. The same collaboration, review, merge, and WIP controls remain available from the live status UI
 
 ## Acceptance Criteria
 
-1. Plain `nw` no longer asks about collaboration during startup
-2. Plain `nw` no longer asks about AI reviews during startup
-3. Plain `nw` no longer asks about merge strategy during startup
-4. Plain `nw` no longer asks about WIP during startup
-5. Plain `nw` starts in `Local`, `Reviews Off`, `Manual`
-6. Plain `nw` starts with user-persisted WIP when present, otherwise a computed default
-7. The computed default generally falls in the `2-4` range
-8. Plain `nw` shows a short claim-gated arming window before first claim
-9. Doing nothing during the arming window starts local automatically
-10. `Join` and `Share` can be chosen from that arming window
-11. Explicit join/share commands skip the arming window
-12. Stopping and restarting `nw` never resumes an old session
-13. Review mode can be changed at runtime to `Off`, `Ninthwave PRs`, or `All PRs`
-14. Merge strategy can be changed at runtime to `Manual` or `Auto`, plus `Bypass` when allowed
-15. Pressing `+` or `-` in the live status page changes WIP immediately
-16. WIP changes made from the live status page persist to user-level config
-17. An explicit `--wip-limit` flag overrides both persisted and computed WIP for that run
-18. Collaboration, reviews, and merge policy are all controllable from the live status UI
-19. `ninthwave.sh` no longer appears as the primary reason to start `nw`
+1. Plain `nw` uses a single startup settings screen for merge, reviews, collaboration, WIP limit, and backend selection
+2. There is no separate arming step before first claim
+3. When no saved default or CLI override exists, startup preselects `Local`, `Reviews Off`, and `Manual`
+4. Plain `nw` starts with user-persisted WIP when present, otherwise a computed default
+5. The computed default generally falls in the `2-4` range
+6. Stopping and restarting `nw` never resumes an old session automatically
+7. Review mode can be changed at runtime to `Off`, `Ninthwave PRs`, or `All PRs`
+8. Merge strategy can be changed at runtime to `Manual` or `Auto`, plus `Bypass` when allowed
+9. Merge copy consistently explains `Manual`, `Auto`, and `Bypass` as CI-first modes
+10. Pressing `+` or `-` in the live status page changes WIP immediately
+11. WIP changes made from the live status page persist to user-level config
+12. An explicit `--wip-limit` flag overrides both persisted and computed WIP for that run
+13. Collaboration, reviews, and merge policy are all controllable from the live status UI
+14. `ninthwave.sh` no longer appears as the primary reason to start `nw`
 
 ## Implementation Principle
 
-The startup flow should choose work. The running UI should control policy.
+The startup flow should choose work and set initial policy once. The running UI should keep those same controls live.
 
 That is the core simplification.

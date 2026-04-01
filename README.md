@@ -44,6 +44,14 @@ Requires [gh](https://cli.github.com) and a terminal multiplexer: [tmux](https:/
 
 Just run `nw` inside tmux, cmux, or with [iTerm2 tmux integration](docs/iterm2.md).
 
+After item selection (and AI tool selection when multiple tools are configured), `nw` shows a single startup settings screen before the live status UI. That screen is the pre-status control surface for merge strategy, reviews, collaboration mode, WIP limit, and backend selection.
+
+Merge strategies are CI-first in every mode:
+
+- `manual` -- CI must pass, then a human merges the PR
+- `auto` -- CI must pass, then ninthwave auto-merges the PR
+- `bypass` -- CI must pass, then ninthwave admin-merges without human approval requirements (`--dangerously-bypass` only)
+
 ## License
 
 Apache 2.0. See [LICENSE](LICENSE).
