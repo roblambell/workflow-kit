@@ -88,6 +88,11 @@ export function strategyIndicator(strategy: MergeStrategy): string {
   }
 }
 
+function formatStrategyFooterLine(strategy: MergeStrategy): string {
+  const badge = strategyIndicator(strategy);
+  return `  ${badge} ${DIM}(shift+tab to cycle) · c controls · ? help${RESET}`;
+}
+
 export interface SessionMetrics {
   leadTimeMedianMs: number | null;
   leadTimeP95Ms: number | null;
@@ -1579,8 +1584,7 @@ export function buildStatusLayout(
   if (viewOptions?.ctrlCPending) {
     footerLines.push(`  ${YELLOW}Press Ctrl-C again to exit${RESET}`);
   } else if (viewOptions?.mergeStrategy) {
-    const badge = strategyIndicator(viewOptions.mergeStrategy);
-    const left = `  ${badge} ${DIM}· c controls · ? help${RESET}`;
+    const left = formatStrategyFooterLine(viewOptions.mergeStrategy);
     if (apiWarning) {
       const leftLen = stripAnsiForWidth(left).length;
       const warnLen = stripAnsiForWidth(apiWarning).length;
@@ -1938,8 +1942,7 @@ function buildPanelFooter(
   if (viewOptions?.ctrlCPending) {
     footerLines.push(`  ${YELLOW}Press Ctrl-C again to exit${RESET}`);
   } else if (viewOptions?.mergeStrategy) {
-    const badge = strategyIndicator(viewOptions.mergeStrategy);
-    footerLines.push(`  ${badge} ${DIM}· c controls · ? help${RESET}`);
+    footerLines.push(formatStrategyFooterLine(viewOptions.mergeStrategy));
   } else {
     const shortcuts = `q quit  d deps  ↑/↓ scroll`;
     footerLines.push(`  ${DIM}${shortcuts}${RESET}`);
