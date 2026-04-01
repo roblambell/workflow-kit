@@ -9,11 +9,24 @@ import {
   agentTargetDirs,
   agentFileTargets,
   agentTargetFilename,
+  renderAgentArtifact,
   runtimeAgentIdFromFilename,
   runtimeAgentNameForTool,
   type LaunchDeps,
   type LaunchOpts,
 } from "../core/ai-tools.ts";
+
+const IMPLEMENTER_AGENT_SOURCE = `---
+name: ninthwave-implementer
+description: "ninthwave orchestration agent -- implements work items during \`nw watch\` sessions"
+model: opus
+---
+
+If no ninthwave work item context is available to you (no item ID,
+no item specification, no work item details), you were not launched
+by the ninthwave orchestrator. Inform the user this agent is
+designed for ninthwave orchestration (\`nw watch\`) and stop.
+`;
 
 // ── Stub helpers ──────────────────────────────────────────────────────────────
 
@@ -65,6 +78,13 @@ describe("getToolProfile", () => {
     expect(profile.suffix).toBe(".agent.md");
   });
 
+  it("returns the codex profile for 'codex'", () => {
+    const profile = getToolProfile("codex");
+    expect(profile.id).toBe("codex");
+    expect(profile.targetDir).toBe(".codex/agents");
+    expect(profile.suffix).toBe(".toml");
+  });
+
   it("throws for an unknown tool ID", () => {
     expect(() => getToolProfile("unknown")).toThrow("Unknown AI tool: unknown");
   });
@@ -77,8 +97,8 @@ describe("getToolProfile", () => {
 // ── allToolIds ────────────────────────────────────────────────────────────────
 
 describe("allToolIds", () => {
-  it("returns exactly [claude, opencode, copilot] in profile order", () => {
-    expect(allToolIds()).toEqual(["claude", "opencode", "copilot"]);
+  it("returns exactly [claude, opencode, codex, copilot] in profile order", () => {
+    expect(allToolIds()).toEqual(["claude", "opencode", "codex", "copilot"]);
   });
 });
 
@@ -95,6 +115,10 @@ describe("isAiToolId", () => {
 
   it("returns true for 'copilot'", () => {
     expect(isAiToolId("copilot")).toBe(true);
+  });
+
+  it("returns true for 'codex'", () => {
+    expect(isAiToolId("codex")).toBe(true);
   });
 
   it("returns false for 'cursor'", () => {
@@ -115,7 +139,7 @@ describe("isAiToolId", () => {
 describe("agentTargetDirs", () => {
   it("returns one target dir entry per tool, in profile order", () => {
     const dirs = agentTargetDirs();
-    expect(dirs).toHaveLength(3);
+    expect(dirs).toHaveLength(4);
   });
 
   it("has the claude entry first with correct dir and suffix", () => {
@@ -128,15 +152,21 @@ describe("agentTargetDirs", () => {
     expect(dirs[1]).toEqual({ dir: ".opencode/agents", suffix: ".md" });
   });
 
-  it("has the copilot entry third with correct dir and suffix", () => {
+  it("has the codex entry third with correct dir and suffix", () => {
     const dirs = agentTargetDirs();
-    expect(dirs[2]).toEqual({ dir: ".github/agents", suffix: ".agent.md" });
+    expect(dirs[2]).toEqual({ dir: ".codex/agents", suffix: ".toml" });
+  });
+
+  it("has the copilot entry fourth with correct dir and suffix", () => {
+    const dirs = agentTargetDirs();
+    expect(dirs[3]).toEqual({ dir: ".github/agents", suffix: ".agent.md" });
   });
 
   it("matches the full expected structure", () => {
     expect(agentTargetDirs()).toEqual([
       { dir: ".claude/agents", suffix: ".md" },
       { dir: ".opencode/agents", suffix: ".md" },
+      { dir: ".codex/agents", suffix: ".toml" },
       { dir: ".github/agents", suffix: ".agent.md" },
     ]);
   });
@@ -150,17 +180,18 @@ describe("agentFileTargets", () => {
     expect(entries).toHaveLength(1);
   });
 
-  it("maps implementer.md to correct source and 3 targets", () => {
+  it("maps implementer.md to correct source and 4 targets", () => {
     const entries = agentFileTargets(["implementer.md"]);
     expect(entries[0]!.source).toBe("implementer.md");
-    expect(entries[0]!.targets).toHaveLength(3);
+    expect(entries[0]!.targets).toHaveLength(4);
   });
 
-  it("maps implementer.md targets correctly for all 3 tools", () => {
+  it("maps implementer.md targets correctly for all 4 tools", () => {
     const entries = agentFileTargets(["implementer.md"]);
     expect(entries[0]!.targets).toEqual([
       { dir: ".claude/agents", suffix: ".md" },
       { dir: ".opencode/agents", suffix: ".md" },
+      { dir: ".codex/agents", suffix: ".toml" },
       { dir: ".github/agents", suffix: ".agent.md" },
     ]);
   });
@@ -181,17 +212,41 @@ describe("agentFileTargets", () => {
   });
 });
 
-// ── agentTargetFilename / runtime agent IDs ──────────────────────────────────
+// ── agentTargetFilename / rendered artifacts / runtime agent IDs ─────────────
 
-describe("Copilot agent artifact alignment helpers", () => {
+describe("tool-owned agent artifact helpers", () => {
   it("builds ninthwave-prefixed Copilot filenames from source files", () => {
     expect(agentTargetFilename("implementer.md", { suffix: ".agent.md" })).toBe(
       "ninthwave-implementer.agent.md",
     );
   });
 
+  it("builds ninthwave-prefixed Codex filenames from source files", () => {
+    expect(agentTargetFilename("implementer.md", { suffix: ".toml" })).toBe(
+      "ninthwave-implementer.toml",
+    );
+  });
+
   it("keeps Claude/OpenCode filenames equal to the source filename", () => {
     expect(agentTargetFilename("implementer.md", { suffix: ".md" })).toBe("implementer.md");
+  });
+
+  it("renders Codex artifacts as TOML with required fields", () => {
+    const artifact = renderAgentArtifact("implementer.md", IMPLEMENTER_AGENT_SOURCE, { suffix: ".toml" });
+
+    expect(artifact.filename).toBe("ninthwave-implementer.toml");
+    expect(artifact.content).toContain('name = "ninthwave-implementer"');
+    expect(artifact.content).toContain(
+      'description = "ninthwave orchestration agent -- implements work items during `nw watch` sessions"',
+    );
+    expect(artifact.content).toContain('developer_instructions = ');
+    expect(artifact.content).toContain("If no ninthwave work item context is available to you");
+  });
+
+  it("keeps non-Codex artifact contents unchanged", () => {
+    const artifact = renderAgentArtifact("implementer.md", IMPLEMENTER_AGENT_SOURCE, { suffix: ".md" });
+    expect(artifact.filename).toBe("implementer.md");
+    expect(artifact.content).toBe(IMPLEMENTER_AGENT_SOURCE);
   });
 
   it("derives the runtime Copilot agent id from the generated filename", () => {
@@ -207,6 +262,7 @@ describe("Copilot agent artifact alignment helpers", () => {
   it("leaves non-Copilot launch agent names unchanged", () => {
     expect(runtimeAgentNameForTool("claude", "ninthwave-reviewer")).toBe("ninthwave-reviewer");
     expect(runtimeAgentNameForTool("opencode", "ninthwave-reviewer")).toBe("ninthwave-reviewer");
+    expect(runtimeAgentNameForTool("codex", "ninthwave-reviewer")).toBe("ninthwave-reviewer");
   });
 });
 
@@ -401,6 +457,69 @@ describe("opencode profile buildHeadlessCmd", () => {
   });
 });
 
+// ── buildLaunchCmd: codex ─────────────────────────────────────────────────────
+
+describe("codex profile buildLaunchCmd", () => {
+  it("returns an inline shell command (no .sh script file)", () => {
+    const profile = getToolProfile("codex");
+    const result = profile.buildLaunchCmd(stubOpts({ id: "H-X-CODEX" }), stubDeps());
+    expect(result.cmd).not.toMatch(/\.sh$/);
+    expect(result.cmd).toContain("exec codex --full-auto");
+  });
+
+  it("returns empty initialPrompt", () => {
+    const profile = getToolProfile("codex");
+    const result = profile.buildLaunchCmd(stubOpts(), stubDeps());
+    expect(result.initialPrompt).toBe("");
+  });
+
+  it("writes the prompt data file with start instruction appended", () => {
+    const profile = getToolProfile("codex");
+    const deps = stubDeps("CODEX PROMPT");
+    profile.buildLaunchCmd(stubOpts({ id: "H-X-CODEX" }), deps);
+
+    const calls = (deps.writeFileSync as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![0]).toMatch(/^\/fake\/state\/tmp\/nw-prompt-H-X-CODEX-\d+$/);
+    expect(calls[0]![1]).toContain("CODEX PROMPT");
+    expect(calls[0]![1]).toContain("Start implementing this work item now.");
+  });
+
+  it("uses the supported interactive codex command shape", () => {
+    const profile = getToolProfile("codex");
+    const result = profile.buildLaunchCmd(stubOpts({ id: "H-X-CODEX" }), stubDeps());
+    expect(result.cmd).toContain('PROMPT=$(cat ');
+    expect(result.cmd).toContain('exec codex --full-auto "$PROMPT"');
+  });
+});
+
+// ── buildHeadlessCmd: codex ───────────────────────────────────────────────────
+
+describe("codex profile buildHeadlessCmd", () => {
+  it("returns empty initialPrompt", () => {
+    const profile = getToolProfile("codex");
+    const result = profile.buildHeadlessCmd(stubOpts(), stubDeps());
+    expect(result.initialPrompt).toBe("");
+  });
+
+  it("writes and references a temp prompt file", () => {
+    const profile = getToolProfile("codex");
+    const deps = stubDeps("CODEX PROMPT");
+    profile.buildHeadlessCmd(stubOpts({ id: "H-X-CODEX-HEADLESS" }), deps);
+
+    const calls = (deps.writeFileSync as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![0]).toMatch(/^\/fake\/state\/tmp\/nw-prompt-H-X-CODEX-HEADLESS-\d+$/);
+    expect(calls[0]![1]).toContain("CODEX PROMPT");
+    expect(calls[0]![1]).toContain("Start implementing this work item now.");
+  });
+
+  it("uses the supported headless codex command shape", () => {
+    const profile = getToolProfile("codex");
+    const result = profile.buildHeadlessCmd(stubOpts({ id: "H-X-CODEX-HEADLESS" }), stubDeps());
+    expect(result.cmd).toContain('exec codex exec --ask-for-approval never --sandbox workspace-write "$PROMPT"');
+    expect(result.cmd).not.toContain("--full-auto");
+  });
+});
+
 // ── buildLaunchCmd: copilot ───────────────────────────────────────────────────
 
 describe("copilot profile buildLaunchCmd", () => {
@@ -501,8 +620,8 @@ describe("copilot profile buildHeadlessCmd", () => {
 // ── AI_TOOL_PROFILES integrity ────────────────────────────────────────────────
 
 describe("AI_TOOL_PROFILES", () => {
-  it("has exactly 3 profiles", () => {
-    expect(AI_TOOL_PROFILES).toHaveLength(3);
+  it("has exactly 4 profiles", () => {
+    expect(AI_TOOL_PROFILES).toHaveLength(4);
   });
 
   it("has unique IDs", () => {

@@ -14,6 +14,7 @@ import {
   readlinkSync,
 } from "fs";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
+import { agentTargetFilename } from "../core/ai-tools.ts";
 import {
   setupGlobal,
   copySkillFiles,
@@ -564,7 +565,7 @@ describe("buildCopyPlan", () => {
 
     const selection: AgentSelection = {
       agents: ["implementer.md"],
-      toolDirs: [AGENT_TARGET_DIRS[2]!], // .github/agents
+      toolDirs: [AGENT_TARGET_DIRS.find((target) => target.dir === ".github/agents")!],
     };
 
     const plan = buildCopyPlan(projectDir, bundleDir, selection);
@@ -579,7 +580,10 @@ describe("buildCopyPlan", () => {
 
     const selection: AgentSelection = {
       agents: ["implementer.md", "reviewer.md"],
-      toolDirs: [AGENT_TARGET_DIRS[0]!, AGENT_TARGET_DIRS[2]!], // .claude + .github
+      toolDirs: [
+        AGENT_TARGET_DIRS.find((target) => target.dir === ".claude/agents")!,
+        AGENT_TARGET_DIRS.find((target) => target.dir === ".github/agents")!,
+      ],
     };
 
     const plan = buildCopyPlan(projectDir, bundleDir, selection);
@@ -850,12 +854,11 @@ describe("interactiveAgentSelection", () => {
 
     // Pre-create all agent files for all tools with canonical content
     for (const agent of AGENT_SOURCES) {
-      const baseName = agent.replace(/\.md$/, "");
       const canonicalContent = readFileSync(join(bundleDir, "agents", agent), "utf-8");
       for (const target of AGENT_TARGET_DIRS) {
         const targetDir = join(projectDir, target.dir);
         mkdirSync(targetDir, { recursive: true });
-        const filename = target.suffix === ".agent.md" ? `ninthwave-${baseName}.agent.md` : agent;
+        const filename = agentTargetFilename(agent, target);
         writeFileSync(join(targetDir, filename), canonicalContent);
       }
     }

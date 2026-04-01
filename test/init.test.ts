@@ -12,6 +12,7 @@ import {
 } from "fs";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 import { userStateDir } from "../core/daemon.ts";
+import { agentTargetFilename } from "../core/ai-tools.ts";
 import {
   detectCI,
   detectTestCommand,
@@ -1692,9 +1693,8 @@ describe("initProject -- agent selection", () => {
 
     // All agent files should be regular files (copies), not symlinks
     for (const agent of AGENT_SOURCES) {
-      const baseName = agent.replace(/\.md$/, "");
       for (const target of AGENT_TARGET_DIRS) {
-        const filename = target.suffix === ".agent.md" ? `ninthwave-${baseName}.agent.md` : agent;
+        const filename = agentTargetFilename(agent, target);
         const filePath = join(projectDir, target.dir, filename);
         expect(lstatSync(filePath).isFile()).toBe(true);
         expect(lstatSync(filePath).isSymbolicLink()).toBe(false);

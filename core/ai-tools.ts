@@ -1,4 +1,4 @@
-// AI tool profiles: single source of truth for Claude Code, OpenCode, and Copilot.
+// AI tool profiles: single source of truth for Claude Code, OpenCode, Codex, and Copilot.
 //
 // Defines AiToolId, AiToolProfile, LaunchDeps, LaunchOpts, and AI_TOOL_PROFILES.
 // All other modules should derive tool-specific behaviour from this module rather
@@ -11,7 +11,7 @@ import { run as defaultRun } from "./shell.ts";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /** Supported AI tool identifiers. */
-export type AiToolId = "claude" | "opencode" | "copilot";
+export type AiToolId = "claude" | "opencode" | "codex" | "copilot";
 
 /**
  * Injectable dependencies for launch command builders.
@@ -61,6 +61,12 @@ export interface AgentTarget {
 export interface AgentFileTargetEntry {
   source: string;
   targets: AgentTarget[];
+}
+
+/** One rendered agent artifact for a specific tool target. */
+export interface RenderedAgentArtifact {
+  filename: string;
+  content: string;
 }
 
 /** Full profile for a single AI tool. */
@@ -116,10 +122,79 @@ export const STANDARD_AGENT_SOURCES_BY_NAME: Record<string, string> = {
   "ninthwave-forward-fixer": "forward-fixer.md",
 };
 
+interface ParsedAgentSource {
+  name: string;
+  description: string;
+  model: string | null;
+  developerInstructions: string;
+}
+
+function parseFrontmatter(content: string): Record<string, string> {
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!frontmatterMatch) return {};
+
+  const frontmatter = frontmatterMatch[1] ?? "";
+  const fields: Record<string, string> = {};
+
+  for (const line of frontmatter.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.+)$/);
+    if (!match) continue;
+
+    const key = match[1];
+    const rawValue = match[2];
+    if (!key || rawValue === undefined) continue;
+    let value = rawValue.trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    fields[key] = value;
+  }
+
+  return fields;
+}
+
+function parseAgentSource(source: string, sourceContent: string): ParsedAgentSource {
+  const frontmatter = parseFrontmatter(sourceContent);
+  const baseName = source.replace(/\.md$/, "");
+  const developerInstructions = sourceContent.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "").trimStart();
+
+  return {
+    name: frontmatter.name ?? `ninthwave-${baseName}`,
+    description: frontmatter.description ?? `ninthwave agent: ${baseName}`,
+    model: frontmatter.model ?? null,
+    developerInstructions,
+  };
+}
+
 /** Build the target filename for one agent source and tool target. */
 export function agentTargetFilename(source: string, target: Pick<AgentTarget, "suffix">): string {
   const baseName = source.replace(/\.md$/, "");
-  return target.suffix === ".agent.md" ? `ninthwave-${baseName}.agent.md` : source;
+  if (target.suffix === ".agent.md") return `ninthwave-${baseName}.agent.md`;
+  if (target.suffix === ".toml") return `ninthwave-${baseName}.toml`;
+  return source;
+}
+
+/** Render the generated filename and content for one tool-owned agent artifact. */
+export function renderAgentArtifact(
+  source: string,
+  sourceContent: string,
+  target: Pick<AgentTarget, "suffix">,
+): RenderedAgentArtifact {
+  const filename = agentTargetFilename(source, target);
+  if (target.suffix !== ".toml") {
+    return { filename, content: sourceContent };
+  }
+
+  const parsed = parseAgentSource(source, sourceContent);
+  const lines = [
+    `name = ${JSON.stringify(parsed.name)}`,
+    `description = ${JSON.stringify(parsed.description)}`,
+  ];
+
+  if (parsed.model) lines.push(`model = ${JSON.stringify(parsed.model)}`);
+  lines.push(`developer_instructions = ${JSON.stringify(parsed.developerInstructions)}`);
+
+  return { filename, content: `${lines.join("\n")}\n` };
 }
 
 /** Extract the runtime agent identifier from a generated target filename. */
@@ -217,6 +292,33 @@ export const AI_TOOL_PROFILES: AiToolProfile[] = [
         ` && PROMPT=$(cat '${promptDataFile}')` +
         ` && rm -f '${promptDataFile}'` +
         ` && exec opencode run "$PROMPT" --agent ${opts.agentName}`;
+      return { cmd, initialPrompt: "" };
+    },
+  },
+  {
+    id: "codex",
+    displayName: "Codex CLI",
+    command: "codex",
+    description: "OpenAI's coding agent",
+    installCmd: "npm install -g @openai/codex",
+    targetDir: ".codex/agents",
+    suffix: ".toml",
+    projectIndicators: [".codex/agents"],
+    processNames: ["codex"],
+    buildLaunchCmd(opts, deps): LaunchCmdResult {
+      const promptDataFile = writePromptDataFile(opts, deps);
+      const cmd =
+        `PROMPT=$(cat '${promptDataFile}')` +
+        ` && rm -f '${promptDataFile}'` +
+        ` && exec codex --full-auto "$PROMPT"`;
+      return { cmd, initialPrompt: "" };
+    },
+    buildHeadlessCmd(opts, deps): LaunchCmdResult {
+      const promptDataFile = writePromptDataFile(opts, deps);
+      const cmd =
+        `PROMPT=$(cat '${promptDataFile}')` +
+        ` && rm -f '${promptDataFile}'` +
+        ` && exec codex exec --ask-for-approval never --sandbox workspace-write "$PROMPT"`;
       return { cmd, initialPrompt: "" };
     },
   },
