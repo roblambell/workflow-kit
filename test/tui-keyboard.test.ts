@@ -387,6 +387,44 @@ describe("setupKeyboardShortcuts", () => {
     vimCleanup();
   });
 
+  it("keeps help, quit, navigation, and controls local while engine confirmation is pending", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onShutdown = vi.fn();
+    const state = makeStatusNavigationState([
+      makeStatusItem({ id: "A-1", state: "implementing" }),
+      makeStatusItem({ id: "B-2", state: "review" }),
+    ], {
+      pendingWipLimit: 4,
+      pendingStrategy: "auto",
+      pendingReviewMode: "all-prs",
+      pendingCollaborationMode: "shared",
+      onShutdown,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "?");
+    expect(state.showHelp).toBe(true);
+
+    stdin.emit("data", "\x1b");
+    expect(state.showHelp).toBe(false);
+
+    stdin.emit("data", "\x1b[B");
+    expect(state.selectedItemId).toBe("B-2");
+
+    stdin.emit("data", "c");
+    expect(state.showControls).toBe(true);
+
+    stdin.emit("data", "\x1b[B");
+    expect(state.controlsRowIndex).toBe(1);
+
+    stdin.emit("data", "q");
+    expect(onShutdown).toHaveBeenCalledTimes(1);
+    expect(ac.signal.aborted).toBe(false);
+
+    cleanup();
+  });
+
   it("Up/Down scroll logs on the logs page", () => {
     const ac = new AbortController();
     const stdin = makeFakeStdin();

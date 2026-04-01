@@ -41,6 +41,7 @@ import {
   createWatchEngineRunner,
   createDetachedDaemonEngineRunner,
   createInteractiveChildEngineRunner,
+  renderTuiPanelFrameFromStatusItems,
   resolveInteractiveStartupConfig,
   INTERACTIVE_WATCH_STAGE_WARN_MS,
   ARMING_WINDOW_MS,
@@ -4967,6 +4968,77 @@ describe("interactive watch instrumentation", () => {
     expect(logs.some((entry) => entry.event === "interactive_watch_timing")).toBe(false);
     expect(logs.some((entry) => entry.event === "interactive_watch_stall")).toBe(false);
   });
+
+  it("records multi-second engine stalls without flagging operator repaint as blocked", async () => {
+    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("T-SPLIT-TUI-1"));
+    orch.getItem("T-SPLIT-TUI-1")!.reviewCompleted = true;
+
+    const logs: LogEntry[] = [];
+    const abortController = new AbortController();
+    let currentMs = 0;
+    const advance = (ms: number) => {
+      currentMs += ms;
+    };
+
+    const pollMs = 2_600;
+    const actionExecutionMs = 2_300;
+    const mainRefreshMs = 2_100;
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: () => {
+        advance(pollMs);
+        return { items: [], readyIds: ["T-SPLIT-TUI-1"] };
+      },
+      sleep: async () => {
+        abortController.abort();
+      },
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps({
+        fetchOrigin: vi.fn(() => advance(mainRefreshMs)),
+        ffMerge: vi.fn(),
+        launchSingleItem: vi.fn(() => {
+          advance(actionExecutionMs);
+          return { worktreePath: "/tmp/test/split-tui-stage-timing", workspaceRef: "workspace:T-SPLIT-TUI-1" };
+        }),
+      }),
+      onPollComplete: () => {
+        // Operator repaint happens in a separate foreground process and should not
+        // be counted as an engine-side blocking stage.
+      },
+      nowMs: () => currentMs,
+    };
+
+    await orchestrateLoop(
+      orch,
+      defaultCtx,
+      deps,
+      { maxIterations: 10, tuiMode: true },
+      abortController.signal,
+    );
+
+    const timingLog = logs.find((entry) => entry.event === "interactive_watch_timing");
+    expect(timingLog).toBeDefined();
+    expect(timingLog!.timingsMs).toEqual({
+      eventLoopLag: 0,
+      poll: pollMs,
+      actionExecution: actionExecutionMs,
+      mainRefresh: mainRefreshMs,
+      displaySync: 0,
+      render: 0,
+      totalBlocking: pollMs + actionExecutionMs + mainRefreshMs,
+    });
+
+    const stallStages = logs
+      .filter((entry) => entry.event === "interactive_watch_stall")
+      .map((entry) => entry.stage);
+    expect(stallStages).toEqual([
+      "poll",
+      "action_execution",
+      "main_refresh",
+    ]);
+    expect(stallStages).not.toContain("render");
+  });
 });
 
 describe("watch engine runner", () => {
@@ -5203,6 +5275,126 @@ describe("shared engine wrappers", () => {
     expect(createRunner).toHaveBeenNthCalledWith(1, deps);
     expect(createRunner).toHaveBeenNthCalledWith(2, deps);
   });
+
+  it("keep detached daemon and interactive child wrappers behaviorally aligned", async () => {
+    async function captureWrapperOutput(
+      createWrapper: typeof createDetachedDaemonEngineRunner,
+    ) {
+      const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "manual" });
+      orch.addItem(makeWorkItem("ENG-PARITY-1"));
+
+      const logs: LogEntry[] = [];
+      const snapshots: WatchEngineSnapshotEvent[] = [];
+      let currentWipLimit = 2;
+      let continueLoop!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        continueLoop = resolve;
+      });
+
+      const runner = createWrapper({
+        orch,
+        ctx: defaultCtx,
+        loopDeps: {
+          buildSnapshot: () => ({ items: [], readyIds: [] }),
+          sleep: () => Promise.resolve(),
+          log: () => {},
+          actionDeps: mockActionDeps(),
+        },
+        runLoop: (async (innerOrch: Orchestrator, _ctx: ExecutionContext, deps: OrchestrateLoopDeps) => {
+          deps.log({ ts: "2026-04-01T00:00:00.000Z", level: "info", event: "engine_log_forwarded" });
+          deps.onPollComplete?.(
+            innerOrch.getAllItems(),
+            { items: [], readyIds: [] },
+            1200,
+            {
+              iteration: 1,
+              actionCount: 0,
+              actionTypes: [],
+              timingsMs: {
+                eventLoopLag: 0,
+                poll: 2_500,
+                actionExecution: 0,
+                mainRefresh: 0,
+                displaySync: 0,
+                render: 0,
+                totalBlocking: 2_500,
+              },
+            },
+          );
+          await gate;
+          deps.onPollComplete?.(
+            innerOrch.getAllItems(),
+            { items: [], readyIds: [] },
+            800,
+          );
+          return {};
+        }) as any,
+        emitLog: (entry) => logs.push(entry),
+        emitSnapshot: (event) => snapshots.push(event),
+        buildState: (items: OrchestratorItem[], heartbeats: ReadonlyMap<string, any>) =>
+          serializeOrchestratorState(items, 2, "2026-04-01T00:00:00.000Z", { heartbeats }),
+        initialReviewMode: "ninthwave-prs",
+        initialCollaborationMode: "local",
+        getWipLimit: () => currentWipLimit,
+        setWipLimit: (limit) => {
+          currentWipLimit = limit;
+        },
+      } as any);
+
+      const runPromise = runner.run();
+      runner.sendControl({ type: "set-review-mode", mode: "all-prs", source: "test-review" });
+      runner.sendControl({ type: "set-collaboration-mode", mode: "shared", source: "test-collab" });
+      runner.sendControl({ type: "set-wip-limit", limit: 4, source: "test-wip" });
+      runner.sendControl({ type: "set-merge-strategy", strategy: "auto", source: "test-merge" });
+      continueLoop();
+      await runPromise;
+
+      return {
+        logEvents: logs.map((entry) => entry.event),
+        snapshotRuntimes: snapshots.map((event) => event.runtime),
+        snapshotTimings: snapshots.map((event) => event.interactiveTiming?.timingsMs ?? null),
+        snapshotPollIntervals: snapshots.map((event) => event.pollIntervalMs ?? null),
+        mergeStrategy: orch.config.mergeStrategy,
+        skipReview: orch.config.skipReview,
+        wipLimit: currentWipLimit,
+      };
+    }
+
+    const detached = await captureWrapperOutput(createDetachedDaemonEngineRunner);
+    const interactive = await captureWrapperOutput(createInteractiveChildEngineRunner);
+
+    expect(detached).toEqual(interactive);
+    expect(detached.logEvents).toEqual([
+      "engine_log_forwarded",
+      "review_mode_changed",
+      "collaboration_mode_changed",
+      "wip_limit_changed",
+    ]);
+    expect(detached.snapshotRuntimes).toEqual([
+      {
+        mergeStrategy: "manual",
+        wipLimit: 2,
+        reviewMode: "ninthwave-prs",
+        collaborationMode: "local",
+      },
+      {
+        mergeStrategy: "auto",
+        wipLimit: 4,
+        reviewMode: "all-prs",
+        collaborationMode: "shared",
+      },
+    ]);
+    expect(detached.snapshotTimings[0]).toEqual({
+      eventLoopLag: 0,
+      poll: 2_500,
+      actionExecution: 0,
+      mainRefresh: 0,
+      displaySync: 0,
+      render: 0,
+      totalBlocking: 2_500,
+    });
+    expect(detached.snapshotPollIntervals).toEqual([1200, 800]);
+  });
 });
 
 describe("interactive watch operator session", () => {
@@ -5293,26 +5485,34 @@ describe("interactive watch operator session", () => {
   }
 
   function makeOperatorSnapshot(title = "Snapshot item"): WatchEngineSnapshotEvent {
+    return makeOperatorSnapshotWithItems([
+      { id: "H-TRS-3", title },
+    ]);
+  }
+
+  function makeOperatorSnapshotWithItems(
+    items: Array<{ id: string; title: string; state?: string; dependencies?: string[]; descriptionBody?: string }>,
+    runtimeOverrides: Partial<WatchEngineSnapshotEvent["runtime"]> = {},
+    interactiveTiming?: WatchEngineSnapshotEvent["interactiveTiming"],
+  ): WatchEngineSnapshotEvent {
     return {
       state: {
         pid: 1,
         startedAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-01T00:00:01.000Z",
         wipLimit: 2,
-        items: [
-          {
-            id: "H-TRS-3",
-            state: "implementing",
-            prNumber: null,
-            title,
-            priority: "high",
-            descriptionBody: "Snapshot-driven description body",
-            lastTransition: "2026-04-01T00:00:01.000Z",
-            ciFailCount: 1,
-            retryCount: 2,
-            dependencies: ["H-TRS-2"],
-          },
-        ],
+        items: items.map((item, index) => ({
+          id: item.id,
+          state: item.state ?? "implementing",
+          prNumber: null,
+          title: item.title,
+          priority: "high",
+          descriptionBody: item.descriptionBody ?? `Snapshot-driven description body ${index + 1}`,
+          lastTransition: "2026-04-01T00:00:01.000Z",
+          ciFailCount: 1,
+          retryCount: 2,
+          dependencies: item.dependencies ?? ["H-TRS-2"],
+        })),
       },
       pollSnapshot: { items: [], readyIds: [] },
       runtime: {
@@ -5320,7 +5520,9 @@ describe("interactive watch operator session", () => {
         wipLimit: 2,
         reviewMode: "ninthwave-prs",
         collaborationMode: "local",
+        ...runtimeOverrides,
       },
+      ...(interactiveTiming ? { interactiveTiming } : {}),
     };
   }
 
@@ -5399,6 +5601,87 @@ describe("interactive watch operator session", () => {
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
     expect((stdin.setRawMode as any).mock.calls).toContainEqual([false]);
     expect(writes.some((chunk) => chunk.includes("\x1B[?1049l"))).toBe(true);
+  });
+
+  it("keeps help, navigation, and overlay interaction responsive during multi-second engine stalls", async () => {
+    const stdin = makeOperatorStdin();
+    const { stream: stdout } = makeOperatorStdout();
+    const tuiState = makeOperatorTuiState();
+    const child = makeOperatorChild();
+    const renderFrame = vi.fn((...args: Parameters<typeof renderTuiPanelFrameFromStatusItems>) => {
+      renderTuiPanelFrameFromStatusItems(...args);
+    });
+
+    const stalledTiming = {
+      iteration: 7,
+      actionCount: 1,
+      actionTypes: ["launch"] as const,
+      timingsMs: {
+        eventLoopLag: 0,
+        poll: 2_600,
+        actionExecution: 2_300,
+        mainRefresh: 2_100,
+        displaySync: 0,
+        render: 0,
+        totalBlocking: 7_000,
+      },
+    };
+
+    const sessionPromise = runInteractiveWatchOperatorSession({
+      projectRoot: "/project",
+      childArgs: ["--items", "H-TRS-3", "H-TRS-5"],
+      tuiState,
+      log: () => {},
+      initialSnapshot: {
+        daemonState: makeOperatorSnapshotWithItems([
+          { id: "H-TRS-3", title: "First blocked snapshot" },
+          { id: "H-TRS-5", title: "Second blocked snapshot", dependencies: ["H-TRS-3"] },
+        ]).state,
+        runtime: makeOperatorSnapshot().runtime,
+        interactiveTiming: stalledTiming,
+      },
+      watchMode: true,
+      stdin,
+      stdout,
+      spawnChild: () => child,
+      renderFrame,
+    });
+
+    await Promise.resolve();
+    expect(tuiState.selectedItemId).toBeDefined();
+
+    const initialRenderCount = renderFrame.mock.calls.length;
+    (stdin as any)._emit("data", "?");
+    expect(tuiState.showHelp).toBe(true);
+    expect(renderFrame.mock.calls.length).toBeGreaterThan(initialRenderCount);
+
+    (stdin as any)._emit("data", "\x1b");
+    expect(tuiState.showHelp).toBe(false);
+
+    (stdin as any)._emit("data", "\x1b[B");
+    expect(tuiState.selectedItemId).toBe("H-TRS-5");
+
+    (stdin as any)._emit("data", "\r");
+    expect(tuiState.detailItemId).toBe("H-TRS-5");
+
+    (stdin as any)._emit("data", "\x1b");
+    expect(tuiState.detailItemId).toBeNull();
+
+    (stdin as any)._emit("data", "c");
+    expect(tuiState.showControls).toBe(true);
+
+    (stdin as any)._emit("data", "\x1b[B");
+    expect(tuiState.controlsRowIndex).toBe(1);
+
+    (stdin as any)._emit("data", "\x1b");
+    expect(tuiState.showControls).toBe(false);
+
+    (stdin as any)._emit("data", "q");
+    const result = await sessionPromise;
+
+    expect(result.lastSnapshot.interactiveTiming?.timingsMs.totalBlocking).toBe(7_000);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(result.completionAction).toBe("quit");
   });
 
   it("restores terminal state after the child completes", async () => {
