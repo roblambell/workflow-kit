@@ -12,6 +12,7 @@ import {
   type ReviewMode,
   getTerminalHeight,
   clampScrollOffset,
+  detailOverlayMaxScroll,
   MIN_SPLIT_ROWS,
 } from "./status-render.ts";
 
@@ -114,8 +115,12 @@ export interface TuiState {
   selectedIndex?: number;
   /** Item ID currently shown in the detail panel (null = log panel visible). */
   detailItemId?: string | null;
+  /** Scroll offset within the detail overlay content (0 = top). */
+  detailScrollOffset?: number;
   /** Saved log scroll offset, restored when returning from detail view. */
   savedLogScrollOffset?: number;
+  /** Total content lines in the current detail overlay (set by render loop for clamping). */
+  detailContentLines?: number;
   /** Called when the user cycles the merge strategy via Shift+Tab. */
   onStrategyChange?: (strategy: MergeStrategy) => void;
   /** Called when the user cycles panel mode via Tab (for preference persistence). */
@@ -310,6 +315,7 @@ export function setupKeyboardShortcuts(
         } else if (tuiState.detailItemId) {
           // Return from detail view to log panel, restore scroll offset
           tuiState.detailItemId = null;
+          tuiState.detailScrollOffset = 0;
           tuiState.logScrollOffset = tuiState.savedLogScrollOffset ?? 0;
         } else {
           handled = false;
@@ -336,26 +342,38 @@ export function setupKeyboardShortcuts(
           if (itemId) {
             tuiState.savedLogScrollOffset = tuiState.logScrollOffset;
             tuiState.detailItemId = itemId;
+            tuiState.detailScrollOffset = 0;
           }
         }
         break;
       }
       case "\x1b[A": { // Up arrow
-        if ((tuiState.selectedIndex ?? 0) > 0) {
-          tuiState.selectedIndex = (tuiState.selectedIndex ?? 0) - 1;
+        if (tuiState.detailItemId) {
+          // Scroll detail overlay up
+          tuiState.detailScrollOffset = Math.max(0, (tuiState.detailScrollOffset ?? 0) - 1);
+        } else {
+          if ((tuiState.selectedIndex ?? 0) > 0) {
+            tuiState.selectedIndex = (tuiState.selectedIndex ?? 0) - 1;
+          }
+          // Scroll follows selection: keep selected item in view
+          tuiState.scrollOffset = Math.min(tuiState.scrollOffset, tuiState.selectedIndex ?? 0);
         }
-        // Scroll follows selection: keep selected item in view
-        tuiState.scrollOffset = Math.min(tuiState.scrollOffset, tuiState.selectedIndex ?? 0);
         break;
       }
       case "\x1b[B": { // Down arrow
-        const maxIdx = (tuiState.getItemCount?.() ?? 0) - 1;
-        const curIdx = tuiState.selectedIndex ?? 0;
-        if (curIdx < maxIdx) {
-          tuiState.selectedIndex = curIdx + 1;
+        if (tuiState.detailItemId) {
+          // Scroll detail overlay down
+          const maxScroll = detailOverlayMaxScroll(tuiState.detailContentLines ?? 0, getTerminalHeight());
+          tuiState.detailScrollOffset = Math.min(maxScroll, (tuiState.detailScrollOffset ?? 0) + 1);
+        } else {
+          const maxIdx = (tuiState.getItemCount?.() ?? 0) - 1;
+          const curIdx = tuiState.selectedIndex ?? 0;
+          if (curIdx < maxIdx) {
+            tuiState.selectedIndex = curIdx + 1;
+          }
+          // Scroll follows selection: ensure selected item stays visible
+          tuiState.scrollOffset = tuiState.selectedIndex ?? 0;
         }
-        // Scroll follows selection: ensure selected item stays visible
-        tuiState.scrollOffset = tuiState.selectedIndex ?? 0;
         break;
       }
       case "\t": { // Tab -- cycle panel mode (split -> logs-only -> status-only -> split)
@@ -369,11 +387,20 @@ export function setupKeyboardShortcuts(
         tuiState.onPanelModeChange?.(tuiState.panelMode);
         break;
       }
-      case "j": // Scroll log panel down
-        tuiState.logScrollOffset += 1;
+      case "j": // Scroll down (detail overlay or log panel)
+        if (tuiState.detailItemId) {
+          const maxScroll = detailOverlayMaxScroll(tuiState.detailContentLines ?? 0, getTerminalHeight());
+          tuiState.detailScrollOffset = Math.min(maxScroll, (tuiState.detailScrollOffset ?? 0) + 1);
+        } else {
+          tuiState.logScrollOffset += 1;
+        }
         break;
-      case "k": // Scroll log panel up
-        tuiState.logScrollOffset = Math.max(0, tuiState.logScrollOffset - 1);
+      case "k": // Scroll up (detail overlay or log panel)
+        if (tuiState.detailItemId) {
+          tuiState.detailScrollOffset = Math.max(0, (tuiState.detailScrollOffset ?? 0) - 1);
+        } else {
+          tuiState.logScrollOffset = Math.max(0, tuiState.logScrollOffset - 1);
+        }
         break;
       case "l": { // Cycle log level filter (info -> warn -> error -> all)
         const currentIdx = LOG_LEVEL_CYCLE.indexOf(tuiState.logLevelFilter);
@@ -383,11 +410,16 @@ export function setupKeyboardShortcuts(
         tuiState.logScrollOffset = 0;
         break;
       }
-      case "G": { // Jump to end of log (re-enable follow mode)
-        const filtered = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
-        const termRows = getTerminalHeight();
-        const viewportHeight = Math.max(1, termRows - 10); // approximate
-        tuiState.logScrollOffset = Math.max(0, filtered.length - viewportHeight);
+      case "G": { // Jump to end (detail overlay or log)
+        if (tuiState.detailItemId) {
+          const maxScroll = detailOverlayMaxScroll(tuiState.detailContentLines ?? 0, getTerminalHeight());
+          tuiState.detailScrollOffset = maxScroll;
+        } else {
+          const filtered = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
+          const termRows = getTerminalHeight();
+          const viewportHeight = Math.max(1, termRows - 10); // approximate
+          tuiState.logScrollOffset = Math.max(0, filtered.length - viewportHeight);
+        }
         break;
       }
       case "\x1B[Z": { // Shift+Tab -- cycle merge strategy

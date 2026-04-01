@@ -326,6 +326,8 @@ export function renderTuiPanelFrame(
         dependencies: orchItem?.workItem.dependencies,
         ciFailCount: orchItem?.ciFailCount,
         retryCount: orchItem?.retryCount,
+        scrollOffset: tuiState.detailScrollOffset ?? 0,
+        descriptionBody: orchItem?.workItem.rawText,
       });
       const content = overlayLines.join("\n");
       write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
@@ -419,6 +421,8 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     logLevelFilter: "all",
     selectedIndex: 0,
     detailItemId: null,
+    detailScrollOffset: 0,
+    detailContentLines: 0,
     savedLogScrollOffset: 0,
     getSelectedItemId: (index: number) => {
       const data = getItems();
@@ -476,6 +480,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
       if (detailItem) {
         const overlayLines = renderDetailOverlay(detailItem, termWidth, termRows, {
           repoUrl: tuiState.viewOptions.repoUrl,
+          scrollOffset: tuiState.detailScrollOffset ?? 0,
         });
         const content = overlayLines.join("\n");
         write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
@@ -2566,6 +2571,8 @@ export async function cmdOrchestrate(
     logLevelFilter: "all",
     selectedIndex: 0,
     detailItemId: null,
+    detailScrollOffset: 0,
+    detailContentLines: 0,
     savedLogScrollOffset: 0,
     getSelectedItemId: (index: number) => {
       const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemIds(), orch.config.maxTimeoutExtensions);

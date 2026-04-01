@@ -1105,7 +1105,7 @@ export function daemonStateToStatusItems(state: DaemonState): StatusItem[] {
   }));
 }
 
-function wrapDetailText(text: string, maxWidth: number): string[] {
+export function wrapDetailText(text: string, maxWidth: number): string[] {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return [];
 
@@ -2495,6 +2495,10 @@ export function renderDetailOverlay(
     dependencies?: string[];
     ciFailCount?: number;
     retryCount?: number;
+    /** Scroll offset within the detail content region (0 = top). */
+    scrollOffset?: number;
+    /** Full description body to render in a scrollable region (overrides descriptionSnippet). */
+    descriptionBody?: string;
   },
 ): string[] {
   // ── Build content lines from formatItemDetail + extras ────────────
@@ -2543,6 +2547,19 @@ export function renderDetailOverlay(
     }
   }
 
+  // Full description body: wrap and append as a scrollable region
+  if (opts?.descriptionBody) {
+    contentLines.push("");
+    contentLines.push(`  ${DIM}${"─".repeat(40)}${RESET}`);
+    contentLines.push(`  ${BOLD}Description${RESET}`);
+    contentLines.push("");
+    const wrapWidth = Math.min(72, termWidth - 12);
+    const wrappedBody = wrapDetailText(opts.descriptionBody, wrapWidth);
+    for (const line of wrappedBody) {
+      contentLines.push(`  ${line}`);
+    }
+  }
+
   // ── Compute box dimensions ─────────────────────────────────────────
 
   const maxContentWidth = Math.max(
@@ -2550,6 +2567,24 @@ export function renderDetailOverlay(
   );
   const innerWidth = Math.min(maxContentWidth + 4, termWidth - 4);
   const boxWidth = innerWidth + 2;
+
+  // ── Determine scrollable viewport ──────────────────────────────────
+  // Reserve: top border (1), title (1), blank (1), blank before footer (1),
+  // footer hint (1), bottom border (1) = 6 chrome lines.
+  // Also reserve 1 line each for scroll indicators when content overflows.
+
+  const chromeLines = 6;
+  const maxViewportHeight = termRows - chromeLines - 2; // 2 for vertical centering margin
+  const totalContentLines = contentLines.length;
+  const needsScroll = totalContentLines > maxViewportHeight && maxViewportHeight > 0;
+  const viewportHeight = needsScroll ? maxViewportHeight : totalContentLines;
+
+  const scrollOffset = Math.max(0, Math.min(
+    opts?.scrollOffset ?? 0,
+    Math.max(0, totalContentLines - viewportHeight),
+  ));
+
+  const visibleContent = contentLines.slice(scrollOffset, scrollOffset + viewportHeight);
 
   // ── Draw box ───────────────────────────────────────────────────────
 
@@ -2566,9 +2601,16 @@ export function renderDetailOverlay(
   boxLines.push(`${margin}│${" ".repeat(titlePad)}${BOLD}${title}${RESET}${" ".repeat(Math.max(0, innerWidth - titlePad - title.length))}│`);
   boxLines.push(`${margin}│${" ".repeat(innerWidth)}│`);
 
-  // Content lines
+  // Scroll-up indicator
+  if (needsScroll && scrollOffset > 0) {
+    const upHint = "▲ scroll up";
+    const upPad = Math.max(0, Math.floor((innerWidth - upHint.length) / 2));
+    boxLines.push(`${margin}│${" ".repeat(upPad)}${DIM}${upHint}${RESET}${" ".repeat(Math.max(0, innerWidth - upPad - upHint.length))}│`);
+  }
+
+  // Content lines (scrolled viewport)
   const maxContentDisplay = innerWidth - 2;
-  for (const line of contentLines) {
+  for (const line of visibleContent) {
     const displayLen = stripAnsiForWidth(line).length;
     let rendered = line;
     if (displayLen > maxContentDisplay) {
@@ -2586,11 +2628,18 @@ export function renderDetailOverlay(
     boxLines.push(`${margin}│  ${rendered}${" ".repeat(rightPad)}│`);
   }
 
+  // Scroll-down indicator
+  if (needsScroll && scrollOffset + viewportHeight < totalContentLines) {
+    const downHint = "▼ scroll down";
+    const downPad = Math.max(0, Math.floor((innerWidth - downHint.length) / 2));
+    boxLines.push(`${margin}│${" ".repeat(downPad)}${DIM}${downHint}${RESET}${" ".repeat(Math.max(0, innerWidth - downPad - downHint.length))}│`);
+  }
+
   // Empty line before footer hint
   boxLines.push(`${margin}│${" ".repeat(innerWidth)}│`);
 
   // Footer hint
-  const hint = "Press Escape to close";
+  const hint = needsScroll ? "↑/↓ scroll · Escape to close" : "Press Escape to close";
   const hintPad = Math.max(0, Math.floor((innerWidth - hint.length) / 2));
   boxLines.push(`${margin}│${" ".repeat(hintPad)}${DIM}${hint}${RESET}${" ".repeat(Math.max(0, innerWidth - hintPad - hint.length))}│`);
 
@@ -2612,4 +2661,18 @@ export function renderDetailOverlay(
   }
 
   return result;
+}
+
+/**
+ * Compute the maximum scroll offset for the detail overlay content.
+ * Returns the number of lines that overflow the viewport (0 if no scrolling needed).
+ */
+export function detailOverlayMaxScroll(
+  totalContentLines: number,
+  termRows: number,
+): number {
+  const chromeLines = 6;
+  const maxViewportHeight = termRows - chromeLines - 2;
+  if (totalContentLines <= maxViewportHeight || maxViewportHeight <= 0) return 0;
+  return totalContentLines - maxViewportHeight;
 }
