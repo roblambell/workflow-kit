@@ -1,4 +1,4 @@
-// Directory-based TODO parser for the ninthwave CLI.
+// Directory-based work item parser for the ninthwave CLI.
 // Delegates to listWorkItems() from work-item-files.ts for actual file reading.
 // Re-exports utility functions from work-item-files.ts for backward compatibility.
 
@@ -18,9 +18,9 @@ export {
 } from "./work-item-files.ts";
 
 /**
- * Parse todo items from a directory of todo files (.ninthwave/work/).
+ * Parse work items from a directory of work item files (.ninthwave/work/).
  *
- * Delegates to listWorkItems() from todo-files.ts which reads each .md file,
+ * Delegates to listWorkItems() from work-item-files.ts which reads each .md file,
  * parses metadata, expands wildcard dependencies, and detects in-progress status.
  *
  * When `projectRoot` is provided, only items whose files exist on origin/main

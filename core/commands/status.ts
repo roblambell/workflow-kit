@@ -85,7 +85,7 @@ export {
 
 // ─── Data gathering ──────────────────────────────────────────────────────────
 
-interface TodoMetadata {
+interface WorkItemMetadata {
   title: string;
   dependencies: string[];
   lineageToken?: string;
@@ -99,9 +99,9 @@ const defaultStatusDeps: StatusDeps = {
   runCommand: run,
 };
 
-/** Try to read TODO metadata from .ninthwave/work/ directory. Returns a map of ID → metadata. */
-function loadTodoMetadata(projectRoot: string): Map<string, TodoMetadata> {
-  const metadata = new Map<string, TodoMetadata>();
+/** Try to read work item metadata from .ninthwave/work/ directory. Returns a map of ID → metadata. */
+function loadWorkItemMetadata(projectRoot: string): Map<string, WorkItemMetadata> {
+  const metadata = new Map<string, WorkItemMetadata>();
   const workDir = join(projectRoot, ".ninthwave", "work");
   if (!existsSync(workDir)) return metadata;
 
@@ -380,7 +380,7 @@ function gatherStatusItems(
     return { items: [], wipLimit: undefined };
   }
 
-  const todoMeta = loadTodoMetadata(projectRoot);
+  const workItemMeta = loadWorkItemMetadata(projectRoot);
   const items: StatusItem[] = [];
 
   // Hub-local worktrees
@@ -391,7 +391,7 @@ function gatherStatusItems(
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
       const id = entry.slice(10);
-      const meta = todoMeta.get(id);
+      const meta = workItemMeta.get(id);
       const { state, prNumber } = determineItemState(
         id,
         projectRoot,
@@ -424,7 +424,7 @@ function gatherStatusItems(
       const idxPath = parts[2];
       if (!idxId || !idxRepo || !idxPath) continue;
       if (!existsSync(idxPath)) continue;
-      const meta = todoMeta.get(idxId);
+      const meta = workItemMeta.get(idxId);
       const { state, prNumber } = determineItemState(
         idxId,
         idxRepo,
@@ -499,7 +499,7 @@ export function renderStatus(
     return lines.join("\n") + "\n";
   }
 
-  const todoMeta = loadTodoMetadata(projectRoot);
+  const workItemMeta = loadWorkItemMetadata(projectRoot);
   const items: StatusItem[] = [];
 
   // Hub-local worktrees
@@ -510,7 +510,7 @@ export function renderStatus(
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
       const id = entry.slice(10); // strip "ninthwave-"
-      const meta = todoMeta.get(id);
+      const meta = workItemMeta.get(id);
       const { state, prNumber } = determineItemState(
         id,
         projectRoot,
@@ -543,7 +543,7 @@ export function renderStatus(
       const idxPath = parts[2];
       if (!idxId || !idxRepo || !idxPath) continue;
       if (!existsSync(idxPath)) continue;
-      const meta = todoMeta.get(idxId);
+      const meta = workItemMeta.get(idxId);
       const { state, prNumber } = determineItemState(
         idxId,
         idxRepo,

@@ -1,4 +1,4 @@
-// Orchestrator state machine for parallel TODO processing.
+// Orchestrator state machine for parallel work item processing.
 // processTransitions is pure -- takes a snapshot and returns actions, no side effects.
 // executeAction bridges the pure state machine to external dependencies via injected deps.
 //
@@ -132,11 +132,11 @@ export class Orchestrator {
     }
   }
 
-  /** Add a TODO item to orchestration. Starts in 'queued' state. */
-  addItem(todo: WorkItem, partition?: number): void {
-    this.items.set(todo.id, {
-      id: todo.id,
-      workItem: todo,
+  /** Add a work item to orchestration. Starts in 'queued' state. */
+  addItem(workItem: WorkItem, partition?: number): void {
+    this.items.set(workItem.id, {
+      id: workItem.id,
+      workItem,
       state: "queued",
       partition,
       lastTransition: new Date().toISOString(),
@@ -1514,7 +1514,7 @@ export class Orchestrator {
 
   /**
    * Check if an item needs bootstrap before launch.
-   * True when the TODO has bootstrap: true, has a cross-repo alias, and the repo isn't resolved yet.
+   * True when the work item has bootstrap: true, has a cross-repo alias, and the repo isn't resolved yet.
    */
   private needsBootstrap(item: OrchestratorItem): boolean {
     if (!item.workItem.bootstrap) return false;

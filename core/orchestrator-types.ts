@@ -338,15 +338,15 @@ export interface OrchestratorDeps {
    */
   syncStackComments?: (baseBranch: string, stack: Array<{ prNumber: number; title: string }>) => void;
   /**
-   * Clean up stale branches when a TODO ID is reused with different work.
+   * Clean up stale branches when a work item ID is reused with different work.
    * Called before launching a worker. Checks for merged PRs with title mismatches
    * and deletes both local and remote branches so the worker starts fresh.
    * Non-fatal -- launch proceeds even if cleanup fails.
    */
-  cleanStaleBranch?: (todo: WorkItem, projectRoot: string) => void;
+  cleanStaleBranch?: (workItem: WorkItem, projectRoot: string) => void;
   /**
    * Bootstrap a target repo (clone from remote or create new).
-   * Called before launch when a cross-repo TODO has bootstrap: true and the repo doesn't exist locally.
+   * Called before launch when a cross-repo work item has bootstrap: true and the repo doesn't exist locally.
    * Returns the resolved repo path on success, or an error string on failure.
    */
   bootstrapRepo?: (alias: string, projectRoot: string) => { status: "exists" | "cloned" | "created"; path?: string } | { status: "failed"; reason: string };

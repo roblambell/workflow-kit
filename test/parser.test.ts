@@ -23,7 +23,7 @@ function setupWorkItemsDir(repo: string): string {
 }
 
 /** Helper: write a raw markdown work item file directly (for fine-grained control). */
-function writeRawTodoFile(workDir: string, filename: string, content: string): void {
+function writeRawWorkItemFile(workDir: string, filename: string, content: string): void {
   writeFileSync(join(workDir, filename), content);
 }
 
@@ -48,7 +48,7 @@ describe("parseWorkItems -- valid items", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Source:** Manual request 2026-03-22
@@ -67,7 +67,7 @@ Acceptance: Test workflows use 4 vCPU runners. Deploy workflows remain on 2 vCPU
 Key files: \`.github/workflows/test-api.yml\`, \`.github/workflows/ci.yml\`
 `);
 
-    writeRawTodoFile(workDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Source:** Eng review 2026-03-22
@@ -85,7 +85,7 @@ Acceptance: No more timeout errors in CI. Pool size configurable via env var.
 Key files: \`config/test.exs\`
 `);
 
-    writeRawTodoFile(workDir, "0-user-onboarding--C-UO-1.md", `# Add welcome email (C-UO-1)
+    writeRawWorkItemFile(workDir, "0-user-onboarding--C-UO-1.md", `# Add welcome email (C-UO-1)
 
 **Priority:** Critical
 **Source:** Product review 2026-03-20
@@ -99,7 +99,7 @@ Acceptance: Email sent within 30s of onboarding completion. Email contains user 
 Key files: \`lib/onboarding/email.ex\`, \`lib/mailer.ex\`
 `);
 
-    writeRawTodoFile(workDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+    writeRawWorkItemFile(workDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
 
 **Priority:** High
 **Source:** Product review 2026-03-20
@@ -122,7 +122,7 @@ Key files: \`lib/onboarding/checklist.ex\`, \`assets/js/checklist.tsx\`
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
@@ -131,7 +131,7 @@ Key files: \`lib/onboarding/checklist.ex\`, \`assets/js/checklist.tsx\`
 Acceptance: Runners upgraded.
 `);
 
-    writeRawTodoFile(workDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-cloud-infrastructure--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** M-CI-1
@@ -150,21 +150,21 @@ Acceptance: Fixed.
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "0-test--C-UO-1.md", `# Item (C-UO-1)
+    writeRawWorkItemFile(workDir, "0-test--C-UO-1.md", `# Item (C-UO-1)
 
 **Priority:** Critical
 **Depends on:** None
@@ -183,14 +183,14 @@ Acceptance: Fixed.
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
@@ -208,14 +208,14 @@ Acceptance: Fixed.
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-cloud-infrastructure--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** cloud-infrastructure
 `);
 
-    writeRawTodoFile(workDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+    writeRawWorkItemFile(workDir, "1-user-onboarding--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
 
 **Priority:** High
 **Depends on:** None
@@ -233,28 +233,28 @@ Acceptance: Fixed.
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** M-CI-1
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+    writeRawWorkItemFile(workDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
 
 **Priority:** High
 **Depends on:** C-UO-1, M-CI-1
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
+    writeRawWorkItemFile(workDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
 
 **Priority:** Critical
 **Depends on:** None
@@ -273,7 +273,7 @@ Acceptance: Fixed.
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
+    writeRawWorkItemFile(workDir, "1-test--H-UO-2.md", `# Add onboarding checklist (H-UO-2)
 
 **Priority:** High
 **Depends on:** None
@@ -289,14 +289,14 @@ Acceptance: Fixed.
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
@@ -314,7 +314,7 @@ Acceptance: Fixed.
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
@@ -325,7 +325,7 @@ Acceptance: Runners upgraded.
 Key files: \`.github/workflows/test-api.yml\`, \`.github/workflows/ci.yml\`
 `);
 
-    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-test--H-CI-2.md", `# Flaky connection pool timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
@@ -351,7 +351,7 @@ Key files: \`config/test.exs\`
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
@@ -369,7 +369,7 @@ Acceptance: Runners upgraded.
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
@@ -386,7 +386,7 @@ describe("parseWorkItems -- items with missing optional fields", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-test--H-BK-1.md", `# Some item (H-BK-1)
+    writeRawWorkItemFile(workDir, "1-test--H-BK-1.md", `# Some item (H-BK-1)
 
 **Priority:** High
 **Domain:** test
@@ -404,7 +404,7 @@ Description only.
     const workDir = setupWorkItemsDir(repo);
 
     // No priority line -- parseWorkItemFile returns null
-    writeRawTodoFile(workDir, "2-test--M-BK-1.md", `# No priority item (M-BK-1)
+    writeRawWorkItemFile(workDir, "2-test--M-BK-1.md", `# No priority item (M-BK-1)
 
 **Depends on:** None
 **Domain:** test
@@ -412,7 +412,7 @@ Description only.
 This item has no Priority line.
 `);
 
-    writeRawTodoFile(workDir, "2-test--M-BK-2.md", `# Valid item (M-BK-2)
+    writeRawWorkItemFile(workDir, "2-test--M-BK-2.md", `# Valid item (M-BK-2)
 
 **Priority:** Medium
 **Depends on:** None
@@ -432,14 +432,14 @@ This is valid.
     const workDir = setupWorkItemsDir(repo);
 
     // No ID in heading -- parseWorkItemFile returns null
-    writeRawTodoFile(workDir, "2-test--no-id.md", `# Item with no ID
+    writeRawWorkItemFile(workDir, "2-test--no-id.md", `# Item with no ID
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "2-test--M-BK-3.md", `# Valid item after bad one (M-BK-3)
+    writeRawWorkItemFile(workDir, "2-test--M-BK-3.md", `# Valid item after bad one (M-BK-3)
 
 **Priority:** Medium
 **Depends on:** None
@@ -476,21 +476,21 @@ describe("parseWorkItems -- multi-domain items", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-section-alpha--H-AL-1.md", `# Alpha item one (H-AL-1)
+    writeRawWorkItemFile(workDir, "1-section-alpha--H-AL-1.md", `# Alpha item one (H-AL-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** section-alpha
 `);
 
-    writeRawTodoFile(workDir, "2-section-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
+    writeRawWorkItemFile(workDir, "2-section-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
 
 **Priority:** Medium
 **Depends on:** H-AL-1
 **Domain:** section-alpha
 `);
 
-    writeRawTodoFile(workDir, "1-section-beta--H-BE-1.md", `# Beta item one (H-BE-1)
+    writeRawWorkItemFile(workDir, "1-section-beta--H-BE-1.md", `# Beta item one (H-BE-1)
 
 **Priority:** High
 **Depends on:** None
@@ -510,14 +510,14 @@ describe("parseWorkItems -- multi-domain items", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-alpha--H-AL-1.md", `# Alpha item (H-AL-1)
+    writeRawWorkItemFile(workDir, "1-alpha--H-AL-1.md", `# Alpha item (H-AL-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** alpha
 `);
 
-    writeRawTodoFile(workDir, "2-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
+    writeRawWorkItemFile(workDir, "2-alpha--M-AL-2.md", `# Alpha item two (M-AL-2)
 
 **Priority:** Medium
 **Depends on:** H-AL-1
@@ -536,7 +536,7 @@ describe("parseWorkItems -- cross-repo items", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-api-service--H-API-1.md", `# Add rate limiting (H-API-1)
+    writeRawWorkItemFile(workDir, "1-api-service--H-API-1.md", `# Add rate limiting (H-API-1)
 
 **Priority:** High
 **Depends on:** None
@@ -548,7 +548,7 @@ Acceptance: Rate limiting returns 429 after threshold.
 Key files: \`lib/gateway/rate_limiter.ex\`
 `);
 
-    writeRawTodoFile(workDir, "2-api-service--M-API-2.md", `# Connection pool timeout (M-API-2)
+    writeRawWorkItemFile(workDir, "2-api-service--M-API-2.md", `# Connection pool timeout (M-API-2)
 
 **Priority:** Medium
 **Depends on:** H-API-1
@@ -556,7 +556,7 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-a
 `);
 
-    writeRawTodoFile(workDir, "1-web-app--H-WA-1.md", `# Add onboarding flow (H-WA-1)
+    writeRawWorkItemFile(workDir, "1-web-app--H-WA-1.md", `# Add onboarding flow (H-WA-1)
 
 **Priority:** High
 **Depends on:** None
@@ -564,7 +564,7 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-b
 `);
 
-    writeRawTodoFile(workDir, "2-documentation--M-DOC-1.md", `# Update ADR for rate limiting (M-DOC-1)
+    writeRawWorkItemFile(workDir, "2-documentation--M-DOC-1.md", `# Update ADR for rate limiting (M-DOC-1)
 
 **Priority:** Medium
 **Depends on:** H-API-1
@@ -585,7 +585,7 @@ Key files: \`lib/gateway/rate_limiter.ex\`
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-api--H-API-1.md", `# Rate limiting (H-API-1)
+    writeRawWorkItemFile(workDir, "1-api--H-API-1.md", `# Rate limiting (H-API-1)
 
 **Priority:** High
 **Depends on:** None
@@ -593,7 +593,7 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-a
 `);
 
-    writeRawTodoFile(workDir, "2-api--M-API-2.md", `# Pool timeout (M-API-2)
+    writeRawWorkItemFile(workDir, "2-api--M-API-2.md", `# Pool timeout (M-API-2)
 
 **Priority:** Medium
 **Depends on:** H-API-1
@@ -601,7 +601,7 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-a
 `);
 
-    writeRawTodoFile(workDir, "1-web--H-WA-1.md", `# Onboarding (H-WA-1)
+    writeRawWorkItemFile(workDir, "1-web--H-WA-1.md", `# Onboarding (H-WA-1)
 
 **Priority:** High
 **Depends on:** None
@@ -609,7 +609,7 @@ Key files: \`lib/gateway/rate_limiter.ex\`
 **Repo:** target-repo-b
 `);
 
-    writeRawTodoFile(workDir, "2-docs--M-DOC-1.md", `# ADR (M-DOC-1)
+    writeRawWorkItemFile(workDir, "2-docs--M-DOC-1.md", `# ADR (M-DOC-1)
 
 **Priority:** Medium
 **Depends on:** H-API-1
@@ -626,14 +626,14 @@ describe("parseWorkItems -- in-progress detection", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** M-CI-1
@@ -655,14 +655,14 @@ describe("parseWorkItems -- in-progress detection", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Item (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** test
 `);
 
-    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-test--H-CI-2.md", `# Item (H-CI-2)
 
 **Priority:** High
 **Depends on:** M-CI-1
@@ -695,21 +695,21 @@ describe("parseWorkItems -- circular deps", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-circular--H-CC-1.md", `# Item A depends on B (H-CC-1)
+    writeRawWorkItemFile(workDir, "1-circular--H-CC-1.md", `# Item A depends on B (H-CC-1)
 
 **Priority:** High
 **Depends on:** H-CC-2
 **Domain:** circular
 `);
 
-    writeRawTodoFile(workDir, "1-circular--H-CC-2.md", `# Item B depends on C (H-CC-2)
+    writeRawWorkItemFile(workDir, "1-circular--H-CC-2.md", `# Item B depends on C (H-CC-2)
 
 **Priority:** High
 **Depends on:** H-CC-3
 **Domain:** circular
 `);
 
-    writeRawTodoFile(workDir, "1-circular--H-CC-3.md", `# Item C depends on A (H-CC-3)
+    writeRawWorkItemFile(workDir, "1-circular--H-CC-3.md", `# Item C depends on A (H-CC-3)
 
 **Priority:** High
 **Depends on:** H-CC-1
@@ -724,21 +724,21 @@ describe("parseWorkItems -- circular deps", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-circular--H-CC-1.md", `# Item A (H-CC-1)
+    writeRawWorkItemFile(workDir, "1-circular--H-CC-1.md", `# Item A (H-CC-1)
 
 **Priority:** High
 **Depends on:** H-CC-2
 **Domain:** circular
 `);
 
-    writeRawTodoFile(workDir, "1-circular--H-CC-2.md", `# Item B (H-CC-2)
+    writeRawWorkItemFile(workDir, "1-circular--H-CC-2.md", `# Item B (H-CC-2)
 
 **Priority:** High
 **Depends on:** H-CC-3
 **Domain:** circular
 `);
 
-    writeRawTodoFile(workDir, "1-circular--H-CC-3.md", `# Item C (H-CC-3)
+    writeRawWorkItemFile(workDir, "1-circular--H-CC-3.md", `# Item C (H-CC-3)
 
 **Priority:** High
 **Depends on:** H-CC-1
@@ -924,7 +924,7 @@ describe("parseWorkItems -- test plan extraction", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
+    writeRawWorkItemFile(workDir, "2-test--M-CI-1.md", `# Upgrade CI runners (M-CI-1)
 
 **Priority:** Medium
 **Depends on:** None
@@ -938,7 +938,7 @@ describe("parseWorkItems -- test plan extraction", () => {
 Acceptance: Test workflows use 4 vCPU runners.
 `);
 
-    writeRawTodoFile(workDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
+    writeRawWorkItemFile(workDir, "1-test--H-CI-2.md", `# Flaky timeout (H-CI-2)
 
 **Priority:** High
 **Depends on:** None
@@ -966,7 +966,7 @@ Acceptance: Fixed.
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
+    writeRawWorkItemFile(workDir, "0-test--C-UO-1.md", `# Add welcome email (C-UO-1)
 
 **Priority:** Critical
 **Depends on:** None
@@ -1121,21 +1121,21 @@ describe("parseWorkItems -- wildcard dependencies", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-test-domain--H-TD-1.md", `# First item (H-TD-1)
+    writeRawWorkItemFile(workDir, "1-test-domain--H-TD-1.md", `# First item (H-TD-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** test-domain
 `);
 
-    writeRawTodoFile(workDir, "1-test-domain--H-TD-2.md", `# Second item (H-TD-2)
+    writeRawWorkItemFile(workDir, "1-test-domain--H-TD-2.md", `# Second item (H-TD-2)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** test-domain
 `);
 
-    writeRawTodoFile(workDir, "2-other-domain--M-OT-1.md", `# Depends on all TD items (M-OT-1)
+    writeRawWorkItemFile(workDir, "2-other-domain--M-OT-1.md", `# Depends on all TD items (M-OT-1)
 
 **Priority:** Medium
 **Depends on:** TD-*
@@ -1154,28 +1154,28 @@ describe("parseWorkItems -- wildcard dependencies", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
 
-    writeRawTodoFile(workDir, "1-alpha--H-AL-1.md", `# A1 (H-AL-1)
+    writeRawWorkItemFile(workDir, "1-alpha--H-AL-1.md", `# A1 (H-AL-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** alpha
 `);
 
-    writeRawTodoFile(workDir, "2-alpha--M-AL-2.md", `# A2 (M-AL-2)
+    writeRawWorkItemFile(workDir, "2-alpha--M-AL-2.md", `# A2 (M-AL-2)
 
 **Priority:** Medium
 **Depends on:** None
 **Domain:** alpha
 `);
 
-    writeRawTodoFile(workDir, "1-beta--H-BE-1.md", `# B1 (H-BE-1)
+    writeRawWorkItemFile(workDir, "1-beta--H-BE-1.md", `# B1 (H-BE-1)
 
 **Priority:** High
 **Depends on:** None
 **Domain:** beta
 `);
 
-    writeRawTodoFile(workDir, "2-gamma--M-GA-1.md", `# Depends on A1 and all Beta (M-GA-1)
+    writeRawWorkItemFile(workDir, "2-gamma--M-GA-1.md", `# Depends on A1 and all Beta (M-GA-1)
 
 **Priority:** Medium
 **Depends on:** H-AL-1, BE-*

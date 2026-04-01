@@ -93,7 +93,7 @@ export function executeLaunch(
   deps: OrchestratorDeps,
 ): ActionResult {
   // Clean stale branches before launching (H-ORC-4).
-  // When a TODO ID is reused with different work, the old branch may have
+  // When a work item ID is reused with different work, the old branch may have
   // merged PRs that cause workers to falsely exit as "done".
   if (deps.cleanStaleBranch) {
     try {

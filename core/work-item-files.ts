@@ -1,5 +1,5 @@
-// File-per-todo operations: read, write, list, delete individual todo files.
-// Also includes shared utility functions for todo parsing (splitIds, normalizeDomain, etc.).
+// File-per-work-item operations: read, write, list, delete individual work item files.
+// Also includes shared utility functions for work item parsing (splitIds, normalizeDomain, etc.).
 
 import {
   existsSync,
@@ -254,7 +254,7 @@ export function expandWildcardDeps(
   return [...expanded];
 }
 
-/** Metadata line prefixes used in todo file format. */
+/** Metadata line prefixes used in the work item file format. */
 const METADATA_PREFIXES = [
   "**Priority:**",
   "**Source:**",
@@ -267,7 +267,7 @@ const METADATA_PREFIXES = [
 ];
 
 /**
- * Extract the body text from a todo file's rawText, stripping the # header
+ * Extract the body text from a work item file's rawText, stripping the # header
  * and metadata lines (Priority, Source, Depends on, Domain, Lineage, Bundle with, Repo).
  * Trims trailing empty lines.
  */
@@ -308,18 +308,18 @@ export function extractBody(rawText: string): string[] {
 }
 
 /**
- * Normalize a title for comparison by lowercasing, stripping TODO ID
+ * Normalize a title for comparison by lowercasing, stripping legacy TODO ID
  * references (e.g., "(H-MUX-1)", "TODO H-MUX-1"), conventional commit
  * prefixes (e.g., "fix:", "feat:"), and collapsing whitespace.
  *
- * Used to detect TODO ID collisions: when a new TODO reuses an old merged
- * PR's branch name, we compare the PR title against the TODO title.
+ * Used to detect legacy ID collisions: when a new work item reuses an old
+ * merged PR's branch name, we compare the PR title against the work item title.
  * Titles must be an exact match after normalization.
  */
 export function normalizeTitleForComparison(title: string): string {
   return title
     .toLowerCase()
-    // Strip TODO ID references: "(H-MUX-1)", "TODO H-MUX-1", "(TODO H-MUX-1)"
+    // Strip legacy TODO ID references: "(H-MUX-1)", "TODO H-MUX-1", "(TODO H-MUX-1)"
     .replace(new RegExp(`\\(?TODO\\s+${ID_PATTERN_SOURCE}\\)?`, "gi"), "")
     .replace(new RegExp(`\\(${ID_PATTERN_SOURCE}\\)`, "gi"), "")
     // Strip conventional commit prefixes: "fix:", "feat:", "refactor:", etc.
@@ -400,21 +400,21 @@ export function parseWorkItemReferenceBlock(
  */
 export function prTitleMatchesWorkItem(
   prTitle: string,
-  todoTitle: string,
+  workItemTitle: string,
   branchName?: string,
 ): boolean {
   // Primary: branch name match (strongest signal).
-  // Workers always create branches named ninthwave/<todoId>.
+  // Workers always create branches named ninthwave/<workItemId>.
   if (branchName?.startsWith("ninthwave/")) {
     return true;
   }
 
   // Fallback: normalized title comparison (collision detection for ID reuse)
-  if (!prTitle || !todoTitle) return false;
+  if (!prTitle || !workItemTitle) return false;
   const normPr = normalizeTitleForComparison(prTitle);
-  const normTodo = normalizeTitleForComparison(todoTitle);
-  if (!normPr || !normTodo) return false;
-  return normPr === normTodo;
+  const normWorkItem = normalizeTitleForComparison(workItemTitle);
+  if (!normPr || !normWorkItem) return false;
+  return normPr === normWorkItem;
 }
 
 export type PrMetadataMatchMode =
@@ -502,7 +502,7 @@ export function findMatchingPrForWorkItem<
 }
 
 // ---------------------------------------------------------------------------
-// File-per-todo operations
+// File-per-work-item operations
 // ---------------------------------------------------------------------------
 
 /** Map a priority to its sort-order number. */
@@ -511,7 +511,7 @@ export function priorityNum(p: Priority): number {
 }
 
 /**
- * Generate the canonical filename for a todo item.
+ * Generate the canonical filename for a work item.
  * Format: "{priority_num}-{domain_slug}--{ID}.md"
  * Example: "2-worker-reliability--M-WRK-8.md"
  */
@@ -522,7 +522,7 @@ export function workItemFilename(
 }
 
 /**
- * Parse a single todo file into a WorkItem.
+ * Parse a single work item file into a WorkItem.
  * Returns null if the file is malformed (missing ID or priority).
  */
 export function parseWorkItemFile(filePath: string): WorkItem | null {
@@ -656,9 +656,9 @@ export function parseWorkItemFile(filePath: string): WorkItem | null {
 }
 
 /**
- * List all todo files in a directory, parse them, and return WorkItem[].
+ * List all work item files in a directory, parse them, and return WorkItem[].
  * Expands wildcard dependencies in a second pass.
- * Sets status to "in-progress" if a worktree `todo-{id}` exists.
+ * Sets status to "in-progress" if a worktree `ninthwave-{id}` exists.
  */
 export function listWorkItems(workDir: string, worktreeDir: string): WorkItem[] {
   if (!existsSync(workDir)) return [];
@@ -731,7 +731,7 @@ export function listWorkItems(workDir: string, worktreeDir: string): WorkItem[] 
 }
 
 /**
- * Read a single todo by ID.
+ * Read a single work item by ID.
  * Globs for `*--{id}.md` in the todos directory.
  */
 export function readWorkItem(
@@ -750,7 +750,7 @@ export function readWorkItem(
 }
 
 /**
- * Write a WorkItem to its canonical file in the todos directory.
+ * Write a WorkItem to its canonical file in the work items directory.
  * Generates the markdown content and sets item.filePath.
  */
 export function writeWorkItemFile(
@@ -836,7 +836,7 @@ export function writeWorkItemFile(
 }
 
 /**
- * Delete a todo file by ID.
+ * Delete a work item file by ID.
  * Globs for `*--{id}.md` in the todos directory.
  * Returns true if a file was deleted, false otherwise.
  */
