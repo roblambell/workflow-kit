@@ -3,7 +3,7 @@
 // Detects: (1) repo structure (monorepo vs single), (2) CI system (GitHub Actions),
 // (3) multiplexer (cmux), (4) AI tool config (.claude/, .opencode/, copilot).
 // Writes .ninthwave/config.json with detected settings, runs setup scaffolding,
-// creates agent symlinks, nw alias, and prints a summary.
+// creates managed skill/agent copies, nw alias, and prints a summary.
 //
 // Merged from setup.ts: also handles prerequisite checking (warn mode),
 // interactive agent selection, nw symlink creation, and --global mode.
@@ -772,7 +772,7 @@ export function initProject(
   console.log(`  .ninthwave/work/ ${DIM}(work items)${RESET}`);
   console.log(`  .ninthwave/friction/ ${DIM}(friction log)${RESET}`);
   console.log(`  .ninthwave/schedules/ ${DIM}(scheduled tasks)${RESET}`);
-  console.log(`  .claude/skills/ ${DIM}(symlinks)${RESET}`);
+  console.log(`  .claude/skills/ ${DIM}(managed copies)${RESET}`);
   console.log(`  .gitignore`);
   console.log();
 

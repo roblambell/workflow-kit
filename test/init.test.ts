@@ -1678,7 +1678,7 @@ describe("initProject -- nw symlink", () => {
 // --- --global mode ---
 
 describe("initProject -- global mode", () => {
-  it("setupGlobal creates skill symlinks in ~/.claude/skills/", () => {
+  it("setupGlobal creates managed skill copies in ~/.claude/skills/", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -1697,11 +1697,9 @@ describe("initProject -- global mode", () => {
     ]) {
       const linkPath = join(skillsDir, skill);
       expect(existsSync(linkPath)).toBe(true);
-      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
-
-      // Symlink target must be relative
-      const target = readlinkSync(linkPath);
-      expect(target.startsWith("/")).toBe(false);
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+      expect(lstatSync(linkPath).isDirectory()).toBe(true);
+      expect(existsSync(join(linkPath, "SKILL.md"))).toBe(true);
     }
   });
 
@@ -1719,6 +1717,24 @@ describe("initProject -- global mode", () => {
     expect(existsSync(join(fakeHome, ".ninthwave"))).toBe(false);
     expect(existsSync(join(fakeHome, ".ninthwave/work"))).toBe(false);
     expect(existsSync(join(fakeHome, ".claude/agents"))).toBe(false);
+  });
+
+  it("setupGlobal refreshes stale managed skill files on rerun", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const fakeHome = join(projectDir, "fake-home");
+    mkdirSync(fakeHome, { recursive: true });
+    process.env.HOME = fakeHome;
+
+    setupGlobal(bundleDir);
+    writeFileSync(join(fakeHome, ".claude/skills", "work", "SKILL.md"), "# stale\n");
+
+    setupGlobal(bundleDir);
+
+    expect(readFileSync(join(fakeHome, ".claude/skills", "work", "SKILL.md"), "utf-8")).toBe(
+      "# work\n",
+    );
   });
 });
 
@@ -1813,6 +1829,30 @@ describe("initProject -- idempotency", () => {
     // Should only have one deny-by-default block (not duplicated)
     const matches = content.match(/\*/g);
     expect(matches!.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("refreshes stale managed skill and agent outputs on rerun", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+
+    writeFileSync(join(projectDir, ".claude/skills", "work", "SKILL.md"), "# stale skill\n");
+    writeFileSync(join(projectDir, ".claude/agents", "implementer.md"), "# stale agent\n");
+
+    initProject(projectDir, bundleDir, deps);
+
+    expect(readFileSync(join(projectDir, ".claude/skills", "work", "SKILL.md"), "utf-8")).toBe(
+      "# work\n",
+    );
+    expect(readFileSync(join(projectDir, ".claude/agents", "implementer.md"), "utf-8")).toContain(
+      "set the timeout to the longest practical value available",
+    );
   });
 });
 

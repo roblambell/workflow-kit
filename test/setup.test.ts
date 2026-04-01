@@ -16,7 +16,6 @@ import {
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 import {
   setupGlobal,
-  createSkillSymlinks,
   copySkillFiles,
   checkPrerequisites,
   createNwSymlink,
@@ -475,11 +474,11 @@ describe("buildCopyPlan", () => {
     expect(plan[0]!.status).toBe("create");
   });
 
-  it("detects existing regular files as 'exists'", () => {
+  it("detects up-to-date managed files", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
-    // Pre-create a regular file (already copied)
+    // Pre-create a matching managed copy
     const targetDir = join(projectDir, ".claude/agents");
     mkdirSync(targetDir, { recursive: true });
     writeFileSync(join(targetDir, "implementer.md"), "# Implementer Agent\n");
@@ -492,7 +491,26 @@ describe("buildCopyPlan", () => {
     const plan = buildCopyPlan(projectDir, bundleDir, selection);
 
     expect(plan).toHaveLength(1);
-    expect(plan[0]!.status).toBe("exists");
+    expect(plan[0]!.status).toBe("up-to-date");
+  });
+
+  it("detects stale managed files as 'refresh'", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const targetDir = join(projectDir, ".claude/agents");
+    mkdirSync(targetDir, { recursive: true });
+    writeFileSync(join(targetDir, "implementer.md"), "# Stale content\n");
+
+    const selection: AgentSelection = {
+      agents: ["implementer.md"],
+      toolDirs: [AGENT_TARGET_DIRS[0]!],
+    };
+
+    const plan = buildCopyPlan(projectDir, bundleDir, selection);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0]!.status).toBe("refresh");
   });
 
   it("detects legacy symlinks as 'replace'", () => {
@@ -605,14 +623,14 @@ describe("executeCopyPlan", () => {
     expect(content).toBe("# Implementer Agent\n");
   });
 
-  it("skips entries with status 'exists'", () => {
+  it("skips entries with status 'up-to-date'", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
-    // Pre-create a regular file
+    // Pre-create a matching managed copy
     const targetDir = join(projectDir, ".claude/agents");
     mkdirSync(targetDir, { recursive: true });
-    writeFileSync(join(targetDir, "implementer.md"), "# Custom content\n");
+    writeFileSync(join(targetDir, "implementer.md"), "# Implementer Agent\n");
 
     const selection: AgentSelection = {
       agents: ["implementer.md"],
@@ -620,14 +638,36 @@ describe("executeCopyPlan", () => {
     };
 
     const plan = buildCopyPlan(projectDir, bundleDir, selection);
-    expect(plan[0]!.status).toBe("exists");
+    expect(plan[0]!.status).toBe("up-to-date");
 
     // Should not throw or modify
     executeCopyPlan(plan);
 
-    // File should still have the original custom content (not overwritten)
+    // File should remain unchanged
     const content = readFileSync(join(targetDir, "implementer.md"), "utf-8");
-    expect(content).toBe("# Custom content\n");
+    expect(content).toBe("# Implementer Agent\n");
+  });
+
+  it("refreshes stale managed files", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const targetDir = join(projectDir, ".claude/agents");
+    mkdirSync(targetDir, { recursive: true });
+    writeFileSync(join(targetDir, "implementer.md"), "# Stale content\n");
+
+    const selection: AgentSelection = {
+      agents: ["implementer.md"],
+      toolDirs: [AGENT_TARGET_DIRS[0]!],
+    };
+
+    const plan = buildCopyPlan(projectDir, bundleDir, selection);
+    expect(plan[0]!.status).toBe("refresh");
+
+    executeCopyPlan(plan);
+
+    const content = readFileSync(join(targetDir, "implementer.md"), "utf-8");
+    expect(content).toBe("# Implementer Agent\n");
   });
 });
 
@@ -720,14 +760,15 @@ describe("interactiveAgentSelection", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
-    // Pre-create all agent files for all tools (already copied)
+    // Pre-create all agent files for all tools with canonical content
     for (const agent of AGENT_SOURCES) {
       const baseName = agent.replace(/\.md$/, "");
+      const canonicalContent = readFileSync(join(bundleDir, "agents", agent), "utf-8");
       for (const target of AGENT_TARGET_DIRS) {
         const targetDir = join(projectDir, target.dir);
         mkdirSync(targetDir, { recursive: true });
         const filename = target.suffix === ".agent.md" ? `ninthwave-${baseName}.agent.md` : agent;
-        writeFileSync(join(targetDir, filename), `# ${agent}\n`);
+        writeFileSync(join(targetDir, filename), canonicalContent);
       }
     }
 
@@ -745,7 +786,7 @@ describe("interactiveAgentSelection", () => {
     });
 
     expect(selection).not.toBeNull();
-    // Should NOT call confirm since everything is already set up
+    // Should NOT call confirm since everything is already up to date
     expect(confirmCalled).toBe(false);
   });
 
@@ -767,7 +808,7 @@ describe("interactiveAgentSelection", () => {
 });
 
 describe("setupGlobal", () => {
-  it("creates relative skill symlinks in ~/.claude/skills/", () => {
+  it("creates managed skill copies in ~/.claude/skills/", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -786,11 +827,9 @@ describe("setupGlobal", () => {
     ]) {
       const linkPath = join(skillsDir, skill);
       expect(existsSync(linkPath)).toBe(true);
-      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
-
-      // Symlink target must be relative
-      const target = readlinkSync(linkPath);
-      expect(target.startsWith("/")).toBe(false);
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
+      expect(lstatSync(linkPath).isDirectory()).toBe(true);
+      expect(existsSync(join(linkPath, "SKILL.md"))).toBe(true);
     }
   });
 
@@ -811,7 +850,7 @@ describe("setupGlobal", () => {
     expect(existsSync(join(fakeHome, ".claude/agents"))).toBe(false);
   });
 
-  it("is idempotent -- running twice produces the same result", () => {
+  it("rerunning setupGlobal refreshes stale managed skills", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
 
@@ -820,17 +859,12 @@ describe("setupGlobal", () => {
     process.env.HOME = fakeHome;
 
     setupGlobal(bundleDir);
+    writeFileSync(join(fakeHome, ".claude/skills", "work", "SKILL.md"), "# stale\n");
     setupGlobal(bundleDir);
 
-    const skillsDir = join(fakeHome, ".claude/skills");
-    for (const skill of [
-      "work",
-      "decompose",
-  
-    ]) {
-      const linkPath = join(skillsDir, skill);
-      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
-    }
+    expect(readFileSync(join(fakeHome, ".claude/skills", "work", "SKILL.md"), "utf-8")).toBe(
+      "# work\n",
+    );
   });
 });
 

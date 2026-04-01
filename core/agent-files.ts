@@ -1,11 +1,11 @@
 // Agent file seeding into worktrees.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { join, dirname } from "path";
+import { join } from "path";
 import { run, GIT_TIMEOUT } from "./shell.ts";
 import { info as defaultInfo } from "./output.ts";
 import { agentFileTargets } from "./ai-tools.ts";
-import { discoverAgentSources } from "./commands/setup.ts";
+import { discoverAgentSources, detectManagedCopyStatus, writeManagedCopy } from "./commands/setup.ts";
 
 /** Parse the configured LLM model from YAML frontmatter. */
 export function parseAgentModel(content: string): string | null {
@@ -79,10 +79,10 @@ export function readAgentFileContent(
 }
 
 /**
- * Seed agent files into a worktree if they don't already exist.
+ * Seed agent files into a worktree as managed copies.
  * Reads agent content from origin/main for consistency with remote state,
  * falling back to the hub repo's local agents/ directory. Returns the list
- * of relative paths that were seeded (so the worker can commit them).
+ * of relative paths that were created or refreshed (so the worker can commit them).
  */
 export function seedAgentFiles(
   worktreePath: string,
@@ -101,10 +101,10 @@ export function seedAgentFiles(
       const filename = target.suffix === ".agent.md" ? `ninthwave-${baseName}.agent.md` : agent.source;
       const destPath = join(worktreePath, target.dir, filename);
 
-      if (deps.existsSync(destPath)) continue;
+      const status = detectManagedCopyStatus(destPath, sourceContent);
+      if (status === "up-to-date") continue;
 
-      deps.mkdirSync(dirname(destPath), { recursive: true });
-      deps.writeFileSync(destPath, sourceContent);
+      writeManagedCopy(destPath, sourceContent);
       seeded.push(join(target.dir, filename));
     }
   }

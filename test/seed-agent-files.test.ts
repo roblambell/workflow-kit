@@ -259,10 +259,10 @@ describe("seedAgentFiles", () => {
     rmSync(worktree, { recursive: true, force: true });
   });
 
-  it("skips files that already exist in worktree", () => {
+  it("skips files that are already up to date in worktree", () => {
     const hubRoot = makeTmpDir();
     const worktree = makeTmpDir();
-    const existingContent = "# Pre-existing agent file";
+    const existingContent = "# Remote agent file";
     const remoteContent = "# Remote agent file";
 
     writeAgentFile(hubRoot, "implementer.md");
@@ -286,6 +286,35 @@ describe("seedAgentFiles", () => {
 
     // Existing file should NOT be overwritten
     expect(readFileSync(join(worktree, ".claude/agents/implementer.md"), "utf-8")).toBe(existingContent);
+
+    rmSync(hubRoot, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  it("refreshes stale managed files that already exist in worktree", () => {
+    const hubRoot = makeTmpDir();
+    const worktree = makeTmpDir();
+    const remoteContent = "# Remote agent file";
+
+    writeAgentFile(hubRoot, "implementer.md");
+
+    mkdirSync(join(worktree, ".claude/agents"), { recursive: true });
+    writeFileSync(join(worktree, ".claude/agents/implementer.md"), "# Stale agent file");
+
+    const deps = createDeps({
+      run: vi.fn(() => ({
+        stdout: remoteContent,
+        stderr: "",
+        exitCode: 0,
+      })) as any,
+    });
+
+    const seeded = seedAgentFiles(worktree, hubRoot, deps);
+
+    expect(seeded).toContain(".claude/agents/implementer.md");
+    expect(readFileSync(join(worktree, ".claude/agents/implementer.md"), "utf-8")).toBe(
+      remoteContent,
+    );
 
     rmSync(hubRoot, { recursive: true, force: true });
     rmSync(worktree, { recursive: true, force: true });

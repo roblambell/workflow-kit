@@ -1,6 +1,6 @@
 // Setup utilities -- shared functions for project initialization.
 //
-// Provides: prerequisite checking, skill/agent symlink management,
+// Provides: prerequisite checking, managed skill/agent copy setup,
 // interactive agent selection, nw symlink creation, and global setup.
 //
 // Used by `core/commands/init.ts` for the unified `ninthwave init` command.
@@ -11,7 +11,6 @@ import {
   writeFileSync,
   readFileSync,
   readdirSync,
-  copyFileSync,
   cpSync,
   rmSync,
   symlinkSync,
@@ -285,7 +284,7 @@ export const AGENT_DESCRIPTIONS: Record<string, string> = {
   "rebaser.md": "branch rebase agent for stacked and drifted PRs",
 };
 
-/** AI tool target directories where agent symlinks are created -- derived from AI_TOOL_PROFILES. */
+/** AI tool target directories where managed agent files are written. */
 export const AGENT_TARGET_DIRS = AI_TOOL_PROFILES.map((p) => ({
   dir: p.targetDir,
   suffix: p.suffix,
@@ -337,8 +336,37 @@ export interface CopyPlan {
   linkPath: string;
   /** Absolute source path in the bundle to copy from */
   sourcePath: string;
-  /** Status: "create" (new), "exists" (regular file already there), "replace" (symlink to replace) */
-  status: "create" | "exists" | "replace";
+  /** Status of the managed copy destination. */
+  status: ManagedCopyStatus;
+}
+
+export type ManagedCopyStatus = "create" | "refresh" | "replace" | "up-to-date";
+
+export function detectManagedCopyStatus(
+  destPath: string,
+  sourceContent: string,
+): ManagedCopyStatus {
+  if (!lstatExists(destPath)) return "create";
+
+  try {
+    const stat = lstatSync(destPath);
+    if (stat.isSymbolicLink()) return "replace";
+    return readFileSync(destPath, "utf-8") === sourceContent ? "up-to-date" : "refresh";
+  } catch {
+    return "refresh";
+  }
+}
+
+export function writeManagedCopy(destPath: string, sourceContent: string): ManagedCopyStatus {
+  const status = detectManagedCopyStatus(destPath, sourceContent);
+  if (status === "up-to-date") return status;
+
+  mkdirSync(dirname(destPath), { recursive: true });
+  if (lstatExists(destPath)) {
+    rmSync(destPath, { recursive: true, force: true });
+  }
+  writeFileSync(destPath, sourceContent);
+  return status;
 }
 
 /**
@@ -347,9 +375,10 @@ export interface CopyPlan {
  * Does not create any files -- just computes what would happen.
  *
  * Status semantics:
- *   "create"  -- no file at destination, will copy
- *   "exists"  -- regular file already present, will skip (preserves customizations)
- *   "replace" -- symlink at destination (legacy), will unlink and copy
+ *   "create"     -- no file at destination, will create managed copy
+ *   "refresh"    -- managed copy exists but content is stale, will overwrite
+ *   "replace"    -- legacy symlink at destination, will replace with real file
+ *   "up-to-date" -- managed copy already matches the canonical source
  */
 export function buildCopyPlan(
   projectDir: string,
@@ -371,23 +400,8 @@ export function buildCopyPlan(
           : agentFile;
       const linkPath = join(targetDir, filename);
       const displayPath = `${target.dir}/${filename}`;
-
-      let status: CopyPlan["status"] = "create";
-
-      if (existsSync(linkPath) || lstatExists(linkPath)) {
-        try {
-          const stat = lstatSync(linkPath);
-          if (stat.isSymbolicLink()) {
-            // Legacy symlink from old setup -- replace with a real file
-            status = "replace";
-          } else {
-            // Regular file already present -- skip to preserve customizations
-            status = "exists";
-          }
-        } catch {
-          status = "create";
-        }
-      }
+      const sourceContent = readFileSync(agentSource, "utf-8");
+      const status = detectManagedCopyStatus(linkPath, sourceContent);
 
       plan.push({ displayPath, linkPath, sourcePath: agentSource, status });
     }
@@ -401,25 +415,21 @@ export function buildCopyPlan(
  */
 export function executeCopyPlan(plan: CopyPlan[]): void {
   for (const entry of plan) {
-    if (entry.status === "exists") {
-      console.log(`  ${DIM}${entry.displayPath} (already set up)${RESET}`);
+    if (entry.status === "up-to-date") {
+      console.log(`  ${DIM}${entry.displayPath} (up to date)${RESET}`);
       continue;
     }
 
-    // Ensure parent directory exists
-    const parentDir = dirname(entry.linkPath);
-    mkdirSync(parentDir, { recursive: true });
+    const sourceContent = readFileSync(entry.sourcePath, "utf-8");
+    const status = writeManagedCopy(entry.linkPath, sourceContent);
 
-    // Remove existing symlink if present (legacy cleanup)
-    if (lstatExists(entry.linkPath)) {
-      unlinkSync(entry.linkPath);
-    }
-
-    copyFileSync(entry.sourcePath, entry.linkPath);
-
-    if (entry.status === "replace") {
+    if (status === "replace") {
       console.log(
         `  ${YELLOW}↻${RESET} ${entry.displayPath} ${DIM}(replaced symlink)${RESET}`,
+      );
+    } else if (status === "refresh") {
+      console.log(
+        `  ${YELLOW}↻${RESET} ${entry.displayPath} ${DIM}(refreshed managed copy)${RESET}`,
       );
     } else {
       console.log(`  ${GREEN}✓${RESET} ${entry.displayPath}`);
@@ -506,19 +516,19 @@ export function copySkillFiles(
 }
 
 /**
- * Global setup: seed ~/.claude/skills/ symlinks only.
+ * Global setup: seed ~/.claude/skills/ managed copies.
  */
 export function setupGlobal(bundleDir: string): void {
   const home = process.env.HOME;
   if (!home) die("HOME environment variable not set");
 
   const skillsDir = join(home!, "/.claude/skills");
-  console.log("Setting up global skill symlinks...");
+  console.log("Setting up global skill copies...");
   console.log(`Bundle: ${bundleDir}`);
   console.log();
 
   console.log("Skills (~/.claude/skills/)...");
-  createSkillSymlinks(skillsDir, bundleDir);
+  copySkillFiles(skillsDir, bundleDir);
 
   console.log();
   console.log("Done! Global skills are available in all projects.");
@@ -531,7 +541,7 @@ export function setupGlobal(bundleDir: string): void {
  * Run the interactive agent selection flow:
  * 1. Detect installed AI tools
  * 2. Present checkbox for agent selection
- * 3. Show preview of symlinks to create
+ * 3. Show preview of managed files to create or refresh
  * 4. Ask for confirmation
  *
  * Returns the agent selection, or null if the user cancels.
@@ -603,13 +613,19 @@ export async function interactiveAgentSelection(
   const plan = buildCopyPlan(projectDir, bundleDir, selection);
 
   const toCreate = plan.filter((p) => p.status === "create");
+  const toRefresh = plan.filter((p) => p.status === "refresh");
   const toReplace = plan.filter((p) => p.status === "replace");
-  const existing = plan.filter((p) => p.status === "exists");
+  const upToDate = plan.filter((p) => p.status === "up-to-date");
 
-  if (toCreate.length > 0 || toReplace.length > 0) {
+  if (toCreate.length > 0 || toRefresh.length > 0 || toReplace.length > 0) {
     console.log("Will install:");
     for (const entry of toCreate) {
       console.log(`  ${GREEN}+${RESET} ${entry.displayPath}`);
+    }
+    for (const entry of toRefresh) {
+      console.log(
+        `  ${YELLOW}↻${RESET} ${entry.displayPath} ${DIM}(refreshes managed copy)${RESET}`,
+      );
     }
     for (const entry of toReplace) {
       console.log(
@@ -618,12 +634,12 @@ export async function interactiveAgentSelection(
     }
   }
 
-  if (existing.length > 0) {
-    console.log(`${DIM}Already set up: ${existing.map((e) => e.displayPath).join(", ")}${RESET}`);
+  if (upToDate.length > 0) {
+    console.log(`${DIM}Already up to date: ${upToDate.map((e) => e.displayPath).join(", ")}${RESET}`);
   }
 
-  if (toCreate.length === 0 && toReplace.length === 0) {
-    console.log(`${GREEN}All selected agents are already set up.${RESET}`);
+  if (toCreate.length === 0 && toRefresh.length === 0 && toReplace.length === 0) {
+    console.log(`${GREEN}All selected agents are already up to date.${RESET}`);
     return selection;
   }
 
