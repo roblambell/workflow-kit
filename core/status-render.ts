@@ -1322,6 +1322,113 @@ export interface FrameLayout {
    * Used by render functions to pin a queue affordance when the queue is scrolled off.
    */
   queueStartIndex?: number;
+  /** Visible-order metadata for rendered/selectable status rows. */
+  visibleLayout?: VisibleStatusLayoutMetadata;
+}
+
+export interface RenderedLineSpan {
+  startLineIndex: number;
+  endLineIndex: number;
+  lineCount: number;
+}
+
+export interface VisibleStatusItemRow {
+  type: "item";
+  item: StatusItem;
+  blockers: string[];
+  queued: boolean;
+}
+
+export interface VisibleStatusQueueSpacerRow {
+  type: "queue-spacer";
+}
+
+export interface VisibleStatusQueueHeaderRow {
+  type: "queue-header";
+  queuedCount: number;
+  activeCount: number;
+}
+
+export interface VisibleStatusQueueSeparatorRow {
+  type: "queue-separator";
+}
+
+export type VisibleStatusLayoutRow =
+  | VisibleStatusItemRow
+  | VisibleStatusQueueSpacerRow
+  | VisibleStatusQueueHeaderRow
+  | VisibleStatusQueueSeparatorRow;
+
+export interface VisibleStatusLayoutMetadata {
+  rows: VisibleStatusLayoutRow[];
+  selectableItemIds: string[];
+  renderedLineSpans: Record<string, RenderedLineSpan>;
+  hasDependencies: boolean;
+  queueStartIndex?: number;
+  queueItemCount: number;
+}
+
+export function buildVisibleStatusLayoutMetadata(
+  items: StatusItem[],
+  options?: {
+    flat?: boolean;
+    showBlockerDetail?: boolean;
+  },
+): VisibleStatusLayoutMetadata {
+  const flat = options?.flat ?? false;
+  const showBlockerDetail = options?.showBlockerDetail ?? false;
+  const hasDependencies = !flat && items.some((item) => (item.dependencies ?? []).length > 0);
+  const blockedBy = hasDependencies ? computeBlockedBy(items) : undefined;
+  const orderedItems = hasDependencies ? sortByBlockedThenId(items, blockedBy!) : items;
+  const activeItems = orderedItems.filter((item) => item.state !== "queued" && item.state !== "done");
+  const doneItems = orderedItems.filter((item) => item.state === "done");
+  const queuedItems = orderedItems.filter((item) => item.state === "queued");
+
+  const rows: VisibleStatusLayoutRow[] = [];
+  const selectableItemIds: string[] = [];
+  const renderedLineSpans: Record<string, RenderedLineSpan> = {};
+  let renderedLineIndex = 0;
+
+  const pushItem = (item: StatusItem, queued: boolean): void => {
+    const blockers = blockedBy?.get(item.id) ?? [];
+    const lineCount = 1 + (showBlockerDetail && blockers.length > 0 ? 1 : 0);
+    rows.push({ type: "item", item, blockers, queued });
+    selectableItemIds.push(item.id);
+    renderedLineSpans[item.id] = {
+      startLineIndex: renderedLineIndex,
+      endLineIndex: renderedLineIndex + lineCount - 1,
+      lineCount,
+    };
+    renderedLineIndex += lineCount;
+  };
+
+  for (const item of activeItems) pushItem(item, false);
+  for (const item of doneItems) pushItem(item, false);
+
+  let queueStartIndex: number | undefined;
+  if (queuedItems.length > 0) {
+    queueStartIndex = renderedLineIndex;
+    rows.push({ type: "queue-spacer" });
+    renderedLineIndex += 1;
+    rows.push({
+      type: "queue-header",
+      queuedCount: queuedItems.length,
+      activeCount: activeItems.length,
+    });
+    renderedLineIndex += 1;
+    rows.push({ type: "queue-separator" });
+    renderedLineIndex += 1;
+    for (const item of queuedItems) pushItem(item, true);
+  }
+
+  return {
+    rows,
+    selectableItemIds,
+    renderedLineSpans,
+    hasDependencies,
+    queueStartIndex,
+    queueItemCount: queuedItems.length,
+  };
 }
 
 /**
@@ -1543,8 +1650,11 @@ export function buildStatusLayout(
   const opts = viewOptions ?? {};
   const repoUrl = opts.repoUrl;
   const crewActive = opts.crewStatus != null;
-  const hasDeps = !flat && items.some((i) => (i.dependencies ?? []).length > 0);
-  const blockedBy = hasDeps ? computeBlockedBy(items) : undefined;
+  const visibleLayout = buildVisibleStatusLayoutMetadata(items, {
+    flat,
+    showBlockerDetail: opts.showBlockerDetail,
+  });
+  const hasDeps = visibleLayout.hasDependencies;
 
   // Inline dep indicator: 2-char slot (icon + space) before title when deps exist
   const depIndicatorWidth = hasDeps ? 2 : 0;
@@ -1555,13 +1665,6 @@ export function buildStatusLayout(
 
   // Column offset where the blocker icon sits (for aligning sub-lines)
   const blockerColOffset = 26 + stateColWidth;
-
-  /** Build the 2-char dep indicator for an item. */
-  function depIndicator(itemId: string): string {
-    if (!blockedBy) return "  ";
-    const blockers = blockedBy.get(itemId) ?? [];
-    return blockingIcon(blockers.length) + " ";
-  }
 
   // Header: title with inline crew status + right-aligned metrics
   const inlineModeIndicator = opts.inlineModeIndicatorOnTitle
@@ -1589,67 +1692,49 @@ export function buildStatusLayout(
 
   // Build item lines
   const itemLines: string[] = [];
-  let queueStartIndex: number | undefined;
-
-  if (hasDeps) {
-    const sorted = sortByBlockedThenId(items, blockedBy!);
-    const activeItems = sorted.filter((i) => i.state !== "queued" && i.state !== "done");
-    const doneItems = sorted.filter((i) => i.state === "done");
-    const queuedItems = sorted.filter((i) => i.state === "queued");
-
-    for (const item of activeItems) {
-      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, item.id === selectedItemId));
-      const blockers = blockedBy!.get(item.id) ?? [];
-      if (opts.showBlockerDetail && blockers.length > 0) {
-        itemLines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
+  for (const row of visibleLayout.rows) {
+    switch (row.type) {
+      case "queue-spacer":
+        itemLines.push("");
+        break;
+      case "queue-header": {
+        let queueHeader = `Queue (${row.queuedCount} waiting`;
+        if (wipLimit !== undefined) queueHeader += `, ${row.activeCount}/${wipLimit} WIP slots active`;
+        queueHeader += ")";
+        itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
+        break;
       }
-    }
-    for (const item of doneItems) {
-      itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, item.id === selectedItemId));
-      const blockers = blockedBy!.get(item.id) ?? [];
-      if (opts.showBlockerDetail && blockers.length > 0) {
-        itemLines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
-      }
-    }
-    if (queuedItems.length > 0) {
-      const activeCount = items.filter((i) => i.state !== "queued" && i.state !== "done").length;
-      let queueHeader = `Queue (${queuedItems.length} waiting`;
-      if (wipLimit !== undefined) queueHeader += `, ${activeCount}/${wipLimit} WIP slots active`;
-      queueHeader += ")";
-      queueStartIndex = itemLines.length;
-      itemLines.push("");
-      itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
-      itemLines.push(sep);
-      for (const item of queuedItems) {
-        itemLines.push(formatQueuedItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, item.id === selectedItemId));
-        const blockers = blockedBy!.get(item.id) ?? [];
-        if (opts.showBlockerDetail && blockers.length > 0) {
-          itemLines.push(formatBlockerSubline(blockers, titleWidth, true, blockerColOffset));
+      case "queue-separator":
+        itemLines.push(sep);
+        break;
+      case "item": {
+        const depIndicator = hasDeps ? `${blockingIcon(row.blockers.length)} ` : undefined;
+        if (row.queued) {
+          itemLines.push(
+            formatQueuedItemRow(
+              row.item,
+              titleWidth,
+              depIndicator,
+              stateColWidth,
+              row.item.id === selectedItemId,
+            ),
+          );
+        } else {
+          itemLines.push(
+            formatItemRow(
+              row.item,
+              titleWidth,
+              depIndicator,
+              stateColWidth,
+              repoUrl,
+              row.item.id === selectedItemId,
+            ),
+          );
         }
-      }
-    }
-  } else {
-    const activeItems = items.filter((i) => i.state !== "queued" && i.state !== "done");
-    const queuedItems = items.filter((i) => i.state === "queued");
-    const doneItems = items.filter((i) => i.state === "done");
-
-    for (const item of activeItems) {
-      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, item.id === selectedItemId));
-    }
-    for (const item of doneItems) {
-      itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, item.id === selectedItemId));
-    }
-    if (queuedItems.length > 0) {
-      const activeCount = activeItems.length;
-      let queueHeader = `Queue (${queuedItems.length} waiting`;
-      if (wipLimit !== undefined) queueHeader += `, ${activeCount}/${wipLimit} WIP slots active`;
-      queueHeader += ")";
-      queueStartIndex = itemLines.length;
-      itemLines.push("");
-      itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
-      itemLines.push(sep);
-      for (const item of queuedItems) {
-        itemLines.push(formatQueuedItemRow(item, titleWidth, undefined, stateColWidth, item.id === selectedItemId));
+        if (opts.showBlockerDetail && row.blockers.length > 0) {
+          itemLines.push(formatBlockerSubline(row.blockers, titleWidth, row.queued, blockerColOffset));
+        }
+        break;
       }
     }
   }
@@ -1700,7 +1785,13 @@ export function buildStatusLayout(
     footerLines.push(`  ${DIM}${shortcuts}${RESET}`);
   }
 
-  return { headerLines, itemLines, footerLines, queueStartIndex };
+  return {
+    headerLines,
+    itemLines,
+    footerLines,
+    queueStartIndex: visibleLayout.queueStartIndex,
+    visibleLayout,
+  };
 }
 
 /**
@@ -1730,7 +1821,7 @@ export function renderFullScreenFrame(
   termCols: number,
   scrollOffset: number,
 ): string[] {
-  const { headerLines, itemLines, footerLines, queueStartIndex } = layout;
+  const { headerLines, itemLines, footerLines, queueStartIndex, visibleLayout } = layout;
 
   // Reserve space for scroll indicators (1 line each when needed)
   const hasScrollUp = scrollOffset > 0;
@@ -1738,9 +1829,8 @@ export function renderFullScreenFrame(
   const hasScrollDown = scrollOffset < maxOffset && itemLines.length > (termRows - headerLines.length - footerLines.length);
 
   // Check if we need a pinned queue summary (queue exists but is entirely below the fold)
-  const queuedCount = queueStartIndex != null
-    ? itemLines.length - queueStartIndex  // lines from queue start to end
-    : 0;
+  const queuedCount = visibleLayout?.queueItemCount
+    ?? (queueStartIndex != null ? itemLines.length - queueStartIndex : 0);
   const needsQueuePin = queueStartIndex != null && queuedCount > 0;
 
   const scrollIndicatorLines = (hasScrollUp ? 1 : 0) + (hasScrollDown ? 1 : 0);
@@ -1774,12 +1864,7 @@ export function renderFullScreenFrame(
 
   // Pinned queue summary when queue is below the fold
   if (queueScrolledOff) {
-    // Count actual queued items (not header/separator lines)
-    const queueItemCount = itemLines
-      .slice(queueStartIndex!)
-      .filter((line) => line.trim() !== "" && !stripAnsiForWidth(line).match(/^[\s─]*$/) && !stripAnsiForWidth(line).startsWith("Queue ("))
-      .length;
-    output.push(formatQueueSummary(queueItemCount > 0 ? queueItemCount : queuedCount));
+    output.push(formatQueueSummary(queuedCount));
   }
 
   // Scroll-down indicator
@@ -1887,12 +1972,16 @@ export function buildPanelLayout(
 ): PanelLayout {
   const logScrollOffset = opts?.logScrollOffset ?? 0;
 
-  // Resolve selectedIndex → selectedItemId using the full item list so queued
-  // rows participate in keyboard navigation and selection.
+  // Resolve selectedIndex → selectedItemId using visible render order so the
+  // highlighted row matches what the user sees onscreen.
   const selectedIndex = opts?.selectedIndex;
   let selectedItemId: string | undefined;
   if (selectedIndex != null && selectedIndex >= 0) {
-    selectedItemId = items[selectedIndex]?.id;
+    const visibleLayout = buildVisibleStatusLayoutMetadata(items, {
+      flat: opts?.flat,
+      showBlockerDetail: opts?.viewOptions?.showBlockerDetail,
+    });
+    selectedItemId = visibleLayout.selectableItemIds[selectedIndex];
   }
 
   // Below MIN_FULLSCREEN_ROWS: legacy flat rendering, no panels

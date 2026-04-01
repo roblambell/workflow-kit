@@ -30,6 +30,7 @@ import {
   getTerminalWidth,
   getTerminalHeight,
   buildStatusLayout,
+  buildVisibleStatusLayoutMetadata,
   renderFullScreenFrame,
   clampScrollOffset,
   strategyIndicator,
@@ -836,6 +837,79 @@ describe("buildStatusLayout with selectedItemId", () => {
     const queuedRow = stripped.find(l => l.includes("A-2"));
     expect(queuedRow).toBeDefined();
     expect(queuedRow!).toMatch(/^> /);
+  });
+});
+
+describe("buildVisibleStatusLayoutMetadata", () => {
+  it("matches rendered selectable order across active, done, and queued sections", () => {
+    const items = [
+      makeStatusItem({ id: "Q-2", state: "queued", title: "Queued", dependencies: ["A-1"] }),
+      makeStatusItem({ id: "D-1", state: "done", title: "Done" }),
+      makeStatusItem({ id: "A-2", state: "review", title: "Reviewing" }),
+      makeStatusItem({ id: "A-1", state: "implementing", title: "Active" }),
+    ];
+
+    const metadata = buildVisibleStatusLayoutMetadata(items);
+    const layout = buildStatusLayout(items, 100);
+    const renderedRowStarts = metadata.selectableItemIds.map(
+      (id) => stripAnsi(layout.itemLines[metadata.renderedLineSpans[id]!.startLineIndex] ?? ""),
+    );
+
+    expect(metadata.selectableItemIds).toEqual(["A-1", "A-2", "D-1", "Q-2"]);
+    expect(renderedRowStarts[0]).toContain("A-1");
+    expect(renderedRowStarts[1]).toContain("A-2");
+    expect(renderedRowStarts[2]).toContain("D-1");
+    expect(renderedRowStarts[3]).toContain("Q-2");
+  });
+
+  it("expands blocker detail into the parent line span without adding a selectable row", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing", dependencies: [] }),
+      makeStatusItem({ id: "B-2", state: "queued", dependencies: ["A-1"] }),
+    ];
+
+    const metadata = buildVisibleStatusLayoutMetadata(items, { showBlockerDetail: true });
+    const layout = buildStatusLayout(items, 100, undefined, false, { showBlockerDetail: true });
+    const span = metadata.renderedLineSpans["B-2"];
+
+    expect(metadata.selectableItemIds).toEqual(["A-1", "B-2"]);
+    expect(span).toBeDefined();
+    expect(span).toEqual({
+      startLineIndex: expect.any(Number),
+      endLineIndex: expect.any(Number),
+      lineCount: 2,
+    });
+    expect(span!.endLineIndex - span!.startLineIndex).toBe(1);
+    expect(stripAnsi(layout.itemLines[span!.startLineIndex]!)).toContain("B-2");
+    expect(stripAnsi(layout.itemLines[span!.endLineIndex]!)).toContain("└ A-1");
+  });
+
+  it("excludes queue chrome and schedule worker rows from selectable metadata", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "implementing" }),
+      makeStatusItem({ id: "Q-2", state: "queued" }),
+    ];
+
+    const layout = buildStatusLayout(items, 100, 3, false, {
+      scheduleWorkers: [{ taskId: "daily-tests", startedAt: new Date(Date.now() - 60_000).toISOString() }],
+    });
+    const metadata = layout.visibleLayout!;
+    const selectableStarts = new Set(
+      Object.values(metadata.renderedLineSpans).map((span) => span.startLineIndex),
+    );
+    const queueHeaderIndex = layout.itemLines.findIndex((line) => stripAnsi(line).includes("Queue (1 waiting"));
+    const queueSeparatorIndex = layout.itemLines.findIndex(
+      (line, index) => index > queueHeaderIndex && /^\s*─+\s*$/.test(stripAnsi(line)),
+    );
+    const scheduleWorkerIndex = layout.itemLines.findIndex((line) => stripAnsi(line).includes("[sched] daily-tests"));
+
+    expect(metadata.selectableItemIds).toEqual(["A-1", "Q-2"]);
+    expect(queueHeaderIndex).toBeGreaterThan(-1);
+    expect(queueSeparatorIndex).toBeGreaterThan(-1);
+    expect(scheduleWorkerIndex).toBeGreaterThan(-1);
+    expect(selectableStarts.has(queueHeaderIndex)).toBe(false);
+    expect(selectableStarts.has(queueSeparatorIndex)).toBe(false);
+    expect(selectableStarts.has(scheduleWorkerIndex)).toBe(false);
   });
 });
 
@@ -4284,5 +4358,28 @@ describe("buildPanelLayout queueStartIndex passthrough", () => {
 
     expect(queuedRow).toBeDefined();
     expect(queuedRow!).toMatch(/^> /);
+  });
+
+  it("maps selectedIndex through visible item order instead of raw input order", () => {
+    const items = [
+      makeStatusItem({ id: "B-2", state: "queued", title: "Blocked queued item", dependencies: ["A-1"] }),
+      makeStatusItem({ id: "A-1", state: "implementing", title: "Active item" }),
+    ];
+
+    const layout = buildPanelLayout("status-only", items, [], 100, 50, {
+      selectedIndex: 0,
+    });
+
+    const activeRow = layout.statusPanel!.itemLines
+      .map(stripAnsi)
+      .find((line) => line.includes("A-1"));
+    const queuedRow = layout.statusPanel!.itemLines
+      .map(stripAnsi)
+      .find((line) => line.includes("B-2"));
+
+    expect(activeRow).toBeDefined();
+    expect(queuedRow).toBeDefined();
+    expect(activeRow!).toMatch(/^> /);
+    expect(queuedRow!).toMatch(/^ {2}/);
   });
 });
