@@ -13,7 +13,6 @@ import {
   getTerminalHeight,
   clampScrollOffset,
   detailOverlayMaxScroll,
-  MIN_SPLIT_ROWS,
 } from "./status-render.ts";
 
 // ── Log ring buffer ────────────────────────────────────────────────
@@ -110,7 +109,7 @@ export interface TuiState {
   collaborationMode: CollaborationMode;
   /** Current AI review mode (per-run, not persisted). */
   reviewMode: ReviewMode;
-  /** Active panel mode: split (default), logs-only, or status-only. */
+  /** Active page mode: status-only or logs-only. */
   panelMode: PanelMode;
   /** Ring buffer of log entries for the TUI log panel (max LOG_BUFFER_MAX). */
   logBuffer: PanelLogEntry[];
@@ -161,7 +160,7 @@ export interface TuiState {
  * - `d` toggles deps detail view
  * - `?` toggles full-screen help overlay
  * - Escape dismisses help overlay (raw `\x1b`, not arrow key sequences)
- * - Up/Down arrows scroll item list
+ * - Up/Down arrows are page-aware: navigate items or scroll logs
  *
  * Returns a cleanup function that restores terminal state.
  * Only call this when tuiMode is true and stdin is a TTY.
@@ -396,6 +395,8 @@ export function setupKeyboardShortcuts(
         if (tuiState.detailItemId) {
           // Scroll detail overlay up
           tuiState.detailScrollOffset = Math.max(0, (tuiState.detailScrollOffset ?? 0) - 1);
+        } else if (tuiState.panelMode === "logs-only") {
+          tuiState.logScrollOffset = Math.max(0, tuiState.logScrollOffset - 1);
         } else {
           if ((tuiState.selectedIndex ?? 0) > 0) {
             tuiState.selectedIndex = (tuiState.selectedIndex ?? 0) - 1;
@@ -410,6 +411,8 @@ export function setupKeyboardShortcuts(
           // Scroll detail overlay down
           const maxScroll = detailOverlayMaxScroll(tuiState.detailContentLines ?? 0, getTerminalHeight());
           tuiState.detailScrollOffset = Math.min(maxScroll, (tuiState.detailScrollOffset ?? 0) + 1);
+        } else if (tuiState.panelMode === "logs-only") {
+          tuiState.logScrollOffset += 1;
         } else {
           const maxIdx = (tuiState.getItemCount?.() ?? 0) - 1;
           const curIdx = tuiState.selectedIndex ?? 0;
@@ -421,11 +424,8 @@ export function setupKeyboardShortcuts(
         }
         break;
       }
-      case "\t": { // Tab -- cycle panel mode (split -> logs-only -> status-only -> split)
-        const termRows = getTerminalHeight();
-        const modes: PanelMode[] = termRows < MIN_SPLIT_ROWS
-          ? ["logs-only", "status-only"]  // Small terminal: no split, cycle full-screen views
-          : ["split", "logs-only", "status-only"];
+      case "\t": { // Tab -- cycle panel mode (status-only <-> logs-only)
+        const modes: PanelMode[] = ["status-only", "logs-only"];
         const currentIdx = modes.indexOf(tuiState.panelMode);
         const nextIdx = (currentIdx + 1) % modes.length;
         tuiState.panelMode = modes[nextIdx]!;
@@ -436,15 +436,19 @@ export function setupKeyboardShortcuts(
         if (tuiState.detailItemId) {
           const maxScroll = detailOverlayMaxScroll(tuiState.detailContentLines ?? 0, getTerminalHeight());
           tuiState.detailScrollOffset = Math.min(maxScroll, (tuiState.detailScrollOffset ?? 0) + 1);
-        } else {
+        } else if (tuiState.panelMode === "logs-only") {
           tuiState.logScrollOffset += 1;
+        } else {
+          handled = false;
         }
         break;
       case "k": // Scroll up (detail overlay or log panel)
         if (tuiState.detailItemId) {
           tuiState.detailScrollOffset = Math.max(0, (tuiState.detailScrollOffset ?? 0) - 1);
-        } else {
+        } else if (tuiState.panelMode === "logs-only") {
           tuiState.logScrollOffset = Math.max(0, tuiState.logScrollOffset - 1);
+        } else {
+          handled = false;
         }
         break;
       case "l": { // Cycle log level filter (info -> warn -> error -> all)
@@ -459,11 +463,13 @@ export function setupKeyboardShortcuts(
         if (tuiState.detailItemId) {
           const maxScroll = detailOverlayMaxScroll(tuiState.detailContentLines ?? 0, getTerminalHeight());
           tuiState.detailScrollOffset = maxScroll;
-        } else {
+        } else if (tuiState.panelMode === "logs-only") {
           const filtered = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
           const termRows = getTerminalHeight();
           const viewportHeight = Math.max(1, termRows - 10); // approximate
           tuiState.logScrollOffset = Math.max(0, filtered.length - viewportHeight);
+        } else {
+          handled = false;
         }
         break;
       }

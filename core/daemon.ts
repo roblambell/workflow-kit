@@ -152,11 +152,11 @@ export function preferencesFilePath(projectRoot: string): string {
 
 // ── Layout preference persistence ───────────────────────────────────
 
-export type LayoutPreference = "split" | "logs-only" | "status-only";
+export type LayoutPreference = "logs-only" | "status-only";
 
 /**
  * Read the persisted layout preference for a project.
- * Returns "split" (the default) when the file is missing or contains invalid JSON.
+ * Returns "status-only" (the default) when the file is missing or contains invalid JSON.
  */
 export function readLayoutPreference(projectRoot: string): LayoutPreference {
   const filePath = preferencesFilePath(projectRoot);
@@ -164,13 +164,13 @@ export function readLayoutPreference(projectRoot: string): LayoutPreference {
     const raw = readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw);
     const mode = parsed?.panelMode;
-    if (mode === "split" || mode === "logs-only" || mode === "status-only") {
+    if (mode === "logs-only" || mode === "status-only") {
       return mode;
     }
   } catch {
     // Missing file or corrupt JSON -- fall through to default
   }
-  return "split";
+  return "status-only";
 }
 
 /**

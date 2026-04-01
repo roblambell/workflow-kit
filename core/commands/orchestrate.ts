@@ -378,7 +378,7 @@ export function renderTuiFrame(
 }
 
 /**
- * Render a panel-aware TUI frame with split/logs-only/status-only support.
+ * Render a panel-aware TUI frame with status/log full-screen pages.
  * Uses buildPanelLayout + renderPanelFrame from status-render.ts.
  * Falls back to renderTuiFrame when the help overlay is active.
  */
@@ -478,7 +478,7 @@ export interface RunTUIOptions {
   intervalMs?: number;
   /** External abort signal to stop the TUI loop. */
   signal?: AbortSignal;
-  /** Starting panel mode (default: split). */
+  /** Starting panel mode (default: status-only). */
   panelMode?: PanelMode;
 }
 
@@ -492,7 +492,7 @@ export interface RunTUIOptions {
  * without needing the orchestrate event loop.
  */
 export async function runTUI(opts: RunTUIOptions): Promise<void> {
-  const { getItems, getLogEntries, intervalMs = 2000, signal, panelMode = "split" } = opts;
+  const { getItems, getLogEntries, intervalMs = 2000, signal, panelMode = "status-only" } = opts;
   const isTTY = process.stdin.isTTY === true;
   if (!isTTY) return;
 
@@ -2644,8 +2644,8 @@ export async function cmdOrchestrate(
   writeStateFile(projectRoot, initialState);
 
   // TUI state: scroll offset and view option toggles (shared with keyboard handler)
-  // Read persisted layout preference (defaults to "split" if missing/corrupt)
-  const savedPanelMode = tuiMode ? readLayoutPreference(projectRoot) : "split";
+  // Read persisted layout preference (defaults to "status-only" if missing/corrupt)
+  const savedPanelMode = tuiMode ? readLayoutPreference(projectRoot) : "status-only";
 
   let lastTuiItems: OrchestratorItem[] = orch.getAllItems();
   let lastTuiHeartbeats = new Map<string, WorkerProgress>();

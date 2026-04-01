@@ -48,7 +48,7 @@ function makeTuiState(overrides: Partial<TuiState> = {}): TuiState {
     showControls: false,
     collaborationMode: "local",
     reviewMode: "off",
-    panelMode: "split" as PanelMode,
+    panelMode: "status-only" as PanelMode,
     logBuffer: [],
     logScrollOffset: 0,
     logLevelFilter: "all" as LogLevelFilter,
@@ -67,7 +67,7 @@ describe("pushLogBuffer", () => {
   it("appends entries up to LOG_BUFFER_MAX", () => {
     const buffer: PanelLogEntry[] = [];
     for (let i = 0; i < LOG_BUFFER_MAX + 10; i++) {
-      pushLogBuffer(buffer, { timestamp: `t${i}`, message: `msg ${i}` });
+      pushLogBuffer(buffer, { timestamp: `t${i}`, itemId: `I-${i}`, message: `msg ${i}` });
     }
     expect(buffer.length).toBe(LOG_BUFFER_MAX);
     expect(buffer[0]!.message).toBe(`msg 10`);
@@ -76,10 +76,10 @@ describe("pushLogBuffer", () => {
 
 describe("filterLogsByLevel", () => {
   const buffer: PanelLogEntry[] = [
-    { timestamp: "t1", message: "[error] something failed" },
-    { timestamp: "t2", message: "[warn] something off" },
-    { timestamp: "t3", message: "[info] all good" },
-    { timestamp: "t4", message: "no prefix" },
+    { timestamp: "t1", itemId: "I-1", message: "[error] something failed" },
+    { timestamp: "t2", itemId: "I-2", message: "[warn] something off" },
+    { timestamp: "t3", itemId: "I-3", message: "[info] all good" },
+    { timestamp: "t4", itemId: "I-4", message: "no prefix" },
   ];
 
   it("returns all entries for 'all' filter", () => {
@@ -258,6 +258,82 @@ describe("setupKeyboardShortcuts", () => {
 
     stdin.emit("data", "-");
     expect(onWipChange).toHaveBeenCalledWith(-1);
+    cleanup();
+  });
+
+  it("Tab toggles between exactly two panel modes", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onPanelModeChange = vi.fn();
+    const state = makeTuiState({ panelMode: "status-only", onPanelModeChange });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\t");
+    expect(state.panelMode).toBe("logs-only");
+    expect(onPanelModeChange).toHaveBeenLastCalledWith("logs-only");
+
+    stdin.emit("data", "\t");
+    expect(state.panelMode).toBe("status-only");
+    expect(onPanelModeChange).toHaveBeenLastCalledWith("status-only");
+
+    cleanup();
+  });
+
+  it("Up/Down navigate items on the status page", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      panelMode: "status-only",
+      selectedIndex: 1,
+      getItemCount: () => 4,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b[A");
+    expect(state.selectedIndex).toBe(0);
+    expect(state.logScrollOffset).toBe(0);
+
+    stdin.emit("data", "\x1b[B");
+    expect(state.selectedIndex).toBe(1);
+    expect(state.scrollOffset).toBe(1);
+
+    cleanup();
+  });
+
+  it("Up/Down scroll logs on the logs page", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      panelMode: "logs-only",
+      logScrollOffset: 2,
+      selectedIndex: 1,
+      getItemCount: () => 4,
+    });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b[A");
+    expect(state.logScrollOffset).toBe(1);
+    expect(state.selectedIndex).toBe(1);
+
+    stdin.emit("data", "\x1b[B");
+    expect(state.logScrollOffset).toBe(2);
+    expect(state.selectedIndex).toBe(1);
+
+    cleanup();
+  });
+
+  it("j/k remain log scroll aliases on the logs page", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({ panelMode: "logs-only", logScrollOffset: 1 });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "j");
+    expect(state.logScrollOffset).toBe(2);
+
+    stdin.emit("data", "k");
+    expect(state.logScrollOffset).toBe(1);
+
     cleanup();
   });
 });

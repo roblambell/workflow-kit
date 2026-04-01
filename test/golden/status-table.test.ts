@@ -347,7 +347,7 @@ describe("golden: renderPanelFrame", () => {
     assertGolden("panel-status-only-120", stripAnsi(frame.join("\n")));
   });
 
-  it("renders split panel with logs at 80 columns", () => {
+  it("renders logs page with logs at 80 columns", () => {
     const logs = [
       { timestamp: "2026-03-29T10:15:00Z", itemId: "H-CA-1", message: "Worker started" },
       { timestamp: "2026-03-29T10:15:30Z", itemId: "H-CA-1", message: "Cloning repository..." },
@@ -356,7 +356,7 @@ describe("golden: renderPanelFrame", () => {
       { timestamp: "2026-03-29T10:17:00Z", itemId: "M-FE-2", message: "CI failed: lint errors" },
     ];
     const panelLayout = buildPanelLayout(
-      "split",
+      "logs-only",
       MIXED_STATE,
       logs,
       80,
@@ -364,7 +364,7 @@ describe("golden: renderPanelFrame", () => {
       { viewOptions: { mergeStrategy: "auto" } },
     );
     const frame = renderPanelFrame(panelLayout, 40, 80, 0);
-    assertGolden("panel-split-80", stripAnsi(frame.join("\n")));
+    assertGolden("panel-logs-only-80", stripAnsi(frame.join("\n")));
   });
 });
 

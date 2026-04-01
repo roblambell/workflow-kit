@@ -45,7 +45,7 @@ import {
   type StartupIntent,
 } from "../core/commands/orchestrate.ts";
 import type { LogEntry as PanelLogEntry } from "../core/status-render.ts";
-import { MIN_SPLIT_ROWS, daemonStateToStatusItems } from "../core/status-render.ts";
+import { daemonStateToStatusItems } from "../core/status-render.ts";
 import {
   Orchestrator,
   type OrchestratorItem,
@@ -2499,7 +2499,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -2601,7 +2601,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 5,
       logLevelFilter: "all",
@@ -2630,7 +2630,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 3,
       logLevelFilter: "all",
@@ -2659,7 +2659,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 10, // changed while viewing detail
       logLevelFilter: "all",
@@ -2686,7 +2686,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -2714,7 +2714,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -2742,7 +2742,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -2772,7 +2772,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -2811,7 +2811,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -2838,7 +2838,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -4790,7 +4790,7 @@ describe("panel mode cycling (Tab key)", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -4798,51 +4798,18 @@ describe("panel mode cycling (Tab key)", () => {
     };
   }
 
-  it("Tab cycles split -> logs-only -> status-only -> split (large terminal)", () => {
+  it("Tab cycles status-only -> logs-only -> status-only", () => {
     const ac = new AbortController();
     const stdin = mockStdin();
-    const tuiState = baseTuiState({ panelMode: "split" });
+    const tuiState = baseTuiState({ panelMode: "status-only" });
 
-    // Mock getTerminalHeight to return large terminal
-    const origColumns = process.stdout.columns;
-    const origRows = process.stdout.rows;
-    process.stdout.columns = 120;
-    process.stdout.rows = 50;
-    try {
-      setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
+    setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
 
-      (stdin as any)._emit("data", "\t"); // split -> logs-only
-      expect(tuiState.panelMode).toBe("logs-only");
+    (stdin as any)._emit("data", "\t");
+    expect(tuiState.panelMode).toBe("logs-only");
 
-      (stdin as any)._emit("data", "\t"); // logs-only -> status-only
-      expect(tuiState.panelMode).toBe("status-only");
-
-      (stdin as any)._emit("data", "\t"); // status-only -> split
-      expect(tuiState.panelMode).toBe("split");
-    } finally {
-      process.stdout.columns = origColumns;
-      process.stdout.rows = origRows;
-    }
-  });
-
-  it("Tab cycles logs-only -> status-only in small terminal (< MIN_SPLIT_ROWS)", () => {
-    const ac = new AbortController();
-    const stdin = mockStdin();
-    const tuiState = baseTuiState({ panelMode: "logs-only" });
-
-    const origRows = process.stdout.rows;
-    process.stdout.rows = 20; // < 35 (MIN_SPLIT_ROWS)
-    try {
-      setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
-
-      (stdin as any)._emit("data", "\t"); // logs-only -> status-only
-      expect(tuiState.panelMode).toBe("status-only");
-
-      (stdin as any)._emit("data", "\t"); // status-only -> logs-only (wraps, no split)
-      expect(tuiState.panelMode).toBe("logs-only");
-    } finally {
-      process.stdout.rows = origRows;
-    }
+    (stdin as any)._emit("data", "\t");
+    expect(tuiState.panelMode).toBe("status-only");
   });
 });
 
@@ -4875,7 +4842,7 @@ describe("log panel scroll (j/k/G keys)", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "logs-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -4977,7 +4944,7 @@ describe("log level filter cycling (l key)", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -5356,9 +5323,9 @@ describe("post-completion prompt (orchestrateLoop)", () => {
 describe("persistent layout preferences", () => {
   const tmpDir = join("/tmp", `nw-prefs-test-${process.pid}`);
 
-  it("readLayoutPreference returns split when file is missing", () => {
+  it("readLayoutPreference returns status-only when file is missing", () => {
     const result = readLayoutPreference("/nonexistent/project/root");
-    expect(result).toBe("split");
+    expect(result).toBe("status-only");
   });
 
   it("writeLayoutPreference + readLayoutPreference roundtrip", () => {
@@ -5367,22 +5334,22 @@ describe("persistent layout preferences", () => {
     expect(result).toBe("logs-only");
   });
 
-  it("readLayoutPreference returns split for corrupt JSON", () => {
+  it("readLayoutPreference returns status-only for corrupt JSON", () => {
     const { mkdirSync, writeFileSync } = require("fs");
     const dir = userStateDir(tmpDir + "-corrupt");
     mkdirSync(dir, { recursive: true });
     writeFileSync(preferencesFilePath(tmpDir + "-corrupt"), "not json!!!");
     const result = readLayoutPreference(tmpDir + "-corrupt");
-    expect(result).toBe("split");
+    expect(result).toBe("status-only");
   });
 
-  it("readLayoutPreference returns split for invalid mode value", () => {
+  it("readLayoutPreference returns status-only for invalid mode value", () => {
     const { mkdirSync, writeFileSync } = require("fs");
     const dir = userStateDir(tmpDir + "-invalid");
     mkdirSync(dir, { recursive: true });
     writeFileSync(preferencesFilePath(tmpDir + "-invalid"), JSON.stringify({ panelMode: "banana" }));
     const result = readLayoutPreference(tmpDir + "-invalid");
-    expect(result).toBe("split");
+    expect(result).toBe("status-only");
   });
 
   it("Tab key triggers onPanelModeChange callback", () => {
@@ -5396,7 +5363,7 @@ describe("persistent layout preferences", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      panelMode: "split",
+      panelMode: "status-only",
       logBuffer: [],
       logScrollOffset: 0,
       logLevelFilter: "all",
@@ -5424,8 +5391,7 @@ describe("persistent layout preferences", () => {
     dataHandler("\t"); // Tab
 
     expect(modeChanges.length).toBe(1);
-    // Default split -> logs-only (or depends on terminal height mock)
-    expect(["split", "logs-only", "status-only"]).toContain(modeChanges[0]);
+    expect(modeChanges[0]).toBe("logs-only");
 
     cleanup();
   });

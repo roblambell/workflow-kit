@@ -293,7 +293,7 @@ export function tailLogFile(projectRoot: string): LogEntry[] {
 /**
  * Run `ninthwave status` in watch mode using the shared panel TUI from orchestrate.ts.
  *
- * Delegates to `runTUI()` in read-only mode, giving status the same panel layout,
+ * Delegates to `runTUI()` in read-only mode, giving status the same two-page layout,
  * keyboard shortcuts, and rendering as `nw watch`. When a daemon is running, log
  * entries are tailed from the daemon's log file.
  */
@@ -312,7 +312,7 @@ export async function cmdStatusWatch(
     getLogEntries: daemonPid !== null ? () => tailLogFile(projectRoot) : undefined,
     intervalMs,
     signal,
-    panelMode: daemonPid !== null ? "split" : "status-only",
+    panelMode: "status-only",
   });
 }
 

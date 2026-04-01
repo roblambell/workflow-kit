@@ -1712,18 +1712,12 @@ export function renderFullScreenFrame(
 /** Minimum terminal rows for full-screen mode. Below this, use legacy non-fullscreen rendering. */
 export const MIN_FULLSCREEN_ROWS = 10;
 
-/** Minimum terminal rows for split panel mode. Below this, split degrades to full-screen cycling. */
-export const MIN_SPLIT_ROWS = 35;
-
-/** Fraction of available rows allocated to the status panel in split mode (0.6 = 60%). */
-export const STATUS_SPLIT_RATIO = 0.6;
-
 // ─── Panel layout types ─────────────────────────────────────────────────────
 
 /** Panel display modes for the unified TUI. */
-export type PanelMode = "status-only" | "split" | "logs-only";
+export type PanelMode = "status-only" | "logs-only";
 
-/** Layout geometry for a single panel within the split view. */
+/** Layout geometry for the full-screen log page. */
 export interface LogPanelLayout {
   /** Visible log lines (already sliced to fit). */
   lines: string[];
@@ -1733,7 +1727,7 @@ export interface LogPanelLayout {
   scrollOffset: number;
 }
 
-/** Full panel layout produced by buildPanelLayout(). */
+/** Full-screen page layout produced by buildPanelLayout(). */
 export interface PanelLayout {
   /** The mode that was actually used (may differ from requested if terminal too small). */
   mode: PanelMode;
@@ -1788,8 +1782,6 @@ function formatLogLine(entry: LogEntry, termWidth: number): string {
  *
  * Layout rules:
  * - Below MIN_FULLSCREEN_ROWS (10): returns status-only with no footer (legacy flat).
- * - Below MIN_SPLIT_ROWS (35): "split" degrades to "status-only" (full-screen cycling).
- * - At MIN_SPLIT_ROWS+: split gives status top (60%) and logs bottom (40%).
  * - "logs-only": full screen of logs.
  * - "status-only": delegates entirely to buildStatusLayout().
  */
@@ -1837,12 +1829,7 @@ export function buildPanelLayout(
     };
   }
 
-  // Split mode degrades to status-only below MIN_SPLIT_ROWS
-  const effectiveMode = mode === "split" && termRows < MIN_SPLIT_ROWS
-    ? "status-only"
-    : mode;
-
-  if (effectiveMode === "status-only") {
+  if (mode === "status-only") {
     const statusLayout = buildStatusLayout(
       items,
       termWidth,
@@ -1859,85 +1846,23 @@ export function buildPanelLayout(
     };
   }
 
-  if (effectiveMode === "logs-only") {
-    // Full screen of logs with footer
-    const footerLines = buildPanelFooter(items, logEntries.length, termWidth, opts?.viewOptions);
-    const logViewHeight = Math.max(1, termRows - footerLines.length);
-    const clampedLogOffset = clampScrollOffset(logScrollOffset, logEntries.length, logViewHeight);
-    const visibleLogs = logEntries
-      .slice(clampedLogOffset, clampedLogOffset + logViewHeight)
-      .map((e) => formatLogLine(e, termWidth));
-
-    return {
-      mode: "logs-only",
-      statusPanel: null,
-      logPanel: {
-        lines: visibleLogs,
-        totalEntries: logEntries.length,
-        scrollOffset: clampedLogOffset,
-      },
-      footerLines,
-    };
-  }
-
-  // Split mode: status top (60%), logs bottom (40%)
   const footerLines = buildPanelFooter(items, logEntries.length, termWidth, opts?.viewOptions);
-  const separatorLine = buildPanelSeparator(logEntries.length, termWidth);
-
-  // Available rows = total - footer - separator (1 line)
-  const availableRows = Math.max(2, termRows - footerLines.length - 1);
-  const statusRows = Math.max(1, Math.floor(availableRows * STATUS_SPLIT_RATIO));
-  const logRows = Math.max(1, availableRows - statusRows);
-
-  // Build status panel (header + items fit within statusRows)
-  const statusLayout = buildStatusLayout(
-    items,
-    termWidth,
-    opts?.wipLimit,
-    opts?.flat,
-    opts?.viewOptions,
-    selectedItemId,
-  );
-  // Strip footer from the status layout -- we use our own panel footer
-  const statusPanel: FrameLayout = {
-    headerLines: statusLayout.headerLines,
-    itemLines: statusLayout.itemLines,
-    footerLines: [], // managed by panel footer
-    queueStartIndex: statusLayout.queueStartIndex,
-  };
-
-  // Build log panel
-  const clampedLogOffset = clampScrollOffset(logScrollOffset, logEntries.length, logRows);
+  const logViewHeight = Math.max(1, termRows - footerLines.length);
+  const clampedLogOffset = clampScrollOffset(logScrollOffset, logEntries.length, logViewHeight);
   const visibleLogs = logEntries
-    .slice(clampedLogOffset, clampedLogOffset + logRows)
+    .slice(clampedLogOffset, clampedLogOffset + logViewHeight)
     .map((e) => formatLogLine(e, termWidth));
 
   return {
-    mode: "split",
-    statusPanel,
+    mode: "logs-only",
+    statusPanel: null,
     logPanel: {
       lines: visibleLogs,
       totalEntries: logEntries.length,
       scrollOffset: clampedLogOffset,
     },
-    footerLines: [separatorLine, ...footerLines],
+    footerLines,
   };
-}
-
-/**
- * Build the separator line between status and log panels.
- * Shows log count and shortcut hints.
- * Format: "──── Logs (42) ──── tab: switch  ↑↓: scroll ────"
- */
-function buildPanelSeparator(logCount: number, termWidth: number): string {
-  const label = ` Logs (${logCount}) `;
-  const hints = ` tab: switch  ${DIM}↑↓: scroll${RESET} `;
-  const hintsPlain = ` tab: switch  ↑↓: scroll `;
-  const usedWidth = label.length + hintsPlain.length + 4; // 4 for dash segments
-  const remainingDashes = Math.max(0, termWidth - usedWidth);
-  const leftDashes = Math.max(2, Math.floor(remainingDashes / 2));
-  const rightDashes = Math.max(2, remainingDashes - leftDashes);
-  return `${DIM}${"─".repeat(leftDashes)}${RESET}${BOLD}${label}${RESET}${DIM}${"─".repeat(2)}${RESET} ${hints}${DIM}${"─".repeat(rightDashes)}${RESET}`;
 }
 
 
@@ -1961,7 +1886,7 @@ function buildPanelFooter(
   } else if (viewOptions?.mergeStrategy) {
     footerLines.push(formatStrategyFooterLine(viewOptions.mergeStrategy, viewOptions.pendingStrategy));
   } else {
-    const shortcuts = `q quit  d deps  ↑/↓ scroll`;
+    const shortcuts = `q quit  tab switch  ↑/↓ page controls`;
     footerLines.push(`  ${DIM}${shortcuts}${RESET}`);
   }
 
@@ -1971,10 +1896,7 @@ function buildPanelFooter(
 /**
  * Render a complete panel frame as an array of terminal lines.
  *
- * Composites the status panel (with scroll indicators), separator, log panel
- * (with scroll indicators), and footer -- producing exactly termRows lines.
- *
- * For status-only and logs-only modes, delegates to simpler rendering.
+ * Composites the active full-screen page and footer, producing exactly termRows lines.
  */
 export function renderPanelFrame(
   panelLayout: PanelLayout,
@@ -2024,103 +1946,7 @@ export function renderPanelFrame(
     return padToHeight(output, termRows);
   }
 
-  // Split mode
-  if (!statusPanel || !logPanel) {
-    // Defensive: shouldn't happen in split mode
-    return padToHeight([...footerLines], termRows);
-  }
-
-  // The footerLines for split include separator + actual footer
-  // Extract the separator (first line of footerLines) and the rest
-  const separatorLine = footerLines[0] ?? "";
-  const actualFooter = footerLines.slice(1);
-
-  // Calculate available space
-  const footerHeight = actualFooter.length;
-  const separatorHeight = 1;
-  const availableRows = Math.max(2, termRows - footerHeight - separatorHeight);
-  const statusRows = Math.max(1, Math.floor(availableRows * STATUS_SPLIT_RATIO));
-  const logRows = Math.max(1, availableRows - statusRows);
-
-  const output: string[] = [];
-
-  // Status panel with scroll indicators and queue pinning
-  const statusHeader = statusPanel.headerLines;
-  const statusItemViewport = Math.max(1, statusRows - statusHeader.length);
-  const clampedStatusOffset = clampScrollOffset(statusScrollOffset, statusPanel.itemLines.length, statusItemViewport);
-
-  const hasStatusScrollUp = clampedStatusOffset > 0;
-  const hasStatusScrollDown = statusPanel.itemLines.length > clampedStatusOffset + statusItemViewport;
-  const statusScrollLines = (hasStatusScrollUp ? 1 : 0) + (hasStatusScrollDown ? 1 : 0);
-  let adjustedStatusViewport = Math.max(1, statusItemViewport - statusScrollLines);
-
-  // Check if queue is scrolled off in split mode
-  const qsi = statusPanel.queueStartIndex;
-  const statusViewEnd = clampedStatusOffset + adjustedStatusViewport;
-  const queueScrolledOffSplit = qsi != null && qsi >= statusViewEnd && statusPanel.itemLines.length > qsi;
-  if (queueScrolledOffSplit) {
-    adjustedStatusViewport = Math.max(1, adjustedStatusViewport - 1);
-  }
-
-  output.push(...statusHeader);
-
-  if (hasStatusScrollUp) {
-    const hidden = clampedStatusOffset;
-    output.push(`  ${DIM}↑ ${hidden} more above${RESET}`);
-  }
-
-  const visibleStatusItems = statusPanel.itemLines.slice(
-    clampedStatusOffset,
-    clampedStatusOffset + adjustedStatusViewport,
-  );
-  output.push(...visibleStatusItems);
-
-  // Pinned queue summary in split mode
-  if (queueScrolledOffSplit) {
-    const queueItemCount = statusPanel.itemLines
-      .slice(qsi!)
-      .filter((line) => line.trim() !== "" && !stripAnsiForWidth(line).match(/^[\s─]*$/) && !stripAnsiForWidth(line).startsWith("Queue ("))
-      .length;
-    output.push(formatQueueSummary(queueItemCount > 0 ? queueItemCount : statusPanel.itemLines.length - qsi!));
-  }
-
-  if (hasStatusScrollDown && !queueScrolledOffSplit) {
-    const hidden = Math.max(0, statusPanel.itemLines.length - clampedStatusOffset - adjustedStatusViewport);
-    output.push(`  ${DIM}↓ ${hidden} more below${RESET}`);
-  }
-
-  // Pad status section to fill its allocation
-  while (output.length < statusRows) {
-    output.push("");
-  }
-
-  // Separator
-  output.push(separatorLine);
-
-  // Log panel with scroll indicators
-  const hasLogScrollUp = logPanel.scrollOffset > 0;
-  const hasLogScrollDown = logPanel.totalEntries > logPanel.scrollOffset + logRows;
-  const logScrollLines = (hasLogScrollUp ? 1 : 0) + (hasLogScrollDown ? 1 : 0);
-  const adjustedLogViewport = Math.max(1, logRows - logScrollLines);
-
-  if (hasLogScrollUp) {
-    const hidden = logPanel.scrollOffset;
-    output.push(`  ${DIM}↑ ${hidden} more above${RESET}`);
-  }
-
-  // Re-slice log lines to account for scroll indicators
-  const visibleLogLines = logPanel.lines.slice(0, adjustedLogViewport);
-  output.push(...visibleLogLines);
-
-  if (hasLogScrollDown) {
-    const hidden = Math.max(0, logPanel.totalEntries - logPanel.scrollOffset - adjustedLogViewport);
-    output.push(`  ${DIM}↓ ${hidden} more below${RESET}`);
-  }
-
-  // Footer
-  output.push(...actualFooter);
-
-  return padToHeight(output, termRows);
+  return padToHeight([...footerLines], termRows);
 }
 
 /**
@@ -2305,6 +2131,7 @@ export function renderHelpOverlay(
   // Keyboard shortcuts section
   sections.push([
     `${BOLD}Keyboard Shortcuts${RESET}`,
+    `  Tab         Toggle status/log pages`,
     `  c           Open runtime controls`,
     `  Shift+Tab   Cycle merge strategy`,
     `  +/-         Adjust WIP limit`,
@@ -2315,7 +2142,8 @@ export function renderHelpOverlay(
     `  Ctrl+C x2   Quit (double-tap)`,
     `  d           Toggle blocker sub-lines`,
     `  x           Extend worker timeout`,
-    `  Up/Down     Scroll item list`,
+    `  Up/Down     Navigate items / scroll logs`,
+    `  j/k         Scroll logs (logs page)`,
   ]);
 
   // Credits section

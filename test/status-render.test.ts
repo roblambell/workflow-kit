@@ -40,7 +40,6 @@ import {
   formatBlockerSubline,
   formatInlineProgress,
   MIN_FULLSCREEN_ROWS,
-  MIN_SPLIT_ROWS,
   buildPanelLayout,
   renderPanelFrame,
   formatItemDetail,
@@ -2985,12 +2984,15 @@ describe("renderHelpOverlay", () => {
     const lines = renderHelpOverlay(100, 40);
     const text = stripAnsi(lines.join("\n"));
     // These shortcuts were previously in the footer before H-TUI-4:
+    expect(text).toContain("Tab");
     expect(text).toContain("q");        // quit
     expect(text).toContain("d");        // deps toggle
     expect(text).toContain("Up/Down");  // scroll
+    expect(text).toContain("j/k");
     expect(text).toContain("Ctrl+C");   // double-tap quit
     expect(text).toContain("Escape");   // dismiss help
     expect(text).toContain("?");        // toggle help
+    expect(text).not.toContain("split view");
   });
 
   it("documents timeout extension shortcut", () => {
@@ -3082,12 +3084,6 @@ function makeLogEntries(count: number): LogEntry[] {
   );
 }
 
-describe("MIN_SPLIT_ROWS", () => {
-  it("is 35", () => {
-    expect(MIN_SPLIT_ROWS).toBe(35);
-  });
-});
-
 describe("buildPanelLayout", () => {
   const items = [
     makeStatusItem({ id: "A-1", state: "implementing" }),
@@ -3120,62 +3116,6 @@ describe("buildPanelLayout", () => {
     });
   });
 
-  describe("split mode", () => {
-    it("returns split layout at 80x40 (>= MIN_SPLIT_ROWS)", () => {
-      const layout = buildPanelLayout("split", items, logs, 80, 40);
-      expect(layout.mode).toBe("split");
-      expect(layout.statusPanel).not.toBeNull();
-      expect(layout.logPanel).not.toBeNull();
-      expect(layout.logPanel!.lines.length).toBeGreaterThan(0);
-    });
-
-    it("degrades split to status-only at 34 rows (< MIN_SPLIT_ROWS)", () => {
-      const layout = buildPanelLayout("split", items, logs, 80, 34);
-      expect(layout.mode).toBe("status-only");
-      expect(layout.statusPanel).not.toBeNull();
-      expect(layout.logPanel).toBeNull();
-    });
-
-    it("degrades split to status-only at 20 rows", () => {
-      const layout = buildPanelLayout("split", items, logs, 80, 20);
-      expect(layout.mode).toBe("status-only");
-      expect(layout.logPanel).toBeNull();
-    });
-
-    it("degrades split to status-only at 8 rows (below MIN_FULLSCREEN_ROWS)", () => {
-      const layout = buildPanelLayout("split", items, logs, 80, 8);
-      expect(layout.mode).toBe("status-only");
-      expect(layout.logPanel).toBeNull();
-    });
-
-    it("split at exactly MIN_SPLIT_ROWS (35) works", () => {
-      const layout = buildPanelLayout("split", items, logs, 80, 35);
-      expect(layout.mode).toBe("split");
-      expect(layout.statusPanel).not.toBeNull();
-      expect(layout.logPanel).not.toBeNull();
-    });
-
-    it("status panel has no footer in split mode (footer is separate)", () => {
-      const layout = buildPanelLayout("split", items, logs, 80, 40);
-      expect(layout.statusPanel!.footerLines).toHaveLength(0);
-    });
-
-    it("footer lines include separator in split mode", () => {
-      const layout = buildPanelLayout("split", items, logs, 80, 40);
-      const footerText = layout.footerLines.map(stripAnsi).join("\n");
-      // Separator contains "Logs (N)"
-      expect(footerText).toContain("Logs (10)");
-    });
-
-    it("split gives status ~60% and logs ~40%", () => {
-      const layout = buildPanelLayout("split", items, logs, 80, 40);
-      // The log panel should have visible lines
-      expect(layout.logPanel!.lines.length).toBeGreaterThan(0);
-      // Status panel should have items
-      expect(layout.statusPanel!.itemLines.length).toBeGreaterThan(0);
-    });
-  });
-
   describe("logs-only mode", () => {
     it("returns logs-only at 80x40", () => {
       const layout = buildPanelLayout("logs-only", items, logs, 80, 40);
@@ -3190,6 +3130,13 @@ describe("buildPanelLayout", () => {
       expect(layout.mode).toBe("logs-only");
       expect(layout.statusPanel).toBeNull();
       expect(layout.logPanel).not.toBeNull();
+    });
+
+    it("shows footer controls for the log page", () => {
+      const layout = buildPanelLayout("logs-only", items, logs, 80, 40);
+      const footerText = layout.footerLines.map(stripAnsi).join("\n");
+      expect(footerText).toContain("tab switch");
+      expect(footerText).toContain("page controls");
     });
 
     it("returns status-only at 80x8 (below MIN_FULLSCREEN_ROWS overrides all)", () => {
@@ -3209,12 +3156,6 @@ describe("renderPanelFrame", () => {
 
   it("status-only frame matches terminal height exactly", () => {
     const layout = buildPanelLayout("status-only", items, logs, 80, 40);
-    const frame = renderPanelFrame(layout, 40, 80);
-    expect(frame).toHaveLength(40);
-  });
-
-  it("split frame matches terminal height exactly", () => {
-    const layout = buildPanelLayout("split", items, logs, 80, 40);
     const frame = renderPanelFrame(layout, 40, 80);
     expect(frame).toHaveLength(40);
   });
@@ -3242,15 +3183,9 @@ describe("renderPanelFrame", () => {
       lastNonEmpty.includes("quit") ||
       lastNonEmpty.includes("scroll") ||
       lastNonEmpty.includes("items") ||
-      lastNonEmpty.includes("shift+tab") ||
+      lastNonEmpty.includes("switch") ||
       lastNonEmpty.includes("c controls"),
     ).toBe(true);
-  });
-
-  it("split frame at exactly MIN_SPLIT_ROWS matches height", () => {
-    const layout = buildPanelLayout("split", items, logs, 80, 35);
-    const frame = renderPanelFrame(layout, 35, 80);
-    expect(frame).toHaveLength(35);
   });
 
   it("status-only frame at 20 rows matches height", () => {
@@ -3266,84 +3201,31 @@ describe("renderPanelFrame", () => {
   });
 
   it("frame at 8 rows (below MIN_FULLSCREEN_ROWS) matches height", () => {
-    const layout = buildPanelLayout("split", items, logs, 80, 8);
+    const layout = buildPanelLayout("logs-only", items, logs, 80, 8);
     const frame = renderPanelFrame(layout, 8, 80);
     expect(frame).toHaveLength(8);
   });
 });
 
-describe("panel separator formatting", () => {
-  it("shows log count in separator", () => {
-    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
-    const logs = makeLogEntries(42);
-    const layout = buildPanelLayout("split", items, logs, 80, 40);
-    const allText = layout.footerLines.map(stripAnsi).join("\n");
-    expect(allText).toContain("Logs (42)");
-  });
-
-  it("shows shortcut hints in separator", () => {
-    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
-    const logs = makeLogEntries(5);
-    const layout = buildPanelLayout("split", items, logs, 80, 40);
-    const allText = layout.footerLines.map(stripAnsi).join("\n");
-    expect(allText).toContain("tab: switch");
-    expect(allText).toContain("scroll");
-  });
-
-  it("shows zero logs in separator when no entries", () => {
-    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
-    const layout = buildPanelLayout("split", items, [], 80, 40);
-    const allText = layout.footerLines.map(stripAnsi).join("\n");
-    expect(allText).toContain("Logs (0)");
-  });
-
-  it("handles large log counts", () => {
-    const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
-    const logs = makeLogEntries(1234);
-    const layout = buildPanelLayout("split", items, logs, 80, 40);
-    const allText = layout.footerLines.map(stripAnsi).join("\n");
-    expect(allText).toContain("Logs (1234)");
-  });
-});
-
 describe("scroll indicators in panel frames", () => {
-  it("status panel shows scroll indicators when items overflow", () => {
-    const manyItems = Array.from({ length: 30 }, (_, i) =>
-      makeStatusItem({ id: `I-${i}`, state: "implementing" }),
-    );
-    const logs = makeLogEntries(5);
-    const layout = buildPanelLayout("split", manyItems, logs, 80, 40);
-    const frame = renderPanelFrame(layout, 40, 80, 0);
-    const text = frame.map(stripAnsi).join("\n");
-    // With 30 items in the status panel (60% of ~40 rows = ~20 rows for header+items),
-    // there should be a scroll-down indicator
-    expect(text).toContain("more below");
-  });
-
-  it("log panel shows scroll indicators when logs overflow", () => {
+  it("log page shows scroll indicators when logs overflow", () => {
     const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
     const manyLogs = makeLogEntries(100);
-    const layout = buildPanelLayout("split", items, manyLogs, 80, 40, {
+    const layout = buildPanelLayout("logs-only", items, manyLogs, 80, 40, {
       logScrollOffset: 5,
     });
     const frame = renderPanelFrame(layout, 40, 80);
     const text = frame.map(stripAnsi).join("\n");
-    // With 100 logs and offset 5, should show both scroll indicators
     expect(text).toContain("more above");
   });
 
   it("no scroll indicators when content fits", () => {
     const items = [makeStatusItem({ id: "A-1", state: "implementing" })];
     const fewLogs = makeLogEntries(2);
-    const layout = buildPanelLayout("split", items, fewLogs, 80, 40);
+    const layout = buildPanelLayout("logs-only", items, fewLogs, 80, 40);
     const frame = renderPanelFrame(layout, 40, 80);
     const text = frame.map(stripAnsi).join("\n");
-    // Few items and few logs should have no overflow
-    // (status panel might not overflow with just 1 item)
-    // Check the log section specifically -- 2 logs should fit
-    const logSection = frame.slice(frame.findIndex(l => stripAnsi(l).includes("Logs")));
-    const logText = logSection.map(stripAnsi).join("\n");
-    expect(logText).not.toContain("more above");
+    expect(text).not.toContain("more above");
   });
 });
 
@@ -4172,56 +4054,9 @@ describe("layout with narrow terminals", () => {
   });
 });
 
-// ── Panel layout queue pinning in split mode (M-STUI-4) ─────────────────────
-
-describe("renderPanelFrame split mode queue pinning", () => {
-  it("pins queue summary in split mode when queue is scrolled off", () => {
-    // Build a large active list that pushes queue off
-    const activeLines: string[] = [];
-    for (let i = 0; i < 25; i++) {
-      activeLines.push(`  active-${i}`);
-    }
-    const queueLines = ["", "  Queue (3 waiting)", "  ───", "  q-1", "  q-2", "  q-3"];
-
-    const panelLayout: PanelLayout = {
-      mode: "split",
-      statusPanel: {
-        headerLines: ["Title", ""],
-        itemLines: [...activeLines, ...queueLines],
-        footerLines: [],
-        queueStartIndex: activeLines.length,
-      },
-      logPanel: {
-        lines: ["  log-1", "  log-2"],
-        totalEntries: 2,
-        scrollOffset: 0,
-      },
-      footerLines: ["separator", "  progress", "  controls"],
-    };
-
-    const frame = renderPanelFrame(panelLayout, 40, 80, 0);
-    const plain = frame.map(stripAnsi).join("\n");
-    expect(plain).toContain("Queue:");
-    expect(plain).toContain("waiting");
-  });
-});
-
 // ── buildPanelLayout passes queueStartIndex through (M-STUI-4) ──────────────
 
 describe("buildPanelLayout queueStartIndex passthrough", () => {
-  it("passes queueStartIndex to status panel in split mode", () => {
-    const items = [
-      makeStatusItem({ id: "A-1", state: "implementing" }),
-      makeStatusItem({ id: "A-2", state: "queued" }),
-    ];
-    const logs: LogEntry[] = [{ timestamp: "2024-01-01T00:00:00Z", itemId: "A-1", message: "test" }];
-    const layout = buildPanelLayout("split", items, logs, 80, 50, {
-      wipLimit: 3,
-    });
-    expect(layout.statusPanel).not.toBeNull();
-    expect(layout.statusPanel!.queueStartIndex).toBeDefined();
-  });
-
   it("passes queueStartIndex to status panel in status-only mode", () => {
     const items = [
       makeStatusItem({ id: "A-1", state: "implementing" }),
