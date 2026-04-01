@@ -90,7 +90,7 @@ import {
   type PanelMode,
   type LogEntry as PanelLogEntry,
 } from "../status-render.ts";
-import type { CrewBroker, CrewStatus, SyncItem } from "../crew.ts";
+import type { CrewBroker, CrewRemoteItemSnapshot, CrewStatus, SyncItem } from "../crew.ts";
 import { WebSocketCrewBroker, resolveOperatorId, saveCrewCode } from "../crew.ts";
 import { AuthorCache } from "../git-author.ts";
 import {
@@ -201,39 +201,90 @@ export function detectTuiMode(isDaemonChild: boolean, jsonFlag: boolean, isTTY: 
 
 /**
  * Convert OrchestratorItem[] to StatusItem[] for TUI rendering.
- * When remoteItemIds is provided, marks items claimed by other crew members as remote.
+ * When broker-fed remote snapshots are provided, use them as the source of truth
+ * for live crew rows instead of local inferred state.
  */
+export type RemoteItemRenderState = ReadonlySet<string> | ReadonlyMap<string, CrewRemoteItemSnapshot>;
+
+export function crewStatusToRemoteItemSnapshots(
+  crewStatus: CrewStatus | null | undefined,
+): Map<string, CrewRemoteItemSnapshot> | undefined {
+  if (!crewStatus?.remoteItems?.length) return undefined;
+  return new Map(crewStatus.remoteItems.map((item) => [item.id, item]));
+}
+
+export function crewStatusToRemoteOwnedItemIds(
+  crewStatus: CrewStatus | null | undefined,
+): Set<string> | undefined {
+  if (crewStatus?.remoteItems?.length) {
+    const ownedIds = crewStatus.remoteItems
+      .filter((item) => item.ownerDaemonId !== null)
+      .map((item) => item.id);
+    return ownedIds.length > 0 ? new Set(ownedIds) : undefined;
+  }
+  if (!crewStatus?.claimedItems?.length) return undefined;
+  return new Set(crewStatus.claimedItems);
+}
+
+export function filterCrewRemoteWriteActions(
+  actions: Action[],
+  crewStatus: CrewStatus | null | undefined,
+): Action[] {
+  const remoteIds = crewStatusToRemoteOwnedItemIds(crewStatus);
+  if (!remoteIds || remoteIds.size === 0) return actions;
+
+  const WRITE_ACTIONS: ReadonlySet<string> = new Set([
+    "merge", "clean", "retry", "rebase", "daemon-rebase",
+    "launch-repair", "clean-repair", "launch-review", "clean-review",
+    "launch-verifier", "clean-verifier", "workspace-close",
+  ]);
+  return actions.filter((action) => !(WRITE_ACTIONS.has(action.type) && remoteIds.has(action.itemId)));
+}
+
 export function orchestratorItemsToStatusItems(
   items: OrchestratorItem[],
-  remoteItemIds?: Set<string>,
+  remoteItems?: RemoteItemRenderState,
   maxTimeoutExtensions: number = DEFAULT_CONFIG.maxTimeoutExtensions,
 ): StatusItem[] {
   const now = Date.now();
-  return items.map((item) => ({
-    id: item.id,
-    title: item.workItem.title,
-    ...(item.workItem.descriptionSnippet
-      ? { descriptionSnippet: item.workItem.descriptionSnippet }
-      : {}),
-    state: mapDaemonItemState(item.state, { rebaseRequested: item.rebaseRequested }),
-    prNumber: item.prNumber ?? null,
-    ageMs: now - new Date(item.lastTransition).getTime(),
-    timeoutRemainingMs: item.timeoutDeadline
-      ? Math.max(0, new Date(item.timeoutDeadline).getTime() - now)
-      : undefined,
-    timeoutExtensions: item.timeoutDeadline
-      ? `${item.timeoutExtensionCount ?? 0}/${maxTimeoutExtensions}`
-      : undefined,
-    repoLabel: item.resolvedRepoRoot ? basename(item.resolvedRepoRoot) : "",
-    failureReason: item.failureReason,
-    dependencies: item.workItem.dependencies ?? [],
-    startedAt: item.startedAt,
-    endedAt: item.endedAt,
-    exitCode: item.exitCode,
-    stderrTail: item.stderrTail,
-    remote: remoteItemIds?.has(item.id) ?? false,
-    workspaceRef: item.workspaceRef,
-  }));
+  const remoteSnapshots = remoteItems instanceof Map ? remoteItems : undefined;
+  const remoteIds = remoteItems instanceof Set ? remoteItems : undefined;
+  return items.map((item) => {
+    const remoteSnapshot = remoteSnapshots?.get(item.id);
+    const mappedState = mapDaemonItemState(item.state, { rebaseRequested: item.rebaseRequested });
+    const state = remoteSnapshot?.state ?? mappedState;
+    const remote = remoteSnapshot
+      ? remoteSnapshot.ownerDaemonId !== null
+      : (remoteIds?.has(item.id) ?? false);
+
+    return {
+      id: item.id,
+      title: remoteSnapshot?.title ?? item.workItem.title,
+      ...(item.workItem.descriptionSnippet
+        ? { descriptionSnippet: item.workItem.descriptionSnippet }
+        : {}),
+      state,
+      prNumber: remoteSnapshot && "prNumber" in remoteSnapshot
+        ? remoteSnapshot.prNumber ?? null
+        : item.prNumber ?? null,
+      ageMs: now - new Date(item.lastTransition).getTime(),
+      timeoutRemainingMs: item.timeoutDeadline
+        ? Math.max(0, new Date(item.timeoutDeadline).getTime() - now)
+        : undefined,
+      timeoutExtensions: item.timeoutDeadline
+        ? `${item.timeoutExtensionCount ?? 0}/${maxTimeoutExtensions}`
+        : undefined,
+      repoLabel: item.resolvedRepoRoot ? basename(item.resolvedRepoRoot) : "",
+      failureReason: item.failureReason,
+      dependencies: item.workItem.dependencies ?? [],
+      startedAt: item.startedAt,
+      endedAt: item.endedAt,
+      exitCode: item.exitCode,
+      stderrTail: item.stderrTail,
+      remote,
+      workspaceRef: item.workspaceRef,
+    };
+  });
 }
 
 /**
@@ -251,11 +302,11 @@ export function renderTuiFrame(
   write: (s: string) => void = (s) => process.stdout.write(s),
   viewOptions?: ViewOptions,
   scrollOffset: number = 0,
-  remoteItemIds?: Set<string>,
+  remoteItems?: RemoteItemRenderState,
   sessionCode?: string,
   maxTimeoutExtensions: number = DEFAULT_CONFIG.maxTimeoutExtensions,
 ): void {
-  const statusItems = orchestratorItemsToStatusItems(items, remoteItemIds, maxTimeoutExtensions);
+  const statusItems = orchestratorItemsToStatusItems(items, remoteItems, maxTimeoutExtensions);
   const termWidth = getTerminalWidth();
   const termRows = getTerminalHeight();
 
@@ -290,10 +341,10 @@ export function renderTuiPanelFrame(
   wipLimit: number | undefined,
   tuiState: TuiState,
   write: (s: string) => void = (s) => process.stdout.write(s),
-  remoteItemIds?: Set<string>,
+  remoteItems?: RemoteItemRenderState,
   maxTimeoutExtensions: number = DEFAULT_CONFIG.maxTimeoutExtensions,
 ): void {
-  const statusItems = orchestratorItemsToStatusItems(items, remoteItemIds, maxTimeoutExtensions);
+  const statusItems = orchestratorItemsToStatusItems(items, remoteItems, maxTimeoutExtensions);
   const termWidth = getTerminalWidth();
   const termRows = getTerminalHeight();
 
@@ -1896,21 +1947,7 @@ export async function orchestrateLoop(
     // Crew mode: suppress write actions for items claimed by other daemons.
     // Remote items are tracked via GitHub polling but only the owning daemon acts.
     if (deps.crewBroker) {
-      const crewStatus = deps.crewBroker.getCrewStatus();
-      const remoteIds = crewStatus?.claimedItems?.length
-        ? new Set(crewStatus.claimedItems)
-        : undefined;
-      if (remoteIds && remoteIds.size > 0) {
-        const WRITE_ACTIONS: ReadonlySet<string> = new Set([
-          "merge", "clean", "retry", "rebase", "daemon-rebase",
-          "launch-repair", "clean-repair", "launch-review", "clean-review",
-          "launch-verifier", "clean-verifier", "workspace-close",
-        ]);
-        actions = actions.filter((a) => {
-          if (WRITE_ACTIONS.has(a.type) && remoteIds.has(a.itemId)) return false;
-          return true;
-        });
-      }
+      actions = filterCrewRemoteWriteActions(actions, deps.crewBroker.getCrewStatus());
     }
 
     // Execute actions
@@ -2488,12 +2525,10 @@ export async function cmdOrchestrate(
     saveCrewCode(projectRoot, crewCode);
   }
 
-  /** Get IDs of items claimed by other crew members (for remote indicator in TUI). */
-  function getRemoteItemIds(): Set<string> | undefined {
+  /** Get broker-fed remote item snapshots for live TUI rendering. */
+  function getRemoteItemSnapshots(): Map<string, CrewRemoteItemSnapshot> | undefined {
     if (!crewBroker) return undefined;
-    const status = crewBroker.getCrewStatus();
-    if (!status?.claimedItems?.length) return undefined;
-    return new Set(status.claimedItems);
+    return crewStatusToRemoteItemSnapshots(crewBroker.getCrewStatus());
   }
 
   // Graceful SIGINT handling
@@ -2575,12 +2610,12 @@ export async function cmdOrchestrate(
     detailContentLines: 0,
     savedLogScrollOffset: 0,
     getSelectedItemId: (index: number) => {
-      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemIds(), orch.config.maxTimeoutExtensions);
+      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions);
       const nonQueued = items.filter((i) => i.state !== "queued");
       return nonQueued[index]?.id;
     },
     getItemCount: () => {
-      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemIds(), orch.config.maxTimeoutExtensions);
+      const items = orchestratorItemsToStatusItems(lastTuiItems, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions);
       return items.filter((i) => i.state !== "queued").length;
     },
     onExtendTimeout: (itemId) => orch.extendTimeout(itemId),
@@ -2636,7 +2671,7 @@ export async function cmdOrchestrate(
     onUpdate: () => {
       if (tuiMode) {
         try {
-          renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, getRemoteItemIds(), orch.config.maxTimeoutExtensions);
+          renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions);
         } catch {
           // Non-fatal
         }
@@ -2686,7 +2721,7 @@ export async function cmdOrchestrate(
         }
       }
       try {
-        renderTuiPanelFrame(items, wipLimit, tuiState, undefined, getRemoteItemIds(), orch.config.maxTimeoutExtensions);
+        renderTuiPanelFrame(items, wipLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions);
       } catch {
         // Non-fatal -- TUI render failure shouldn't block the orchestrator
       }
@@ -2791,7 +2826,7 @@ export async function cmdOrchestrate(
         const write = (s: string) => process.stdout.write(s);
         write("\x1B[H"); // cursor home
         // Re-render the current TUI frame first (to show final state)
-        renderTuiPanelFrame(allItems, wipLimit, tuiState, write, getRemoteItemIds());
+        renderTuiPanelFrame(allItems, wipLimit, tuiState, write, getRemoteItemSnapshots());
         // Overlay the banner at the bottom
         const termRows = getTerminalHeight();
         const startRow = Math.max(1, termRows - bannerLines.length);
@@ -2854,7 +2889,7 @@ export async function cmdOrchestrate(
     // Render initial TUI frame so the status table is visible behind the banner
     const initialItems = orch.getAllItems();
     try {
-      renderTuiPanelFrame(initialItems, wipLimit, tuiState, undefined, undefined, orch.config.maxTimeoutExtensions);
+      renderTuiPanelFrame(initialItems, wipLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions);
     } catch { /* non-fatal */ }
 
     // Overlay arming banner at the bottom of the screen

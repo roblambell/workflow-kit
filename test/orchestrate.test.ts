@@ -23,6 +23,8 @@ import {
   validateItemIds,
   pushLogBuffer,
   filterLogsByLevel,
+  crewStatusToRemoteItemSnapshots,
+  filterCrewRemoteWriteActions,
   formatExitSummary,
   formatCompletionBanner,
   waitForCompletionKey,
@@ -53,7 +55,7 @@ import {
 import type { WorkItem } from "../core/types.ts";
 import type { Multiplexer } from "../core/mux.ts";
 import { pidFilePath, logFilePath, readLayoutPreference, writeLayoutPreference, preferencesFilePath, userStateDir, type DaemonState } from "../core/daemon.ts";
-import type { CrewBroker } from "../core/crew.ts";
+import type { CrewBroker, CrewStatus } from "../core/crew.ts";
 import { readCrewCode, crewCodePath } from "../core/crew.ts";
 import { shouldEnterInteractive } from "../core/interactive.ts";
 
@@ -4102,6 +4104,75 @@ describe("orchestrateLoop crew mode", () => {
     } finally {
       rmSync(ctx.projectRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("crew remote state helpers", () => {
+  function makeCrewStatus(remoteItems: CrewStatus["remoteItems"]): CrewStatus {
+    return {
+      crewCode: "ABCD-EFGH",
+      daemonCount: 2,
+      availableCount: 1,
+      claimedCount: remoteItems.filter((item) => item.ownerDaemonId !== null).length,
+      completedCount: 0,
+      daemonNames: ["local", "remote"],
+      claimedItems: remoteItems.filter((item) => item.ownerDaemonId !== null).map((item) => item.id),
+      remoteItems,
+    };
+  }
+
+  it("filters write actions using broker ownership instead of local heuristics", () => {
+    const actions = [
+      { type: "merge", itemId: "H-REMOTE-1" },
+      { type: "workspace-close", itemId: "H-REMOTE-1" },
+      { type: "launch", itemId: "H-REMOTE-1" },
+    ] as any;
+    const crewStatus = makeCrewStatus([
+      {
+        id: "H-REMOTE-1",
+        state: "implementing",
+        ownerDaemonId: "daemon-2",
+        ownerName: "remote-host",
+      },
+    ]);
+
+    expect(filterCrewRemoteWriteActions(actions, crewStatus)).toEqual([
+      { type: "launch", itemId: "H-REMOTE-1" },
+    ]);
+  });
+
+  it("updates suppression and rendering data on the next broker owner change", () => {
+    const actions = [{ type: "merge", itemId: "H-REMOTE-2" }] as any;
+    const ownedByRemote = makeCrewStatus([
+      {
+        id: "H-REMOTE-2",
+        state: "review",
+        ownerDaemonId: "daemon-2",
+        ownerName: "remote-host",
+        prNumber: 17,
+      },
+    ]);
+    const releasedToQueue = makeCrewStatus([
+      {
+        id: "H-REMOTE-2",
+        state: "queued",
+        ownerDaemonId: null,
+        ownerName: null,
+      },
+    ]);
+
+    expect(filterCrewRemoteWriteActions(actions, ownedByRemote)).toEqual([]);
+    expect(filterCrewRemoteWriteActions(actions, releasedToQueue)).toEqual(actions);
+
+    expect(crewStatusToRemoteItemSnapshots(ownedByRemote)?.get("H-REMOTE-2")).toMatchObject({
+      state: "review",
+      ownerDaemonId: "daemon-2",
+      prNumber: 17,
+    });
+    expect(crewStatusToRemoteItemSnapshots(releasedToQueue)?.get("H-REMOTE-2")).toMatchObject({
+      state: "queued",
+      ownerDaemonId: null,
+    });
   });
 });
 

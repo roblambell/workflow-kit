@@ -70,6 +70,7 @@ import {
 } from "../core/commands/orchestrate.ts";
 import type { OrchestratorItem } from "../core/orchestrator.ts";
 import type { DaemonState } from "../core/daemon.ts";
+import type { CrewRemoteItemSnapshot } from "../core/crew.ts";
 import type { WorkItem } from "../core/types.ts";
 import { RED, YELLOW, DIM, RESET } from "../core/output.ts";
 
@@ -1512,6 +1513,60 @@ describe("orchestratorItemsToStatusItems", () => {
     // Non-remote item keeps its own state
     expect(result[2]!.state).toBe("implementing");
     expect(result[2]!.remote).toBe(false);
+  });
+
+  it("uses broker snapshots for queued, implementing, and review rows", () => {
+    const items = [
+      makeOrchestratorItem("R-QUEUE", "implementing"),
+      makeOrchestratorItem("R-IMPL", "queued"),
+      makeOrchestratorItem("R-REVIEW", "queued"),
+    ];
+    const remoteSnapshots = new Map<string, CrewRemoteItemSnapshot>([
+      ["R-QUEUE", {
+        id: "R-QUEUE",
+        state: "queued",
+        ownerDaemonId: null,
+        ownerName: null,
+        title: "Queued remotely",
+      }],
+      ["R-IMPL", {
+        id: "R-IMPL",
+        state: "implementing",
+        ownerDaemonId: "daemon-2",
+        ownerName: "remote-host",
+        title: "Implementing remotely",
+      }],
+      ["R-REVIEW", {
+        id: "R-REVIEW",
+        state: "review",
+        ownerDaemonId: "daemon-3",
+        ownerName: "review-host",
+        title: "Reviewing remotely",
+        prNumber: 88,
+      }],
+    ]);
+
+    const result = orchestratorItemsToStatusItems(items, remoteSnapshots);
+
+    expect(result[0]).toMatchObject({
+      id: "R-QUEUE",
+      state: "queued",
+      remote: false,
+      title: "Queued remotely",
+    });
+    expect(result[1]).toMatchObject({
+      id: "R-IMPL",
+      state: "implementing",
+      remote: true,
+      title: "Implementing remotely",
+    });
+    expect(result[2]).toMatchObject({
+      id: "R-REVIEW",
+      state: "review",
+      remote: true,
+      title: "Reviewing remotely",
+      prNumber: 88,
+    });
   });
 });
 

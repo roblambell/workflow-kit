@@ -3,7 +3,7 @@
 
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { MockBroker } from "../core/mock-broker.ts";
-import { WebSocketCrewBroker } from "../core/crew.ts";
+import { WebSocketCrewBroker, parseCrewStatusUpdate } from "../core/crew.ts";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -68,6 +68,89 @@ afterEach(() => {
 });
 
 // ── Tests ───────────────────────────────────────────────────────────
+
+describe("parseCrewStatusUpdate", () => {
+  it("parses enriched remote item snapshots from crew_update payloads", () => {
+    const status = parseCrewStatusUpdate({
+      crewCode: "ABCD-EFGH",
+      daemonCount: 2,
+      availableCount: 1,
+      claimedCount: 2,
+      completedCount: 3,
+      daemonNames: ["local", "remote"],
+      items: [
+        {
+          id: "H-LOCAL-1",
+          state: "implementing",
+          owner: { daemonId: "daemon-local", name: "local" },
+          title: "Local item",
+        },
+        {
+          id: "H-REMOTE-1",
+          state: "implementing",
+          owner: { daemonId: "daemon-remote", name: "remote" },
+          title: "Remote implementing item",
+        },
+        {
+          id: "H-REMOTE-2",
+          state: "review",
+          owner: { daemonId: "daemon-review", name: "reviewer" },
+          title: "Remote review item",
+          prNumber: 42,
+        },
+      ],
+    }, "daemon-local");
+
+    expect(status.claimedItems).toEqual(["H-REMOTE-1", "H-REMOTE-2"]);
+    expect(status.remoteItems).toEqual([
+      {
+        id: "H-REMOTE-1",
+        state: "implementing",
+        ownerDaemonId: "daemon-remote",
+        ownerName: "remote",
+        title: "Remote implementing item",
+      },
+      {
+        id: "H-REMOTE-2",
+        state: "review",
+        ownerDaemonId: "daemon-review",
+        ownerName: "reviewer",
+        title: "Remote review item",
+        prNumber: 42,
+      },
+    ]);
+  });
+
+  it("keeps queued broker snapshots without forcing an owner heuristic", () => {
+    const status = parseCrewStatusUpdate({
+      crewCode: "ABCD-EFGH",
+      daemonCount: 2,
+      availableCount: 2,
+      claimedCount: 0,
+      completedCount: 0,
+      daemonNames: ["local", "remote"],
+      items: [
+        {
+          id: "H-REMOTE-QUEUED",
+          state: "queued",
+          owner: null,
+          title: "Queued remote item",
+        },
+      ],
+    }, "daemon-local");
+
+    expect(status.claimedItems).toEqual([]);
+    expect(status.remoteItems).toEqual([
+      {
+        id: "H-REMOTE-QUEUED",
+        state: "queued",
+        ownerDaemonId: null,
+        ownerName: null,
+        title: "Queued remote item",
+      },
+    ]);
+  });
+});
 
 describe("WebSocketCrewBroker system test", () => {
   it("connect() resolves for a new daemon (does not hang)", async () => {

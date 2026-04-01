@@ -96,6 +96,19 @@ export interface ErrorMessage {
   message: string;
 }
 
+export interface CrewUpdateMessage {
+  type: "crew_update";
+  crewCode: string;
+  daemonCount: number;
+  availableCount: number;
+  claimedCount: number;
+  completedCount: number;
+  daemonNames: string[];
+  claimedItems?: Array<Record<string, unknown>>;
+  items?: Array<Record<string, unknown>>;
+  remoteItems?: Array<Record<string, unknown>>;
+}
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
@@ -134,6 +147,7 @@ export type ServerMessage =
   | ClaimResponseMessage
   | CompleteAckMessage
   | HeartbeatAckMessage
+  | CrewUpdateMessage
   | ReconnectStateMessage
   | ScheduleClaimResponseMessage
   | ReportAckMessage
@@ -149,6 +163,26 @@ export interface ReconnectState {
 
 // ── Crew status (from crew_update messages) ───────────────────────
 
+export type CrewRemoteItemState =
+  | "merged"
+  | "bootstrapping"
+  | "implementing"
+  | "rebasing"
+  | "ci-failed"
+  | "ci-pending"
+  | "review"
+  | "in-progress"
+  | "queued";
+
+export interface CrewRemoteItemSnapshot {
+  id: string;
+  state: CrewRemoteItemState;
+  ownerDaemonId: string | null;
+  ownerName: string | null;
+  title?: string;
+  prNumber?: number | null;
+}
+
 export interface CrewStatus {
   crewCode: string;
   daemonCount: number;
@@ -158,6 +192,121 @@ export interface CrewStatus {
   daemonNames: string[];
   /** Item IDs claimed by other daemons (not this one). */
   claimedItems: string[];
+  /** Broker-derived item snapshots for non-local owners and unowned remote state. */
+  remoteItems: CrewRemoteItemSnapshot[];
+}
+
+const CREW_REMOTE_ITEM_STATES: ReadonlySet<CrewRemoteItemState> = new Set([
+  "merged",
+  "bootstrapping",
+  "implementing",
+  "rebasing",
+  "ci-failed",
+  "ci-pending",
+  "review",
+  "in-progress",
+  "queued",
+]);
+
+function recordOrNull(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parseCrewRemoteItemState(value: unknown): CrewRemoteItemState | null {
+  return typeof value === "string" && CREW_REMOTE_ITEM_STATES.has(value as CrewRemoteItemState)
+    ? value as CrewRemoteItemState
+    : null;
+}
+
+function parseCrewRemoteItemSnapshot(value: unknown): CrewRemoteItemSnapshot | null {
+  const item = recordOrNull(value);
+  if (!item) return null;
+
+  const nestedItem = recordOrNull(item.item);
+  const owner = recordOrNull(item.owner);
+  const id = stringOrNull(item.id) ?? stringOrNull(item.todoId);
+  const state = parseCrewRemoteItemState(item.state);
+  if (!id || !state) return null;
+
+  const ownerDaemonId =
+    stringOrNull(item.ownerDaemonId)
+    ?? stringOrNull(item.daemonId)
+    ?? stringOrNull(owner?.daemonId)
+    ?? null;
+  const ownerName =
+    stringOrNull(item.ownerName)
+    ?? stringOrNull(item.daemonName)
+    ?? stringOrNull(owner?.name)
+    ?? null;
+  const title =
+    stringOrNull(item.title)
+    ?? stringOrNull(item.todoTitle)
+    ?? stringOrNull(nestedItem?.title)
+    ?? undefined;
+  const rawPrNumber = item.prNumber ?? nestedItem?.prNumber;
+  const prNumber = numberOrNull(rawPrNumber);
+
+  return {
+    id,
+    state,
+    ownerDaemonId,
+    ownerName,
+    ...(title ? { title } : {}),
+    ...(prNumber !== null || rawPrNumber === null
+      ? { prNumber }
+      : {}),
+  };
+}
+
+function parseLegacyClaimedItemIds(value: unknown, localDaemonId: string): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const item = recordOrNull(entry);
+    const id = stringOrNull(item?.id);
+    const daemonId = stringOrNull(item?.daemonId);
+    if (!id || daemonId === localDaemonId) return [];
+    return [id];
+  });
+}
+
+export function parseCrewStatusUpdate(data: Record<string, unknown>, localDaemonId: string): CrewStatus {
+  const rawSnapshots = Array.isArray(data.items)
+    ? data.items
+    : Array.isArray(data.remoteItems)
+      ? data.remoteItems
+      : Array.isArray(data.claimedItems)
+        ? data.claimedItems
+        : [];
+
+  const remoteItems = rawSnapshots
+    .map(parseCrewRemoteItemSnapshot)
+    .filter((item): item is CrewRemoteItemSnapshot => item !== null)
+    .filter((item) => item.ownerDaemonId !== localDaemonId);
+
+  const claimedItems = remoteItems.some((item) => item.ownerDaemonId !== null)
+    ? remoteItems.filter((item) => item.ownerDaemonId !== null).map((item) => item.id)
+    : parseLegacyClaimedItemIds(data.claimedItems, localDaemonId);
+
+  return {
+    crewCode: typeof data.crewCode === "string" ? data.crewCode : "",
+    daemonCount: typeof data.daemonCount === "number" ? data.daemonCount : 0,
+    availableCount: typeof data.availableCount === "number" ? data.availableCount : 0,
+    claimedCount: typeof data.claimedCount === "number" ? data.claimedCount : 0,
+    completedCount: typeof data.completedCount === "number" ? data.completedCount : 0,
+    daemonNames: Array.isArray(data.daemonNames)
+      ? data.daemonNames.filter((name): name is string => typeof name === "string")
+      : [],
+    claimedItems,
+    remoteItems,
+  };
 }
 
 // ── CrewBroker interface ────────────────────────────────────────────
@@ -626,17 +775,7 @@ export class WebSocketCrewBroker implements CrewBroker {
         break;
 
       case "crew_update":
-        this.crewStatus = {
-          crewCode: data.crewCode ?? "",
-          daemonCount: data.daemonCount ?? 0,
-          availableCount: data.availableCount ?? 0,
-          claimedCount: data.claimedCount ?? 0,
-          completedCount: data.completedCount ?? 0,
-          daemonNames: data.daemonNames ?? [],
-          claimedItems: (data.claimedItems ?? [])
-            .filter((c: { daemonId?: string }) => c.daemonId !== this.daemonId)
-            .map((c: { id: string }) => c.id),
-        };
+        this.crewStatus = parseCrewStatusUpdate(data, this.daemonId);
         // Resolve connect promise -- crew_update is the first message for new daemons
         if (this.connectPromise) {
           this.connectPromise.resolve();
