@@ -97,7 +97,7 @@ describe("loadConfig", () => {
     expect(config.review_external).toBe(true);
     expect(config.schedule_enabled).toBe(false);
     // Only known keys in the result
-    expect(Object.keys(config)).toEqual(["review_external", "schedule_enabled", "ai_tools"]);
+    expect(Object.keys(config)).toEqual(["review_external", "schedule_enabled"]);
   });
 
   it("treats non-boolean review_external as false", () => {
@@ -127,7 +127,7 @@ describe("loadConfig", () => {
     expect(config.schedule_enabled).toBe(false);
   });
 
-  it("reads ai_tools field", () => {
+  it("ignores ai_tools in project config", () => {
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
@@ -137,35 +137,25 @@ describe("loadConfig", () => {
     );
 
     const config = loadConfig(repo);
-    expect(config.ai_tools).toEqual(["opencode", "claude"]);
-  });
-
-  it("ignores legacy ai_tool field", () => {
-    const repo = setupTempRepo();
-    const configDir = join(repo, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config.json"),
-      JSON.stringify({ ai_tool: "opencode" }),
-    );
-
-    const config = loadConfig(repo);
-    expect(config.ai_tools).toBeUndefined();
+    expect(config).toEqual({
+      review_external: false,
+      schedule_enabled: false,
+    });
   });
 });
 
 describe("saveConfig", () => {
   it("creates config file when missing", () => {
     const repo = setupTempRepo();
-    saveConfig(repo, { ai_tools: ["claude"] });
+    saveConfig(repo, { review_external: true });
 
     const configPath = join(repo, ".ninthwave", "config.json");
     expect(existsSync(configPath)).toBe(true);
     const content = JSON.parse(readFileSync(configPath, "utf-8"));
-    expect(content.ai_tools).toEqual(["claude"]);
+    expect(content.review_external).toBe(true);
   });
 
-  it("merges ai_tools into existing config without clobbering", () => {
+  it("merges stable settings into existing config without clobbering", () => {
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
@@ -174,11 +164,11 @@ describe("saveConfig", () => {
       JSON.stringify({ review_external: true }),
     );
 
-    saveConfig(repo, { ai_tools: ["opencode"] });
+    saveConfig(repo, { schedule_enabled: true });
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
     expect(content.review_external).toBe(true);
-    expect(content.ai_tools).toEqual(["opencode"]);
+    expect(content.schedule_enabled).toBe(true);
   });
 
   it("preserves unknown keys in config file", () => {
@@ -190,34 +180,40 @@ describe("saveConfig", () => {
       JSON.stringify({ custom_key: "hello", review_external: false }),
     );
 
-    saveConfig(repo, { ai_tools: ["copilot"] });
+    saveConfig(repo, { schedule_enabled: true });
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
     expect(content.custom_key).toBe("hello");
-    expect(content.ai_tools).toEqual(["copilot"]);
+    expect(content.schedule_enabled).toBe(true);
   });
 
-  it("overwrites existing ai_tools value", () => {
+  it("overwrites existing stable setting values", () => {
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ ai_tools: ["claude"] }),
+      JSON.stringify({ review_external: false }),
     );
 
-    saveConfig(repo, { ai_tools: ["opencode"] });
+    saveConfig(repo, { review_external: true });
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
-    expect(content.ai_tools).toEqual(["opencode"]);
+    expect(content.review_external).toBe(true);
   });
 
   it("round-trips with loadConfig", () => {
     const repo = setupTempRepo();
-    saveConfig(repo, { ai_tools: ["copilot"] });
+    saveConfig(repo, {
+      review_external: true,
+      schedule_enabled: true,
+    });
 
     const config = loadConfig(repo);
-    expect(config.ai_tools).toEqual(["copilot"]);
+    expect(config).toEqual({
+      review_external: true,
+      schedule_enabled: true,
+    });
   });
 });
 
