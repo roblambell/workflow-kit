@@ -6,6 +6,7 @@ import {
   runSingleSelect,
   runNumberPicker,
   runConfirm,
+  runStartupSettingsScreen,
   runTextInput,
   runSelectionScreen,
   sortWorkItems,
@@ -807,6 +808,76 @@ describe("toCheckboxItems", () => {
   });
 });
 
+describe("runStartupSettingsScreen", () => {
+  it("changes rows with up/down and values with left/right", async () => {
+    const { io, sendKeys } = createMockIO();
+
+    const resultPromise = runStartupSettingsScreen(io, {
+      summaryLines: ["Items: A-1"],
+      defaultWipLimit: 4,
+      defaultSettings: {
+        mergeStrategy: "manual",
+        reviewMode: "off",
+        collaborationMode: "local",
+      },
+    });
+
+    sendKeys([
+      "\x1B[C", // merge -> auto
+      "\x1B[B", // reviews
+      "\x1B[C", // off -> mine
+      "\x1B[B", // collaboration
+      "\x1B[C", // local -> share
+      "\x1B[B", // WIP
+      "\x1B[C", // 4 -> 5
+      "\r",
+    ]);
+
+    const result = await resultPromise;
+    expect(result.cancelled).toBe(false);
+    expect(result.mergeStrategy).toBe("auto");
+    expect(result.reviewMode).toBe("mine");
+    expect(result.collaborationMode).toBe("share");
+    expect(result.wipLimit).toBe(5);
+  });
+
+  it("confirms defaults on Enter", async () => {
+    const { io, sendKeys } = createMockIO();
+
+    const resultPromise = runStartupSettingsScreen(io, {
+      summaryLines: ["Items: A-1"],
+      defaultWipLimit: 4,
+    });
+
+    sendKeys(["\r"]);
+
+    const result = await resultPromise;
+    expect(result.cancelled).toBe(false);
+    expect(result.mergeStrategy).toBe("manual");
+    expect(result.reviewMode).toBe("off");
+    expect(result.collaborationMode).toBe("local");
+    expect(result.wipLimit).toBe(4);
+  });
+
+  it("cancels on Escape and Ctrl+C", async () => {
+    const { io, sendKeys } = createMockIO();
+    const escapePromise = runStartupSettingsScreen(io, {
+      summaryLines: ["Items: A-1"],
+      defaultWipLimit: 4,
+    });
+    sendKeys(["\x1B"]);
+    expect((await escapePromise).cancelled).toBe(true);
+
+    const second = createMockIO();
+    const ctrlCPromise = runStartupSettingsScreen(second.io, {
+      summaryLines: ["Items: A-1"],
+      defaultWipLimit: 4,
+    });
+    second.sendKeys(["\x03"]);
+    expect((await ctrlCPromise).cancelled).toBe(true);
+  });
+});
+
 // ── Selection screen (composite) ────────────────────────────────────
 
 describe("runSelectionScreen", () => {
@@ -837,7 +908,7 @@ describe("runSelectionScreen", () => {
     // All items start checked (including __ALL__ sentinel). Just confirm items then summary.
     sendKeyBatches(
       ["\r"],        // Step 1: Confirm all items (all pre-checked)
-      ["\r"],        // Step 2: Confirm summary
+      ["\r"],        // Step 2: Confirm startup settings
     );
 
     const result = await resultPromise;
@@ -872,7 +943,7 @@ describe("runSelectionScreen", () => {
     const resultPromise = runSelectionScreen(io, items, 4);
     sendKeyBatches(
       ["\r"],       // Confirm all items (pre-checked)
-      ["n"],        // Cancel confirmation
+      ["\x1B"],     // Cancel startup settings
     );
 
     const result = await resultPromise;
@@ -891,7 +962,7 @@ describe("runSelectionScreen", () => {
     // All items start checked; just confirm
     sendKeyBatches(
       ["\r"],        // Confirm all items (pre-checked)
-      ["\r"],        // Confirm summary
+      ["\r"],        // Confirm startup settings
     );
 
     const result = await resultPromise;
@@ -911,7 +982,7 @@ describe("runSelectionScreen", () => {
     const resultPromise = runSelectionScreen(io, items, 5);
     sendKeyBatches(
       ["\r"],  // Confirm all items
-      ["\r"],  // Confirm summary
+      ["\r"],  // Confirm startup settings
     );
 
     const result = await resultPromise;
@@ -996,7 +1067,7 @@ describe("runSelectionScreen", () => {
     // Space on __ALL__ (index 0) to uncheck all, then re-check A-1
     sendKeyBatches(
       [" ", "\x1B[B", " ", "\r"],  // Uncheck __ALL__ (unchecks all), re-check A-1, confirm
-      ["\r"],                       // Confirm summary
+      ["\r"],                       // Confirm startup settings
     );
 
     const result = await resultPromise;
@@ -1153,64 +1224,70 @@ describe("runTextInput", () => {
   });
 });
 
-// ── Selection screen: local-first defaults ─────────────────────────
+// ── Selection screen: startup defaults ──────────────────────────────
 
-describe("runSelectionScreen -- local-first defaults", () => {
-  it("always returns reviewMode 'off' without prompting", async () => {
+describe("runSelectionScreen -- startup defaults", () => {
+  it("returns persisted defaults when confirmed without changes", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+    const items = [makeWorkItem("A-1", "Task")];
+
+    const resultPromise = runSelectionScreen(io, items, 7, {
+      defaultSettings: {
+        mergeStrategy: "auto",
+        reviewMode: "mine",
+        collaborationMode: "share",
+      },
+    });
+    sendKeyBatches(["\r"], ["\r"]);
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.mergeStrategy).toBe("auto");
+    expect(result!.reviewMode).toBe("mine");
+    expect(result!.connectionAction).toEqual({ type: "connect" });
+    expect(result!.wipLimit).toBe(7);
+  });
+
+  it("returns selected settings values from the startup settings screen", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
     const resultPromise = runSelectionScreen(io, items, 4);
     sendKeyBatches(
-      ["\r"],  // items
-      ["\r"],  // confirm
+      ["\r"],
+      [
+        "\x1B[C", // merge -> auto
+        "\x1B[B",
+        "\x1B[C", // reviews -> mine
+        "\x1B[B",
+        "\x1B[C", // collaboration -> share
+        "\x1B[B",
+        "\x1B[C", // wip 4 -> 5
+        "\r",
+      ],
     );
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(result!.reviewMode).toBe("off");
+    expect(result!.mergeStrategy).toBe("auto");
+    expect(result!.reviewMode).toBe("mine");
+    expect(result!.connectionAction).toEqual({ type: "connect" });
+    expect(result!.wipLimit).toBe(5);
   });
 
-  it("ignores defaultReviewMode option (no review prompt)", async () => {
+  it("falls back to defaultReviewMode when defaultSettings are omitted", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
     const resultPromise = runSelectionScreen(io, items, 4, { defaultReviewMode: "all" });
-    sendKeyBatches(
-      ["\r"],  // items
-      ["\r"],  // confirm
-    );
-
-    const result = await resultPromise;
-    expect(result).not.toBeNull();
-    expect(result!.reviewMode).toBe("off");
-  });
-
-  it("always returns manual merge strategy", async () => {
-    const { io, sendKeyBatches } = createMockIO();
-    const items = [makeWorkItem("A-1", "Task")];
-
-    const resultPromise = runSelectionScreen(io, items, 4);
     sendKeyBatches(["\r"], ["\r"]);
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(result!.mergeStrategy).toBe("manual");
+    expect(result!.reviewMode).toBe("all");
   });
 
-  it("always returns null connectionAction (Local)", async () => {
-    const { io, sendKeyBatches } = createMockIO();
-    const items = [makeWorkItem("A-1", "Task")];
-
-    const resultPromise = runSelectionScreen(io, items, 4);
-    sendKeyBatches(["\r"], ["\r"]);
-
-    const result = await resultPromise;
-    expect(result).not.toBeNull();
-    expect(result!.connectionAction).toBeNull();
-  });
-
-  it("passes through defaultWipLimit as wipLimit", async () => {
+  it("passes through defaultWipLimit as the initial wipLimit", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
@@ -1222,24 +1299,24 @@ describe("runSelectionScreen -- local-first defaults", () => {
     expect(result!.wipLimit).toBe(7);
   });
 
-  it("showConnectionStep option is ignored (always local)", async () => {
+  it("uses confirmation-only re-entry flow when showConnectionStep is false", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
-    // showConnectionStep: true should not add a connection step
-    const resultPromise = runSelectionScreen(io, items, 4, { showConnectionStep: true });
+    const resultPromise = runSelectionScreen(io, items, 4, { showConnectionStep: false });
     sendKeyBatches(["\r"], ["\r"]);
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
+    expect(result!.mergeStrategy).toBe("manual");
     expect(result!.connectionAction).toBeNull();
   });
 });
 
-// ── Selection screen: confirmation shows local-first defaults ───────
+// ── Selection screen: startup settings display ───────────────────────
 
-describe("runSelectionScreen -- confirmation display", () => {
-  it("confirmation shows 'All (dynamic)' when allSelected", async () => {
+describe("runSelectionScreen -- startup settings display", () => {
+  it("settings screen shows 'All (dynamic)' when allSelected", async () => {
     const { io, sendKeyBatches, getOutput } = createMockIO();
     const items = [
       makeWorkItem("A-1", "First task"),
@@ -1257,7 +1334,7 @@ describe("runSelectionScreen -- confirmation display", () => {
     expect(getOutput()).toContain("dynamic");
   });
 
-  it("confirmation shows individual item list when not allSelected", async () => {
+  it("settings screen shows individual item list when not allSelected", async () => {
     const { io, sendKeyBatches, getOutput } = createMockIO();
     const items = [
       makeWorkItem("A-1", "First task"),
@@ -1268,7 +1345,7 @@ describe("runSelectionScreen -- confirmation display", () => {
     // Explicitly uncheck __ALL__ (unchecks all), then re-check A-1
     sendKeyBatches(
       [" ", "\x1B[B", " ", "\r"],  // uncheck __ALL__, re-check A-1
-      ["\r"],   // confirm
+      ["\r"],   // confirm settings
     );
 
     const result = await resultPromise;
@@ -1277,7 +1354,7 @@ describe("runSelectionScreen -- confirmation display", () => {
     expect(getOutput()).toContain("A-1");
   });
 
-  it("confirmation shows manual merge strategy", async () => {
+  it("settings screen shows manual merge strategy", async () => {
     const { io, sendKeyBatches, getOutput } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
@@ -1286,10 +1363,10 @@ describe("runSelectionScreen -- confirmation display", () => {
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(getOutput()).toContain("manual");
+    expect(getOutput()).toContain("[manual]");
   });
 
-  it("confirmation shows AI reviews Off", async () => {
+  it("settings screen shows AI reviews off", async () => {
     const { io, sendKeyBatches, getOutput } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
@@ -1298,22 +1375,23 @@ describe("runSelectionScreen -- confirmation display", () => {
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(getOutput()).toContain("Off");
+    expect(getOutput()).toContain("[off]");
   });
 
-  it("confirmation shows collaboration: Local by default", async () => {
+  it("settings screen shows collaboration defaults", async () => {
     const { io, sendKeyBatches, getOutput } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
     const resultPromise = runSelectionScreen(io, items, 4);
-    sendKeyBatches(["\r"], ["\r"]);
+    sendKeyBatches(["\r"], ["\x1B[B", "\x1B[B", "\r"]);
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(getOutput()).toContain("Local by default");
+    expect(getOutput()).toContain("[local]");
+    expect(getOutput()).toContain("Local by default, no connection");
   });
 
-  it("confirmation title is 'Ninthwave · Start orchestration?'", async () => {
+  it("settings screen title includes 'Start orchestration'", async () => {
     const { io, sendKeyBatches, getOutput } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 

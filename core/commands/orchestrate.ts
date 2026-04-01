@@ -2170,7 +2170,7 @@ export async function cmdOrchestrate(
   const {
     wipLimitOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, clickupListId, remoteFlag,
-    reviewAutoFix, reviewExternal, reviewWipLimit,
+    reviewAutoFix, reviewExternal: parsedReviewExternal, reviewWipLimit,
     fixForward, skipReview: cliSkipReview, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewName,
     bypassEnabled, toolOverride: parsedToolOverride,
@@ -2306,6 +2306,7 @@ export async function cmdOrchestrate(
 
   // Interactive mode: no --items and stdin is a TTY
   let interactiveSkipReview = false;
+  let interactiveReviewMode: "all" | "mine" | "off" | null = null;
   if (shouldEnterInteractive(itemIds.length > 0)) {
     // Pre-detect tools and config for TUI flow
     const installedTools = detectInstalledAITools();
@@ -2323,11 +2324,30 @@ export async function cmdOrchestrate(
     itemIds = result.itemIds;
     watchMode = watchMode || result.allSelected || result.futureOnly === true;
     futureOnlyStartup = futureOnlyStartup || result.futureOnly === true;
-    // Local-first: merge strategy, WIP, and review mode use CLI-parsed values
-    // (which default to manual, computed WIP, and reviews off).
-    // The interactive flow no longer prompts for these.
+    mergeStrategy = result.mergeStrategy;
+    wipLimit = result.wipLimit;
+    interactiveReviewMode = result.reviewMode;
     interactiveSkipReview = result.reviewMode === "off";
-    // connectionAction is always null (local) from local-first interactive flow
+    try {
+      saveUserConfig({
+        merge_strategy: result.mergeStrategy === "auto" ? "auto" : "manual",
+        review_mode: result.reviewMode,
+        collaboration_mode: result.connectionAction?.type === "connect"
+          ? "share"
+          : result.connectionAction?.type === "join"
+            ? "join"
+            : "local",
+        wip_limit: result.wipLimit,
+      });
+    } catch {
+      // best-effort persistence only
+    }
+    if (result.connectionAction?.type === "connect") {
+      connectMode = true;
+    } else if (result.connectionAction?.type === "join") {
+      crewCode = result.connectionAction.code;
+      if (!crewUrl) crewUrl = "wss://ninthwave.sh";
+    }
     // Capture AI tool choice from TUI -- flows to selectAiTools via toolOverride
     if (result.aiTools && result.aiTools.length > 0) {
       toolOverride = result.aiTools.join(",");
@@ -2661,7 +2681,11 @@ export async function cmdOrchestrate(
   // --review-wip-limit 0 explicitly disables reviews, overriding config
   const reviewExternalEnabled = reviewWipLimit === 0
     ? false
-    : (reviewExternal || projectConfig.review_external);
+    : interactiveReviewMode === "all"
+      ? true
+      : interactiveReviewMode === "mine" || interactiveReviewMode === "off"
+        ? false
+        : (parsedReviewExternal || projectConfig.review_external);
   const scheduleEnabled = projectConfig.schedule_enabled;
 
   // State persistence: serialize state each poll cycle so the status pane can display all items.

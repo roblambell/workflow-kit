@@ -452,6 +452,27 @@ describe("runInteractiveFlow", () => {
     expect(result!.wipLimit).toBe(3);
   });
 
+  it("uses persisted startup defaults in the TUI path", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+
+    const resultPromise = runInteractiveFlow(items, 6, {
+      widgetIO: io,
+      defaultSettings: {
+        mergeStrategy: "auto",
+        reviewMode: "mine",
+        collaborationMode: "share",
+      },
+    });
+    sendKeyBatches(["\r"], ["\r"]);
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.mergeStrategy).toBe("auto");
+    expect(result!.reviewMode).toBe("mine");
+    expect(result!.connectionAction).toEqual({ type: "connect" });
+    expect(result!.wipLimit).toBe(6);
+  });
+
   it("returns null when the empty-queue TUI path is cancelled", async () => {
     const { io, sendKeys } = createMockIO();
 

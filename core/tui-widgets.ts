@@ -7,9 +7,15 @@ import { BOLD, DIM, GREEN, YELLOW, CYAN, RESET, RED } from "./output.ts";
 import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
-import type { ConnectionAction } from "./commands/crew.ts";
+import { isCrewCode, type ConnectionAction } from "./commands/crew.ts";
 import type { AiToolProfile } from "./ai-tools.ts";
-import type { TuiSettingsDefaults } from "./tui-settings.ts";
+import {
+  COLLABORATION_MODE_OPTIONS,
+  REVIEW_MODE_OPTIONS,
+  STARTUP_MERGE_STRATEGY_OPTIONS,
+  TUI_SETTINGS_DEFAULTS,
+  type TuiSettingsDefaults,
+} from "./tui-settings.ts";
 
 // ── ANSI escape helpers ─────────────────────────────────────────────
 
@@ -68,6 +74,14 @@ export interface NumberPickerResult {
 
 export interface TextInputResult {
   value: string;
+  cancelled: boolean;
+}
+
+interface StartupSettingsScreenResult {
+  mergeStrategy: Extract<MergeStrategy, "auto" | "manual">;
+  reviewMode: "all" | "mine" | "off";
+  collaborationMode: "local" | "share" | "join";
+  wipLimit: number;
   cancelled: boolean;
 }
 
@@ -597,6 +611,177 @@ export function runConfirm(
   });
 }
 
+// ── Startup Settings Screen ──────────────────────────────────────────
+
+/**
+ * Startup settings screen shown after item/tool selection.
+ * Keeps the item summary visible while arrow keys adjust startup settings.
+ */
+export function runStartupSettingsScreen(
+  io: WidgetIO,
+  opts: {
+    title?: string;
+    summaryLines?: string[];
+    defaultWipLimit: number;
+    defaultSettings?: TuiSettingsDefaults;
+  },
+): Promise<StartupSettingsScreenResult> {
+  return new Promise((resolve) => {
+    const defaults = opts.defaultSettings ?? TUI_SETTINGS_DEFAULTS;
+    let activeRow = 0;
+    let mergeIndex = Math.max(
+      0,
+      STARTUP_MERGE_STRATEGY_OPTIONS.findIndex((option) => option.runtimeValue === defaults.mergeStrategy),
+    );
+    let reviewIndex = Math.max(
+      0,
+      REVIEW_MODE_OPTIONS.findIndex((option) => option.persistedValue === defaults.reviewMode),
+    );
+    let collaborationIndex = Math.max(
+      0,
+      COLLABORATION_MODE_OPTIONS.findIndex((option) => option.persistedValue === defaults.collaborationMode),
+    );
+    let wipLimit = Math.max(1, Math.min(10, opts.defaultWipLimit));
+
+    const currentMergeOption = () => STARTUP_MERGE_STRATEGY_OPTIONS[mergeIndex]!;
+    const currentReviewOption = () => REVIEW_MODE_OPTIONS[reviewIndex]!;
+    const currentCollaborationOption = () => COLLABORATION_MODE_OPTIONS[collaborationIndex]!;
+
+    const renderChoiceRow = (
+      title: string,
+      values: string[],
+      active: boolean,
+    ): string => {
+      const pointer = active ? `${CYAN}>${RESET}` : " ";
+      return `${pointer} ${BOLD}${title.padEnd(13)}${RESET} ${values.join("  ")}`;
+    };
+
+    const mergeValues = () => STARTUP_MERGE_STRATEGY_OPTIONS.map((option, index) =>
+      index === mergeIndex
+        ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
+        : `${DIM}${option.startupLabel}${RESET}`,
+    );
+    const reviewValues = () => REVIEW_MODE_OPTIONS.map((option, index) =>
+      index === reviewIndex
+        ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
+        : `${DIM}${option.startupLabel}${RESET}`,
+    );
+    const collaborationValues = () => COLLABORATION_MODE_OPTIONS.map((option, index) =>
+      index === collaborationIndex
+        ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
+        : `${DIM}${option.startupLabel}${RESET}`,
+    );
+    const wipValues = () => Array.from({ length: 10 }, (_, idx) => idx + 1).map((value) =>
+      value === wipLimit
+        ? `${GREEN}${BOLD}[${value}]${RESET}`
+        : `${DIM}${value}${RESET}`,
+    );
+
+    const activeDescription = () => {
+      switch (activeRow) {
+        case 0:
+          return currentMergeOption().startupDescription;
+        case 1:
+          return currentReviewOption().startupDescription;
+        case 2:
+          return currentCollaborationOption().startupDescription;
+        default:
+          return "Maximum work items allowed to run in parallel";
+      }
+    };
+
+    const render = () => {
+      const cols = io.getCols();
+      let out = CURSOR_HOME;
+
+      out += `${BOLD}${opts.title ?? "Ninthwave · Start orchestration"}${RESET}${CLEAR_LINE}\n`;
+      out += `${CLEAR_LINE}\n`;
+
+      for (const line of opts.summaryLines ?? []) {
+        out += `  ${line.slice(0, cols + 80)}${CLEAR_LINE}\n`;
+      }
+
+      out += `${CLEAR_LINE}\n`;
+      out += `${renderChoiceRow("Merge", mergeValues(), activeRow === 0).slice(0, cols + 80)}${CLEAR_LINE}\n`;
+      out += `${renderChoiceRow("Reviews", reviewValues(), activeRow === 1).slice(0, cols + 80)}${CLEAR_LINE}\n`;
+      out += `${renderChoiceRow("Collaboration", collaborationValues(), activeRow === 2).slice(0, cols + 80)}${CLEAR_LINE}\n`;
+      out += `${renderChoiceRow("WIP limit", wipValues(), activeRow === 3).slice(0, cols + 80)}${CLEAR_LINE}\n`;
+      out += `${CLEAR_LINE}\n`;
+      out += `${DIM}${activeDescription()}${RESET}${CLEAR_LINE}\n`;
+      out += `${CLEAR_LINE}\n`;
+      out += `${DIM}↑/↓ change row  ←/→ change value  Enter confirm  Esc cancel${RESET}${CLEAR_LINE}\n`;
+      out += `${CLEAR_LINE}`;
+
+      io.write(out);
+    };
+
+    const handler = (key: string) => {
+      switch (key) {
+        case "\x1B[A":
+        case "k":
+          activeRow = (activeRow - 1 + 4) % 4;
+          break;
+        case "\x1B[B":
+        case "j":
+          activeRow = (activeRow + 1) % 4;
+          break;
+        case "\x1B[D":
+        case "h":
+          if (activeRow === 0) {
+            mergeIndex = (mergeIndex - 1 + STARTUP_MERGE_STRATEGY_OPTIONS.length) % STARTUP_MERGE_STRATEGY_OPTIONS.length;
+          } else if (activeRow === 1) {
+            reviewIndex = (reviewIndex - 1 + REVIEW_MODE_OPTIONS.length) % REVIEW_MODE_OPTIONS.length;
+          } else if (activeRow === 2) {
+            collaborationIndex = (collaborationIndex - 1 + COLLABORATION_MODE_OPTIONS.length) % COLLABORATION_MODE_OPTIONS.length;
+          } else {
+            wipLimit = Math.max(1, wipLimit - 1);
+          }
+          break;
+        case "\x1B[C":
+        case "l":
+          if (activeRow === 0) {
+            mergeIndex = (mergeIndex + 1) % STARTUP_MERGE_STRATEGY_OPTIONS.length;
+          } else if (activeRow === 1) {
+            reviewIndex = (reviewIndex + 1) % REVIEW_MODE_OPTIONS.length;
+          } else if (activeRow === 2) {
+            collaborationIndex = (collaborationIndex + 1) % COLLABORATION_MODE_OPTIONS.length;
+          } else {
+            wipLimit = Math.min(10, wipLimit + 1);
+          }
+          break;
+        case "\r":
+          io.offKey(handler);
+          resolve({
+            mergeStrategy: currentMergeOption().runtimeValue as Extract<MergeStrategy, "auto" | "manual">,
+            reviewMode: currentReviewOption().persistedValue,
+            collaborationMode: currentCollaborationOption().persistedValue,
+            wipLimit,
+            cancelled: false,
+          });
+          return;
+        case "\x1B":
+        case "\x03":
+          io.offKey(handler);
+          resolve({
+            mergeStrategy: currentMergeOption().runtimeValue as Extract<MergeStrategy, "auto" | "manual">,
+            reviewMode: currentReviewOption().persistedValue,
+            collaborationMode: currentCollaborationOption().persistedValue,
+            wipLimit,
+            cancelled: true,
+          });
+          return;
+        default:
+          return;
+      }
+
+      render();
+    };
+
+    io.onKey(handler);
+    render();
+  });
+}
+
 // ── Selection Screen (composite) ────────────────────────────────────
 
 /**
@@ -634,14 +819,14 @@ export function toCheckboxItems(items: WorkItem[]): CheckboxItem[] {
 }
 
 /**
- * Run the full TUI selection screen flow (local-first):
+ * Run the full TUI selection screen flow:
  * 1. Checkbox list for item selection
  * 2. Checkbox list for AI tool selection (conditional: 2+ tools)
- * 3. Summary confirmation
+ * 3. Startup settings screen (startup) or summary confirmation (re-entry)
  *
- * Merge strategy, WIP limit, AI reviews, and collaboration default to
- * local-first values (manual, passed-in WIP, off, local) without prompting.
- * CLI overrides are handled upstream in orchestrate.ts.
+ * Initial startup keeps the item summary visible while arrow keys adjust merge,
+ * reviews, collaboration, and WIP. Re-entry flows (`showConnectionStep: false`)
+ * keep the simpler confirmation-only step so they do not change live session policy.
  *
  * Renders entirely in the alt-screen buffer using raw keypresses.
  * Returns null if cancelled at any step.
@@ -664,6 +849,11 @@ export async function runSelectionScreen(
     savedToolIds?: string[];
   } = {},
 ): Promise<SelectionScreenResult | null> {
+  const resolvedDefaults: TuiSettingsDefaults = {
+    mergeStrategy: opts.defaultSettings?.mergeStrategy ?? TUI_SETTINGS_DEFAULTS.mergeStrategy,
+    reviewMode: opts.defaultSettings?.reviewMode ?? opts.defaultReviewMode ?? TUI_SETTINGS_DEFAULTS.reviewMode,
+    collaborationMode: opts.defaultSettings?.collaborationMode ?? TUI_SETTINGS_DEFAULTS.collaborationMode,
+  };
   const sorted = sortWorkItems(items);
   const hasCurrentItems = sorted.length > 0;
   const checkboxItemsWithAll: CheckboxItem[] = hasCurrentItems
@@ -728,11 +918,10 @@ export async function runSelectionScreen(
     (id) => id !== ALL_SENTINEL_ID && id !== FUTURE_TASKS_ID,
   );
 
-  // Local-first defaults -- no prompts for these
-  const mergeStrategy: MergeStrategy = "manual";
-  const wipLimit = defaultWipLimit;
-  const reviewMode: "all" | "mine" | "off" = "off";
-  const connectionAction: ConnectionAction | null = null;
+  const defaultMergeStrategy: Extract<MergeStrategy, "auto" | "manual"> = resolvedDefaults.mergeStrategy;
+  const defaultWip = Math.max(1, Math.min(10, defaultWipLimit));
+  const defaultReviewMode: "all" | "mine" | "off" = resolvedDefaults.reviewMode;
+  const defaultConnectionAction: ConnectionAction | null = null;
 
   // Step 2: AI coding tool (conditional -- only when 2+ tools detected)
   let aiTool: string | undefined;
@@ -796,24 +985,63 @@ export async function runSelectionScreen(
 
   const summaryLines = [
     ...itemLines,
-    "",
-    `${BOLD}Merge strategy:${RESET}  ${mergeStrategy}`,
-    `${BOLD}WIP limit:${RESET}       ${wipLimit}`,
-    `${BOLD}AI reviews:${RESET}      Off`,
-    `${BOLD}Collaboration:${RESET}   Local by default`,
-    ...(toolLabel ? [`${BOLD}AI tool:${RESET}         ${toolLabel}`] : []),
+    ...(toolLabel ? ["", `${BOLD}AI tool:${RESET}         ${toolLabel}`] : []),
   ];
 
-  io.write(CLEAR_SCREEN);
-  const confirmed = await runConfirm(io, {
-    title: "Ninthwave \u00b7 Start orchestration?",
-    lines: summaryLines,
-  });
+  let mergeStrategy: MergeStrategy = defaultMergeStrategy;
+  let wipLimit = defaultWip;
+  let reviewMode: "all" | "mine" | "off" = defaultReviewMode;
+  let connectionAction: ConnectionAction | null = defaultConnectionAction;
 
-  io.write(SHOW_CURSOR);
+  if (opts.showConnectionStep === false) {
+    io.write(CLEAR_SCREEN);
+    const confirmed = await runConfirm(io, {
+      title: "Ninthwave \u00b7 Start orchestration?",
+      lines: summaryLines,
+    });
 
-  if (!confirmed) {
-    return null;
+    io.write(SHOW_CURSOR);
+
+    if (!confirmed) {
+      return null;
+    }
+  } else {
+    io.write(CLEAR_SCREEN);
+    const settingsResult = await runStartupSettingsScreen(io, {
+      title: "Ninthwave \u00b7 Start orchestration",
+      summaryLines,
+      defaultWipLimit: defaultWip,
+      defaultSettings: resolvedDefaults,
+    });
+
+    io.write(SHOW_CURSOR);
+
+    if (settingsResult.cancelled) {
+      return null;
+    }
+
+    mergeStrategy = settingsResult.mergeStrategy;
+    wipLimit = settingsResult.wipLimit;
+    reviewMode = settingsResult.reviewMode;
+    if (settingsResult.collaborationMode === "share") {
+      connectionAction = { type: "connect" };
+    } else if (settingsResult.collaborationMode === "join") {
+      io.write(CLEAR_SCREEN);
+      const joinCode = await runTextInput(io, {
+        title: "Ninthwave · Join session",
+        hint: "Format: XXXX-XXXX-XXXX-XXXX (e.g. K2F9-AB3X-7YPL-QM4N)",
+        validate: (value) => isCrewCode(value.trim()) ? null : "Invalid session code",
+      });
+      io.write(SHOW_CURSOR);
+
+      if (joinCode.cancelled) {
+        return null;
+      }
+
+      connectionAction = { type: "join", code: joinCode.value.trim() };
+    } else {
+      connectionAction = null;
+    }
   }
 
   return {
