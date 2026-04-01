@@ -193,7 +193,7 @@ describe("Daemon lifecycle: single-item flow", () => {
   const NOW = new Date("2026-03-25T10:00:00.000Z");
 
   beforeEach(() => {
-    orch = new Orchestrator({ wipLimit: 4, mergeStrategy: "auto" });
+    orch = new Orchestrator({ fixForward: false, wipLimit: 4, mergeStrategy: "auto" });
     deps = mockDeps();
   });
 
@@ -425,7 +425,7 @@ describe("Daemon lifecycle: stuck item and retry logic", () => {
 
 describe("Daemon lifecycle: stacking (dependent items)", () => {
   it("dependent item stays queued until dependency merges, then launches", () => {
-    const orch = new Orchestrator({ wipLimit: 4, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, wipLimit: 4, mergeStrategy: "auto" });
     const deps = mockDeps();
 
     orch.addItem(makeWorkItem("DEP-1"));
@@ -636,7 +636,7 @@ describe("Daemon lifecycle: stacking with stuck dependency notification", () => 
 
 describe("Daemon lifecycle: cleanup after merge", () => {
   it("merge triggers clean action, cleanup runs workspace and worktree", () => {
-    const orch = new Orchestrator({ wipLimit: 4, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, wipLimit: 4, mergeStrategy: "auto" });
     const deps = mockDeps();
 
     orch.addItem(makeWorkItem("CLN-1"));
@@ -748,7 +748,7 @@ describe("Daemon lifecycle: cleanup after merge", () => {
 
 describe("Daemon lifecycle: multi-item orchestration", () => {
   it("processes three independent items through full lifecycle concurrently", () => {
-    const orch = new Orchestrator({ wipLimit: 3, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, wipLimit: 3, mergeStrategy: "auto" });
     const deps = mockDeps();
 
     // Add 3 independent items

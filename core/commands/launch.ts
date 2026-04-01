@@ -544,11 +544,12 @@ export function launchForwardFixerWorker(
   repoRoot: string,
   aiTool: string,
   mux: Multiplexer = getMux(),
-  options: { hubRepoNwo?: string } = {},
+  options: { hubRepoNwo?: string; defaultBranch?: string } = {},
   deps: LaunchGitDeps = defaultLaunchGitDeps,
 ): ForwardFixerLaunchResult | null {
   const worktreePath = join(repoRoot, ".ninthwave", ".worktrees", `ninthwave-fix-forward-${itemId}`);
   const branch = `ninthwave/fix-forward-${itemId}`;
+  const defaultBranch = options.defaultBranch ?? "main";
 
   if (existsSync(worktreePath)) {
     warn(`Forward-fixer worktree already exists for ${itemId} at ${worktreePath}, reusing`);
@@ -556,9 +557,9 @@ export function launchForwardFixerWorker(
     mkdirSync(join(repoRoot, ".ninthwave", ".worktrees"), { recursive: true });
     ensureWorktreeExcluded(repoRoot);
 
-    info(`Fetching main in ${basename(repoRoot)} for forward-fixer of ${itemId}`);
-    try { deps.fetchOrigin(repoRoot, "main"); } catch (e) {
-      warn(`Failed to fetch origin/main for forward-fixer of ${itemId}: ${e instanceof Error ? e.message : e}`);
+    info(`Fetching ${defaultBranch} in ${basename(repoRoot)} for forward-fixer of ${itemId}`);
+    try { deps.fetchOrigin(repoRoot, defaultBranch); } catch (e) {
+      warn(`Failed to fetch origin/${defaultBranch} for forward-fixer of ${itemId}: ${e instanceof Error ? e.message : e}`);
       return null;
     }
 
@@ -573,17 +574,19 @@ export function launchForwardFixerWorker(
     }
 
     info(`Creating forward-fixer worktree for ${itemId} on branch ${branch}`);
-    deps.createWorktree(repoRoot, worktreePath, branch, "origin/main");
+    deps.createWorktree(repoRoot, worktreePath, branch, `origin/${defaultBranch}`);
   }
 
   // Seed agent files into the forward-fixer worktree
   seedAgentFiles(worktreePath, repoRoot);
 
   const hubRepoNwoLine = options.hubRepoNwo ? `HUB_REPO_NWO: ${options.hubRepoNwo}\n` : "";
+  const defaultBranchLine = `REPO_DEFAULT_BRANCH: ${defaultBranch}\n`;
   const systemPrompt = `YOUR_VERIFY_ITEM_ID: ${itemId}
 YOUR_VERIFY_MERGE_SHA: ${mergeCommitSha}
 PROJECT_ROOT: ${worktreePath}
 REPO_ROOT: ${repoRoot}
+${defaultBranchLine}
 ${hubRepoNwoLine}`;
 
   const safeTitle = sanitizeTitle(`Fix-forward ${itemId}`);

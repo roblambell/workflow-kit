@@ -198,7 +198,7 @@ describe("collectRunMetrics", () => {
 
 describe("orchestrateLoop analytics integration", () => {
   it("emits run_metrics log event on orchestrate_complete", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -245,7 +245,7 @@ describe("orchestrateLoop analytics integration", () => {
   });
 
   it("includes CI retry count in run_metrics for items with failures", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -297,7 +297,7 @@ describe("orchestrateLoop analytics integration", () => {
   });
 
   it("always emits run_metrics (no analyticsDir needed)", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 

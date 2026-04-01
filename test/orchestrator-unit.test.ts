@@ -1227,7 +1227,7 @@ describe("handleCiPassed", () => {
 
 describe("full lifecycle: queued → done", () => {
   it("drives an item through normal flow to merge", () => {
-    const orch = new Orchestrator({ mergeStrategy: "auto", wipLimit: 1 });
+    const orch = new Orchestrator({ fixForward: false, mergeStrategy: "auto", wipLimit: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
 
@@ -1628,7 +1628,7 @@ describe("launching state timeout", () => {
 
 describe("handleMerging", () => {
   it("transitions to merged when PR state is merged", () => {
-    const orch = new Orchestrator();
+    const orch = new Orchestrator({ fixForward: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "merging");
@@ -1647,7 +1647,7 @@ describe("handleMerging", () => {
   });
 
   it("stays in merging when PR not yet merged", () => {
-    const orch = new Orchestrator();
+    const orch = new Orchestrator({ fixForward: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "merging");
@@ -1738,7 +1738,7 @@ describe("handleReviewing", () => {
   });
 
   it("transitions to merged on external merge during review", () => {
-    const orch = new Orchestrator();
+    const orch = new Orchestrator({ fixForward: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "reviewing");
