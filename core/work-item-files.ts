@@ -480,6 +480,27 @@ export function prMetadataMatchesWorkItem(
   return classifyPrMetadataMatch(pr, item).matches;
 }
 
+/**
+ * Pick the merged/open PR candidate that belongs to the current logical work item.
+ *
+ * Tokenized items require a matching lineage token. Legacy token-less items keep
+ * the title-based fallback path via prMetadataMatchesWorkItem().
+ */
+export function findMatchingPrForWorkItem<
+  T extends {
+    title: string;
+    body?: string;
+    lineageToken?: string;
+    branchName?: string;
+  },
+>(
+  prs: T[],
+  item?: Pick<WorkItem, "id" | "title" | "lineageToken">,
+): T | undefined {
+  if (!item) return prs[0];
+  return prs.find((pr) => prMetadataMatchesWorkItem(pr, item));
+}
+
 // ---------------------------------------------------------------------------
 // File-per-todo operations
 // ---------------------------------------------------------------------------

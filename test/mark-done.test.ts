@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdirSync, existsSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
-import { cmdMarkDone } from "../core/commands/mark-done.ts";
+import { cmdMarkDone, cmdMergedIds } from "../core/commands/mark-done.ts";
 
 let tmpDirs: string[] = [];
 
@@ -21,6 +21,24 @@ function writeWorkItemFile(workDir: string, id: string, priority = "medium", dom
   writeFileSync(
     join(workDir, filename),
     `# Test item (${id})\n\n**Priority:** ${priority}\n**Domain:** ${domain}\n`,
+  );
+}
+
+function writeTokenizedWorkItemFile(
+  workDir: string,
+  id: string,
+  title: string,
+  lineageToken?: string,
+): void {
+  writeFileSync(
+    join(workDir, `2-testing--${id}.md`),
+    [
+      `# ${title} (${id})`,
+      "",
+      "**Priority:** High",
+      "**Domain:** testing",
+      ...(lineageToken ? [`**Lineage:** ${lineageToken}`] : []),
+    ].join("\n"),
   );
 }
 
@@ -124,5 +142,103 @@ describe("cmdMarkDone", () => {
     // Mark again -- should not throw
     cmdMarkDone(["M-CI-1"], workDir);
     expect(existsSync(join(workDir, "2-testing--M-CI-1.md"))).toBe(false);
+  });
+});
+
+describe("cmdMergedIds", () => {
+  it("does not print reused IDs when merged PR lineage mismatches", () => {
+    const workDir = makeWorkItemsDir();
+    const projectRoot = join(workDir, "..", "..");
+    const worktreeDir = join(projectRoot, ".ninthwave", ".worktrees");
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-9"), { recursive: true });
+    writeTokenizedWorkItemFile(
+      workDir,
+      "H-CI-9",
+      "New work",
+      "11111111-1111-4111-8111-111111111111",
+    );
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (msg: string) => logs.push(msg);
+    try {
+      cmdMergedIds(worktreeDir, projectRoot, {
+        commitCount: () => 3,
+        isBranchMerged: () => true,
+        prList: () => ({
+          ok: true,
+          data: [{
+            number: 9,
+            title: "fix: old work (H-CI-9)",
+            body: "## Work Item Reference\nID: H-CI-9\nLineage: 22222222-2222-4222-8222-222222222222",
+          }],
+        }),
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs).toEqual([]);
+  });
+
+  it("preserves lineage-based merged detection for normal tokenized items", () => {
+    const workDir = makeWorkItemsDir();
+    const projectRoot = join(workDir, "..", "..");
+    const worktreeDir = join(projectRoot, ".ninthwave", ".worktrees");
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-10"), { recursive: true });
+    writeTokenizedWorkItemFile(
+      workDir,
+      "H-CI-10",
+      "Current work",
+      "33333333-3333-4333-8333-333333333333",
+    );
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (msg: string) => logs.push(msg);
+    try {
+      cmdMergedIds(worktreeDir, projectRoot, {
+        commitCount: () => 0,
+        isBranchMerged: () => false,
+        prList: () => ({
+          ok: true,
+          data: [{
+            number: 10,
+            title: "refactor: completely renamed title",
+            body: "## Work Item Reference\nID: H-CI-10\nLineage: 33333333-3333-4333-8333-333333333333",
+          }],
+        }),
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs).toEqual(["H-CI-10"]);
+  });
+
+  it("preserves legacy token-less merged detection when titles match", () => {
+    const workDir = makeWorkItemsDir();
+    const projectRoot = join(workDir, "..", "..");
+    const worktreeDir = join(projectRoot, ".ninthwave", ".worktrees");
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-11"), { recursive: true });
+    writeTokenizedWorkItemFile(workDir, "H-CI-11", "Legacy work");
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (msg: string) => logs.push(msg);
+    try {
+      cmdMergedIds(worktreeDir, projectRoot, {
+        commitCount: () => 0,
+        isBranchMerged: () => false,
+        prList: () => ({
+          ok: true,
+          data: [{ number: 11, title: "fix: legacy work (H-CI-11)", body: "## Work Item Reference\nID: H-CI-11" }],
+        }),
+      });
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs).toEqual(["H-CI-11"]);
   });
 });

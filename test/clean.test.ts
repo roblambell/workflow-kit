@@ -42,6 +42,26 @@ function createMockCleanDeps(): CleanDeps & Record<string, Mock> {
   };
 }
 
+function writeWorkItemFile(
+  repo: string,
+  id: string,
+  title: string,
+  lineageToken?: string,
+): void {
+  const workDir = join(repo, ".ninthwave", "work");
+  mkdirSync(workDir, { recursive: true });
+  writeFileSync(
+    join(workDir, `2-test--${id}.md`),
+    [
+      `# ${title} (${id})`,
+      "",
+      "**Priority:** High",
+      "**Domain:** test",
+      ...(lineageToken ? [`**Lineage:** ${lineageToken}`] : []),
+    ].join("\n"),
+  );
+}
+
 describe("cmdCloseWorkspaces", () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => cleanupTempRepos());
@@ -359,6 +379,55 @@ describe("cmdClean", () => {
 
     expect(output).toContain("Cleaned 0 worktree(s)");
     expect(deps.removeWorktree).not.toHaveBeenCalled();
+  });
+
+  it("does not clean reused IDs when merged PR lineage mismatches", () => {
+    const mockMux = createMockMux();
+    const deps = createMockCleanDeps();
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-9"), { recursive: true });
+    writeWorkItemFile(repo, "H-CI-9", "New work", "11111111-1111-4111-8111-111111111111");
+
+    deps.isBranchMerged.mockReturnValue(true);
+    deps.prList.mockReturnValue({
+      ok: true,
+      data: [{
+        number: 9,
+        title: "fix: old work (H-CI-9)",
+        body: "## Work Item Reference\nID: H-CI-9\nLineage: 22222222-2222-4222-8222-222222222222",
+      }],
+    });
+
+    const output = captureOutput(() =>
+      cmdClean([], worktreeDir, repo, mockMux, deps),
+    );
+
+    expect(output).toContain("Cleaned 0 worktree(s)");
+    expect(deps.removeWorktree).not.toHaveBeenCalled();
+    expect(mockMux.closeWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("preserves legacy token-less cleanup when merged PR title matches", () => {
+    const mockMux = createMockMux();
+    const deps = createMockCleanDeps();
+    const repo = setupTempRepo();
+    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
+    mkdirSync(join(worktreeDir, "ninthwave-H-CI-10"), { recursive: true });
+    writeWorkItemFile(repo, "H-CI-10", "Legacy work");
+
+    deps.isBranchMerged.mockReturnValue(false);
+    deps.prList.mockReturnValue({
+      ok: true,
+      data: [{ number: 10, title: "fix: legacy work (H-CI-10)", body: "## Work Item Reference\nID: H-CI-10" }],
+    });
+
+    const output = captureOutput(() =>
+      cmdClean([], worktreeDir, repo, mockMux, deps),
+    );
+
+    expect(output).toContain("Cleaned 1 worktree(s)");
+    expect(deps.removeWorktree).toHaveBeenCalledTimes(1);
   });
 
   it("only closes the targeted workspace when cleaning a specific ID", () => {

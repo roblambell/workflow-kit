@@ -7,6 +7,7 @@ import { splitIds } from "../work-item-files.ts";
 import { isBranchMerged, commitCount } from "../git.ts";
 import { prList } from "../gh.ts";
 import { deleteWorkItemFile } from "../work-item-files.ts";
+import { findMatchingPrForWorkItem, readWorkItem } from "../work-item-files.ts";
 
 /**
  * Remove completed items by deleting their individual todo files.
@@ -49,24 +50,43 @@ export function cmdMarkDone(
 export function cmdMergedIds(
   worktreeDir: string,
   projectRoot: string,
+  deps: {
+    isBranchMerged: typeof isBranchMerged;
+    commitCount: typeof commitCount;
+    prList: typeof prList;
+  } = {
+    isBranchMerged,
+    commitCount,
+    prList,
+  },
 ): void {
   if (!existsSync(worktreeDir)) return;
+  const workDir = join(projectRoot, ".ninthwave", "work");
 
   function checkMerged(id: string, repoRoot: string): void {
     const branch = `ninthwave/${id}`;
 
     let merged = false;
+    const workItem = readWorkItem(workDir, id);
+    const mergedPrs = deps.prList(repoRoot, branch, "merged");
 
-    // Check git branch --merged
-    const ahead = commitCount(repoRoot, "main", branch);
-    if (ahead > 0 && isBranchMerged(repoRoot, branch, "main")) {
-      merged = true;
+    if (workItem && mergedPrs.ok) {
+      merged = Boolean(
+        findMatchingPrForWorkItem(mergedPrs.data, {
+          id: workItem.id,
+          title: workItem.title,
+          lineageToken: workItem.lineageToken,
+        }),
+      );
+    } else if (!merged) {
+      const ahead = deps.commitCount(repoRoot, "main", branch);
+      if (ahead > 0 && deps.isBranchMerged(repoRoot, branch, "main")) {
+        merged = true;
+      }
     }
 
-    // Check via gh PR status
-    if (!merged) {
-      const result = prList(repoRoot, branch, "merged");
-      if (result.ok && result.data.length > 0) merged = true;
+    if (!merged && !workItem) {
+      merged = mergedPrs.ok && mergedPrs.data.length > 0;
     }
 
     if (merged) {

@@ -31,6 +31,7 @@ import {
 } from "../core/commands/status.ts";
 import { stateFilePath, userStateDir, type DaemonState } from "../core/daemon.ts";
 import { parseCrewStatusUpdate } from "../core/crew.ts";
+import type { RunResult } from "../core/types.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir } from "os";
@@ -40,6 +41,14 @@ function stripAnsi(s: string): string {
   return s
     .replace(/\x1b\]8;[^\x07]*\x07/g, "")   // Strip OSC 8 hyperlink sequences
     .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");  // Strip CSI sequences (colors, etc.)
+}
+
+function ok(stdout = ""): RunResult {
+  return { stdout, stderr: "", exitCode: 0 };
+}
+
+function fail(stderr = ""): RunResult {
+  return { stdout: "", stderr, exitCode: 1 };
 }
 
 describe("stateColor", () => {
@@ -559,6 +568,99 @@ describe("renderStatus", () => {
       const result = stripAnsi(renderStatus(worktreeDir, tmpDir));
       expect(result).toContain("No active items");
       expect(result).toContain("Ninthwave");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not report merged for reused IDs when merged PR lineage mismatches", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "nw-status-token-test-"));
+    const worktreeDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const workDir = join(tmpDir, ".ninthwave", "work");
+    mkdirSync(join(worktreeDir, "ninthwave-H-FOO-1"), { recursive: true });
+    mkdirSync(workDir, { recursive: true });
+    writeFileSync(
+      join(workDir, "2-test--H-FOO-1.md"),
+      [
+        "# New work (H-FOO-1)",
+        "",
+        "**Priority:** High",
+        "**Domain:** test",
+        "**Lineage:** 11111111-1111-4111-8111-111111111111",
+      ].join("\n"),
+    );
+
+    const fakeRun = ((command: string, args: string[]) => {
+      if (command === "git") return ok("origin/ninthwave/H-FOO-1\n");
+      if (command === "which") return ok("/usr/bin/gh\n");
+      if (command === "gh" && args.includes("--state") && args.includes("merged")) {
+        return ok(JSON.stringify([
+          {
+            number: 42,
+            title: "fix: old work (H-FOO-1)",
+            body: [
+              "## Work Item Reference",
+              "ID: H-FOO-1",
+              "Lineage: 22222222-2222-4222-8222-222222222222",
+            ].join("\n"),
+          },
+        ]));
+      }
+      if (command === "gh" && args.includes("--state") && args.includes("open")) {
+        return ok("");
+      }
+      return fail(`unexpected command: ${command} ${args.join(" ")}`);
+    }) as any;
+
+    try {
+      const output = stripAnsi(renderStatus(worktreeDir, tmpDir, false, undefined, { runCommand: fakeRun }));
+      expect(output).toContain("H-FOO-1");
+      expect(output).not.toContain("Merged");
+      expect(output).toContain("In Progress");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves legacy token-less merged detection when titles match", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "nw-status-legacy-test-"));
+    const worktreeDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const workDir = join(tmpDir, ".ninthwave", "work");
+    mkdirSync(join(worktreeDir, "ninthwave-H-LEG-1"), { recursive: true });
+    mkdirSync(workDir, { recursive: true });
+    writeFileSync(
+      join(workDir, "2-test--H-LEG-1.md"),
+      [
+        "# Legacy work (H-LEG-1)",
+        "",
+        "**Priority:** High",
+        "**Domain:** test",
+      ].join("\n"),
+    );
+
+    const fakeRun = ((command: string, args: string[]) => {
+      if (command === "git") return ok("origin/ninthwave/H-LEG-1\n");
+      if (command === "which") return ok("/usr/bin/gh\n");
+      if (command === "gh" && args.includes("--state") && args.includes("merged")) {
+        return ok(JSON.stringify([
+          {
+            number: 7,
+            title: "fix: legacy work (H-LEG-1)",
+            body: "## Work Item Reference\nID: H-LEG-1",
+          },
+        ]));
+      }
+      if (command === "gh" && args.includes("--state") && args.includes("open")) {
+        return ok("");
+      }
+      return fail(`unexpected command: ${command} ${args.join(" ")}`);
+    }) as any;
+
+    try {
+      const output = stripAnsi(renderStatus(worktreeDir, tmpDir, false, undefined, { runCommand: fakeRun }));
+      expect(output).toContain("H-LEG-1");
+      expect(output).toContain("Merged");
+      expect(output).toContain("#7");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

@@ -11,8 +11,8 @@ import { cmdMarkDone } from "./mark-done.ts";
 import { cleanSingleWorktree, closeWorkspacesForIds } from "./clean.ts";
 import { getMux } from "../mux.ts";
 import {
+  findMatchingPrForWorkItem,
   parseWorkItemReferenceBlock,
-  prMetadataMatchesWorkItem,
   readWorkItem,
 } from "../work-item-files.ts";
 import { ID_IN_FILENAME } from "../types.ts";
@@ -119,10 +119,7 @@ function defaultGetMergedTodoIds(projectRoot: string, worktreeDir: string): Arra
   lineageToken?: string;
 }> {
   // Query hub repo for merged ninthwave/* PRs
-  const byId = new Map<string, { id: string; prTitle: string; lineageToken?: string }>();
-  for (const item of getMergedTodoIdsFromRepo(projectRoot)) {
-    byId.set(item.id, item);
-  }
+  const mergedItems = [...getMergedTodoIdsFromRepo(projectRoot)];
 
   // Also query cross-repo targets discovered from the cross-repo index
   const indexPath = join(worktreeDir, ".cross-repo-index");
@@ -135,17 +132,13 @@ function defaultGetMergedTodoIds(projectRoot: string, worktreeDir: string): Arra
   }
   for (const repo of targetRepos) {
     try {
-      for (const item of getMergedTodoIdsFromRepo(repo)) {
-        if (!byId.has(item.id)) {
-          byId.set(item.id, item);
-        }
-      }
+      mergedItems.push(...getMergedTodoIdsFromRepo(repo));
     } catch (e) {
       warn(`Failed to query merged PRs in ${repo}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  return Array.from(byId.values());
+  return mergedItems;
 }
 
 function defaultGetOpenTodoIds(workDir: string): string[] {
@@ -280,35 +273,48 @@ export function reconcile(
   }
 
   // Step 3: Find items that are merged but still have work item files.
-  // Collision safety (H-MID-1): compare the merged PR's title with the work item file's
-  // title. If they don't match, the merged PR belongs to a previous cycle that reused
-  // the same ID -- skip it to avoid falsely deleting the new work item.
+  // Reused-ID safety: only treat a merged PR as belonging to the current logical
+  // work item when PR metadata matches the item's lineage token (or legacy title fallback).
   const openIds = new Set(deps.getOpenItemIds(workDir));
   const toMarkDone: string[] = [];
   const skippedCollisions: string[] = [];
+  const mergedCandidatesById = new Map<string, Array<{ id: string; prTitle: string; lineageToken?: string }>>();
 
   for (const merged of mergedItems) {
-    if (!openIds.has(merged.id)) continue;
+    const candidates = mergedCandidatesById.get(merged.id) ?? [];
+    candidates.push(merged);
+    mergedCandidatesById.set(merged.id, candidates);
+  }
 
-    // Title-match check: read the work item file's title and compare with the merged PR's title
-    const workItem = readWorkItem(workDir, merged.id);
-    if (
-      workItem
-      && !prMetadataMatchesWorkItem(
-        { title: merged.prTitle, lineageToken: merged.lineageToken },
-        workItem,
-      )
-    ) {
-      skippedCollisions.push(merged.id);
+  const doneIds = new Set<string>();
+
+  for (const [id, mergedCandidates] of mergedCandidatesById) {
+    if (!openIds.has(id)) {
+      doneIds.add(id);
       continue;
     }
 
-    toMarkDone.push(merged.id);
+    const workItem = readWorkItem(workDir, id);
+    const matchingMergedPr = findMatchingPrForWorkItem(
+      mergedCandidates.map((candidate) => ({
+        title: candidate.prTitle,
+        lineageToken: candidate.lineageToken,
+      })),
+      workItem,
+    );
+
+    if (workItem && !matchingMergedPr) {
+      skippedCollisions.push(id);
+      continue;
+    }
+
+    toMarkDone.push(id);
+    doneIds.add(id);
   }
 
   if (skippedCollisions.length > 0) {
     warn(
-      `Skipped ${skippedCollisions.length} item(s) with ID collision (merged PR title doesn't match TODO title): ${skippedCollisions.join(", ")}`,
+      `Skipped ${skippedCollisions.length} item(s) with reused-ID metadata mismatch: ${skippedCollisions.join(", ")}`,
     );
   }
 
@@ -321,16 +327,6 @@ export function reconcile(
 
   // Step 4: Clean worktrees for done items
   const worktreeIds = deps.getWorktreeIds(worktreeDir);
-  // Done items = those we just marked done + those already not in todos dir
-  // (only IDs that passed title check or have no open TODO file)
-  const mergedIds = new Set(mergedItems.map((m) => m.id));
-  const doneIds = new Set<string>();
-  for (const id of mergedIds) {
-    // Include if: not a collision (either in toMarkDone, or no open TODO file)
-    if (!skippedCollisions.includes(id)) {
-      doneIds.add(id);
-    }
-  }
   let cleanedCount = 0;
 
   for (const wtId of worktreeIds) {

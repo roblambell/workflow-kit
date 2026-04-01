@@ -12,6 +12,7 @@ import {
 import { prList as defaultPrList } from "../gh.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { cleanInbox } from "./inbox.ts";
+import { findMatchingPrForWorkItem, readWorkItem } from "../work-item-files.ts";
 
 /** Injectable dependencies for clean commands, for testing. */
 export interface CleanDeps {
@@ -147,15 +148,20 @@ export function cmdCloseWorkspace(targetId: string, mux: Multiplexer = getMux())
 function isMerged(
   repoRoot: string,
   branch: string,
+  item: { id: string; title: string; lineageToken?: string } | undefined,
   deps: CleanDeps,
 ): boolean {
-  // Check git merge status
+  const result = deps.prList(repoRoot, branch, "merged");
+  if (item && result.ok) {
+    return Boolean(findMatchingPrForWorkItem(result.data, item));
+  }
+
+  // Fall back to legacy branch-merged detection when we cannot disambiguate
+  // against a current open work item.
   if (deps.isBranchMerged(repoRoot, branch, "main")) {
     return true;
   }
 
-  // Check via gh PR status
-  const result = deps.prList(repoRoot, branch, "merged");
   return result.ok && result.data.length > 0;
 }
 
@@ -189,6 +195,7 @@ export function cmdClean(
 
   const partitionDir = join(worktreeDir, ".partitions");
   const crossRepoIndex = join(worktreeDir, ".cross-repo-index");
+  const workDir = join(projectRoot, ".ninthwave", "work");
   let cleaned = 0;
   const mergedIds = new Set<string>();
 
@@ -197,7 +204,13 @@ export function cmdClean(
     if (targetId && id !== targetId) return false;
 
     const branch = `ninthwave/${id}`;
-    const merged = isMerged(repoRoot, branch, deps);
+    const workItem = readWorkItem(workDir, id);
+    const merged = isMerged(
+      repoRoot,
+      branch,
+      workItem ? { id: workItem.id, title: workItem.title, lineageToken: workItem.lineageToken } : undefined,
+      deps,
+    );
 
     if (merged || targetId) {
       if (merged && !targetId) mergedIds.add(id);

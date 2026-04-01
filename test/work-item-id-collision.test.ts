@@ -276,7 +276,7 @@ describe("reconcile: item ID collision safety", () => {
 
     const output = captureOutput(() => reconcile(workDir, worktreeDir, projectRoot, deps));
     expect(markedIds).toEqual([]);
-    expect(output).toContain("collision");
+    expect(output).toContain("metadata mismatch");
     expect(output).toContain("H-FOO-1");
   });
 
@@ -368,6 +368,41 @@ describe("reconcile: item ID collision safety", () => {
 
     captureOutput(() => reconcile(workDir, worktreeDir, projectRoot, deps));
     expect(markedIds).toEqual([]);
+  });
+
+  it("matches the correct merged PR candidate when reused IDs have multiple merged PRs", () => {
+    const { workDir, worktreeDir, projectRoot } = setupWorkItemsDir({
+      "2-test--H-FOO-1.md": `# New work (H-FOO-1)\n\n**Priority:** High\n**Domain:** test\n**Lineage:** ${LINEAGE}\n`,
+    });
+    let markedIds: string[] = [];
+    const cleanedIds: string[] = [];
+
+    const deps = makeDeps({
+      getMergedTodoIds: () => [
+        {
+          id: "H-FOO-1",
+          prTitle: "fix: old work (H-FOO-1)",
+          lineageToken: "11111111-1111-4111-8111-111111111111",
+        },
+        {
+          id: "H-FOO-1",
+          prTitle: "different title entirely",
+          lineageToken: LINEAGE,
+        },
+      ],
+      markDone: (ids) => {
+        markedIds = ids;
+      },
+      getWorktreeIds: () => ["H-FOO-1"],
+      cleanWorktree: (id) => {
+        cleanedIds.push(id);
+        return true;
+      },
+    });
+
+    reconcile(workDir, worktreeDir, projectRoot, deps);
+    expect(markedIds).toEqual(["H-FOO-1"]);
+    expect(cleanedIds).toEqual(["H-FOO-1"]);
   });
 
   it("does not clean worktrees for collision-skipped items", () => {

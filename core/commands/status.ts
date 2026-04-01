@@ -5,6 +5,7 @@ import { join, basename } from "path";
 import { BOLD, DIM, RESET } from "../output.ts";
 import { run } from "../shell.ts";
 import { ID_PATTERN_GLOBAL, ID_IN_FILENAME } from "../types.ts";
+import { findMatchingPrForWorkItem } from "../work-item-files.ts";
 import {
   isDaemonRunning,
   readStateFile,
@@ -87,7 +88,16 @@ export {
 interface TodoMetadata {
   title: string;
   dependencies: string[];
+  lineageToken?: string;
 }
+
+interface StatusDeps {
+  runCommand: typeof run;
+}
+
+const defaultStatusDeps: StatusDeps = {
+  runCommand: run,
+};
 
 /** Try to read TODO metadata from .ninthwave/work/ directory. Returns a map of ID → metadata. */
 function loadTodoMetadata(projectRoot: string): Map<string, TodoMetadata> {
@@ -109,6 +119,7 @@ function loadTodoMetadata(projectRoot: string): Map<string, TodoMetadata> {
           // Extract dependencies from **Depends on:** line
           const deps: string[] = [];
           const depsMatch = content.match(/^\*\*Depends on:\*\*\s+(.+)$/m);
+          const lineageMatch = content.match(/^\*\*Lineage:\*\*\s+(.+)$/m);
           if (depsMatch) {
             const depsStr = depsMatch[1]!;
             if (depsStr.toLowerCase() !== "none" && depsStr !== "-") {
@@ -119,6 +130,7 @@ function loadTodoMetadata(projectRoot: string): Map<string, TodoMetadata> {
           metadata.set(id, {
             title: titleMatch[1]!.trim(),
             dependencies: deps,
+            lineageToken: lineageMatch?.[1]?.trim().toLowerCase(),
           });
         }
       } catch {
@@ -136,12 +148,14 @@ function loadTodoMetadata(projectRoot: string): Map<string, TodoMetadata> {
 function determineItemState(
   id: string,
   repoRoot: string,
+  item?: { id: string; title: string; lineageToken?: string },
+  deps: StatusDeps = defaultStatusDeps,
 ): { state: ItemState; prNumber: number | null } {
   const branch = `ninthwave/${id}`;
 
   // Check remote branch exists
   const hasRemote =
-    run("git", ["-C", repoRoot, "rev-parse", "--verify", `origin/${branch}`])
+    deps.runCommand("git", ["-C", repoRoot, "rev-parse", "--verify", `origin/${branch}`])
       .exitCode === 0;
 
   // If no remote, it's still in progress
@@ -150,13 +164,13 @@ function determineItemState(
   }
 
   // Try gh for PR status
-  const ghCheck = run("which", ["gh"]);
+  const ghCheck = deps.runCommand("which", ["gh"]);
   if (ghCheck.exitCode !== 0) {
     return { state: "ci-pending", prNumber: null };
   }
 
   // Check merged PRs
-  const merged = run(
+  const merged = deps.runCommand(
     "gh",
     [
       "pr",
@@ -166,20 +180,30 @@ function determineItemState(
       "--state",
       "merged",
       "--json",
-      "number",
-      "--jq",
-      ".[0].number",
+      "number,title,body",
       "--limit",
-      "1",
+      "100",
     ],
     { cwd: repoRoot },
   );
   if (merged.exitCode === 0 && merged.stdout) {
-    return { state: "merged", prNumber: parseInt(merged.stdout, 10) };
+    try {
+      const mergedPrs = JSON.parse(merged.stdout) as Array<{
+        number: number;
+        title: string;
+        body?: string;
+      }>;
+      const matchingMergedPr = findMatchingPrForWorkItem(mergedPrs, item);
+      if (matchingMergedPr) {
+        return { state: "merged", prNumber: matchingMergedPr.number };
+      }
+    } catch {
+      // ignore parse failures and continue to open PR lookup
+    }
   }
 
   // Check open PRs
-  const open = run(
+  const open = deps.runCommand(
     "gh",
     [
       "pr",
@@ -203,7 +227,7 @@ function determineItemState(
     const reviewDecision = parts[1] ?? "";
 
     // Check CI status
-    const checks = run(
+    const checks = deps.runCommand(
       "gh",
       [
         "pr",
@@ -323,6 +347,7 @@ export async function cmdStatusWatch(
 function gatherStatusItems(
   worktreeDir: string,
   projectRoot: string,
+  deps: StatusDeps = defaultStatusDeps,
 ): { items: StatusItem[]; wipLimit: number | undefined; sessionStartedAt?: string; viewOptions?: ViewOptions } {
   // Fast path: read state file (written by orchestrator in both daemon and interactive mode)
   const daemonState = readStateFile(projectRoot);
@@ -366,8 +391,13 @@ function gatherStatusItems(
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
       const id = entry.slice(10);
-      const { state, prNumber } = determineItemState(id, projectRoot);
       const meta = todoMeta.get(id);
+      const { state, prNumber } = determineItemState(
+        id,
+        projectRoot,
+        meta ? { id, title: meta.title, lineageToken: meta.lineageToken } : undefined,
+        deps,
+      );
       items.push({
         id,
         title: meta?.title ?? "",
@@ -394,8 +424,13 @@ function gatherStatusItems(
       const idxPath = parts[2];
       if (!idxId || !idxRepo || !idxPath) continue;
       if (!existsSync(idxPath)) continue;
-      const { state, prNumber } = determineItemState(idxId, idxRepo);
       const meta = todoMeta.get(idxId);
+      const { state, prNumber } = determineItemState(
+        idxId,
+        idxRepo,
+        meta ? { id: idxId, title: meta.title, lineageToken: meta.lineageToken } : undefined,
+        deps,
+      );
       items.push({
         id: idxId,
         title: meta?.title ?? "",
@@ -416,7 +451,13 @@ function gatherStatusItems(
  * Used by both cmdStatus (prints it) and cmdStatusWatch (writes it flicker-free).
  * Optional viewOptions controls metrics panel, deps detail, and help footer.
  */
-export function renderStatus(worktreeDir: string, projectRoot: string, flat: boolean = false, viewOptions?: ViewOptions): string {
+export function renderStatus(
+  worktreeDir: string,
+  projectRoot: string,
+  flat: boolean = false,
+  viewOptions?: ViewOptions,
+  deps: StatusDeps = defaultStatusDeps,
+): string {
   const lines: string[] = [];
 
   // Fast path: read state file (written by orchestrator in both daemon and interactive mode)
@@ -469,8 +510,13 @@ export function renderStatus(worktreeDir: string, projectRoot: string, flat: boo
       const wtDir = join(worktreeDir, entry);
       if (!existsSync(wtDir)) continue;
       const id = entry.slice(10); // strip "ninthwave-"
-      const { state, prNumber } = determineItemState(id, projectRoot);
       const meta = todoMeta.get(id);
+      const { state, prNumber } = determineItemState(
+        id,
+        projectRoot,
+        meta ? { id, title: meta.title, lineageToken: meta.lineageToken } : undefined,
+        deps,
+      );
       items.push({
         id,
         title: meta?.title ?? "",
@@ -497,8 +543,13 @@ export function renderStatus(worktreeDir: string, projectRoot: string, flat: boo
       const idxPath = parts[2];
       if (!idxId || !idxRepo || !idxPath) continue;
       if (!existsSync(idxPath)) continue;
-      const { state, prNumber } = determineItemState(idxId, idxRepo);
       const meta = todoMeta.get(idxId);
+      const { state, prNumber } = determineItemState(
+        idxId,
+        idxRepo,
+        meta ? { id: idxId, title: meta.title, lineageToken: meta.lineageToken } : undefined,
+        deps,
+      );
       items.push({
         id: idxId,
         title: meta?.title ?? "",
@@ -514,8 +565,13 @@ export function renderStatus(worktreeDir: string, projectRoot: string, flat: boo
   return formatStatusTable(items, getTerminalWidth(), undefined, flat, viewOptions) + "\n";
 }
 
-export function cmdStatus(worktreeDir: string, projectRoot: string, flat: boolean = false): void {
-  process.stdout.write(renderStatus(worktreeDir, projectRoot, flat));
+export function cmdStatus(
+  worktreeDir: string,
+  projectRoot: string,
+  flat: boolean = false,
+  deps: StatusDeps = defaultStatusDeps,
+): void {
+  process.stdout.write(renderStatus(worktreeDir, projectRoot, flat, undefined, deps));
 }
 
 export function cmdPartitions(partitionDir: string): void {
