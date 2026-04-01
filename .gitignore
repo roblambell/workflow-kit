@@ -16,6 +16,9 @@
 .claude/projects/
 .claude/worktrees/
 
+# OpenCode local plans
+.opencode/plans/
+
 # Node/Bun dependencies
 node_modules/
 
@@ -24,4 +27,3 @@ dist/
 
 # GitHub Actions require compiled dist to be committed
 !actions/*/dist/
-
