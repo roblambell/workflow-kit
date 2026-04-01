@@ -6,6 +6,12 @@ on:
       - 'v*'
   workflow_dispatch:
 
+concurrency:
+  # Release jobs publish assets and update the tap repo. Run them one at a time
+  # so consecutive version tags are released in order.
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
 

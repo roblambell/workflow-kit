@@ -13,7 +13,9 @@ on:
 
 concurrency:
   group: cd-main
-  cancel-in-progress: true
+  # Main pushes should ship in order. Queue newer runs instead of cancelling the
+  # one already publishing, otherwise GitHub surfaces the superseded run as a failure.
+  cancel-in-progress: false
 
 permissions:
   contents: write
