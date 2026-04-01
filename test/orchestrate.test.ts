@@ -6217,6 +6217,116 @@ describe("interactive watch operator session", () => {
     expect(result.completionAction).toBe("quit");
   });
 
+  it("blocks underlying selection and detail changes while help is open", async () => {
+    const stdin = makeOperatorStdin();
+    const { stream: stdout } = makeOperatorStdout();
+    const onExtendTimeout = vi.fn(() => true);
+    const tuiState = makeOperatorTuiState({ onExtendTimeout });
+    const child = makeOperatorChild();
+
+    const sessionPromise = runInteractiveWatchOperatorSession({
+      projectRoot: "/project",
+      childArgs: ["--items", "H-TRS-3", "H-TRS-5"],
+      tuiState,
+      log: () => {},
+      initialSnapshot: {
+        daemonState: makeOperatorSnapshotWithItems([
+          { id: "H-TRS-3", title: "First blocked snapshot" },
+          { id: "H-TRS-5", title: "Second blocked snapshot", dependencies: ["H-TRS-3"] },
+        ]).state,
+        runtime: makeOperatorSnapshot().runtime,
+      },
+      watchMode: true,
+      stdin,
+      stdout,
+      spawnChild: () => child,
+    });
+
+    await Promise.resolve();
+    const initialSelectedItemId = tuiState.selectedItemId;
+    expect(initialSelectedItemId).toBeDefined();
+
+    (stdin as any)._emit("data", "?");
+    expect(tuiState.showHelp).toBe(true);
+
+    (stdin as any)._emit("data", "\x1b[B");
+    (stdin as any)._emit("data", "i");
+    (stdin as any)._emit("data", "d");
+    (stdin as any)._emit("data", "x");
+    (stdin as any)._emit("data", "\t");
+
+    expect(tuiState.selectedItemId).toBe(initialSelectedItemId);
+    expect(tuiState.detailItemId).toBeNull();
+    expect(tuiState.viewOptions.showBlockerDetail).toBe(true);
+    expect(tuiState.panelMode).toBe("status-only");
+    expect(onExtendTimeout).not.toHaveBeenCalled();
+
+    (stdin as any)._emit("data", "\x1b");
+    expect(tuiState.showHelp).toBe(false);
+
+    (stdin as any)._emit("data", "\x1b[B");
+    expect(tuiState.selectedItemId).toBe("H-TRS-5");
+
+    (stdin as any)._emit("data", "i");
+    expect(tuiState.detailItemId).toBe("H-TRS-5");
+
+    (stdin as any)._emit("data", "q");
+    const result = await sessionPromise;
+
+    expect(result.completionAction).toBe("quit");
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  it("prefers help over controls and detail overlays", () => {
+    const writes: string[] = [];
+    const tuiState = makeOperatorTuiState({
+      showHelp: true,
+      showControls: true,
+      detailItemId: "H-TRS-5",
+    });
+    tuiState.viewOptions.showHelp = true;
+    tuiState.viewOptions.showControls = true;
+
+    renderTuiPanelFrameFromStatusItems(
+      [
+        makeStatusItem({ id: "H-TRS-3", title: "First item" }),
+        makeStatusItem({ id: "H-TRS-5", title: "Second item" }),
+      ],
+      2,
+      tuiState,
+      (chunk) => {
+        writes.push(chunk);
+      },
+    );
+
+    const helpOutput = writes.join("");
+    expect(helpOutput).toContain("Help");
+    expect(helpOutput).toContain("Press Enter, ? or Escape to close");
+    expect(helpOutput).not.toContain("Controls");
+    expect(helpOutput).not.toContain("H-TRS-5");
+
+    writes.length = 0;
+    tuiState.showHelp = false;
+    tuiState.viewOptions.showHelp = false;
+
+    renderTuiPanelFrameFromStatusItems(
+      [
+        makeStatusItem({ id: "H-TRS-3", title: "First item" }),
+        makeStatusItem({ id: "H-TRS-5", title: "Second item" }),
+      ],
+      2,
+      tuiState,
+      (chunk) => {
+        writes.push(chunk);
+      },
+    );
+
+    const controlsOutput = writes.join("");
+    expect(controlsOutput).toContain("Controls");
+    expect(controlsOutput).not.toContain("Help");
+    expect(controlsOutput).not.toContain("H-TRS-5");
+  });
+
   it("restores terminal state after the child completes", async () => {
     const stdin = makeOperatorStdin();
     const { stream: stdout, writes } = makeOperatorStdout();

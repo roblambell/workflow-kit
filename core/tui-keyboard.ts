@@ -250,7 +250,7 @@ export function applyRuntimeSnapshotToTuiState(
  * - `m` toggles metrics panel
  * - `d` toggles deps detail view
  * - `?` toggles full-screen help overlay
- * - Escape dismisses help overlay (raw `\x1b`, not arrow key sequences)
+ * - While help is open, only Enter, Escape, and `?` dismiss it
  * - Up/Down arrows are page-aware: navigate items or scroll logs
  *
  * Returns a cleanup function that restores terminal state.
@@ -506,6 +506,34 @@ export function setupKeyboardShortcuts(
     tuiState.viewOptions.showControls = false;
   };
 
+  const setHelpVisible = (visible: boolean) => {
+    if (!tuiState) return;
+    tuiState.showHelp = visible;
+    tuiState.viewOptions.showHelp = visible;
+    if (visible) {
+      dismissControls();
+    }
+  };
+
+  const toggleHelp = () => {
+    if (!tuiState) return;
+    setHelpVisible(!tuiState.showHelp);
+  };
+
+  const setControlsVisible = (visible: boolean) => {
+    if (!tuiState) return;
+    if (visible) {
+      setHelpVisible(false);
+      clampControlsRowIndex();
+      exitJoinInput();
+      syncCollaborationView();
+    } else {
+      exitJoinInput();
+    }
+    tuiState.showControls = visible;
+    tuiState.viewOptions.showControls = visible;
+  };
+
   const moveControlsRow = (delta: number) => {
     if (!tuiState) return;
     clampControlsRowIndex();
@@ -668,6 +696,19 @@ export function setupKeyboardShortcuts(
 
     let handled = true;
 
+    if (tuiState.showHelp) {
+      switch (key) {
+        case "\r":
+        case "\x1b":
+        case "?":
+          setHelpVisible(false);
+          tuiState.onUpdate?.();
+          return;
+        default:
+          return;
+      }
+    }
+
     if (tuiState.showControls) {
       if (tuiState.collaborationJoinInputActive) {
         switch (key) {
@@ -740,36 +781,16 @@ export function setupKeyboardShortcuts(
 
     switch (key) {
       case "?":
-        tuiState.showHelp = !tuiState.showHelp;
-        tuiState.viewOptions.showHelp = tuiState.showHelp;
-        // Close controls if help is opening
-        if (tuiState.showHelp) {
-          tuiState.showControls = false;
-          tuiState.viewOptions.showControls = false;
-        }
+        toggleHelp();
         break;
       case "c": // Toggle controls overlay
-        tuiState.showControls = !tuiState.showControls;
-        tuiState.viewOptions.showControls = tuiState.showControls;
-        // Close help if controls is opening
-        if (tuiState.showControls) {
-          tuiState.showHelp = false;
-          tuiState.viewOptions.showHelp = false;
-          clampControlsRowIndex();
-          exitJoinInput();
-          syncCollaborationView();
-        } else {
-          exitJoinInput();
-        }
+        setControlsVisible(!tuiState.showControls);
         break;
       case "\x1b": // Raw Escape (length 1) -- dismiss help, controls, or detail panel
         // Only treat single-byte \x1b as Escape. Arrow keys send \x1b[A etc.
         // which are longer sequences and won't match this case.
-        if (tuiState.showHelp) {
-          tuiState.showHelp = false;
-          tuiState.viewOptions.showHelp = false;
-        } else if (tuiState.showControls) {
-          dismissControls();
+        if (tuiState.showControls) {
+          setControlsVisible(false);
         } else if (tuiState.detailItemId) {
           // Return from detail view to log panel, restore scroll offset
           tuiState.detailItemId = null;

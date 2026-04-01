@@ -2540,7 +2540,7 @@ export function renderHelpOverlay(
   boxLines.push(`${pad}│${" ".repeat(innerWidth)}│`);
 
   // Footer hint
-  const hint = "Press ? or Escape to close";
+  const hint = "Press Enter, ? or Escape to close";
   const hintPad = Math.max(0, Math.floor((innerWidth - hint.length) / 2));
   boxLines.push(`${pad}│${" ".repeat(hintPad)}${DIM}${hint}${RESET}${" ".repeat(Math.max(0, innerWidth - hintPad - hint.length))}│`);
 

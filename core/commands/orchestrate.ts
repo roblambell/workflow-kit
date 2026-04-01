@@ -1135,6 +1135,16 @@ function renderEngineRecoveryOverlay(
   return output.slice(0, termRows);
 }
 
+type ActiveTuiOverlay = "engine-recovery" | "help" | "controls" | "detail" | "none";
+
+function resolveActiveTuiOverlay(tuiState: TuiState): ActiveTuiOverlay {
+  if (tuiState.engineDisconnected) return "engine-recovery";
+  if (tuiState.showHelp || tuiState.viewOptions.showHelp) return "help";
+  if (tuiState.showControls || tuiState.viewOptions.showControls) return "controls";
+  if (tuiState.detailItemId) return "detail";
+  return "none";
+}
+
 export function renderTuiPanelFrameFromStatusItems(
   statusItems: StatusItem[],
   wipLimit: number | undefined,
@@ -1148,76 +1158,7 @@ export function renderTuiPanelFrameFromStatusItems(
     ? { ...(tuiState.viewOptions ?? {}), inlineModeIndicatorOnTitle: true }
     : tuiState.viewOptions;
 
-  write("\x1B[H");
-
-  if (tuiState.engineDisconnected) {
-    const overlayLines = renderEngineRecoveryOverlay(termWidth, termRows, tuiState.engineDisconnectReason);
-    const content = overlayLines.join("\n");
-    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-  } else if (tuiState.viewOptions.showHelp) {
-    const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
-    const content = helpLines.join("\n");
-    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-  } else if (tuiState.showControls) {
-    const controlsLines = renderControlsOverlay(termWidth, termRows, {
-      collaborationMode: tuiState.collaborationMode,
-      pendingCollaborationMode: tuiState.pendingCollaborationMode,
-      collaborationIntent: tuiState.collaborationIntent,
-      sessionCode: tuiState.sessionCode,
-      collaborationJoinInputActive: tuiState.collaborationJoinInputActive,
-      collaborationJoinInputValue: tuiState.collaborationJoinInputValue,
-      collaborationBusy: tuiState.collaborationBusy,
-      collaborationError: tuiState.collaborationError,
-      reviewMode: tuiState.reviewMode,
-      pendingReviewMode: tuiState.pendingReviewMode,
-      mergeStrategy: tuiState.mergeStrategy,
-      pendingMergeStrategy: tuiState.pendingStrategy,
-      bypassEnabled: tuiState.bypassEnabled,
-      wipLimit,
-      pendingWipLimit: tuiState.pendingWipLimit,
-      activeRowIndex: tuiState.controlsRowIndex,
-    });
-    const content = controlsLines.join("\n");
-    write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-  } else if (tuiState.detailItemId) {
-    const detailStatusItem = statusItems.find((item) => item.id === tuiState.detailItemId);
-    if (detailStatusItem) {
-      const detailSnapshot = detailSnapshots?.get(tuiState.detailItemId);
-      const overlayLines = renderDetailOverlay(detailStatusItem, termWidth, termRows, {
-        repoUrl: tuiState.viewOptions.repoUrl,
-        priority: detailSnapshot?.priority,
-        dependencies: detailSnapshot?.dependencies,
-        ciFailCount: detailSnapshot?.ciFailCount,
-        retryCount: detailSnapshot?.retryCount,
-        scrollOffset: tuiState.detailScrollOffset ?? 0,
-        descriptionBody: detailSnapshot?.descriptionBody,
-      });
-      const content = overlayLines.join("\n");
-      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-    } else {
-      tuiState.detailItemId = null;
-      const filteredLogs = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
-      prepareStatusSelection(tuiState, statusItems);
-      const panelLayout = buildPanelLayout(
-        tuiState.panelMode,
-        statusItems,
-        filteredLogs,
-        termWidth,
-        termRows,
-        {
-          wipLimit,
-          viewOptions: fullScreenViewOptions,
-          logScrollOffset: tuiState.logScrollOffset,
-          statusScrollOffset: tuiState.scrollOffset,
-          selectedItemId: tuiState.selectedItemId,
-        },
-      );
-      syncStatusLayout(tuiState, panelLayout, termRows);
-      const frameLines = renderPanelFrame(panelLayout, termRows, termWidth, tuiState.scrollOffset);
-      const content = frameLines.join("\n");
-      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-    }
-  } else {
+  const renderDefaultPanel = () => {
     const filteredLogs = filterLogsByLevel(tuiState.logBuffer, tuiState.logLevelFilter);
     prepareStatusSelection(tuiState, statusItems);
     const panelLayout = buildPanelLayout(
@@ -1238,6 +1179,72 @@ export function renderTuiPanelFrameFromStatusItems(
     const frameLines = renderPanelFrame(panelLayout, termRows, termWidth, tuiState.scrollOffset);
     const content = frameLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+  };
+
+  write("\x1B[H");
+
+  switch (resolveActiveTuiOverlay(tuiState)) {
+    case "engine-recovery": {
+      const overlayLines = renderEngineRecoveryOverlay(termWidth, termRows, tuiState.engineDisconnectReason);
+      const content = overlayLines.join("\n");
+      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+      break;
+    }
+    case "help": {
+      const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
+      const content = helpLines.join("\n");
+      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+      break;
+    }
+    case "controls": {
+      const controlsLines = renderControlsOverlay(termWidth, termRows, {
+        collaborationMode: tuiState.collaborationMode,
+        pendingCollaborationMode: tuiState.pendingCollaborationMode,
+        collaborationIntent: tuiState.collaborationIntent,
+        sessionCode: tuiState.sessionCode,
+        collaborationJoinInputActive: tuiState.collaborationJoinInputActive,
+        collaborationJoinInputValue: tuiState.collaborationJoinInputValue,
+        collaborationBusy: tuiState.collaborationBusy,
+        collaborationError: tuiState.collaborationError,
+        reviewMode: tuiState.reviewMode,
+        pendingReviewMode: tuiState.pendingReviewMode,
+        mergeStrategy: tuiState.mergeStrategy,
+        pendingMergeStrategy: tuiState.pendingStrategy,
+        bypassEnabled: tuiState.bypassEnabled,
+        wipLimit,
+        pendingWipLimit: tuiState.pendingWipLimit,
+        activeRowIndex: tuiState.controlsRowIndex,
+      });
+      const content = controlsLines.join("\n");
+      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+      break;
+    }
+    case "detail": {
+      const detailStatusItem = statusItems.find((item) => item.id === tuiState.detailItemId);
+      if (detailStatusItem) {
+        const detailSnapshot = detailSnapshots?.get(tuiState.detailItemId!);
+        const overlayLines = renderDetailOverlay(detailStatusItem, termWidth, termRows, {
+          repoUrl: tuiState.viewOptions.repoUrl,
+          priority: detailSnapshot?.priority,
+          dependencies: detailSnapshot?.dependencies,
+          ciFailCount: detailSnapshot?.ciFailCount,
+          retryCount: detailSnapshot?.retryCount,
+          scrollOffset: tuiState.detailScrollOffset ?? 0,
+          descriptionBody: detailSnapshot?.descriptionBody,
+        });
+        const content = overlayLines.join("\n");
+        write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+        break;
+      }
+
+      tuiState.detailItemId = null;
+      renderDefaultPanel();
+      break;
+    }
+    case "none": {
+      renderDefaultPanel();
+      break;
+    }
   }
 
   write("\x1B[J");
@@ -1695,45 +1702,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     const termRows = getTerminalHeight();
     const write = (s: string) => process.stdout.write(s);
 
-    write("\x1B[H");
-
-    if (tuiState.viewOptions.showHelp) {
-      const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
-      const content = helpLines.join("\n");
-      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-    } else if (tuiState.showControls) {
-      const controlsLines = renderControlsOverlay(termWidth, termRows, {
-        collaborationMode: tuiState.collaborationMode,
-        pendingCollaborationMode: tuiState.pendingCollaborationMode,
-        collaborationIntent: tuiState.collaborationIntent,
-        sessionCode: tuiState.sessionCode,
-        collaborationJoinInputActive: tuiState.collaborationJoinInputActive,
-        collaborationJoinInputValue: tuiState.collaborationJoinInputValue,
-        collaborationBusy: tuiState.collaborationBusy,
-        collaborationError: tuiState.collaborationError,
-        reviewMode: tuiState.reviewMode,
-        pendingReviewMode: tuiState.pendingReviewMode,
-        mergeStrategy: tuiState.mergeStrategy,
-        pendingMergeStrategy: tuiState.pendingStrategy,
-        bypassEnabled: tuiState.bypassEnabled,
-        wipLimit: data.wipLimit,
-        pendingWipLimit: tuiState.pendingWipLimit,
-      });
-      const content = controlsLines.join("\n");
-      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-    } else if (tuiState.detailItemId) {
-      const detailItem = data.items.find((i) => i.id === tuiState.detailItemId);
-      if (detailItem) {
-        const overlayLines = renderDetailOverlay(detailItem, termWidth, termRows, {
-          repoUrl: tuiState.viewOptions.repoUrl,
-          scrollOffset: tuiState.detailScrollOffset ?? 0,
-        });
-        const content = overlayLines.join("\n");
-        write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
-      } else {
-        tuiState.detailItemId = null;
-      }
-    } else {
+    const renderDefaultPanel = () => {
       const filteredLogs = filterLogsByLevel(logBuffer, tuiState.logLevelFilter);
 
       prepareStatusSelection(tuiState, data.items);
@@ -1755,6 +1724,65 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
       const frameLines = renderPanelFrame(panelLayout, termRows, termWidth, tuiState.scrollOffset);
       const content = frameLines.join("\n");
       write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+    };
+
+    write("\x1B[H");
+
+    switch (resolveActiveTuiOverlay(tuiState)) {
+      case "help": {
+        const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
+        const content = helpLines.join("\n");
+        write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+        break;
+      }
+      case "controls": {
+        const controlsLines = renderControlsOverlay(termWidth, termRows, {
+          collaborationMode: tuiState.collaborationMode,
+          pendingCollaborationMode: tuiState.pendingCollaborationMode,
+          collaborationIntent: tuiState.collaborationIntent,
+          sessionCode: tuiState.sessionCode,
+          collaborationJoinInputActive: tuiState.collaborationJoinInputActive,
+          collaborationJoinInputValue: tuiState.collaborationJoinInputValue,
+          collaborationBusy: tuiState.collaborationBusy,
+          collaborationError: tuiState.collaborationError,
+          reviewMode: tuiState.reviewMode,
+          pendingReviewMode: tuiState.pendingReviewMode,
+          mergeStrategy: tuiState.mergeStrategy,
+          pendingMergeStrategy: tuiState.pendingStrategy,
+          bypassEnabled: tuiState.bypassEnabled,
+          wipLimit: data.wipLimit,
+          pendingWipLimit: tuiState.pendingWipLimit,
+        });
+        const content = controlsLines.join("\n");
+        write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+        break;
+      }
+      case "detail": {
+        const detailItem = data.items.find((i) => i.id === tuiState.detailItemId);
+        if (detailItem) {
+          const overlayLines = renderDetailOverlay(detailItem, termWidth, termRows, {
+            repoUrl: tuiState.viewOptions.repoUrl,
+            scrollOffset: tuiState.detailScrollOffset ?? 0,
+          });
+          const content = overlayLines.join("\n");
+          write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+          break;
+        }
+
+        tuiState.detailItemId = null;
+        renderDefaultPanel();
+        break;
+      }
+      case "engine-recovery": {
+        const overlayLines = renderEngineRecoveryOverlay(termWidth, termRows, tuiState.engineDisconnectReason);
+        const content = overlayLines.join("\n");
+        write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+        break;
+      }
+      case "none": {
+        renderDefaultPanel();
+        break;
+      }
     }
 
     write("\x1B[J");

@@ -222,7 +222,7 @@ describe("setupKeyboardShortcuts", () => {
     cleanup();
   });
 
-  it("c key closes help when opening controls", () => {
+  it("c key is swallowed while help is open", () => {
     const ac = new AbortController();
     const stdin = makeFakeStdin();
     const state = makeTuiState({ showHelp: true });
@@ -230,8 +230,8 @@ describe("setupKeyboardShortcuts", () => {
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "c");
-    expect(state.showControls).toBe(true);
-    expect(state.showHelp).toBe(false);
+    expect(state.showControls).toBe(false);
+    expect(state.showHelp).toBe(true);
     cleanup();
   });
 
@@ -270,6 +270,138 @@ describe("setupKeyboardShortcuts", () => {
 
     stdin.emit("data", "\x1b");
     expect(state.showHelp).toBe(false);
+    cleanup();
+  });
+
+  it("Enter dismisses help overlay without opening detail", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({
+      showHelp: true,
+      selectedItemId: "A-1",
+      visibleItemIds: ["A-1", "B-2"],
+      detailItemId: null,
+    });
+    state.viewOptions.showHelp = true;
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\r");
+
+    expect(state.showHelp).toBe(false);
+    expect(state.viewOptions.showHelp).toBe(false);
+    expect(state.detailItemId).toBeNull();
+    cleanup();
+  });
+
+  it("? dismisses help overlay without opening controls", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({ showHelp: true, showControls: false });
+    state.viewOptions.showHelp = true;
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "?");
+
+    expect(state.showHelp).toBe(false);
+    expect(state.viewOptions.showHelp).toBe(false);
+    expect(state.showControls).toBe(false);
+    cleanup();
+  });
+
+  it("swallows non-dismiss help keys so background state does not change", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onWipChange = vi.fn();
+    const onExtendTimeout = vi.fn(() => true);
+    const state = makeStatusNavigationState([
+      makeStatusItem({ id: "A-1", state: "implementing" }),
+      makeStatusItem({ id: "B-2", state: "review" }),
+    ], {
+      showHelp: true,
+      panelMode: "status-only",
+      detailItemId: null,
+      controlsRowIndex: 0,
+      onWipChange,
+      onExtendTimeout,
+    });
+    state.viewOptions.showHelp = true;
+    state.viewOptions.showBlockerDetail = true;
+    const initialSelectedItemId = state.selectedItemId;
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b[B");
+    stdin.emit("data", "i");
+    stdin.emit("data", "d");
+    stdin.emit("data", "x");
+    stdin.emit("data", "\t");
+    stdin.emit("data", "+");
+    stdin.emit("data", "-");
+    stdin.emit("data", "c");
+
+    expect(state.showHelp).toBe(true);
+    expect(state.selectedItemId).toBe(initialSelectedItemId);
+    expect(state.detailItemId).toBeNull();
+    expect(state.viewOptions.showBlockerDetail).toBe(true);
+    expect(state.panelMode).toBe("status-only");
+    expect(state.showControls).toBe(false);
+    expect(onExtendTimeout).not.toHaveBeenCalled();
+    expect(onWipChange).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it("q still routes shutdown while help is visible", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onShutdown = vi.fn();
+    const state = makeTuiState({ showHelp: true, onShutdown });
+    state.viewOptions.showHelp = true;
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "q");
+
+    expect(onShutdown).toHaveBeenCalledTimes(1);
+    expect(ac.signal.aborted).toBe(false);
+    expect(state.showHelp).toBe(true);
+    cleanup();
+  });
+
+  it("double Ctrl+C still quits while help is visible", () => {
+    vi.useFakeTimers();
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onShutdown = vi.fn();
+    const state = makeTuiState({ showHelp: true, onShutdown });
+    state.viewOptions.showHelp = true;
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x03");
+    expect(state.ctrlCPending).toBe(true);
+    expect(onShutdown).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1000);
+    stdin.emit("data", "\x03");
+
+    expect(onShutdown).toHaveBeenCalledTimes(1);
+    expect(ac.signal.aborted).toBe(false);
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("controls still work normally after dismissing help", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const state = makeTuiState({ showHelp: true, controlsRowIndex: 0 });
+    state.viewOptions.showHelp = true;
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\r");
+    expect(state.showHelp).toBe(false);
+
+    stdin.emit("data", "c");
+    expect(state.showControls).toBe(true);
+
+    stdin.emit("data", "\x1b[B");
+    expect(state.controlsRowIndex).toBe(1);
     cleanup();
   });
 
