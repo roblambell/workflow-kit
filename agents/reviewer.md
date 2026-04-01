@@ -128,9 +128,9 @@ These are quality issues worth fixing but not blocking. They reduce maintainabil
 
 #### Performance Issues
 - N+1 queries: associations used in loops without eager loading
-- O(n²) algorithms where O(n) or O(n log n) is straightforward
+- O(n^2) algorithms where O(n) or O(n log n) is straightforward
 - Synchronous I/O in hot paths
-- Heavy dependencies added for small functionality (moment.js → date-fns)
+- Heavy dependencies added for small functionality (moment.js -> date-fns)
 - Missing database indexes for new query patterns
 
 #### Clarity & Readability
@@ -139,26 +139,61 @@ These are quality issues worth fixing but not blocking. They reduce maintainabil
 - Variable names that mislead about their contents
 - Complex expressions that would benefit from an explanatory variable
 
-## 4. Severity Tiers
+## 4. Conventional Comment Labels and Decorations
 
-Classify every finding into one of three tiers:
+Use conventional comments for every review finding. Format each inline comment as:
 
-- **BLOCKER**: Must fix before merge. Correctness bugs, security vulnerabilities, data loss risks, race conditions with real impact. The PR should not land with this issue.
-- **NIT**: Worth fixing, not blocking. Dead code, missing tests, magic numbers, performance issues, clarity improvements. The PR can land as-is, but these should be addressed.
-- **PRE-EXISTING**: A real bug or issue, but NOT introduced by this PR. It exists in the codebase already. Flag it for awareness but do not count it against this PR. Do not request changes for pre-existing issues.
+`**label (decorations):** subject`
 
-**Classification rules:**
-- Pass 1 findings default to BLOCKER unless the impact is clearly minimal
-- Pass 2 findings default to NIT
-- If a finding exists in unchanged code visible in the diff context, it's PRE-EXISTING
-- When in doubt between BLOCKER and NIT, ask: "Would I block a colleague's PR for this?" If yes, BLOCKER. If you'd approve with a comment, NIT.
+- `label` is lowercase and names the kind of feedback
+- `decorations` is a comma-separated list in lowercase ASCII
+- `subject` is a short, specific summary; add detail and suggested fixes after it
+
+### Labels
+
+Use the conventional comments label set:
+
+- `issue` - correctness, security, data integrity, or other defects that need action
+- `suggestion` - recommended improvement with a clear fix
+- `nitpick` - small cleanup or readability tweak
+- `praise` - call out something especially strong
+- `question` - ask for clarification when intent is unclear
+- `todo` - request follow-up work or explicit tracking
+- `thought` - share design reasoning or a trade-off to consider
+- `note` - neutral context, caveat, or reviewer heads-up
+
+Optional labels when they fit better:
+
+- `chore`
+- `typo`
+- `polish`
+
+### Decorations
+
+Use decorations to communicate impact and context:
+
+- `blocking` - must fix before merge; use for pass 1 findings and anything you would block on
+- `non-blocking` - worth fixing or discussing, but not required for merge
+- `pre-existing` - issue predates this PR; flag for awareness only and do not count it in `blockingCount` or `nonBlockingCount`
+- `security` - add when the finding is security-sensitive
+- `if-minor` - add when the change is optional unless the author is already touching the area
+
+### Mapping Rules
+
+- Every inline finding should include exactly one of `blocking` or `non-blocking`
+- Keep comment bodies ASCII-only; use `--`, `->`, and `...` instead of typographic punctuation
+- Add extra decorations when they sharpen intent, for example `**issue (blocking, security):** Missing auth check on the new endpoint`
+- Pass 1 findings usually map to `issue (blocking)` unless another label is more precise
+- Pass 2 findings usually map to `suggestion (non-blocking)`, `nitpick (non-blocking)`, `question (non-blocking)`, `thought (non-blocking)`, or `note (non-blocking)`
+- Pre-existing issues should usually be phrased as `note (non-blocking, pre-existing)` or `issue (non-blocking, pre-existing)`; they remain awareness-only and do not change the verdict
+- When in doubt, ask: "Would I block a colleague's PR for this?" If yes, include `blocking`. Otherwise use `non-blocking`.
 
 ## 5. Diagram Guidance
 
 Add a Mermaid diagram to your review summary when the PR changes:
 - State machines or status transitions
 - Data flows between services or modules
-- Multi-step interactions (API → queue → worker → DB)
+- Multi-step interactions (API -> queue -> worker -> DB)
 - Complex branching logic that's hard to follow from code alone
 
 **Skip diagrams** for small PRs (<100 lines), single-file changes, test-only changes, or config changes.
@@ -201,7 +236,7 @@ Every verdict includes 7 numeric scores. The orchestrator renders these as a sco
 
 ### Verdict File
 
-Write a JSON file to the `VERDICT_FILE` path. The `summary` field must contain **detailed** findings in markdown -- all blockers and nits with `file:line` references and suggested fixes. The orchestrator sends this summary to the implementer worker as review feedback, so it must contain enough detail for the implementer to act on without reading GitHub inline comments.
+Write a JSON file to the `VERDICT_FILE` path. The `summary` field must contain **detailed** findings in markdown -- all blocking and non-blocking findings with `file:line` references and suggested fixes. The orchestrator sends this summary to the implementer worker as review feedback, so it must contain enough detail for the implementer to act on without reading GitHub inline comments.
 
 Note: The orchestrator constructs the `[Reviewer]` label and scorecard table in the PR comment -- you only write the verdict file.
 
@@ -209,10 +244,9 @@ Note: The orchestrator constructs the `[Reviewer]` label and scorecard table in 
 cat > "$VERDICT_FILE" << 'VERDICT_EOF'
 {
   "verdict": "approve",
-  "summary": "Detailed review findings in markdown (all blockers/nits with file:line references and suggested fixes)",
-  "blockerCount": 0,
-  "nitCount": 2,
-  "preExistingCount": 0,
+  "summary": "Detailed review findings in markdown (all blocking/non-blocking findings with file:line references and suggested fixes)",
+  "blockingCount": 0,
+  "nonBlockingCount": 2,
   "architectureScore": 8,
   "codeQualityScore": 9,
   "performanceScore": 7,
@@ -226,16 +260,16 @@ VERDICT_EOF
 
 The `summary` field should include:
 
-- Blocker details with `file:line` references and suggested fixes
-- Nit details with `file:line` references
+- Blocking finding details with `file:line` references and suggested fixes
+- Non-blocking finding details with `file:line` references
 - Pre-existing issues flagged for awareness
 - Mermaid diagrams (if warranted per section 5)
 - If no findings: `"No issues found. Clean PR."`
 
 ### Verdict Decision
 
-- **0 blockers**: `"verdict": "approve"`, event = `APPROVE`
-- **≥1 blocker**: `"verdict": "request-changes"`, event = `REQUEST_CHANGES`
+- **0 blocking findings**: `"verdict": "approve"`, event = `APPROVE`
+- **>=1 blocking finding**: `"verdict": "request-changes"`, event = `REQUEST_CHANGES`
 
 ### Post GitHub Review
 
@@ -244,7 +278,7 @@ Post your review using GitHub's Pull Request Review API. This is a single API ca
 - **Verdict** as the review event (`APPROVE` or `REQUEST_CHANGES`)
 - **Body** as a brief summary -- do NOT repeat individual findings here since they appear as inline comments on specific lines
 
-Inline comments are the primary feedback mechanism for the GitHub UI. Each finding should be an inline comment on the relevant line. The review `body` is only a brief summary (e.g., "LGTM -- 2 nits" or "2 blockers found -- see inline comments"). This is separate from the verdict file `summary`, which must remain detailed.
+Inline comments are the primary feedback mechanism for the GitHub UI. Each finding should be an inline comment on the relevant line. The review `body` is only a brief summary (e.g., "LGTM -- 2 non-blocking comments" or "2 blocking findings -- see inline comments"). This is separate from the verdict file `summary`, which must remain detailed.
 
 #### Building the review payload
 
@@ -267,13 +301,13 @@ gh api repos/{owner}/{repo}/pulls/{PR_NUMBER}/reviews \
       "path": "path/to/file.ts",
       "line": 42,
       "side": "RIGHT",
-      "body": "**[NIT]** Description of issue.\n\n\`\`\`suggestion\ncorrected code here\n\`\`\`"
+      "body": "**suggestion (non-blocking):** Extract this retry timeout into a named constant so the policy stays in one place.\n\n\`\`\`suggestion\nconst RETRY_TIMEOUT_MS = 5000;\n\`\`\`"
     },
     {
       "path": "path/to/other.ts",
       "line": 15,
       "side": "RIGHT",
-      "body": "**[BLOCKER]** Description of critical issue.\n\nSuggested fix: ..."
+      "body": "**issue (blocking, security):** Validate this user-controlled path before interpolating it into the shell command.\n\nSuggested fix: reject unsafe characters before constructing the command."
     }
   ]
 }
@@ -300,7 +334,7 @@ REVIEW_EOF
 
 #### Findings that span multiple lines or are about overall approach
 
-If a finding is about the overall approach rather than a specific line, include it in the review `body` instead of as an inline comment. Keep the body concise -- a few bullet points at most.
+If a finding is about the overall approach rather than a specific line, include it in the review `body` instead of as an inline comment. Keep the body concise -- a few bullet points at most, and use the same `**label (decorations):** subject` format for any general findings you include there.
 
 ## 7. Auto-Fix Behavior
 
@@ -319,7 +353,7 @@ Fix mechanical issues directly on the PR branch. Comment on everything else.
 - Trivial null checks (adding `?.` or `?? default`)
 - Stale comments that contradict the code they describe
 - N+1 queries with an obvious eager-loading fix
-- Magic numbers → named constants (when the name is obvious)
+- Magic numbers -> named constants (when the name is obvious)
 - Missing `await` on clearly async calls
 - Formatting of error messages (consistent casing, punctuation)
 
