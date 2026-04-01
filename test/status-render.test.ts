@@ -1570,6 +1570,131 @@ describe("orchestratorItemsToStatusItems", () => {
   });
 });
 
+// ── Regression: remote snapshot overrides prevent claimed-only fallback ─────
+
+describe("regression: remote snapshot overrides local state across all views", () => {
+  it("daemonStateToStatusItems uses remoteSnapshot state, not local state", () => {
+    // If someone reverts to claimed-only rendering (where we only know an item
+    // is remote but not its specific state), these assertions on specific remote
+    // states will fail because local state would leak through.
+    const now = Date.now();
+    const state: DaemonState = {
+      pid: 123,
+      startedAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-01T00:05:00Z",
+      items: [
+        {
+          id: "REG-IMPL",
+          state: "queued",
+          prNumber: null,
+          title: "Local title A",
+          lastTransition: new Date(now - 60000).toISOString(),
+          ciFailCount: 0,
+          retryCount: 0,
+          remoteSnapshot: {
+            state: "implementing",
+            ownerDaemonId: "daemon-2",
+            ownerName: "remote-host",
+          },
+        },
+        {
+          id: "REG-REV",
+          state: "queued",
+          prNumber: null,
+          title: "Local title B",
+          lastTransition: new Date(now - 120000).toISOString(),
+          ciFailCount: 0,
+          retryCount: 0,
+          remoteSnapshot: {
+            state: "review",
+            ownerDaemonId: "daemon-3",
+            ownerName: "review-host",
+            prNumber: 77,
+          },
+        },
+        {
+          id: "REG-QUEUE",
+          state: "implementing",
+          prNumber: 99,
+          title: "Local title C",
+          lastTransition: new Date(now - 180000).toISOString(),
+          ciFailCount: 0,
+          retryCount: 0,
+          remoteSnapshot: {
+            state: "queued",
+            ownerDaemonId: null,
+            ownerName: null,
+            title: "Queued remotely",
+          },
+        },
+      ],
+    };
+
+    const items = daemonStateToStatusItems(state);
+
+    // Each item's DISPLAYED state must match the broker's remoteSnapshot, not the local state.
+    // Reverting to claimed-only rendering would show "queued" for REG-IMPL and REG-REV
+    // (their local state) instead of the truthful broker-reported state.
+    expect(items[0]!.state).toBe("implementing");
+    expect(items[0]!.remote).toBe(true);
+
+    expect(items[1]!.state).toBe("review");
+    expect(items[1]!.remote).toBe(true);
+    expect(items[1]!.prNumber).toBe(77);
+
+    // REG-QUEUE: local says implementing(#99), broker says queued with no owner.
+    // Broker wins -- state is queued, not implementing.
+    expect(items[2]!.state).toBe("queued");
+    expect(items[2]!.remote).toBe(false);
+    expect(items[2]!.title).toBe("Queued remotely");
+    expect(items[2]!.prNumber).toBeNull();
+  });
+
+  it("orchestratorItemsToStatusItems prefers broker snapshot over local for all three key states", () => {
+    // Same regression guard but for the live TUI path.
+    const items = [
+      makeOrchestratorItem("LIVE-IMPL", "queued"),
+      makeOrchestratorItem("LIVE-REV", "queued"),
+      makeOrchestratorItem("LIVE-QUEUE", "implementing"),
+    ];
+    const remoteSnapshots = new Map<string, CrewRemoteItemSnapshot>([
+      ["LIVE-IMPL", {
+        id: "LIVE-IMPL",
+        state: "implementing",
+        ownerDaemonId: "daemon-2",
+        ownerName: "remote-host",
+      }],
+      ["LIVE-REV", {
+        id: "LIVE-REV",
+        state: "review",
+        ownerDaemonId: "daemon-3",
+        ownerName: "review-host",
+        prNumber: 77,
+      }],
+      ["LIVE-QUEUE", {
+        id: "LIVE-QUEUE",
+        state: "queued",
+        ownerDaemonId: null,
+        ownerName: null,
+        title: "Queued remotely",
+      }],
+    ]);
+
+    const result = orchestratorItemsToStatusItems(items, remoteSnapshots);
+
+    expect(result[0]!.state).toBe("implementing");
+    expect(result[0]!.remote).toBe(true);
+
+    expect(result[1]!.state).toBe("review");
+    expect(result[1]!.remote).toBe(true);
+    expect(result[1]!.prNumber).toBe(77);
+
+    expect(result[2]!.state).toBe("queued");
+    expect(result[2]!.remote).toBe(false);
+    expect(result[2]!.title).toBe("Queued remotely");
+  });
+});
+
 // ── renderTuiFrame ─────────────────────────────────────────────────────────────
 
 describe("renderTuiFrame", () => {

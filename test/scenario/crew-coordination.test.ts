@@ -4,9 +4,15 @@
 // (not the full MockBroker WebSocket server) so tests run fast and deterministic.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Orchestrator } from "../../core/orchestrator.ts";
-import { orchestrateLoop } from "../../core/commands/orchestrate.ts";
-import type { CrewBroker, SyncItem, CrewStatus } from "../../core/crew.ts";
+import { Orchestrator, type OrchestratorItem } from "../../core/orchestrator.ts";
+import {
+  orchestrateLoop,
+  orchestratorItemsToStatusItems,
+  crewStatusToRemoteItemSnapshots,
+} from "../../core/commands/orchestrate.ts";
+import type { CrewBroker, SyncItem, CrewStatus, CrewRemoteItemSnapshot } from "../../core/crew.ts";
+import { serializeOrchestratorState } from "../../core/daemon.ts";
+import { daemonStateToStatusItems } from "../../core/status-render.ts";
 import { FakeGitHub } from "../fakes/fake-github.ts";
 import { FakeMux } from "../fakes/fake-mux.ts";
 import {
@@ -44,6 +50,8 @@ class StubCrewBroker implements CrewBroker {
   private _available: string[] = [];
   /** Index for round-robin claim serving. */
   private _claimIdx = 0;
+  /** Crew status returned by getCrewStatus(). */
+  private _crewStatus: CrewStatus | null = null;
 
   constructor(opts: StubCrewBrokerOpts = {}) {
     this._connected = !opts.disconnected;
@@ -99,7 +107,7 @@ class StubCrewBroker implements CrewBroker {
   }
 
   getCrewStatus(): CrewStatus | null {
-    return null;
+    return this._crewStatus;
   }
 
   report(
@@ -121,6 +129,11 @@ class StubCrewBroker implements CrewBroker {
   /** Override what claim() returns. Set to undefined to resume normal behaviour. */
   setClaimOverride(override: string | null | undefined): void {
     this._claimOverride = override;
+  }
+
+  /** Set the crew status returned by getCrewStatus(). */
+  setCrewStatus(status: CrewStatus | null): void {
+    this._crewStatus = status;
   }
 }
 
@@ -424,5 +437,258 @@ describe("scenario: crew coordination", () => {
     // After reconnect, launch and complete should succeed
     expect(actionDeps.launchSingleItem).toHaveBeenCalledTimes(1);
     expect(broker.completes).toContain("C-6");
+  });
+
+  // ── Remote state rendering regression coverage ────────────────────
+
+  function makeCrewStatusWith(
+    remoteItems: CrewRemoteItemSnapshot[],
+  ): CrewStatus {
+    return {
+      crewCode: "ABCD-EFGH",
+      daemonCount: 2,
+      availableCount: 1,
+      claimedCount: remoteItems.filter((i) => i.ownerDaemonId !== null).length,
+      completedCount: 0,
+      daemonNames: ["local", "remote-host"],
+      claimedItems: remoteItems
+        .filter((i) => i.ownerDaemonId !== null)
+        .map((i) => i.id),
+      remoteItems,
+    };
+  }
+
+  it("remote implementing/review/queued states flow truthfully through broker, TUI, and persisted views", async () => {
+    const broker = new StubCrewBroker();
+    broker.setClaimOverride(null); // block launches
+
+    broker.setCrewStatus(
+      makeCrewStatusWith([
+        {
+          id: "RIMPL-1",
+          state: "implementing",
+          ownerDaemonId: "daemon-2",
+          ownerName: "remote-host",
+        },
+        {
+          id: "RREV-1",
+          state: "review",
+          ownerDaemonId: "daemon-3",
+          ownerName: "review-host",
+          prNumber: 42,
+        },
+        {
+          id: "RQUEUE-1",
+          state: "queued",
+          ownerDaemonId: null,
+          ownerName: null,
+        },
+      ]),
+    );
+
+    const orch = new Orchestrator({
+      wipLimit: 5,
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      enableStacking: false,
+      fixForward: false,
+    });
+
+    orch.addItem(makeWorkItem("RIMPL-1"));
+    orch.addItem(makeWorkItem("RREV-1"));
+    orch.addItem(makeWorkItem("RQUEUE-1"));
+
+    const capturedItems: OrchestratorItem[][] = [];
+    const actionDeps = buildActionDeps(fakeGh, fakeMux);
+    const loopDeps = buildLoopDeps(fakeGh, fakeMux, actionDeps);
+    loopDeps.crewBroker = broker;
+    loopDeps.onPollComplete = (items) => capturedItems.push(items.map((i) => ({ ...i })));
+
+    await orchestrateLoop(orch, defaultCtx, loopDeps, { maxIterations: 3 });
+
+    expect(capturedItems.length).toBeGreaterThanOrEqual(1);
+    const lastItems = capturedItems[capturedItems.length - 1]!;
+
+    // ── TUI path: orchestratorItemsToStatusItems with broker snapshots ──
+    const remoteSnapshots = crewStatusToRemoteItemSnapshots(broker.getCrewStatus());
+    const tuiItems = orchestratorItemsToStatusItems(lastItems, remoteSnapshots);
+
+    const tuiImpl = tuiItems.find((i) => i.id === "RIMPL-1")!;
+    expect(tuiImpl.state).toBe("implementing");
+    expect(tuiImpl.remote).toBe(true);
+
+    const tuiRev = tuiItems.find((i) => i.id === "RREV-1")!;
+    expect(tuiRev.state).toBe("review");
+    expect(tuiRev.remote).toBe(true);
+    expect(tuiRev.prNumber).toBe(42);
+
+    const tuiQueue = tuiItems.find((i) => i.id === "RQUEUE-1")!;
+    expect(tuiQueue.state).toBe("queued");
+    expect(tuiQueue.remote).toBe(false);
+
+    // ── Persisted path: serializeOrchestratorState → daemonStateToStatusItems ──
+    const daemonState = serializeOrchestratorState(lastItems, 9999, "2026-04-01T00:00:00Z", {
+      remoteItemSnapshots: remoteSnapshots,
+    });
+    const persItems = daemonStateToStatusItems(daemonState);
+
+    const persImpl = persItems.find((i) => i.id === "RIMPL-1")!;
+    expect(persImpl.state).toBe("implementing");
+    expect(persImpl.remote).toBe(true);
+
+    const persRev = persItems.find((i) => i.id === "RREV-1")!;
+    expect(persRev.state).toBe("review");
+    expect(persRev.remote).toBe(true);
+    expect(persRev.prNumber).toBe(42);
+
+    const persQueue = persItems.find((i) => i.id === "RQUEUE-1")!;
+    expect(persQueue.state).toBe("queued");
+    expect(persQueue.remote).toBe(false);
+
+    // ── Agreement: TUI and persisted views must agree ──
+    for (const id of ["RIMPL-1", "RREV-1", "RQUEUE-1"]) {
+      const tui = tuiItems.find((i) => i.id === id)!;
+      const pers = persItems.find((i) => i.id === id)!;
+      expect(tui.state).toBe(pers.state);
+      expect(tui.remote).toBe(pers.remote);
+      expect(tui.prNumber).toBe(pers.prNumber);
+    }
+  });
+
+  it("last broker update wins: stale remote state replaced without residue", async () => {
+    const broker = new StubCrewBroker();
+    broker.setClaimOverride(null);
+
+    // Initial: RACE-1 implementing by daemon-2
+    broker.setCrewStatus(
+      makeCrewStatusWith([
+        {
+          id: "RACE-1",
+          state: "implementing",
+          ownerDaemonId: "daemon-2",
+          ownerName: "host-2",
+        },
+      ]),
+    );
+
+    const orch = new Orchestrator({
+      wipLimit: 5,
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      enableStacking: false,
+      fixForward: false,
+    });
+    orch.addItem(makeWorkItem("RACE-1"));
+
+    const capturedItems: OrchestratorItem[][] = [];
+    const actionDeps = buildActionDeps(fakeGh, fakeMux);
+    const loopDeps = buildLoopDeps(fakeGh, fakeMux, actionDeps);
+    loopDeps.crewBroker = broker;
+    loopDeps.onPollComplete = (items) => capturedItems.push(items.map((i) => ({ ...i })));
+
+    let cycle = 0;
+    loopDeps.sleep = async () => {
+      cycle++;
+      if (cycle === 3) {
+        // Simulate daemon-2 disconnect -- item released to queue
+        broker.setCrewStatus(
+          makeCrewStatusWith([
+            {
+              id: "RACE-1",
+              state: "queued",
+              ownerDaemonId: null,
+              ownerName: null,
+            },
+          ]),
+        );
+      }
+    };
+
+    await orchestrateLoop(orch, defaultCtx, loopDeps, { maxIterations: 6 });
+
+    const lastItems = capturedItems[capturedItems.length - 1]!;
+
+    // Both views should show the LATEST broker state (queued), not stale implementing
+    const remoteSnapshots = crewStatusToRemoteItemSnapshots(broker.getCrewStatus());
+    const tuiItems = orchestratorItemsToStatusItems(lastItems, remoteSnapshots);
+    expect(tuiItems[0]!.state).toBe("queued");
+    expect(tuiItems[0]!.remote).toBe(false);
+
+    const daemonState = serializeOrchestratorState(lastItems, 9999, "2026-04-01T00:00:00Z", {
+      remoteItemSnapshots: remoteSnapshots,
+    });
+    const persItems = daemonStateToStatusItems(daemonState);
+    expect(persItems[0]!.state).toBe("queued");
+    expect(persItems[0]!.remote).toBe(false);
+  });
+
+  it("remote item returns to queued after daemon release preserves truthful rendering", async () => {
+    const broker = new StubCrewBroker();
+    broker.setClaimOverride(null);
+
+    // Item starts in review by daemon-2
+    broker.setCrewStatus(
+      makeCrewStatusWith([
+        {
+          id: "REL-1",
+          state: "review",
+          ownerDaemonId: "daemon-2",
+          ownerName: "host-2",
+          prNumber: 55,
+        },
+      ]),
+    );
+
+    const orch = new Orchestrator({
+      wipLimit: 5,
+      mergeStrategy: "auto",
+      bypassEnabled: false,
+      enableStacking: false,
+      fixForward: false,
+    });
+    orch.addItem(makeWorkItem("REL-1"));
+
+    const capturedItems: OrchestratorItem[][] = [];
+    const actionDeps = buildActionDeps(fakeGh, fakeMux);
+    const loopDeps = buildLoopDeps(fakeGh, fakeMux, actionDeps);
+    loopDeps.crewBroker = broker;
+    loopDeps.onPollComplete = (items) => capturedItems.push(items.map((i) => ({ ...i })));
+
+    let cycle = 0;
+    loopDeps.sleep = async () => {
+      cycle++;
+      if (cycle === 2) {
+        // daemon-2 disconnects, broker releases item
+        broker.setCrewStatus(
+          makeCrewStatusWith([
+            {
+              id: "REL-1",
+              state: "queued",
+              ownerDaemonId: null,
+              ownerName: null,
+            },
+          ]),
+        );
+      }
+    };
+
+    await orchestrateLoop(orch, defaultCtx, loopDeps, { maxIterations: 5 });
+
+    const lastItems = capturedItems[capturedItems.length - 1]!;
+    const remoteSnapshots = crewStatusToRemoteItemSnapshots(broker.getCrewStatus());
+
+    // TUI: should show queued (not stale review)
+    const tuiItems = orchestratorItemsToStatusItems(lastItems, remoteSnapshots);
+    expect(tuiItems[0]!.state).toBe("queued");
+    expect(tuiItems[0]!.remote).toBe(false);
+    expect(tuiItems[0]!.prNumber).toBeNull();
+
+    // Persisted: same result
+    const daemonState = serializeOrchestratorState(lastItems, 9999, "2026-04-01T00:00:00Z", {
+      remoteItemSnapshots: remoteSnapshots,
+    });
+    const persItems = daemonStateToStatusItems(daemonState);
+    expect(persItems[0]!.state).toBe("queued");
+    expect(persItems[0]!.remote).toBe(false);
   });
 });

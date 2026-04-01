@@ -43,7 +43,7 @@ import {
   type StartupIntent,
 } from "../core/commands/orchestrate.ts";
 import type { LogEntry as PanelLogEntry } from "../core/status-render.ts";
-import { MIN_SPLIT_ROWS } from "../core/status-render.ts";
+import { MIN_SPLIT_ROWS, daemonStateToStatusItems } from "../core/status-render.ts";
 import {
   Orchestrator,
   type OrchestratorItem,
@@ -4272,6 +4272,117 @@ describe("crew remote state helpers", () => {
       state: "queued",
       ownerDaemonId: null,
     });
+  });
+});
+
+// ── Crew remote state: last-write-wins and serialization round-trip ────────────
+
+describe("crew remote state: last broker update replaces stale snapshots", () => {
+  it("serializing state twice with different broker snapshots replaces the first cleanly", () => {
+    const item: OrchestratorItem = {
+      id: "RACE-1",
+      workItem: makeWorkItem("RACE-1"),
+      state: "queued",
+      prNumber: undefined,
+      lastTransition: "2026-04-01T10:00:00Z",
+      ciFailCount: 0,
+      retryCount: 0,
+    };
+
+    // First broker update: implementing by daemon-2
+    const firstSnapshot = new Map<string, CrewRemoteItemSnapshot>([
+      ["RACE-1", {
+        id: "RACE-1",
+        state: "implementing",
+        ownerDaemonId: "daemon-2",
+        ownerName: "host-2",
+      }],
+    ]);
+    const state1 = serializeOrchestratorState([item], 9999, "2026-04-01T00:00:00Z", {
+      remoteItemSnapshots: firstSnapshot,
+    });
+    expect(state1.items[0]!.remoteSnapshot!.state).toBe("implementing");
+    expect(state1.items[0]!.remoteSnapshot!.ownerDaemonId).toBe("daemon-2");
+
+    // Second broker update: daemon-2 disconnected, item released
+    const secondSnapshot = new Map<string, CrewRemoteItemSnapshot>([
+      ["RACE-1", {
+        id: "RACE-1",
+        state: "queued",
+        ownerDaemonId: null,
+        ownerName: null,
+      }],
+    ]);
+    const state2 = serializeOrchestratorState([item], 9999, "2026-04-01T00:00:00Z", {
+      remoteItemSnapshots: secondSnapshot,
+    });
+    expect(state2.items[0]!.remoteSnapshot!.state).toBe("queued");
+    expect(state2.items[0]!.remoteSnapshot!.ownerDaemonId).toBeNull();
+
+    // Round-trip through daemonStateToStatusItems: second update wins
+    const rendered1 = daemonStateToStatusItems(state1);
+    expect(rendered1[0]!.state).toBe("implementing");
+    expect(rendered1[0]!.remote).toBe(true);
+
+    const rendered2 = daemonStateToStatusItems(state2);
+    expect(rendered2[0]!.state).toBe("queued");
+    expect(rendered2[0]!.remote).toBe(false);
+  });
+
+  it("disk round-trip: write → read → render preserves remote truth without stale leak", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "nw-remote-race-"));
+    const item: OrchestratorItem = {
+      id: "RACE-2",
+      workItem: makeWorkItem("RACE-2"),
+      state: "queued",
+      prNumber: undefined,
+      lastTransition: "2026-04-01T10:00:00Z",
+      ciFailCount: 0,
+      retryCount: 0,
+    };
+
+    try {
+      // Write state with implementing snapshot
+      const implSnapshot = new Map<string, CrewRemoteItemSnapshot>([
+        ["RACE-2", {
+          id: "RACE-2",
+          state: "implementing",
+          ownerDaemonId: "daemon-2",
+          ownerName: "host-2",
+        }],
+      ]);
+      writeStateFile(tmpDir, serializeOrchestratorState([item], 9999, "2026-04-01T00:00:00Z", {
+        remoteItemSnapshots: implSnapshot,
+      }));
+
+      // Read back and verify implementing state persisted
+      const restored1 = readStateFile(tmpDir)!;
+      const rendered1 = daemonStateToStatusItems(restored1);
+      expect(rendered1[0]!.state).toBe("implementing");
+      expect(rendered1[0]!.remote).toBe(true);
+
+      // Overwrite with queued snapshot (daemon released)
+      const queuedSnapshot = new Map<string, CrewRemoteItemSnapshot>([
+        ["RACE-2", {
+          id: "RACE-2",
+          state: "queued",
+          ownerDaemonId: null,
+          ownerName: null,
+        }],
+      ]);
+      writeStateFile(tmpDir, serializeOrchestratorState([item], 9999, "2026-04-01T00:00:00Z", {
+        remoteItemSnapshots: queuedSnapshot,
+      }));
+
+      // Read back and verify queued state replaced implementing without residue
+      const restored2 = readStateFile(tmpDir)!;
+      const rendered2 = daemonStateToStatusItems(restored2);
+      expect(rendered2[0]!.state).toBe("queued");
+      expect(rendered2[0]!.remote).toBe(false);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+      rmSync(userStateDir(tmpDir), { recursive: true, force: true });
+    }
   });
 });
 
