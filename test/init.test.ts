@@ -63,11 +63,7 @@ function createFakeBundle(dir: string): string {
   mkdirSync(bundleDir, { recursive: true });
 
   // Create skills directories
-  for (const skill of [
-    "work",
-    "decompose",
-
-  ]) {
+  for (const skill of ["decompose"]) {
     const skillDir = join(bundleDir, "skills", skill);
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(join(skillDir, "SKILL.md"), `# ${skill}\n`);
@@ -672,7 +668,7 @@ describe("initProject", () => {
     expect(existsSync(join(projectDir, "TODOS.md"))).toBe(false);
 
     // Skills copied (real directories, not symlinks)
-    for (const skill of ["work", "decompose"]) {
+    for (const skill of ["decompose"]) {
       const skillPath = join(projectDir, ".claude/skills", skill);
       expect(existsSync(skillPath)).toBe(true);
       expect(lstatSync(skillPath).isSymbolicLink()).toBe(false);
@@ -826,7 +822,7 @@ describe("initProject -- .ninthwave/.gitignore", () => {
     const projectDir = setupTempRepo();
 
     // Set up bundle structure inside projectDir to simulate self-hosting
-    for (const skill of ["work", "decompose"]) {
+    for (const skill of ["decompose"]) {
       const skillDir = join(projectDir, "skills", skill);
       mkdirSync(skillDir, { recursive: true });
       writeFileSync(join(skillDir, "SKILL.md"), `# ${skill}\n`);
@@ -1638,7 +1634,7 @@ describe("initProject -- agent selection", () => {
     expect(existsSync(join(projectDir, ".github/agents"))).toBe(false);
 
     // But skills should still be set up
-    expect(existsSync(join(projectDir, ".claude/skills/work"))).toBe(true);
+    expect(existsSync(join(projectDir, ".claude/skills/decompose"))).toBe(true);
   });
 
   it("creates agent files as copies, not symlinks", () => {
@@ -1740,11 +1736,7 @@ describe("initProject -- global mode", () => {
     setupGlobal(bundleDir);
 
     const skillsDir = join(fakeHome, ".claude/skills");
-    for (const skill of [
-      "work",
-      "decompose",
-  
-    ]) {
+    for (const skill of ["decompose"]) {
       const linkPath = join(skillsDir, skill);
       expect(existsSync(linkPath)).toBe(true);
       expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
@@ -1778,12 +1770,12 @@ describe("initProject -- global mode", () => {
     process.env.HOME = fakeHome;
 
     setupGlobal(bundleDir);
-    writeFileSync(join(fakeHome, ".claude/skills", "work", "SKILL.md"), "# stale\n");
+    writeFileSync(join(fakeHome, ".claude/skills", "decompose", "SKILL.md"), "# stale\n");
 
     setupGlobal(bundleDir);
 
-    expect(readFileSync(join(fakeHome, ".claude/skills", "work", "SKILL.md"), "utf-8")).toBe(
-      "# work\n",
+    expect(readFileSync(join(fakeHome, ".claude/skills", "decompose", "SKILL.md"), "utf-8")).toBe(
+      "# decompose\n",
     );
   });
 });
@@ -1844,11 +1836,7 @@ describe("initProject -- idempotency", () => {
     );
 
     // Skills still present as real directories
-    for (const skill of [
-      "work",
-      "decompose",
-  
-    ]) {
+    for (const skill of ["decompose"]) {
       const skillPath = join(projectDir, ".claude/skills", skill);
       expect(lstatSync(skillPath).isDirectory()).toBe(true);
       expect(lstatSync(skillPath).isSymbolicLink()).toBe(false);
@@ -1892,13 +1880,13 @@ describe("initProject -- idempotency", () => {
 
     initProject(projectDir, bundleDir, deps);
 
-    writeFileSync(join(projectDir, ".claude/skills", "work", "SKILL.md"), "# stale skill\n");
+    writeFileSync(join(projectDir, ".claude/skills", "decompose", "SKILL.md"), "# stale skill\n");
     writeFileSync(join(projectDir, ".claude/agents", "implementer.md"), "# stale agent\n");
 
     initProject(projectDir, bundleDir, deps);
 
-    expect(readFileSync(join(projectDir, ".claude/skills", "work", "SKILL.md"), "utf-8")).toBe(
-      "# work\n",
+    expect(readFileSync(join(projectDir, ".claude/skills", "decompose", "SKILL.md"), "utf-8")).toBe(
+      "# decompose\n",
     );
     expect(readFileSync(join(projectDir, ".claude/agents", "implementer.md"), "utf-8")).toContain(
       "set the timeout to the longest practical value available",
@@ -1918,8 +1906,8 @@ describe("initProject -- idempotency", () => {
 
     const { rmSync, symlinkSync } = require("fs");
 
-    rmSync(join(projectDir, ".claude", "skills", "work"), { recursive: true, force: true });
-    symlinkSync("../missing-skill", join(projectDir, ".claude", "skills", "work"));
+    rmSync(join(projectDir, ".claude", "skills", "decompose"), { recursive: true, force: true });
+    symlinkSync("../missing-skill", join(projectDir, ".claude", "skills", "decompose"));
 
     rmSync(join(projectDir, ".claude", "agents", "implementer.md"), { recursive: true, force: true });
     symlinkSync("../missing-agent.md", join(projectDir, ".claude", "agents", "implementer.md"));
@@ -1935,10 +1923,10 @@ describe("initProject -- idempotency", () => {
 
     initProject(projectDir, bundleDir, deps);
 
-    expect(lstatSync(join(projectDir, ".claude", "skills", "work")).isDirectory()).toBe(true);
-    expect(lstatSync(join(projectDir, ".claude", "skills", "work")).isSymbolicLink()).toBe(false);
-    expect(readFileSync(join(projectDir, ".claude", "skills", "work", "SKILL.md"), "utf-8")).toBe(
-      "# work\n",
+    expect(lstatSync(join(projectDir, ".claude", "skills", "decompose")).isDirectory()).toBe(true);
+    expect(lstatSync(join(projectDir, ".claude", "skills", "decompose")).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(projectDir, ".claude", "skills", "decompose", "SKILL.md"), "utf-8")).toBe(
+      "# decompose\n",
     );
 
     expect(lstatSync(join(projectDir, ".claude", "agents", "implementer.md")).isFile()).toBe(true);
@@ -2029,11 +2017,7 @@ describe("initProject -- preserves existing files", () => {
 
     initProject(projectDir, bundleDir, deps);
 
-    for (const skill of [
-      "work",
-      "decompose",
-  
-    ]) {
+    for (const skill of ["decompose"]) {
       const skillPath = join(projectDir, ".claude/skills", skill);
       expect(existsSync(skillPath)).toBe(true);
       expect(lstatSync(skillPath).isSymbolicLink()).toBe(false);

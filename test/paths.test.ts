@@ -21,9 +21,9 @@ afterEach(() => {
  * Create the bundle marker structure in a directory.
  */
 function createBundleMarker(dir: string): void {
-  const skillDir = join(dir, "skills", "work");
+  const skillDir = join(dir, "skills", "decompose");
   mkdirSync(skillDir, { recursive: true });
-  writeFileSync(join(skillDir, "SKILL.md"), "# Work Skill\n");
+  writeFileSync(join(skillDir, "SKILL.md"), "# Decompose Skill\n");
 }
 
 describe("getBundleDir", () => {
@@ -46,7 +46,7 @@ describe("getBundleDir", () => {
       // Should fall through to dev resolution (which finds the real repo root)
       const result = getBundleDir();
       expect(result).toBeTruthy();
-      expect(existsSync(join(result, "skills", "work", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(result, "skills", "decompose", "SKILL.md"))).toBe(true);
     });
 
     it("takes priority over binary prefix resolution", () => {
@@ -88,7 +88,7 @@ describe("getBundleDir", () => {
       const result = getBundleDir();
       // Dev fallback should find the real repo root
       expect(result).toBeTruthy();
-      expect(existsSync(join(result, "skills", "work", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(result, "skills", "decompose", "SKILL.md"))).toBe(true);
     });
 
     it("skips binary prefix when share/ninthwave has no marker", () => {
@@ -105,7 +105,7 @@ describe("getBundleDir", () => {
       // Should fall through to dev resolution
       const result = getBundleDir();
       expect(result).toBeTruthy();
-      expect(existsSync(join(result, "skills", "work", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(result, "skills", "decompose", "SKILL.md"))).toBe(true);
     });
   });
 
@@ -119,7 +119,7 @@ describe("getBundleDir", () => {
 
       // The repo root should contain the bundle marker
       expect(result).toBeTruthy();
-      expect(existsSync(join(result, "skills", "work", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(result, "skills", "decompose", "SKILL.md"))).toBe(true);
     });
   });
 });

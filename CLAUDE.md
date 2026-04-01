@@ -18,10 +18,10 @@ No build step -- Bun executes TypeScript directly. Changes take effect immediate
 
 - `core/cli.ts` -- CLI entry point and command dispatcher
 - `core/commands/` -- one file per command (list, launch, clean, watch, init, etc.)
-- `core/commands/orchestrate.ts` -- `nw watch` daemon event loop with TUI mode (interactive) and JSON mode (`--json` for piping/CI)
+- `core/commands/orchestrate.ts` -- `nw` orchestration event loop with TUI mode (interactive) and JSON mode (`--json` for piping/CI)
 - `core/parser.ts` -- reads `.ninthwave/work/` directory and domain normalization
 - `core/status-render.ts` -- shared status table rendering for `ninthwave status --watch` and the daemon TUI
-- `skills/` -- SKILL.md files for AI tool integration (/work, /decompose, etc.)
+- `skills/` -- SKILL.md files for AI tool integration (/decompose, etc.)
 - `agents/implementer.md` -- implementation agent prompt (copied to all tool directories by init)
 - `core/commands/init.ts` -- project setup command (seeds config and managed tool copies)
 
@@ -49,7 +49,7 @@ This repo uses ninthwave to develop ninthwave. When working here, log friction a
 
 ### Basics
 
-1. **Log friction.** Any issue, slowdown, or surprising behavior you encounter while using ninthwave tools (the CLI, /work, /decompose, workers, orchestrator) is valuable signal. Append observations to the friction log at `~/.claude/projects/-Users-roblambell-code-ninthwave/memory/project_dogfood_friction.md`.
+1. **Log friction.** Any issue, slowdown, or surprising behavior you encounter while using ninthwave tools (the CLI, /decompose, workers, orchestrator) is valuable signal. Append observations to the friction log at `~/.claude/projects/-Users-roblambell-code-ninthwave/memory/project_dogfood_friction.md`.
 
 2. **WIP limit ≤ 5.** Each worker session (Claude Code + language server + worktree) consumes ~2-3GB RAM. On a 16GB Mac, WIP limit of 5 is the default; reduce if memory pressure is observed.
 

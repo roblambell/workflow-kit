@@ -52,11 +52,7 @@ function createFakeBundle(dir: string): string {
   mkdirSync(bundleDir, { recursive: true });
 
   // Create skills directories
-  for (const skill of [
-    "work",
-    "decompose",
-
-  ]) {
+  for (const skill of ["decompose"]) {
     const skillDir = join(bundleDir, "skills", skill);
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(join(skillDir, "SKILL.md"), `# ${skill}\n`);
@@ -384,7 +380,7 @@ describe("discoverCanonicalBundleSources", () => {
     const sources = discoverCanonicalBundleSources(bundleDir);
 
     expect(sources.instructionFile).toBe("CLAUDE.md");
-    expect(sources.skills).toEqual(["decompose", "work"]);
+    expect(sources.skills).toEqual(["decompose"]);
     expect(sources.agents).toContain("implementer.md");
     expect(sources.agents).toContain("reviewer.md");
     expect(sources.agents).toContain("forward-fixer.md");
@@ -907,11 +903,7 @@ describe("setupGlobal", () => {
     setupGlobal(bundleDir);
 
     const skillsDir = join(fakeHome, ".claude/skills");
-    for (const skill of [
-      "work",
-      "decompose",
-  
-    ]) {
+    for (const skill of ["decompose"]) {
       const linkPath = join(skillsDir, skill);
       expect(existsSync(linkPath)).toBe(true);
       expect(lstatSync(linkPath).isSymbolicLink()).toBe(false);
@@ -946,11 +938,11 @@ describe("setupGlobal", () => {
     process.env.HOME = fakeHome;
 
     setupGlobal(bundleDir);
-    writeFileSync(join(fakeHome, ".claude/skills", "work", "SKILL.md"), "# stale\n");
+    writeFileSync(join(fakeHome, ".claude/skills", "decompose", "SKILL.md"), "# stale\n");
     setupGlobal(bundleDir);
 
-    expect(readFileSync(join(fakeHome, ".claude/skills", "work", "SKILL.md"), "utf-8")).toBe(
-      "# work\n",
+    expect(readFileSync(join(fakeHome, ".claude/skills", "decompose", "SKILL.md"), "utf-8")).toBe(
+      "# decompose\n",
     );
   });
 });

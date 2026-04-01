@@ -18,7 +18,7 @@ See also: [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and coding co
 
 ## Orchestrator State Machine
 
-Each TODO item moves through a state machine defined in [`core/orchestrator.ts`](core/orchestrator.ts). The `processTransitions` function is pure -- it takes a poll snapshot and returns actions to execute; no side effects.
+Each work item moves through a state machine defined in [`core/orchestrator.ts`](core/orchestrator.ts). The `processTransitions` function is pure -- it takes a poll snapshot and returns actions to execute; no side effects.
 
 ### States
 
@@ -85,24 +85,23 @@ When `enableStacking=true`, an item whose only in-flight dependency is in a "sta
 
 ```
 User runs /decompose
-  └─→ skill explores codebase, writes .ninthwave/work/*.md (one file per TODO)
+  └─→ skill explores codebase, writes .ninthwave/work/*.md (one file per work item)
 
-User runs /work
-  └─→ skill reads .ninthwave/work/, presents item selection
-      └─→ calls nw <IDs>
-            ├─ git worktree create .worktrees/todo-<ID>
-            ├─ allocate partition (port/DB isolation) via core/partitions.ts
-            ├─ seed agent files into worktree (core/commands/launch.ts seedAgentFiles)
-            └─ launch AI session in multiplexer workspace, send worker prompt
+User runs nw
+  └─→ CLI handles selection/settings, then launches orchestration
+      ├─ git worktree create .worktrees/todo-<ID>
+      ├─ allocate partition (port/DB isolation) via core/partitions.ts
+      ├─ seed agent files into worktree (core/commands/launch.ts seedAgentFiles)
+      └─ launch AI session in multiplexer workspace, send worker prompt
 
-Worker session (per TODO)
+Worker session (per work item)
   ├─ reads project CLAUDE.md / AGENTS.md for conventions
-  ├─ implements the TODO, runs tests
+  ├─ implements the work item, runs tests
   ├─ git push → gh pr create
   └─ idles, waiting for orchestrator messages
 
-nw watch (event loop, ~10s poll)
-  ├─ poll GitHub for PR/CI/review status (core/commands/watch.ts checkPrStatus)
+nw (orchestrator event loop, ~10s poll)
+  ├─ poll GitHub for PR/CI/review status (core/commands/orchestrate.ts)
   ├─ poll multiplexer for worker liveness (core/mux.ts readScreen)
   ├─ run processTransitions (pure state machine → list of Actions)
   ├─ executeAction for each action:
@@ -116,12 +115,12 @@ nw watch (event loop, ~10s poll)
 
 Post-merge
   ├─ worktree and workspace cleaned up
-  ├─ TODO file removed from .ninthwave/work/
+  ├─ work item file removed from .ninthwave/work/
   ├─ stacked dependents retargeted to main
   └─ version bump deferred until all items done
 ```
 
-Key files: [`core/parser.ts`](core/parser.ts) (read todos), [`core/commands/launch.ts`](core/commands/launch.ts) (launch), [`core/commands/orchestrate.ts`](core/commands/orchestrate.ts) (event loop), [`core/commands/clean.ts`](core/commands/clean.ts) (cleanup).
+Key files: [`core/parser.ts`](core/parser.ts) (read work items), [`core/commands/launch.ts`](core/commands/launch.ts) (launch), [`core/commands/orchestrate.ts`](core/commands/orchestrate.ts) (event loop), [`core/commands/clean.ts`](core/commands/clean.ts) (cleanup).
 
 ---
 
@@ -207,13 +206,13 @@ tmux works especially well with iTerm2's control mode (`tmux -CC`). In that mode
 
 ## Worker Lifecycle
 
-Each TODO item gets an isolated AI coding session managed as follows:
+Each work item gets an isolated AI coding session managed as follows:
 
 ### Launch
 
 `launchSingleItem()` in [`core/commands/launch.ts`](core/commands/launch.ts):
 
-1. `git worktree add .worktrees/todo-<ID> -b todo/<ID>` -- isolated checkout.
+1. Create an isolated git worktree and item branch for the worker.
 2. `allocatePartition(id)` -- assigns a unique port range and DB prefix for test isolation.
 3. `seedAgentFiles(worktreePath, hubRoot)` -- copies `implementer.md` to `.claude/agents/`, `.opencode/agents/`, `.github/agents/` inside the worktree.
 4. `mux.launchWorkspace(worktreePath, command, todoId)` -- spawns the session; returns a workspace ref (e.g., `"workspace:1"` for cmux, `"{session}:nw_<ID>"` for tmux).

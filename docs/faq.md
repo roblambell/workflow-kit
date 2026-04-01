@@ -46,7 +46,7 @@ nw init
 This auto-detects your project structure (CI system, AI tools, monorepo layout) and creates:
 
 - `.ninthwave/` directory with configuration
-- Managed skill copies for `/work` and `/decompose`
+- Managed skill copies for `/decompose`
 - Managed agent files (implementer, reviewer, forward-fixer) in your AI tool directories
 - `.github/copilot-instructions.md` as a managed copy of `CLAUDE.md` when Copilot is configured
 
@@ -82,7 +82,7 @@ Each work item file includes:
 
 ### What is the orchestrator?
 
-The orchestrator (`nw watch`) is a deterministic state machine that manages the lifecycle of work items from start to merged PR. It runs as a continuous loop, polling GitHub for CI/PR status and the multiplexer for worker health every few seconds.
+The orchestrator (`nw`) is a deterministic state machine that manages the lifecycle of work items from start to merged PR. It runs as a continuous loop, polling GitHub for CI/PR status and the multiplexer for worker health every few seconds.
 
 It handles: launching workers, tracking CI status, dispatching review feedback, retrying failures, resolving merge conflicts, and auto-merging PRs when all gates pass.
 
@@ -122,8 +122,8 @@ Wildcard patterns are also supported (e.g., `H-AUTH-*` depends on all auth items
 ### What does the full workflow look like?
 
 1. **Decompose** -- Break your feature into work items (`/decompose` or write them manually)
-2. **Select** -- Choose which items to process and set your merge strategy
-3. **Orchestrate** -- `nw watch` launches parallel AI sessions, each in an isolated worktree
+2. **Start orchestration** -- Run `nw` and let the CLI handle item selection and settings
+3. **Orchestrate** -- `nw` launches parallel AI sessions, each in an isolated worktree
 4. **Workers implement** -- Each AI session reads its work item, writes code, runs tests, and creates a PR
 5. **CI runs** -- The orchestrator monitors CI checks on each PR
 6. **Review** -- Optional review workers (or humans) review PRs
@@ -163,27 +163,20 @@ Save as `.ninthwave/work/1-auth--H-AUTH-1.md`.
 
 ### How do I run work items in parallel?
 
-**Option 1: Use `/work`** (interactive)
-
-In your AI tool, run `/work`. This presents your work items, lets you select which ones to process, choose a merge strategy and WIP limit, then launches the orchestrator.
-
-**Option 2: Use the CLI directly**
+**Primary option: Use the CLI directly**
 
 ```bash
-# Launch specific items
-nw watch --items H-AUTH-1 H-AUTH-2 H-API-1
+# Launch the canonical orchestration flow
+nw
 
-# Launch by ID shorthand
+# Launch specific items by ID
 nw H-AUTH-1 H-AUTH-2 H-API-1
-
-# Launch all ready items
-nw watch
 ```
 
 The `--wip-limit` flag controls how many workers run simultaneously (default is auto-computed from available memory):
 
 ```bash
-nw watch --items H-AUTH-1 H-AUTH-2 --wip-limit 3
+nw --items H-AUTH-1,H-AUTH-2 --wip-limit 3
 ```
 
 ### What merge strategies are available?
@@ -194,10 +187,10 @@ nw watch --items H-AUTH-1 H-AUTH-2 --wip-limit 3
 | `manual` | Never auto-merge; wait for human to merge each PR |
 | `bypass` | Admin override that skips branch protection (requires `--dangerously-bypass`) |
 
-Set via the `/work` skill or the `--merge-strategy` flag:
+Set via the `--merge-strategy` flag, or let the `nw` interactive flow collect it:
 
 ```bash
-nw watch --items H-AUTH-1 --merge-strategy auto
+nw --items H-AUTH-1 --merge-strategy auto
 ```
 
 ### How do I check progress?
@@ -308,7 +301,7 @@ Use `nw repos` to see discovered sibling repositories.
 
 ### What is crew mode?
 
-Crew mode allows multiple operators (each running their own `nw watch` daemon) to collaborate on the same set of work items. A shared broker coordinates task distribution so items aren't double-claimed.
+Crew mode allows multiple operators (each running their own `nw` orchestration session) to collaborate on the same set of work items. A shared broker coordinates task distribution so items aren't double-claimed.
 
 ```bash
 # Create a crew

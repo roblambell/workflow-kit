@@ -1,7 +1,7 @@
 ---
 name: decompose
 description: |
-  Decompose a feature spec into work items for batch processing via /work.
+  Decompose a feature spec into work items for orchestration via `nw`.
   Takes a PRD, phase doc, or verbal description and breaks it into human-reviewable
   PR-sized work items with dependencies mapped into batches.
   Use when asked to "decompose", "break down this feature", "create work items for",
@@ -35,7 +35,7 @@ This skill is highly interactive. You MUST use your interactive question tool to
 
 ## Instructions
 
-This skill decomposes a feature spec into work items sized for individual human-reviewable PRs. Each item is written as an individual file in `.ninthwave/work/`, ready for processing via `/work`.
+This skill decomposes a feature spec into work items sized for individual human-reviewable PRs. Each item is written as an individual file in `.ninthwave/work/`, ready for orchestration via `nw`.
 
 **Prerequisites:** `ninthwave` (or `nw`) must be in PATH. `.ninthwave/work/` directory must exist.
 
@@ -226,7 +226,7 @@ Key files: `path/to/file.ts`, `path/to/other.ex`
 
 ### Phase 7: HANDOFF
 
-Present summary and connect to `/work` for processing.
+Present summary and connect to `nw` for orchestration.
 
 ---
 

@@ -16,7 +16,7 @@ tmux -CC new -s nw
 4. Run ninthwave:
 
 ```bash
-nw watch
+nw
 ```
 
 Each worker the orchestrator launches will appear as a new iTerm2 tab.

@@ -4,13 +4,13 @@ ninthwave works with GitHub Copilot CLI as a first-class AI tool alongside Claud
 
 ## Setup
 
-Running `ninthwave setup` (or `nw setup`) automatically configures Copilot CLI support:
+Running `ninthwave init` (or `nw init`) configures Copilot CLI support:
 
-1. **Agent files** are symlinked into `.github/agents/` with the `.agent.md` suffix:
-   - `.github/agents/ninthwave-implementer.agent.md` -- implementation agent for TODO processing
+1. **Agent files** are copied into `.github/agents/` with the `.agent.md` suffix:
+   - `.github/agents/ninthwave-implementer.agent.md` -- implementation agent for work item processing
    - `.github/agents/ninthwave-reviewer.agent.md` -- review agent for PR reviews
 
-2. **`.gitignore`** is updated to exclude the `.github/agents/` directory (these are developer-local symlinks, re-created by `nw setup`).
+2. **Managed copies** are refreshed when you run `nw init`, so the Copilot agent files stay aligned with the canonical prompts in this repo.
 
 3. **Auto-detection** -- `ninthwave init` detects Copilot CLI if `.github/copilot-instructions.md` exists in the project root, and records it in `.ninthwave/config` under `AI_TOOLS`.
 
@@ -32,7 +32,7 @@ ninthwave selects the AI tool interactively:
 
 - **Single tool installed:** auto-selected, no prompt
 - **Multiple tools installed:** prompted every time (last-used is pre-selected)
-- **`--tool` flag:** explicit override, no prompt (e.g., `nw watch --tool copilot`)
+- **`--tool` flag:** explicit override, no prompt (e.g., `nw --tool copilot`)
 
 The selection is persisted to `.ninthwave/config.json` as `ai_tool`.
 
@@ -79,7 +79,7 @@ Both temp files are deleted by the launcher script before the session starts -- 
 - Workers follow the same agent prompt (`implementer.md` / `reviewer.md`)
 - The orchestrator daemon treats all tools identically after launch
 - PR lifecycle, CI monitoring, and merge behavior are tool-agnostic
-- Skills (`/work`, `/decompose`, etc.) work across all tools
+- Skills like `/decompose` work across all tools
 
 ## Troubleshooting
 
@@ -96,11 +96,11 @@ Both temp files are deleted by the launcher script before the session starts -- 
 
 **Symptom:** Copilot CLI doesn't know about the ninthwave-implementer or ninthwave-reviewer agents.
 
-**Fix:** Run `nw setup` to re-create the agent symlinks in `.github/agents/`.
+**Fix:** Run `nw init` to refresh the managed agent copies in `.github/agents/`.
 
 ### Prompt delivery failures
 
-**Symptom:** Worker session launches but doesn't start implementing the TODO.
+**Symptom:** Worker session launches but doesn't start implementing the work item.
 
 **Possible causes:**
 - **`/tmp` permissions** -- The launcher script and prompt file are written to `/tmp`. On shared systems, verify your user can write to `/tmp`.

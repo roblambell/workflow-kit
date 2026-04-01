@@ -34,7 +34,7 @@ flowchart TD
     I -->|Yes| J["Live status view<br/><code>cmdStatusWatch()</code>"]
     I -->|No| K[Display items summary]
     K --> L{Mode prompt}
-    L -->|Orchestrate| M["Item selection + merge strategy + WIP limit<br/>→ <code>cmdWatch()</code>"]
+    L -->|Orchestrate| M["Item selection + merge strategy + WIP limit<br/>→ <code>runInteractiveFlow()</code> → orchestration"]
     L -->|Launch subset| N["Item selection<br/>→ <code>cmdRunItems()</code>"]
     L -->|Quit| O[Exit]
 
@@ -228,7 +228,6 @@ Every file and directory created during onboarding:
 
 | Path | Type | When Created | Overwritten on Re-init? | Git-tracked? | Purpose |
 |---|---|---|---|---|---|
-| `.claude/skills/work/` | Directory | Always | Yes (re-copied) | Repo policy | `/work` skill |
 | `.claude/skills/decompose/` | Directory | Always | Yes (re-copied) | Repo policy | `/decompose` skill |
 | `.claude/agents/implementer.md` | File | If Claude Code selected | Yes (refreshed) | Repo policy | Implementation agent prompt |
 | `.claude/agents/reviewer.md` | File | If Claude Code selected | Yes (refreshed) | Repo policy | PR review agent prompt |
@@ -266,7 +265,7 @@ Slug formula: project root path with `/` replaced by `-` (e.g., `/Users/rob/code
 
 | Path | Type | Purpose |
 |---|---|---|
-| `~/.claude/skills/work/` | Directory | Global `/work` skill |
+| `~/.claude/skills/decompose/` | Directory | Global `/decompose` skill |
 | `~/.claude/skills/decompose/` | Directory | Global `/decompose` skill |
 
 No project-level files are created in global mode.

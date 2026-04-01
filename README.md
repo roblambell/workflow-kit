@@ -22,7 +22,7 @@ Ninthwave orchestrates parallel AI coding sessions from markdown work items.
 
 ## How it works
 
-Work items are markdown files in `.ninthwave/work/`. Use `/decompose` skill to generate them from a plan.
+Work items are markdown files in `.ninthwave/work/`. Use `/decompose` to generate them from a plan, then run `nw` to orchestrate them.
 
 Each item gets its own git worktree and a full native instance of [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview), [OpenCode](https://opencode.ai), or [Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli), you can jump into and steer.
 

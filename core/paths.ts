@@ -5,7 +5,7 @@
 // 2. Binary install prefix -- if process.execPath or process.argv[0] is at
 //    <prefix>/bin/ninthwave, check <prefix>/share/ninthwave/
 // 3. Development fallback -- walk up from this source file to find repo root
-//    containing skills/work/SKILL.md
+//    containing skills/decompose/SKILL.md
 // 4. ~/.ninthwave/ -- user-level install fallback
 
 import { existsSync } from "fs";
@@ -13,9 +13,9 @@ import { dirname, join, resolve } from "path";
 
 /**
  * Marker file that identifies a valid ninthwave bundle directory.
- * Must exist at <bundleDir>/skills/work/SKILL.md.
+ * Must exist at <bundleDir>/skills/decompose/SKILL.md.
  */
-const BUNDLE_MARKER = join("skills", "work", "SKILL.md");
+const BUNDLE_MARKER = join("skills", "decompose", "SKILL.md");
 
 /**
  * Check whether a directory looks like a valid ninthwave bundle.
@@ -44,7 +44,9 @@ function resolveFromEnv(checkExists: (path: string) => boolean = existsSync): st
 function resolveFromBinaryPrefix(checkExists: (path: string) => boolean = existsSync): string | null {
   // process.execPath is the absolute path to the binary for compiled Bun executables.
   // process.argv[0] may be just the basename in some shell environments.
-  const candidates = [process.execPath, process.argv[0]].filter(Boolean);
+  const candidates = [process.execPath, process.argv[0]].filter(
+    (candidate): candidate is string => Boolean(candidate),
+  );
 
   for (const candidate of candidates) {
     const binDir = dirname(resolve(candidate));

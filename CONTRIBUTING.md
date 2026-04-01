@@ -12,7 +12,7 @@ git clone git@github.com:ninthwave-sh/ninthwave.git ~/code/ninthwave
 
 - [Bun](https://bun.sh/) -- runtime and test runner
 - [gh](https://cli.github.com/) -- PR operations
-- [cmux](https://cmux.com/) -- parallel terminal sessions (for testing `/work`)
+- [cmux](https://cmux.com/) -- parallel terminal sessions (for testing `nw` orchestration)
 
 ### Dogfooding (developing ninthwave with ninthwave)
 
@@ -38,7 +38,7 @@ Changes to source files take effect immediately (the dev install runs TypeScript
 
 The CLI installs as both `ninthwave` (full name) and `nw` (short alias). `nw` is the recommended daily-driver command -- 2 chars, no conflicts with existing tools. Both names invoke the same binary.
 
-When installed via Homebrew, the `nw` symlink is created automatically by the formula. For development, `ninthwave setup` creates the symlink next to the `ninthwave` binary if it's in PATH.
+When installed via Homebrew, the `nw` symlink is created automatically by the formula. For development, `ninthwave init` creates the symlink next to the `ninthwave` binary if it's in PATH.
 
 ## Architecture
 
@@ -52,7 +52,6 @@ ninthwave/                          # The repo IS the installable bundle
 │   ├── parser.ts                   # Reads .ninthwave/work/ directory
 │   └── docs/work-item-format.md     # Work item file format reference
 ├── skills/                         # SKILL.md files (cross-tool standard)
-│   ├── work/SKILL.md               # /work -- batch orchestration
 │   ├── decompose/SKILL.md          # /decompose -- feature breakdown
 ├── agents/
 │   └── implementer.md              # Copied to all tool agent directories by setup
@@ -73,17 +72,16 @@ ninthwave/                          # The repo IS the installable bundle
 |------|-------------|
 | `core/cli.ts` | The CLI entry point. Routes commands to `core/commands/` which handle worktrees/partitions, AI session launches, PR monitoring, and version bumps. TypeScript + Bun. |
 | `core/commands/setup.ts` | Shared setup helpers for prerequisite checks plus managed skill/agent copy installation. |
-| `skills/work/SKILL.md` | The orchestration skill. Drives the 5-phase workflow (select, launch, monitor, merge, finalize). |
 | `skills/decompose/SKILL.md` | Breaks feature specs into PR-sized work items with dependency batches. |
 | `agents/implementer.md` | The implementation agent prompt. Each AI session follows this: read the work item, read project conventions, implement, test, review, PR, wait for orchestrator. |
 
 ### How the Pieces Fit
 
 1. **User runs `/decompose`** -- the decompose skill explores the codebase, breaks the feature into work items, writes them to `.ninthwave/work/`
-2. **User runs `/work`** -- the work skill reads `.ninthwave/work/`, presents selection options, then calls `ninthwave start` to create worktrees and launch AI sessions via cmux
-3. **`ninthwave start`** auto-detects the AI tool, creates a git worktree per item, allocates a partition for port/DB isolation, and launches each session with the `ninthwave-implementer` agent
+2. **User runs `nw`** -- the CLI owns selection, orchestration settings, and the worker-launch flow
+3. **The orchestrator** creates a git worktree per item, allocates a partition for port/DB isolation, and launches each session with the `ninthwave-implementer` agent
 4. **Each worker session** reads `CLAUDE.md`/`AGENTS.md` for project conventions, implements the work item, runs tests, creates a PR, then idles waiting for orchestrator messages
-5. **The orchestrator** (the `/work` skill session) monitors PR status, dispatches CI fixes and review feedback to workers via `cmux send`, merges PRs, rebases dependents, and handles version bumping
+5. **The orchestrator** monitors PR status, dispatches CI fixes and review feedback to workers via the multiplexer, merges PRs, rebases dependents, and handles version bumping
 
 ### TypeScript Development
 
