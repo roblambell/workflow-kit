@@ -66,7 +66,6 @@ function makeItem(overrides: Partial<StatusItem> = {}): StatusItem {
     progress: overrides.progress,
     progressLabel: overrides.progressLabel,
     progressTs: overrides.progressTs,
-    daemonName: overrides.daemonName,
     worktreePath: overrides.worktreePath,
   };
 }
@@ -91,7 +90,7 @@ const MIXED_STATE: StatusItem[] = [
   makeItem({
     id: "H-CA-1",
     title: "Add authentication middleware",
-    state: "merged",
+    state: "verifying",
     prNumber: 42,
     ageMs: 15 * 60_000,
     startedAt: "2026-03-29T10:00:00Z",
@@ -132,12 +131,12 @@ const MIXED_STATE: StatusItem[] = [
   makeItem({ id: "L-BF-3", title: "Add retry logic to webhook handler", state: "queued" }),
 ];
 
-/** All items done/merged. */
+/** All items done. */
 const ALL_DONE_STATE: StatusItem[] = [
   makeItem({
     id: "H-CA-1",
     title: "Add authentication middleware",
-    state: "merged",
+    state: "done",
     prNumber: 42,
     startedAt: "2026-03-29T10:00:00Z",
     endedAt: "2026-03-29T10:15:00Z",
@@ -145,7 +144,7 @@ const ALL_DONE_STATE: StatusItem[] = [
   makeItem({
     id: "H-CA-2",
     title: "Database migration for users table",
-    state: "merged",
+    state: "done",
     prNumber: 43,
     startedAt: "2026-03-29T10:05:00Z",
     endedAt: "2026-03-29T10:20:00Z",
@@ -153,7 +152,7 @@ const ALL_DONE_STATE: StatusItem[] = [
   makeItem({
     id: "M-FE-1",
     title: "Login form component",
-    state: "merged",
+    state: "done",
     prNumber: 44,
     startedAt: "2026-03-29T10:10:00Z",
     endedAt: "2026-03-29T10:25:00Z",

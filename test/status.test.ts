@@ -324,15 +324,15 @@ describe("formatSummary", () => {
     expect(line).toContain("2 items");
   });
 
-  it("shows merged and active counts when both exist", () => {
+  it("shows done and active counts when both exist", () => {
     const items = [
-      makeItem("A-1", "merged"),
-      makeItem("A-2", "merged"),
+      makeItem("A-1", "done"),
+      makeItem("A-2", "done"),
       makeItem("A-3", "implementing"),
     ];
     const line = stripAnsi(formatSummary(items));
     expect(line).toContain("3 items");
-    expect(line).toContain("2 merged");
+    expect(line).toContain("2 done");
     expect(line).toContain("1 active");
   });
 
@@ -720,9 +720,11 @@ describe("cmdStatusWatch", () => {
 // ─── Daemon state mapping ────────────────────────────────────────────────────
 
 describe("mapDaemonItemState", () => {
-  it("maps done/merged to merged", () => {
-    expect(mapDaemonItemState("done")).toBe("merged");
-    expect(mapDaemonItemState("merged")).toBe("merged");
+  it("maps post-merge states to verifying/done", () => {
+    expect(mapDaemonItemState("done")).toBe("done");
+    expect(mapDaemonItemState("merged")).toBe("verifying");
+    expect(mapDaemonItemState("forward-fix-pending")).toBe("verifying");
+    expect(mapDaemonItemState("fixing-forward")).toBe("verifying");
   });
 
   it("maps implementing/launching to implementing", () => {
@@ -1031,15 +1033,15 @@ describe("formatStatusTable with queued items", () => {
     expect(output).not.toContain("Queue");
   });
 
-  it("counts only active (non-merged, non-queued) items for WIP slots", () => {
+  it("counts verifying as active and excludes only done/queued items for WIP slots", () => {
     const items = [
       makeItem("A-1", "implementing", "Active"),
-      makeItem("A-2", "merged", "Done"),
+      makeItem("A-2", "verifying", "Verifying"),
       makeItem("Q-1", "queued", "Waiting"),
     ];
-    // Only A-1 is active (A-2 is merged), so 1/3 WIP slots
+    // A-1 and A-2 are both active because verifying is still in-flight.
     const output = stripAnsi(formatStatusTable(items, 80, 3));
-    expect(output).toContain("1/3 WIP slots active");
+    expect(output).toContain("2/3 WIP slots active");
   });
 });
 

@@ -72,7 +72,7 @@ import type { OrchestratorItem } from "../core/orchestrator.ts";
 import type { DaemonState } from "../core/daemon.ts";
 import type { CrewRemoteItemSnapshot } from "../core/crew.ts";
 import type { WorkItem } from "../core/types.ts";
-import { RED, YELLOW, DIM, RESET } from "../core/output.ts";
+import { RED, YELLOW, GREEN, CYAN, DIM, RESET } from "../core/output.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -129,12 +129,16 @@ function makeOrchestratorItem(id: string, state: OrchestratorItem["state"] = "im
 describe("stateColor", () => {
   it("returns a string for every valid state", () => {
     const states: ItemState[] = [
-      "merged", "bootstrapping", "implementing", "rebasing", "ci-failed", "ci-pending",
+      "merged", "verifying", "done", "bootstrapping", "implementing", "rebasing", "ci-failed", "ci-pending",
       "review", "in-progress", "queued",
     ];
     for (const state of states) {
       expect(typeof stateColor(state)).toBe("string");
     }
+  });
+  it("returns CYAN for verifying and GREEN for done", () => {
+    expect(stateColor("verifying")).toBe(CYAN);
+    expect(stateColor("done")).toBe(GREEN);
   });
   it("returns YELLOW for rebasing", () => {
     // rebasing shares the same color as bootstrapping/implementing/in-progress
@@ -143,6 +147,12 @@ describe("stateColor", () => {
 });
 
 describe("stateIcon", () => {
+  it("returns the verifying icon", () => {
+    expect(stateIcon("verifying")).toBe("◌");
+  });
+  it("returns the checkmark for done", () => {
+    expect(stateIcon("done")).toBe("✓");
+  });
   it("returns the checkmark for merged", () => {
     expect(stateIcon("merged")).toBe("✓");
   });
@@ -154,7 +164,7 @@ describe("stateIcon", () => {
   });
   it("returns a string for every valid state", () => {
     const states: ItemState[] = [
-      "merged", "bootstrapping", "implementing", "rebasing", "ci-failed", "ci-pending",
+      "merged", "verifying", "done", "bootstrapping", "implementing", "rebasing", "ci-failed", "ci-pending",
       "review", "in-progress", "queued",
     ];
     for (const state of states) {
@@ -169,6 +179,8 @@ describe("stateIcon", () => {
 describe("stateLabel", () => {
   it("returns correct labels", () => {
     expect(stateLabel("merged")).toBe("Merged");
+    expect(stateLabel("verifying")).toBe("Verifying");
+    expect(stateLabel("done")).toBe("Done");
     expect(stateLabel("ci-failed")).toBe("CI Failed");
     expect(stateLabel("ci-pending")).toBe("CI Pending");
     expect(stateLabel("review")).toBe("In Review");
@@ -866,14 +878,15 @@ describe("formatBatchProgress", () => {
   });
   it("includes progress counts", () => {
     const items: StatusItem[] = [
-      makeStatusItem({ state: "merged" }),
-      makeStatusItem({ state: "implementing" }),
+      makeStatusItem({ state: "done" }),
+      makeStatusItem({ state: "verifying" }),
       makeStatusItem({ state: "implementing" }),
     ];
     const progress = stripAnsi(formatBatchProgress(items));
     expect(progress).toContain("Progress:");
-    expect(progress).toContain("1 merged");
-    expect(progress).toContain("2 implementing");
+    expect(progress).toContain("1 done");
+    expect(progress).toContain("1 verifying");
+    expect(progress).toContain("1 implementing");
   });
 });
 
@@ -934,9 +947,9 @@ describe("formatStatusTable", () => {
   });
 
   it("renders unified footer progress line", () => {
-    const items = [makeStatusItem({ state: "merged" })];
+    const items = [makeStatusItem({ state: "done" })];
     const table = stripAnsi(formatStatusTable(items, 80));
-    expect(table).toContain("merged");
+    expect(table).toContain("done");
     expect(table).toContain("1 item");
     // Old-style lines should not appear
     expect(table).not.toContain("Progress:");
@@ -1017,7 +1030,7 @@ describe("formatStatusTable", () => {
 
   it("no DEPS header when items have dependencies (inline indicator only)", () => {
     const items = [
-      makeStatusItem({ id: "A", state: "merged", dependencies: [] }),
+      makeStatusItem({ id: "A", state: "done", dependencies: [] }),
       makeStatusItem({ id: "B", state: "queued", dependencies: ["A"] }),
     ];
     const table = stripAnsi(formatStatusTable(items, 100));
@@ -1036,10 +1049,10 @@ describe("formatStatusTable", () => {
 
   it("shows ⧗ icon before blocked item titles", () => {
     const items = [
-      makeStatusItem({ id: "H-NW-1", state: "merged", dependencies: [] }),
+      makeStatusItem({ id: "H-NW-1", state: "done", dependencies: [] }),
       makeStatusItem({ id: "H-NW-2", state: "ci-pending", dependencies: [] }),
-      makeStatusItem({ id: "H-NW-3", state: "merged", dependencies: [] }),
-      makeStatusItem({ id: "H-NW-4", state: "merged", dependencies: [] }),
+      makeStatusItem({ id: "H-NW-3", state: "done", dependencies: [] }),
+      makeStatusItem({ id: "H-NW-4", state: "done", dependencies: [] }),
       makeStatusItem({ id: "M-NW-5", state: "queued", dependencies: ["H-NW-1", "H-NW-2", "H-NW-3", "H-NW-4"] }),
       makeStatusItem({ id: "M-NW-6", state: "queued", dependencies: ["M-NW-5"] }),
     ];
@@ -1081,21 +1094,38 @@ describe("formatStatusTable", () => {
     expect(table).not.toContain("DEPS");
   });
 
-  it("no icon and no sub-line when all deps resolved", () => {
+  it("no icon and no sub-line when all deps are done", () => {
     const items = [
-      makeStatusItem({ id: "A-1", state: "merged", dependencies: [] }),
+      makeStatusItem({ id: "A-1", state: "done", dependencies: [] }),
       makeStatusItem({ id: "B-2", state: "queued", dependencies: ["A-1"] }),
     ];
     const table = stripAnsi(formatStatusTable(items, 100, undefined, false, {
       showBlockerDetail: true,
     }));
     const lines = table.split("\n");
-    // B-2's only dep (A-1) is merged, so no ⧗ icon and no sub-line
+    // B-2's only dep (A-1) is done, so no ⧗ icon and no sub-line
     const b2Line = lines.find(l => l.includes("B-2"));
     expect(b2Line).toBeDefined();
     expect(b2Line).not.toContain("⧗");
     // No sub-line with └
     expect(table).not.toContain("└");
+  });
+
+  it("keeps verifying items in the active section and WIP counts", () => {
+    const items = [
+      makeStatusItem({ id: "A-1", state: "verifying" }),
+      makeStatusItem({ id: "A-2", state: "queued" }),
+      makeStatusItem({ id: "A-3", state: "done" }),
+    ];
+    const table = stripAnsi(formatStatusTable(items, 100, 4));
+    const verifyingIndex = table.indexOf("A-1");
+    const doneIndex = table.indexOf("A-3");
+    const queueIndex = table.indexOf("Queue (1 waiting, 1/4 WIP slots active)");
+    expect(verifyingIndex).toBeGreaterThan(-1);
+    expect(doneIndex).toBeGreaterThan(-1);
+    expect(queueIndex).toBeGreaterThan(-1);
+    expect(verifyingIndex).toBeLessThan(doneIndex);
+    expect(doneIndex).toBeLessThan(queueIndex);
   });
 
   it("sorts by blocked-by count ascending then ID alphanumeric", () => {
@@ -1165,25 +1195,34 @@ describe("computeBlockedBy", () => {
     expect(blocked.get("B")).toEqual([]);
   });
 
-  it("returns only unresolved (non-merged) blockers", () => {
+  it("returns only unresolved (not-done) blockers", () => {
     const items = [
-      makeStatusItem({ id: "A", state: "merged", dependencies: [] }),
+      makeStatusItem({ id: "A", state: "done", dependencies: [] }),
       makeStatusItem({ id: "B", state: "ci-pending", dependencies: [] }),
       makeStatusItem({ id: "C", state: "queued", dependencies: ["A", "B"] }),
     ];
     const blocked = computeBlockedBy(items);
-    // A is merged, so only B blocks C
+    // A is done, so only B blocks C
     expect(blocked.get("C")).toEqual(["B"]);
   });
 
-  it("returns empty when all deps are merged", () => {
+  it("returns empty when all deps are done", () => {
     const items = [
-      makeStatusItem({ id: "A", state: "merged", dependencies: [] }),
-      makeStatusItem({ id: "B", state: "merged", dependencies: [] }),
+      makeStatusItem({ id: "A", state: "done", dependencies: [] }),
+      makeStatusItem({ id: "B", state: "done", dependencies: [] }),
       makeStatusItem({ id: "C", state: "queued", dependencies: ["A", "B"] }),
     ];
     const blocked = computeBlockedBy(items);
     expect(blocked.get("C")).toEqual([]);
+  });
+
+  it("treats verifying dependencies as unresolved blockers", () => {
+    const items = [
+      makeStatusItem({ id: "A", state: "verifying", dependencies: [] }),
+      makeStatusItem({ id: "B", state: "queued", dependencies: ["A"] }),
+    ];
+    const blocked = computeBlockedBy(items);
+    expect(blocked.get("B")).toEqual(["A"]);
   });
 
   it("ignores deps not in the current item set", () => {
@@ -1233,8 +1272,10 @@ describe("sortByBlockedThenId", () => {
 
 describe("mapDaemonItemState", () => {
   it("maps orchestrator states to display states correctly", () => {
-    expect(mapDaemonItemState("merged")).toBe("merged");
-    expect(mapDaemonItemState("done")).toBe("merged");
+    expect(mapDaemonItemState("merged")).toBe("verifying");
+    expect(mapDaemonItemState("forward-fix-pending")).toBe("verifying");
+    expect(mapDaemonItemState("fixing-forward")).toBe("verifying");
+    expect(mapDaemonItemState("done")).toBe("done");
     expect(mapDaemonItemState("bootstrapping")).toBe("bootstrapping");
     expect(mapDaemonItemState("implementing")).toBe("implementing");
     expect(mapDaemonItemState("launching")).toBe("implementing");
@@ -1270,7 +1311,7 @@ describe("mapDaemonItemState", () => {
 
   it("ignores rebaseRequested for non ci-pending/ci-failed states", () => {
     expect(mapDaemonItemState("implementing", { rebaseRequested: true })).toBe("implementing");
-    expect(mapDaemonItemState("merged", { rebaseRequested: true })).toBe("merged");
+    expect(mapDaemonItemState("merged", { rebaseRequested: true })).toBe("verifying");
   });
 });
 
@@ -1474,8 +1515,10 @@ describe("orchestratorItemsToStatusItems", () => {
 
   it("maps all orchestrator states to display states", () => {
     const stateMappings: Array<[OrchestratorItem["state"], ItemState]> = [
-      ["merged", "merged"],
-      ["done", "merged"],
+      ["merged", "verifying"],
+      ["forward-fix-pending", "verifying"],
+      ["fixing-forward", "verifying"],
+      ["done", "done"],
       ["bootstrapping", "bootstrapping"],
       ["implementing", "implementing"],
       ["launching", "implementing"],
@@ -1887,7 +1930,7 @@ describe("getTerminalWidth", () => {
 // ── computeSessionMetrics ─────────────────────────────────────────────────────
 
 describe("computeSessionMetrics", () => {
-  it("returns nulls when no merged items", () => {
+  it("returns nulls when no done items", () => {
     const items = [
       makeStatusItem({ state: "implementing" }),
       makeStatusItem({ id: "B", state: "queued" }),
@@ -1900,17 +1943,17 @@ describe("computeSessionMetrics", () => {
     expect(metrics.sessionDurationMs).toBeNull();
   });
 
-  it("computes lead time for all merged items", () => {
+  it("computes lead time for all done items", () => {
     const items = [
       makeStatusItem({
         id: "A",
-        state: "merged",
+        state: "done",
         startedAt: "2026-01-01T00:00:00Z",
         endedAt: "2026-01-01T00:30:00Z",
       }),
       makeStatusItem({
         id: "B",
-        state: "merged",
+        state: "done",
         startedAt: "2026-01-01T01:00:00Z",
         endedAt: "2026-01-01T02:00:00Z",
       }),
@@ -1922,11 +1965,11 @@ describe("computeSessionMetrics", () => {
     expect(metrics.leadTimeP95Ms).toBe(3_600_000);
   });
 
-  it("computes lead time for a mix of merged and failed items", () => {
+  it("computes lead time for a mix of done and failed items", () => {
     const items = [
       makeStatusItem({
         id: "A",
-        state: "merged",
+        state: "done",
         startedAt: "2026-01-01T00:00:00Z",
         endedAt: "2026-01-01T00:10:00Z",
       }),
@@ -1938,17 +1981,17 @@ describe("computeSessionMetrics", () => {
       }),
     ];
     const metrics = computeSessionMetrics(items);
-    // Only merged item A contributes to lead time: 10min = 600_000ms
+    // Only done item A contributes to lead time: 10min = 600_000ms
     expect(metrics.leadTimeMedianMs).toBe(600_000);
-    // Success rate: 1 merged / (1 merged + 1 failed) = 0.5
+    // Success rate: 1 done / (1 done + 1 failed) = 0.5
     expect(metrics.successRate).toBe(0.5);
   });
 
-  it("handles single merged item", () => {
+  it("handles single done item", () => {
     const items = [
       makeStatusItem({
         id: "A",
-        state: "merged",
+        state: "done",
         startedAt: "2026-01-01T00:00:00Z",
         endedAt: "2026-01-01T00:45:00Z",
       }),
@@ -1959,12 +2002,12 @@ describe("computeSessionMetrics", () => {
     expect(metrics.successRate).toBe(1);
   });
 
-  it("skips merged items without startedAt", () => {
+  it("skips done items without startedAt", () => {
     const items = [
-      makeStatusItem({ id: "A", state: "merged" }), // no startedAt
+      makeStatusItem({ id: "A", state: "done" }), // no startedAt
       makeStatusItem({
         id: "B",
-        state: "merged",
+        state: "done",
         startedAt: "2026-01-01T00:00:00Z",
         endedAt: "2026-01-01T00:20:00Z",
       }),
@@ -1977,18 +2020,18 @@ describe("computeSessionMetrics", () => {
   it("computes throughput when sessionStartedAt is provided", () => {
     const sessionStart = new Date(Date.now() - 2 * 3_600_000).toISOString(); // 2 hours ago
     const items = [
-      makeStatusItem({ id: "A", state: "merged" }),
-      makeStatusItem({ id: "B", state: "merged" }),
-      makeStatusItem({ id: "C", state: "merged" }),
+      makeStatusItem({ id: "A", state: "done" }),
+      makeStatusItem({ id: "B", state: "done" }),
+      makeStatusItem({ id: "C", state: "done" }),
     ];
     const metrics = computeSessionMetrics(items, sessionStart);
-    // 3 merged in ~2 hours ≈ 1.5/hr
+    // 3 done in ~2 hours ≈ 1.5/hr
     expect(metrics.throughputPerHour).toBeCloseTo(1.5, 0);
     expect(metrics.sessionDurationMs).toBeGreaterThan(0);
   });
 
   it("returns null throughput without sessionStartedAt", () => {
-    const items = [makeStatusItem({ id: "A", state: "merged" })];
+    const items = [makeStatusItem({ id: "A", state: "done" })];
     const metrics = computeSessionMetrics(items);
     expect(metrics.throughputPerHour).toBeNull();
     expect(metrics.sessionDurationMs).toBeNull();
@@ -1996,7 +2039,7 @@ describe("computeSessionMetrics", () => {
 
   it("handles zero session duration (avoid division by zero)", () => {
     // sessionStartedAt = now → 0ms duration
-    const items = [makeStatusItem({ id: "A", state: "merged" })];
+    const items = [makeStatusItem({ id: "A", state: "done" })];
     const metrics = computeSessionMetrics(items, new Date().toISOString());
     // sessionDurationMs is 0, throughput should be null (avoids division by zero)
     // Note: Due to timing, sessionDurationMs may be 0 or a small positive number
@@ -2018,13 +2061,21 @@ describe("computeSessionMetrics", () => {
     expect(metrics.leadTimeMedianMs).toBeNull();
   });
 
-  it("computes correct success rate for all merged (100%)", () => {
+  it("computes correct success rate for all done (100%)", () => {
     const items = [
-      makeStatusItem({ id: "A", state: "merged" }),
-      makeStatusItem({ id: "B", state: "merged" }),
+      makeStatusItem({ id: "A", state: "done" }),
+      makeStatusItem({ id: "B", state: "done" }),
     ];
     const metrics = computeSessionMetrics(items);
     expect(metrics.successRate).toBe(1);
+  });
+
+  it("does not count verifying items as completed metrics", () => {
+    const items = [makeStatusItem({ id: "A", state: "verifying" })];
+    const metrics = computeSessionMetrics(items, new Date(Date.now() - 3_600_000).toISOString());
+    expect(metrics.leadTimeMedianMs).toBeNull();
+    expect(metrics.throughputPerHour).toBeCloseTo(0, 5);
+    expect(metrics.successRate).toBeNull();
   });
 });
 
@@ -2106,7 +2157,7 @@ describe("formatStatusTable with ViewOptions", () => {
     const items = [
       makeStatusItem({
         id: "A-1",
-        state: "merged",
+        state: "done",
         startedAt: "2026-01-01T00:00:00Z",
         endedAt: "2026-01-01T00:30:00Z",
         dependencies: [],
@@ -2121,7 +2172,7 @@ describe("formatStatusTable with ViewOptions", () => {
       showBlockerDetail: true,
       sessionStartedAt: "2026-01-01T00:00:00Z",
     }));
-    // A-1 is merged, so B-2 has no unresolved blockers -- no icon, no sub-line
+    // A-1 is done, so B-2 has no unresolved blockers -- no icon, no sub-line
     expect(table).not.toContain("⧗");
     expect(table).not.toContain("└");
     // No DEPS header
@@ -2143,7 +2194,7 @@ describe("buildStatusLayout", () => {
   it("returns correct header/item/footer structure", () => {
     const items = [
       makeStatusItem({ id: "A-1", state: "implementing" }),
-      makeStatusItem({ id: "A-2", state: "merged" }),
+      makeStatusItem({ id: "A-2", state: "done" }),
       makeStatusItem({ id: "A-3", state: "queued" }),
     ];
     const layout = buildStatusLayout(items, 80);
@@ -2187,21 +2238,21 @@ describe("buildStatusLayout", () => {
 
   it("includes unified progress in footer", () => {
     const items = [
-      makeStatusItem({ id: "A-1", state: "merged" }),
+      makeStatusItem({ id: "A-1", state: "done" }),
       makeStatusItem({ id: "A-2", state: "implementing" }),
     ];
     const layout = buildStatusLayout(items, 80);
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
-    expect(footerText).toContain("merged");
+    expect(footerText).toContain("done");
     expect(footerText).toContain("implementing");
     expect(footerText).toContain("2 items");
   });
 
   it("footer has 1 progress line instead of 3 (saves 2 vertical lines)", () => {
     const items = [
-      makeStatusItem({ id: "A-1", state: "merged" }),
+      makeStatusItem({ id: "A-1", state: "done" }),
       makeStatusItem({ id: "A-2", state: "implementing" }),
-      makeStatusItem({ id: "A-3", state: "ci-pending" }),
+      makeStatusItem({ id: "A-3", state: "verifying" }),
     ];
     const layout = buildStatusLayout(items, 80);
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
@@ -2209,9 +2260,9 @@ describe("buildStatusLayout", () => {
     expect(footerText).not.toContain("Progress:");
     expect(footerText).not.toContain("Total:");
     // Should contain unified progress with icons and state counts
-    expect(footerText).toContain("merged");
+    expect(footerText).toContain("done");
     expect(footerText).toContain("implementing");
-    expect(footerText).toContain("ci pending");
+    expect(footerText).toContain("verifying");
     expect(footerText).toContain("3 items");
   });
 
@@ -2240,7 +2291,7 @@ describe("buildStatusLayout", () => {
     const items = [
       makeStatusItem({
         id: "A-1",
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 600_000).toISOString(),
         endedAt: new Date(now - 300_000).toISOString(),
       }),
@@ -2475,16 +2526,16 @@ describe("clampScrollOffset", () => {
 describe("formatCompactMetrics", () => {
   it("formats compact single-line metrics", () => {
     const items = [
-      makeStatusItem({ id: "A-1", state: "merged" }),
-      makeStatusItem({ id: "A-2", state: "merged" }),
+      makeStatusItem({ id: "A-1", state: "done" }),
+      makeStatusItem({ id: "A-2", state: "done" }),
       makeStatusItem({ id: "B-1", state: "implementing" }),
-      makeStatusItem({ id: "B-2", state: "implementing" }),
+      makeStatusItem({ id: "B-2", state: "verifying" }),
       makeStatusItem({ id: "C-1", state: "queued" }),
       makeStatusItem({ id: "C-2", state: "queued" }),
       makeStatusItem({ id: "C-3", state: "queued" }),
     ];
     const text = stripAnsi(formatCompactMetrics(items));
-    expect(text).toContain("2 merged");
+    expect(text).toContain("2 done");
     expect(text).toContain("2 active");
     expect(text).toContain("3 queued");
   });
@@ -2494,7 +2545,7 @@ describe("formatCompactMetrics", () => {
     const items = [
       makeStatusItem({
         id: "A-1",
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 600_000).toISOString(), // 10 min ago
         endedAt: new Date(now - 300_000).toISOString(),   // 5 min ago (5m lead time)
       }),
@@ -2510,27 +2561,27 @@ describe("formatUnifiedProgress", () => {
     expect(formatUnifiedProgress([], 80)).toBe("");
   });
 
-  it("shows all merged with icon and total count", () => {
+  it("shows all done with icon and total count", () => {
     const items = [
-      makeStatusItem({ id: "A-1", state: "merged" }),
-      makeStatusItem({ id: "A-2", state: "merged" }),
-      makeStatusItem({ id: "A-3", state: "merged" }),
+      makeStatusItem({ id: "A-1", state: "done" }),
+      makeStatusItem({ id: "A-2", state: "done" }),
+      makeStatusItem({ id: "A-3", state: "done" }),
     ];
     const text = stripAnsi(formatUnifiedProgress(items, 80));
-    expect(text).toContain("✓ 3 merged");
+    expect(text).toContain("✓ 3 done");
     expect(text).toContain("3 items");
   });
 
   it("shows mixed active states with icons", () => {
     const items = [
-      makeStatusItem({ id: "A-1", state: "merged" }),
+      makeStatusItem({ id: "A-1", state: "done" }),
       makeStatusItem({ id: "A-2", state: "implementing" }),
-      makeStatusItem({ id: "A-3", state: "ci-pending" }),
+      makeStatusItem({ id: "A-3", state: "verifying" }),
     ];
     const text = stripAnsi(formatUnifiedProgress(items, 100));
-    expect(text).toContain("✓ 1 merged");
+    expect(text).toContain("✓ 1 done");
+    expect(text).toContain("◌ 1 verifying");
     expect(text).toContain("▸ 1 implementing");
-    expect(text).toContain("◌ 1 ci pending");
     expect(text).toContain("3 items");
   });
 
@@ -2547,13 +2598,13 @@ describe("formatUnifiedProgress", () => {
 
   it("shows queued items", () => {
     const items = [
-      makeStatusItem({ id: "A-1", state: "merged" }),
+      makeStatusItem({ id: "A-1", state: "done" }),
       makeStatusItem({ id: "A-2", state: "implementing" }),
       makeStatusItem({ id: "A-3", state: "queued" }),
       makeStatusItem({ id: "A-4", state: "queued" }),
     ];
     const text = stripAnsi(formatUnifiedProgress(items, 100));
-    expect(text).toContain("✓ 1 merged");
+    expect(text).toContain("✓ 1 done");
     expect(text).toContain("▸ 1 implementing");
     expect(text).toContain("· 2 queued");
     expect(text).toContain("4 items");
@@ -2570,12 +2621,12 @@ describe("formatUnifiedProgress", () => {
 
   it("handles narrow terminal gracefully", () => {
     const items = [
-      makeStatusItem({ id: "A-1", state: "merged" }),
+      makeStatusItem({ id: "A-1", state: "done" }),
       makeStatusItem({ id: "A-2", state: "implementing" }),
     ];
     // Very narrow -- should still contain the data
     const text = stripAnsi(formatUnifiedProgress(items, 30));
-    expect(text).toContain("merged");
+    expect(text).toContain("done");
     expect(text).toContain("implementing");
     expect(text).toContain("2 items");
   });
@@ -2583,7 +2634,7 @@ describe("formatUnifiedProgress", () => {
   it("output length is strictly less than termWidth to prevent deferred-wrap clipping", () => {
     const termWidth = 80;
     const items = [
-      makeStatusItem({ id: "A-1", state: "merged" }),
+      makeStatusItem({ id: "A-1", state: "done" }),
       makeStatusItem({ id: "A-2", state: "implementing" }),
       makeStatusItem({ id: "A-3", state: "queued" }),
     ];
@@ -2606,7 +2657,7 @@ describe("formatTitleMetrics", () => {
     const items = [
       makeStatusItem({
         id: "A-1",
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 600_000).toISOString(),
         endedAt: new Date(now - 300_000).toISOString(),
       }),
@@ -2626,7 +2677,7 @@ describe("formatTitleMetrics", () => {
     const items = [
       makeStatusItem({
         id: "A-1",
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 600_000).toISOString(),
         endedAt: new Date(now - 300_000).toISOString(),
       }),
@@ -2641,7 +2692,7 @@ describe("formatTitleMetrics", () => {
     const items = [
       makeStatusItem({
         id: "A-1",
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 600_000).toISOString(),
         endedAt: new Date(now - 300_000).toISOString(),
       }),
@@ -2656,7 +2707,7 @@ describe("formatTitleMetrics", () => {
     const items = [
       makeStatusItem({
         id: "A-1",
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 600_000).toISOString(),
         endedAt: new Date(now - 300_000).toISOString(),
       }),
@@ -2674,7 +2725,7 @@ describe("formatTitleMetrics", () => {
     const items = [
       makeStatusItem({
         id: "A-1",
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 2_700_000).toISOString(), // 45m ago
         endedAt: new Date(now - 2_400_000).toISOString(),   // 40m ago
       }),
@@ -2689,7 +2740,7 @@ describe("formatTitleMetrics", () => {
     const items = [
       makeStatusItem({
         id: "A-1",
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 50_000).toISOString(),
         endedAt: new Date(now - 5_000).toISOString(),
       }),
@@ -2703,13 +2754,13 @@ describe("formatTitleMetrics", () => {
   it("shows full metrics including unit suffix at exact boundary width", () => {
     const now = Date.now();
     // Use durations producing metrics string >= 48 chars (so minWidth >= 61 with shorter title).
-    // 1500 merged items in 12.5h → Thru: 120.0/hr (14 chars).
+    // 1500 done items in 12.5h → Thru: 120.0/hr (14 chars).
     // Lead: 23h 59m (14 chars). Session: 12h 30m (16 chars).
     // Total: 14+2+14+2+16 = 48 chars → minWidth = 9+4+48 = 61.
     const items = Array.from({ length: 1500 }, (_, i) =>
       makeStatusItem({
         id: `A-${i + 1}`,
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 87_000_000).toISOString(), // ~24h ago
         endedAt: new Date(now - 700_000).toISOString(),      // ~12m ago → lead ~23h 58m
       }),
@@ -2741,7 +2792,7 @@ describe("formatTitleMetrics", () => {
     const items = Array.from({ length: 1500 }, (_, i) =>
       makeStatusItem({
         id: `A-${i + 1}`,
-        state: "merged",
+        state: "done",
         startedAt: new Date(now - 87_000_000).toISOString(),
         endedAt: new Date(now - 700_000).toISOString(),
       }),
@@ -3087,7 +3138,7 @@ function makeLogEntries(count: number): LogEntry[] {
 describe("buildPanelLayout", () => {
   const items = [
     makeStatusItem({ id: "A-1", state: "implementing" }),
-    makeStatusItem({ id: "A-2", state: "merged" }),
+    makeStatusItem({ id: "A-2", state: "done" }),
     makeStatusItem({ id: "A-3", state: "queued" }),
   ];
   const logs = makeLogEntries(10);
@@ -3150,7 +3201,7 @@ describe("buildPanelLayout", () => {
 describe("renderPanelFrame", () => {
   const items = [
     makeStatusItem({ id: "A-1", state: "implementing" }),
-    makeStatusItem({ id: "A-2", state: "merged" }),
+    makeStatusItem({ id: "A-2", state: "done" }),
   ];
   const logs = makeLogEntries(20);
 
@@ -3284,11 +3335,11 @@ describe("formatItemDetail", () => {
     expect(text).toContain("timeout after 30s");
   });
 
-  it("renders merged state", () => {
+  it("renders done state", () => {
     const item = makeStatusItem({
       id: "H-MG-1",
       title: "Feature done",
-      state: "merged",
+      state: "done",
       prNumber: 200,
       startedAt: new Date(Date.now() - 600_000).toISOString(),
       endedAt: new Date(Date.now() - 300_000).toISOString(),
@@ -3297,9 +3348,24 @@ describe("formatItemDetail", () => {
       repoUrl: "https://github.com/org/repo",
     });
     const text = lines.map(stripAnsi).join("\n");
-    expect(text).toContain("Merged");
+    expect(text).toContain("Done");
     expect(text).toContain("#200");
     expect(text).toContain("Passed");
+  });
+
+  it("renders verifying state without looking complete", () => {
+    const item = makeStatusItem({
+      id: "H-VF-1",
+      title: "Post-merge verification",
+      state: "verifying",
+      prNumber: 201,
+    });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Verifying");
+    expect(text).toContain("CI:");
+    expect(text).toContain("Verifying");
+    expect(text).not.toContain("Passed");
   });
 
   it("renders stuck (ci-failed) state", () => {
@@ -3614,12 +3680,21 @@ describe("formatItemDetail for each item state", () => {
     expect(text).toContain("test timeout");
   });
 
-  it("renders merged state", () => {
-    const item = makeStatusItem({ id: "H-M-1", state: "merged", prNumber: 50 });
+  it("renders done state", () => {
+    const item = makeStatusItem({ id: "H-M-1", state: "done", prNumber: 50 });
     const lines = formatItemDetail(item);
     const text = lines.map(stripAnsi).join("\n");
-    expect(text).toContain("Merged");
+    expect(text).toContain("Done");
     expect(text).toContain("Passed");
+  });
+
+  it("renders verifying state", () => {
+    const item = makeStatusItem({ id: "H-V-1", state: "verifying", prNumber: 51 });
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Verifying");
+    expect(text).toContain("CI:");
+    expect(text).not.toContain("Passed");
   });
 
   it("renders queued state", () => {
@@ -3923,7 +3998,7 @@ describe("buildStatusLayout queueStartIndex", () => {
   it("queueStartIndex is undefined when no queued items", () => {
     const items = [
       makeStatusItem({ id: "A-1", state: "implementing" }),
-      makeStatusItem({ id: "A-2", state: "merged" }),
+      makeStatusItem({ id: "A-2", state: "done" }),
     ];
     const layout = buildStatusLayout(items, 80);
     expect(layout.queueStartIndex).toBeUndefined();

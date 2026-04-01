@@ -118,6 +118,8 @@ export interface SessionMetrics {
 
 export type ItemState =
   | "merged"
+  | "verifying"
+  | "done"
   | "bootstrapping"
   | "implementing"
   | "rebasing"
@@ -175,7 +177,7 @@ export interface TreeNode {
 // ─── Blocked-by computation ──────────────────────────────────────────────────
 
 /**
- * Compute unresolved (non-merged) dependencies for each item.
+ * Compute unresolved (not-done) dependencies for each item.
  * Returns a Map from item ID to an array of blocking dep IDs.
  */
 export function computeBlockedBy(
@@ -191,7 +193,7 @@ export function computeBlockedBy(
     const deps = item.dependencies ?? [];
     const blockers = deps.filter((depId) => {
       const depState = stateMap.get(depId);
-      return depState !== undefined && depState !== "merged";
+      return depState !== undefined && depState !== "done";
     });
     result.set(item.id, blockers);
   }
@@ -219,7 +221,10 @@ export function sortByBlockedThenId(
 export function stateColor(state: ItemState): string {
   switch (state) {
     case "merged":
+    case "done":
       return GREEN;
+    case "verifying":
+      return CYAN;
     case "bootstrapping":
     case "implementing":
     case "rebasing":
@@ -242,7 +247,10 @@ export function stateColor(state: ItemState): string {
 export function stateIcon(state: ItemState): string {
   switch (state) {
     case "merged":
+    case "done":
       return "✓";
+    case "verifying":
+      return "◌";
     case "bootstrapping":
     case "implementing":
     case "in-progress":
@@ -267,6 +275,10 @@ export function stateLabel(state: ItemState): string {
   switch (state) {
     case "merged":
       return "Merged";
+    case "verifying":
+      return "Verifying";
+    case "done":
+      return "Done";
     case "bootstrapping":
       return "Bootstrapping";
     case "implementing":
@@ -619,7 +631,7 @@ export function formatItemRow(
 
 /**
  * Format the batch progress line summarizing item states.
- * E.g., "Progress: 2 merged, 1 implementing, 1 ci-pending"
+ * E.g., "Progress: 2 done, 1 verifying, 1 ci-pending"
  */
 export function formatBatchProgress(items: StatusItem[]): string {
   if (items.length === 0) return "";
@@ -629,9 +641,11 @@ export function formatBatchProgress(items: StatusItem[]): string {
     counts.set(item.state, (counts.get(item.state) ?? 0) + 1);
   }
 
-  // Order states for display: merged first (good news), then active, then bad, then queued
+  // Order states for display: completed first, then active, then bad, then queued
   const order: ItemState[] = [
+    "done",
     "merged",
+    "verifying",
     "review",
     "ci-pending",
     "rebasing",
@@ -659,14 +673,14 @@ export function formatBatchProgress(items: StatusItem[]): string {
  */
 export function formatSummary(items: StatusItem[]): string {
   const total = items.length;
-  const merged = items.filter((i) => i.state === "merged").length;
-  const active = total - merged;
+  const done = items.filter((i) => i.state === "done").length;
+  const active = total - done;
 
   if (total === 0) return `  ${DIM}No active items${RESET}`;
 
   const parts = [`${total} item${total !== 1 ? "s" : ""}`];
-  if (merged > 0 && active > 0) {
-    parts.push(`${GREEN}${merged} merged${RESET}`, `${active} active`);
+  if (done > 0 && active > 0) {
+    parts.push(`${GREEN}${done} done${RESET}`, `${active} active`);
   }
 
   return `  ${DIM}Total: ${parts.join(", ")}${RESET}`;
@@ -871,21 +885,21 @@ function percentile(sorted: number[], p: number): number | null {
 /**
  * Compute DORA-style session metrics from StatusItems.
  *
- * - Lead time (median/P95): endedAt − startedAt for merged items.
- * - Throughput: merged items per hour (requires sessionStartedAt).
- * - Success rate: merged / (merged + failed).
+ * - Lead time (median/P95): endedAt − startedAt for done items.
+ * - Throughput: done items per hour (requires sessionStartedAt).
+ * - Success rate: done / (done + failed).
  * - Session duration: now − sessionStartedAt.
  */
 export function computeSessionMetrics(
   items: StatusItem[],
   sessionStartedAt?: string,
 ): SessionMetrics {
-  const mergedItems = items.filter((i) => i.state === "merged");
+  const doneItems = items.filter((i) => i.state === "done");
   const failedItems = items.filter((i) => i.state === "ci-failed");
 
-  // Collect lead times from merged items with valid timestamps
+  // Collect lead times from done items with valid timestamps
   const leadTimes: number[] = [];
-  for (const item of mergedItems) {
+  for (const item of doneItems) {
     if (item.startedAt && item.endedAt) {
       const start = new Date(item.startedAt).getTime();
       const end = new Date(item.endedAt).getTime();
@@ -908,15 +922,15 @@ export function computeSessionMetrics(
     }
   }
 
-  // Throughput: merged / session-hours
+  // Throughput: done / session-hours
   const throughputPerHour =
     sessionDurationMs !== null && sessionDurationMs > 0
-      ? (mergedItems.length / sessionDurationMs) * 3_600_000
+      ? (doneItems.length / sessionDurationMs) * 3_600_000
       : null;
 
   // Success rate
-  const total = mergedItems.length + failedItems.length;
-  const successRate = total > 0 ? mergedItems.length / total : null;
+  const total = doneItems.length + failedItems.length;
+  const successRate = total > 0 ? doneItems.length / total : null;
 
   return {
     leadTimeMedianMs,
@@ -1033,8 +1047,8 @@ export function formatStatusTable(
     // Flat blocked-by mode: sort by blocked count asc, then ID alpha
     const sorted = sortByBlockedThenId(items, blockedBy!);
 
-    const activeItems = sorted.filter((i) => i.state !== "queued" && i.state !== "merged");
-    const mergedItems = sorted.filter((i) => i.state === "merged");
+    const activeItems = sorted.filter((i) => i.state !== "queued" && i.state !== "done");
+    const doneItems = sorted.filter((i) => i.state === "done");
     const queuedItems = sorted.filter((i) => i.state === "queued");
 
     for (const item of activeItems) {
@@ -1044,7 +1058,7 @@ export function formatStatusTable(
         lines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
       }
     }
-    for (const item of mergedItems) {
+    for (const item of doneItems) {
       lines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
@@ -1055,7 +1069,7 @@ export function formatStatusTable(
     // Queue section
     if (queuedItems.length > 0) {
       const activeCount = items.filter(
-        (i) => i.state !== "queued" && i.state !== "merged",
+        (i) => i.state !== "queued" && i.state !== "done",
       ).length;
       let queueHeader = `Queue (${queuedItems.length} waiting`;
       if (wipLimit !== undefined) {
@@ -1076,15 +1090,15 @@ export function formatStatusTable(
       }
     }
   } else {
-    // Flat mode (no dependencies): split into active, merged, and queued groups
-    const activeItems = items.filter((i) => i.state !== "queued" && i.state !== "merged");
+    // Flat mode (no dependencies): split into active, done, and queued groups
+    const activeItems = items.filter((i) => i.state !== "queued" && i.state !== "done");
     const queuedItems = items.filter((i) => i.state === "queued");
-    const mergedItems = items.filter((i) => i.state === "merged");
+    const doneItems = items.filter((i) => i.state === "done");
 
     for (const item of activeItems) {
       lines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl));
     }
-    for (const item of mergedItems) {
+    for (const item of doneItems) {
       lines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl));
     }
 
@@ -1136,15 +1150,17 @@ export function mapDaemonItemState(orchState: string, flags?: { rebaseRequested?
   }
   switch (orchState) {
     case "merged":
+    case "forward-fix-pending":
+    case "fixing-forward":
+      return "verifying";
     case "done":
-      return "merged";
+      return "done";
     case "bootstrapping":
       return "bootstrapping";
     case "implementing":
     case "launching":
       return "implementing";
     case "rebasing":
-    case "fixing-forward":
       return "rebasing";
     case "ci-failed":
     case "stuck":
@@ -1152,7 +1168,6 @@ export function mapDaemonItemState(orchState: string, flags?: { rebaseRequested?
       return "ci-failed";
     case "ci-pending":
     case "merging":
-    case "forward-fix-pending":
       return "ci-pending";
     case "review-pending":
     case "reviewing":
@@ -1273,20 +1288,20 @@ export interface FrameLayout {
 
 /**
  * Format compact single-line metrics for the footer.
- * E.g., "✓ 2 merged  ▸ 2 active  · 3 queued    Lead: 5m  Thru: 4.2/hr"
+ * E.g., "✓ 2 done  ▸ 2 active  · 3 queued    Lead: 5m  Thru: 4.2/hr"
  */
 export function formatCompactMetrics(
   items: StatusItem[],
   sessionStartedAt?: string,
 ): string {
-  const merged = items.filter((i) => i.state === "merged").length;
+  const done = items.filter((i) => i.state === "done").length;
   const active = items.filter(
-    (i) => i.state !== "merged" && i.state !== "queued",
+    (i) => i.state !== "done" && i.state !== "queued",
   ).length;
   const queued = items.filter((i) => i.state === "queued").length;
 
   const parts: string[] = [];
-  if (merged > 0) parts.push(`${GREEN}✓ ${merged} merged${RESET}`);
+  if (done > 0) parts.push(`${GREEN}✓ ${done} done${RESET}`);
   if (active > 0) parts.push(`${YELLOW}▸ ${active} active${RESET}`);
   if (queued > 0) parts.push(`${DIM}· ${queued} queued${RESET}`);
 
@@ -1304,7 +1319,7 @@ export function formatCompactMetrics(
 /**
  * Format a unified single-line progress summary for the footer.
  * Shows icon-prefixed state counts left-aligned and total count right-aligned.
- * E.g., "✓ 5 merged  ▸ 2 implementing  ◌ 1 ci-pending                    8 items"
+ * E.g., "✓ 5 done  ◌ 1 verifying  ▸ 2 implementing                    8 items"
  *
  * Uses state ordering and colors from formatBatchProgress, icon style from formatCompactMetrics.
  */
@@ -1319,9 +1334,11 @@ export function formatUnifiedProgress(
     counts.set(item.state, (counts.get(item.state) ?? 0) + 1);
   }
 
-  // Order states for display: merged first, then active states, then bad, then queued
+  // Order states for display: completed first, then active states, then bad, then queued
   const order: ItemState[] = [
+    "done",
     "merged",
+    "verifying",
     "review",
     "ci-pending",
     "rebasing",
@@ -1520,8 +1537,8 @@ export function buildStatusLayout(
 
   if (hasDeps) {
     const sorted = sortByBlockedThenId(items, blockedBy!);
-    const activeItems = sorted.filter((i) => i.state !== "queued" && i.state !== "merged");
-    const mergedItems = sorted.filter((i) => i.state === "merged");
+    const activeItems = sorted.filter((i) => i.state !== "queued" && i.state !== "done");
+    const doneItems = sorted.filter((i) => i.state === "done");
     const queuedItems = sorted.filter((i) => i.state === "queued");
 
     for (const item of activeItems) {
@@ -1531,7 +1548,7 @@ export function buildStatusLayout(
         itemLines.push(formatBlockerSubline(blockers, titleWidth, false, blockerColOffset));
       }
     }
-    for (const item of mergedItems) {
+    for (const item of doneItems) {
       itemLines.push(formatItemRow(item, titleWidth, depIndicator(item.id), stateColWidth, repoUrl, item.id === selectedItemId));
       const blockers = blockedBy!.get(item.id) ?? [];
       if (opts.showBlockerDetail && blockers.length > 0) {
@@ -1539,7 +1556,7 @@ export function buildStatusLayout(
       }
     }
     if (queuedItems.length > 0) {
-      const activeCount = items.filter((i) => i.state !== "queued" && i.state !== "merged").length;
+      const activeCount = items.filter((i) => i.state !== "queued" && i.state !== "done").length;
       let queueHeader = `Queue (${queuedItems.length} waiting`;
       if (wipLimit !== undefined) queueHeader += `, ${activeCount}/${wipLimit} WIP slots active`;
       queueHeader += ")";
@@ -1556,14 +1573,14 @@ export function buildStatusLayout(
       }
     }
   } else {
-    const activeItems = items.filter((i) => i.state !== "queued" && i.state !== "merged");
+    const activeItems = items.filter((i) => i.state !== "queued" && i.state !== "done");
     const queuedItems = items.filter((i) => i.state === "queued");
-    const mergedItems = items.filter((i) => i.state === "merged");
+    const doneItems = items.filter((i) => i.state === "done");
 
     for (const item of activeItems) {
       itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, item.id === selectedItemId));
     }
-    for (const item of mergedItems) {
+    for (const item of doneItems) {
       itemLines.push(formatItemRow(item, titleWidth, undefined, stateColWidth, repoUrl, item.id === selectedItemId));
     }
     if (queuedItems.length > 0) {
@@ -2029,7 +2046,9 @@ export function formatItemDetail(
     lines.push(`  ${DIM}CI:${RESET}        ${RED}Failed${RESET}`);
   } else if (item.state === "ci-pending") {
     lines.push(`  ${DIM}CI:${RESET}        ${CYAN}Pending${RESET}`);
-  } else if (item.state === "merged" || item.state === "review") {
+  } else if (item.state === "verifying") {
+    lines.push(`  ${DIM}CI:${RESET}        ${CYAN}Verifying${RESET}`);
+  } else if (item.state === "done" || item.state === "merged" || item.state === "review") {
     lines.push(`  ${DIM}CI:${RESET}        ${GREEN}Passed${RESET}`);
   }
 
