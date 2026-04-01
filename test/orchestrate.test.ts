@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { join } from "path";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { EventEmitter } from "events";
 import {
@@ -85,6 +85,8 @@ import {
 import type { CrewBroker, CrewRemoteItemSnapshot, CrewStatus } from "../core/crew.ts";
 import { readCrewCode, crewCodePath } from "../core/crew.ts";
 import { shouldEnterInteractive } from "../core/interactive.ts";
+import { listWorkItems } from "../core/work-item-files.ts";
+import { completeMergedWorkItemCleanup } from "../core/commands/reconcile.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -1175,6 +1177,81 @@ describe("orchestrateLoop", () => {
     expect(
       logs.every((l) => !(l.event === "action_execute" && l.action === "mark-done")),
     ).toBe(true);
+  });
+
+  it("removes merged work item files during merge completion so restart does not replay them", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "nw-orchestrate-merge-cleanup-"));
+    const workDir = join(projectRoot, ".ninthwave", "work");
+    const worktreeDir = join(projectRoot, ".ninthwave", ".worktrees");
+    mkdirSync(workDir, { recursive: true });
+    mkdirSync(worktreeDir, { recursive: true });
+
+    const filePath = join(workDir, "2-test--H-CLEAN-1.md");
+    writeFileSync(
+      filePath,
+      `# Cleanup work (H-CLEAN-1)\n\n**Priority:** High\n**Domain:** test\n**Lineage:** ${STARTUP_LINEAGE}\n`,
+    );
+
+    try {
+      const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+      orch.addItem({
+        ...makeWorkItem("H-CLEAN-1"),
+        title: "Cleanup work",
+        lineageToken: STARTUP_LINEAGE,
+      });
+      orch.getItem("H-CLEAN-1")!.reviewCompleted = true;
+
+      let cycle = 0;
+      const deps: OrchestrateLoopDeps = {
+        buildSnapshot: () => {
+          cycle++;
+          switch (cycle) {
+            case 1:
+              return { items: [], readyIds: ["H-CLEAN-1"] };
+            case 2:
+              return { items: [{ id: "H-CLEAN-1", workerAlive: true }], readyIds: [] };
+            case 3:
+              return {
+                items: [{ id: "H-CLEAN-1", prNumber: 42, prState: "open", ciStatus: "pass" }],
+                readyIds: [],
+              };
+            default:
+              return { items: [], readyIds: [] };
+          }
+        },
+        sleep: () => Promise.resolve(),
+        log: () => {},
+        actionDeps: mockActionDeps({
+          completeMergedWorkItem: (item, cleanupWorkDir, cleanupProjectRoot) =>
+            completeMergedWorkItemCleanup(item, cleanupWorkDir, cleanupProjectRoot, {
+              commitRemoval: () => true,
+            }),
+        }),
+      };
+
+      await orchestrateLoop(orch, {
+        ...defaultCtx,
+        projectRoot,
+        workDir,
+        worktreeDir,
+      }, deps, { maxIterations: 200 });
+
+      expect(existsSync(filePath)).toBe(false);
+
+      const restartedItems = listWorkItems(workDir, worktreeDir);
+      expect(restartedItems).toEqual([]);
+
+      const replay = pruneMergedStartupReplayItems(
+        restartedItems,
+        projectRoot,
+        () => `H-CLEAN-1\t42\tmerged\t\t\tCleanup work\t${STARTUP_LINEAGE}`,
+      );
+
+      expect(replay.activeItems).toEqual([]);
+      expect(replay.prunedItems).toEqual([]);
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
   });
 
   it("emits structured log with state_summary on each cycle", async () => {

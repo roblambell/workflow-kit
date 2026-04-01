@@ -306,6 +306,8 @@ export interface OrchestratorDeps {
   ) => boolean;
   prMerge: (repoRoot: string, prNumber: number, options?: { admin?: boolean }) => boolean;
   prComment: (repoRoot: string, prNumber: number, body: string) => boolean;
+  /** Legacy direct-message hook retained for older tests/backward compatibility. */
+  sendMessage?: (workspaceRef: string, message: string) => boolean;
   /** Write a message to the file-based inbox for a worker worktree. */
   writeInbox: (projectRoot: string, itemId: string, message: string) => void;
   closeWorkspace: (workspaceRef: string) => boolean;
@@ -420,6 +422,20 @@ export interface OrchestratorDeps {
    * Used to pin branch SHAs before merge so restacking survives branch deletion.
    */
   resolveRef?: (repoRoot: string, ref: string) => string | null;
+  /**
+   * Remove/persist the merged work item file from the hub work directory.
+   * Uses lineage-aware identity checks so reused IDs do not delete the wrong file.
+   */
+  completeMergedWorkItem?: (
+    item: WorkItem,
+    workDir: string,
+    projectRoot: string,
+  ) => {
+    status: "already-removed" | "removed" | "skipped" | "failed";
+    matchMode?: string;
+    reason?: string;
+    committed?: boolean;
+  };
 }
 
 /** Result of executing a single action. */

@@ -299,6 +299,20 @@ export function executeMerge(
     }
   }
 
+  if (deps.completeMergedWorkItem) {
+    try {
+      const cleanupResult = deps.completeMergedWorkItem(item.workItem, ctx.workDir, ctx.projectRoot);
+      if (cleanupResult.status === "skipped" || cleanupResult.status === "failed") {
+        const detail = cleanupResult.reason ?? `cleanup status=${cleanupResult.status}`;
+        const matchMode = cleanupResult.matchMode ? ` (match mode: ${cleanupResult.matchMode})` : "";
+        deps.warn?.(`Merged work item cleanup for ${item.id} ${cleanupResult.status}: ${detail}${matchMode}`);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      deps.warn?.(`Merged work item cleanup for ${item.id} threw: ${msg}`);
+    }
+  }
+
   // Restack stacked dependents using rebaseOnto (squash-merge safe).
   // These items had baseBranch set to the merged dep's branch -- replay only
   // their unique commits onto the default branch, avoiding duplicate commits from squash merge.

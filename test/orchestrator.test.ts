@@ -1012,6 +1012,62 @@ describe("Orchestrator", () => {
       expect(orch.getItem("H-1-1")!.state).toBe("merged");
     });
 
+    it("merge: removes the matching merged work item during merge completion", () => {
+      const completeMergedWorkItem = vi.fn(() => ({
+        status: "removed" as const,
+        matchMode: "lineage",
+        committed: true,
+      }));
+      const deps = mockDeps({ completeMergedWorkItem });
+      orch.addItem({ ...makeWorkItem("H-1-1"), lineageToken: "24af773b-90c0-4f16-a0fd-5be3c5c0fe89" });
+      orch.getItem("H-1-1")!.reviewCompleted = true;
+      orch.hydrateState("H-1-1", "merging");
+      orch.getItem("H-1-1")!.prNumber = 42;
+
+      const result = orch.executeAction(
+        { type: "merge", itemId: "H-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(completeMergedWorkItem).toHaveBeenCalledWith(
+        orch.getItem("H-1-1")!.workItem,
+        defaultCtx.workDir,
+        defaultCtx.projectRoot,
+      );
+    });
+
+    it("merge: warns when merged work item cleanup skips a reused-ID mismatch", () => {
+      const warn = vi.fn();
+      const deps = mockDeps({
+        warn,
+        completeMergedWorkItem: vi.fn(() => ({
+          status: "skipped" as const,
+          matchMode: "mismatch",
+          reason: "work item file for H-1-1 no longer matches merged item metadata",
+        })),
+      });
+      orch.addItem({ ...makeWorkItem("H-1-1"), lineageToken: "24af773b-90c0-4f16-a0fd-5be3c5c0fe89" });
+      orch.getItem("H-1-1")!.reviewCompleted = true;
+      orch.hydrateState("H-1-1", "merging");
+      orch.getItem("H-1-1")!.prNumber = 42;
+
+      const result = orch.executeAction(
+        { type: "merge", itemId: "H-1-1", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Merged work item cleanup for H-1-1 skipped"),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("match mode: mismatch"),
+      );
+    });
+
     it("merge: reverts to ci-passed when prMerge fails", () => {
       const deps = mockDeps({ prMerge: vi.fn(() => false) });
       orch.addItem(makeWorkItem("H-1-1"));

@@ -12,7 +12,7 @@ import {
   prMetadataMatchesWorkItem,
   prTitleMatchesWorkItem,
 } from "../core/work-item-files.ts";
-import { reconcile, type ReconcileDeps } from "../core/commands/reconcile.ts";
+import { completeMergedWorkItemCleanup, reconcile, type ReconcileDeps } from "../core/commands/reconcile.ts";
 import { captureOutput } from "./helpers.ts";
 import {
   Orchestrator,
@@ -423,6 +423,58 @@ describe("reconcile: item ID collision safety", () => {
     captureOutput(() => reconcile(workDir, worktreeDir, projectRoot, deps));
     // Should NOT clean the worktree for H-FOO-1 since title didn't match
     expect(cleanedIds).not.toContain("H-FOO-1");
+  });
+});
+
+describe("completeMergedWorkItemCleanup", () => {
+  it("preserves reused-ID work item files when the lineage token changed", () => {
+    const { workDir, projectRoot } = setupWorkItemsDir({
+      "2-test--H-FOO-1.md": `# New work (H-FOO-1)\n\n**Priority:** High\n**Domain:** test\n**Lineage:** 11111111-1111-4111-8111-111111111111\n`,
+    });
+    let commitCalled = false;
+
+    const result = completeMergedWorkItemCleanup(
+      { id: "H-FOO-1", title: "Old work", lineageToken: LINEAGE },
+      workDir,
+      projectRoot,
+      {
+        commitRemoval: () => {
+          commitCalled = true;
+          return true;
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      status: "skipped",
+      matchMode: "mismatch",
+      reason: "work item file for H-FOO-1 no longer matches merged item metadata",
+    });
+    expect(commitCalled).toBe(false);
+    expect(existsSync(join(workDir, "2-test--H-FOO-1.md"))).toBe(true);
+  });
+
+  it("reports persistence failures after deleting the matching work item file", () => {
+    const { workDir, projectRoot } = setupWorkItemsDir({
+      "2-test--H-FOO-1.md": `# New work (H-FOO-1)\n\n**Priority:** High\n**Domain:** test\n**Lineage:** ${LINEAGE}\n`,
+    });
+
+    const result = completeMergedWorkItemCleanup(
+      { id: "H-FOO-1", title: "Different merged title", lineageToken: LINEAGE },
+      workDir,
+      projectRoot,
+      {
+        commitRemoval: () => false,
+      },
+    );
+
+    expect(result).toEqual({
+      status: "failed",
+      matchMode: "lineage",
+      reason: "removed work item file for H-FOO-1 locally but failed to persist cleanup",
+      committed: false,
+    });
+    expect(existsSync(join(workDir, "2-test--H-FOO-1.md"))).toBe(false);
   });
 });
 

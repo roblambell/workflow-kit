@@ -11,6 +11,8 @@ import { cmdMarkDone } from "./mark-done.ts";
 import { cleanSingleWorktree, closeWorkspacesForIds } from "./clean.ts";
 import { getMux } from "../mux.ts";
 import {
+  classifyPrMetadataMatch,
+  deleteWorkItemFile,
   findMatchingPrForWorkItem,
   parseWorkItemReferenceBlock,
   readWorkItem,
@@ -54,6 +56,19 @@ export interface ReconcileDeps {
 
   /** Check if a branch has an open PR on GitHub. */
   branchHasOpenPR(id: string, projectRoot: string): boolean;
+}
+
+export interface MergeCompletionCleanupResult {
+  status: "already-removed" | "removed" | "skipped" | "failed";
+  matchMode?: string;
+  reason?: string;
+  committed?: boolean;
+}
+
+export interface MergeCompletionCleanupDeps {
+  readWorkItem?: typeof readWorkItem;
+  deleteWorkItemFile?: typeof deleteWorkItemFile;
+  commitRemoval?: (projectRoot: string, workDir: string, id: string) => boolean;
 }
 
 // --- Default implementations ---
@@ -201,6 +216,82 @@ function defaultCommitAndPush(projectRoot: string, workDir: string): boolean {
   }
 
   return true;
+}
+
+function defaultCommitRemoval(projectRoot: string, workDir: string, id: string): boolean {
+  const statusResult = run("git", ["-C", projectRoot, "status", "--porcelain", workDir]);
+  if (statusResult.exitCode !== 0 || !statusResult.stdout.trim()) {
+    return false;
+  }
+
+  const addResult = run("git", ["-C", projectRoot, "add", workDir]);
+  if (addResult.exitCode !== 0) return false;
+
+  const commitResult = run("git", ["-C", projectRoot, "commit", "-m", `chore: remove merged work item ${id}`]);
+  if (commitResult.exitCode !== 0) return false;
+
+  const pushResult = run("git", ["-C", projectRoot, "push", "--quiet"]);
+  if (pushResult.exitCode !== 0) {
+    warn(`Push failed: ${pushResult.stderr}`);
+    return false;
+  }
+
+  return true;
+}
+
+export function completeMergedWorkItemCleanup(
+  item: { id: string; title: string; lineageToken?: string },
+  workDir: string,
+  projectRoot: string,
+  deps: MergeCompletionCleanupDeps = {},
+): MergeCompletionCleanupResult {
+  const readItem = deps.readWorkItem ?? readWorkItem;
+  const deleteItem = deps.deleteWorkItemFile ?? deleteWorkItemFile;
+  const commitRemoval = deps.commitRemoval ?? defaultCommitRemoval;
+
+  const currentWorkItem = readItem(workDir, item.id);
+  if (!currentWorkItem) {
+    return { status: "already-removed" };
+  }
+
+  const match = classifyPrMetadataMatch(
+    {
+      title: currentWorkItem.title,
+      lineageToken: currentWorkItem.lineageToken,
+    },
+    item,
+  );
+
+  if (!match.matches) {
+    return {
+      status: "skipped",
+      matchMode: match.mode,
+      reason: `work item file for ${item.id} no longer matches merged item metadata`,
+    };
+  }
+
+  if (!deleteItem(workDir, item.id)) {
+    return {
+      status: "failed",
+      reason: `failed to delete work item file for ${item.id}`,
+    };
+  }
+
+  const committed = commitRemoval(projectRoot, workDir, item.id);
+  if (!committed) {
+    return {
+      status: "failed",
+      matchMode: match.mode,
+      reason: `removed work item file for ${item.id} locally but failed to persist cleanup`,
+      committed: false,
+    };
+  }
+
+  return {
+    status: "removed",
+    matchMode: match.mode,
+    committed: true,
+  };
 }
 
 function defaultCloseStaleWorkspaces(doneIds: string[]): number {
