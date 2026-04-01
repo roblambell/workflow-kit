@@ -289,6 +289,70 @@ export class Orchestrator {
     this.config.onTransition?.(item.id, prevState, state, detectedTime, item.detectionLatencyMs);
   }
 
+  private timestampMs(ts?: string | null): number | undefined {
+    if (!ts) return undefined;
+    const ms = new Date(ts).getTime();
+    return Number.isFinite(ms) ? ms : undefined;
+  }
+
+  private clearRebaseRetryState(item: OrchestratorItem, options?: { clearAttempts?: boolean }): void {
+    item.rebaseRequested = false;
+    item.lastRebaseNudgeAt = undefined;
+    item.rebaseNudgeCount = undefined;
+    if (options?.clearAttempts) {
+      item.rebaseAttemptCount = 0;
+    }
+  }
+
+  private resetRebaseRetryCooldown(item: OrchestratorItem, progressAt?: string | null): void {
+    item.rebaseRequested = false;
+    item.lastRebaseNudgeAt = progressAt ?? new Date().toISOString();
+    item.rebaseNudgeCount = 0;
+  }
+
+  private hasCommitProgressSinceLastRebaseNudge(item: OrchestratorItem, snap: ItemSnapshot | undefined): boolean {
+    const lastNudgeMs = this.timestampMs(item.lastRebaseNudgeAt);
+    const lastCommitMs = this.timestampMs(snap?.lastCommitTime ?? item.lastCommitTime);
+    return lastNudgeMs != null && lastCommitMs != null && lastCommitMs > lastNudgeMs;
+  }
+
+  private planRebaseConflictAction(
+    item: OrchestratorItem,
+    now: Date,
+    message: string,
+  ): Action[] {
+    const lastNudgeMs = this.timestampMs(item.lastRebaseNudgeAt);
+    const isStale = lastNudgeMs == null
+      || (now.getTime() - lastNudgeMs) >= this.config.rebaseRetryStaleMs;
+
+    if (item.rebaseRequested && lastNudgeMs == null) {
+      item.lastRebaseNudgeAt = now.toISOString();
+      item.rebaseNudgeCount = item.rebaseNudgeCount ?? 0;
+      return [];
+    }
+
+    if (!item.rebaseRequested) {
+      if (!isStale) return [];
+      item.rebaseRequested = true;
+      item.lastRebaseNudgeAt = now.toISOString();
+      item.rebaseNudgeCount = 0;
+      return [{ type: "daemon-rebase", itemId: item.id, message }];
+    }
+
+    if (!isStale) return [];
+
+    const nudgeCount = item.rebaseNudgeCount ?? 0;
+    item.lastRebaseNudgeAt = now.toISOString();
+    item.rebaseNudgeCount = nudgeCount + 1;
+
+    return [{
+      type: "daemon-rebase",
+      itemId: item.id,
+      message,
+      escalateToRebaser: nudgeCount >= 1,
+    }];
+  }
+
   /** Transition a single item based on its snapshot. Returns actions. */
   private transitionItem(
     item: OrchestratorItem,
@@ -353,7 +417,7 @@ export class Orchestrator {
       case "ci-pending":
       case "ci-passed":
       case "ci-failed":
-        actions = this.handlePrLifecycle(item, snap);
+        actions = this.handlePrLifecycle(item, snap, now);
         break;
 
       case "rebasing":
@@ -361,11 +425,11 @@ export class Orchestrator {
         break;
 
       case "reviewing":
-        actions = this.handleReviewing(item, snap);
+        actions = this.handleReviewing(item, snap, now);
         break;
 
       case "review-pending":
-        actions = this.handleReviewPending(item, snap);
+        actions = this.handleReviewPending(item, snap, now);
         break;
 
       case "merging":
@@ -462,7 +526,7 @@ export class Orchestrator {
         actions.push({ type: "sync-stack-comments", itemId: item.id });
       }
       // Fall through to handle CI status in the same cycle
-      actions.push(...this.handlePrLifecycle(item, snap));
+      actions.push(...this.handlePrLifecycle(item, snap, now));
       return actions;
     }
     // If worker died without a PR, retry or mark stuck.
@@ -620,6 +684,7 @@ export class Orchestrator {
   private handlePrLifecycle(
     item: OrchestratorItem,
     snap: ItemSnapshot | undefined,
+    now: Date,
   ): Action[] {
     const actions: Action[] = [];
 
@@ -630,9 +695,10 @@ export class Orchestrator {
       return actions;
     }
 
-    // Reset rebase attempt counter when conflicts are resolved
-    if (snap?.isMergeable !== false && (item.rebaseAttemptCount ?? 0) > 0) {
-      item.rebaseAttemptCount = 0;
+    if (snap?.isMergeable === true) {
+      this.clearRebaseRetryState(item, { clearAttempts: (item.rebaseAttemptCount ?? 0) > 0 });
+    } else if (this.hasCommitProgressSinceLastRebaseNudge(item, snap)) {
+      this.resetRebaseRetryCooldown(item, snap?.lastCommitTime ?? snap?.eventTime);
     }
 
     // Resolve the effective CI status from the snapshot
@@ -650,8 +716,17 @@ export class Orchestrator {
         this.transition(item, "ci-passed", snap?.eventTime);
       } else if (ciStatus === "pending") {
         this.transition(item, "ci-pending", snap?.eventTime);
+        this.resetRebaseRetryCooldown(item, snap?.eventTime ?? snap?.lastCommitTime);
         return [];
       } else {
+        if (snap?.isMergeable === false) {
+          actions.push(...this.planRebaseConflictAction(
+            item,
+            now,
+            "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
+          ));
+          return actions;
+        }
         // Reset notification flag if the worker pushed a new commit (fix attempt)
         if (item.ciFailureNotified && item.lastCommitTime !== item.ciFailureNotifiedAt) {
           item.ciFailureNotified = false;
@@ -685,11 +760,11 @@ export class Orchestrator {
       const isMergeConflict = snap?.isMergeable === false;
 
       if (isMergeConflict) {
-        actions.push({
-          type: "daemon-rebase",
-          itemId: item.id,
-          message: "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
-        });
+        actions.push(...this.planRebaseConflictAction(
+          item,
+          now,
+          "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
+        ));
       } else {
         item.ciFailureNotified = true;
         item.ciFailureNotifiedAt = item.lastCommitTime ?? null;
@@ -705,6 +780,7 @@ export class Orchestrator {
 
     if (ciStatus === "pending" && item.state !== "ci-pending") {
       this.transition(item, "ci-pending", snap?.eventTime);
+      this.resetRebaseRetryCooldown(item, snap?.eventTime ?? snap?.lastCommitTime);
       return [];
     }
 
@@ -712,16 +788,15 @@ export class Orchestrator {
     // from other PRs merging to main between polls, including cases where
     // stale CI results still show "pass". Regress ci-passed items to
     // ci-pending since the branch needs updating before review/merge.
-    if (snap?.isMergeable === false && !item.rebaseRequested) {
-      item.rebaseRequested = true;
+    if (snap?.isMergeable === false) {
       if (item.state === "ci-passed") {
         this.transition(item, "ci-pending", snap?.eventTime);
       }
-      actions.push({
-        type: "daemon-rebase",
-        itemId: item.id,
-        message: "[ORCHESTRATOR] Rebase Request: PR has merge conflicts with main. Please rebase onto latest main.",
-      });
+      actions.push(...this.planRebaseConflictAction(
+        item,
+        now,
+        "[ORCHESTRATOR] Rebase Request: PR has merge conflicts with main. Please rebase onto latest main.",
+      ));
       return actions;
     }
 
@@ -748,8 +823,15 @@ export class Orchestrator {
   private handleReviewPending(
     item: OrchestratorItem,
     snap: ItemSnapshot | undefined,
+    now: Date,
   ): Action[] {
     const actions: Action[] = [];
+
+    if (snap?.isMergeable === true) {
+      this.clearRebaseRetryState(item, { clearAttempts: (item.rebaseAttemptCount ?? 0) > 0 });
+    } else if (this.hasCommitProgressSinceLastRebaseNudge(item, snap)) {
+      this.resetRebaseRetryCooldown(item, snap?.eventTime ?? snap?.lastCommitTime);
+    }
 
     // Check for external merge
     if (snap?.prState === "merged") {
@@ -782,11 +864,11 @@ export class Orchestrator {
         : "ci-failed: CI checks failed";
 
       if (isMergeConflict) {
-        actions.push({
-          type: "daemon-rebase",
-          itemId: item.id,
-          message: "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
-        });
+        actions.push(...this.planRebaseConflictAction(
+          item,
+          now,
+          "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
+        ));
       } else {
         item.ciFailureNotified = true;
         item.ciFailureNotifiedAt = item.lastCommitTime ?? null;
@@ -803,6 +885,7 @@ export class Orchestrator {
     if (!item.reviewCompleted) {
       if (ciStatus === "pending") {
         this.transition(item, "ci-pending", snap?.eventTime);
+        this.resetRebaseRetryCooldown(item, snap?.eventTime ?? snap?.lastCommitTime);
         return actions;
       }
 
@@ -814,13 +897,12 @@ export class Orchestrator {
     }
 
     // Merge conflict without CI failure -- send rebase request
-    if (snap?.isMergeable === false && !item.rebaseRequested) {
-      item.rebaseRequested = true;
-      actions.push({
-        type: "daemon-rebase",
-        itemId: item.id,
-        message: "[ORCHESTRATOR] Rebase Request: PR has merge conflicts with main. Please rebase onto latest main.",
-      });
+    if (snap?.isMergeable === false) {
+      actions.push(...this.planRebaseConflictAction(
+        item,
+        now,
+        "[ORCHESTRATOR] Rebase Request: PR has merge conflicts with main. Please rebase onto latest main.",
+      ));
     }
 
     return actions;
@@ -833,8 +915,15 @@ export class Orchestrator {
   private handleReviewing(
     item: OrchestratorItem,
     snap: ItemSnapshot | undefined,
+    now: Date,
   ): Action[] {
     const actions: Action[] = [];
+
+    if (snap?.isMergeable === true) {
+      this.clearRebaseRetryState(item, { clearAttempts: (item.rebaseAttemptCount ?? 0) > 0 });
+    } else if (this.hasCommitProgressSinceLastRebaseNudge(item, snap)) {
+      this.resetRebaseRetryCooldown(item, snap?.eventTime ?? snap?.lastCommitTime);
+    }
 
     // Drain: skipReview toggled on while item was in reviewing state.
     // reviewCompleted was set by setSkipReview(); clean up the review worker
@@ -860,28 +949,38 @@ export class Orchestrator {
     if (snap?.ciStatus === "fail") {
       this.transition(item, "ci-failed", snap?.eventTime);
       item.ciFailCount++;
-      item.failureReason = "ci-failed: CI regression during review";
+      const isMergeConflict = snap?.isMergeable === false;
+      item.failureReason = isMergeConflict
+        ? "ci-failed: merge conflicts with main"
+        : "ci-failed: CI regression during review";
       actions.push({ type: "clean-review", itemId: item.id });
-      actions.push({
-        type: "notify-ci-failure",
-        itemId: item.id,
-        prNumber: item.prNumber,
-        message: "[ORCHESTRATOR] CI Fix Request: CI failed during review -- please investigate and fix.",
-      });
+      if (isMergeConflict) {
+        actions.push(...this.planRebaseConflictAction(
+          item,
+          now,
+          "[ORCHESTRATOR] Rebase Request: CI failed due to merge conflicts with main. Please rebase onto latest main.",
+        ));
+      } else {
+        actions.push({
+          type: "notify-ci-failure",
+          itemId: item.id,
+          prNumber: item.prNumber,
+          message: "[ORCHESTRATOR] CI Fix Request: CI failed during review -- please investigate and fix.",
+        });
+      }
       return actions;
     }
 
     // Merge conflict during review → abort review and rebase.
     // Another PR may have merged to main while the review was in progress.
-    if (snap?.isMergeable === false && !item.rebaseRequested) {
-      item.rebaseRequested = true;
+    if (snap?.isMergeable === false) {
       this.transition(item, "ci-pending", snap?.eventTime);
       actions.push({ type: "clean-review", itemId: item.id });
-      actions.push({
-        type: "daemon-rebase",
-        itemId: item.id,
-        message: "[ORCHESTRATOR] Rebase Request: PR has merge conflicts with main. Please rebase onto latest main.",
-      });
+      actions.push(...this.planRebaseConflictAction(
+        item,
+        now,
+        "[ORCHESTRATOR] Rebase Request: PR has merge conflicts with main. Please rebase onto latest main.",
+      ));
       return actions;
     }
 
@@ -954,7 +1053,7 @@ export class Orchestrator {
     // Rebaser worker pushed -- CI re-triggered
     if (snap?.ciStatus === "pending" || snap?.ciStatus === "pass" || snap?.ciStatus === "fail") {
       this.transition(item, "ci-pending");
-      item.rebaseRequested = false;
+      this.resetRebaseRetryCooldown(item, snap?.eventTime ?? snap?.lastCommitTime);
       actions.push({ type: "clean-rebaser", itemId: item.id });
       return actions;
     }
@@ -1098,7 +1197,7 @@ export class Orchestrator {
       }
 
       this.transition(item, "ci-pending", snap?.eventTime);
-      actions.push(...this.handlePrLifecycle(item, snap));
+      actions.push(...this.handlePrLifecycle(item, snap, new Date()));
       return actions;
     }
 

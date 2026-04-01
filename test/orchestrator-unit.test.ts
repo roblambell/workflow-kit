@@ -3735,7 +3735,12 @@ describe("rebase circuit breaker and worker message priority", () => {
 
   it("full loop terminates after maxRebaseAttempts (integration-style)", () => {
     const maxAttempts = 3;
-    const orch = new Orchestrator({ wipLimit: 1, maxRebaseAttempts: maxAttempts });
+    const staleMs = 60_000;
+    const orch = new Orchestrator({
+      wipLimit: 1,
+      maxRebaseAttempts: maxAttempts,
+      rebaseRetryStaleMs: staleMs,
+    });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -3747,14 +3752,16 @@ describe("rebase circuit breaker and worker message priority", () => {
       launchRebaser: () => ({ workspaceRef: "rebaser:x" }),
     });
 
-    // Simulate the loop: detect conflict → daemon-rebase → rebaser → CI restarts → still conflicting
+    let now = new Date("2026-04-02T12:00:00.000Z");
+
+    // Simulate the loop: detect conflict → daemon-rebase → rebaser → CI restarts → stale conflict returns
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       // 1. Detect conflict in ci-pending → triggers daemon-rebase
       const conflictSnap: PollSnapshot = {
         items: [{ id: "H-1-1", isMergeable: false }],
         readyIds: [],
       };
-      const actions = orch.processTransitions(conflictSnap);
+      const actions = orch.processTransitions(conflictSnap, now);
       const rebaseAction = actions.find(a => a.type === "daemon-rebase");
 
       if (!rebaseAction) break; // no more rebase actions = loop terminated
@@ -3764,13 +3771,16 @@ describe("rebase circuit breaker and worker message priority", () => {
       expect(item.state).toBe("rebasing");
 
       // 3. Rebaser worker pushes → CI restarts
+      const rebaserDoneAt = new Date(now.getTime() + 1_000);
       const rebaserDoneSnap: PollSnapshot = {
-        items: [{ id: "H-1-1", ciStatus: "pending", workerAlive: true }],
+        items: [{ id: "H-1-1", ciStatus: "pending", workerAlive: true, eventTime: rebaserDoneAt.toISOString() }],
         readyIds: [],
       };
-      orch.processTransitions(rebaserDoneSnap);
+      orch.processTransitions(rebaserDoneSnap, rebaserDoneAt);
       expect(item.state).toBe("ci-pending");
       expect(item.rebaseRequested).toBe(false);
+
+      now = new Date(rebaserDoneAt.getTime() + staleMs + 1_000);
     }
 
     // One more cycle: conflict still present, but circuit breaker should fire
@@ -3778,7 +3788,7 @@ describe("rebase circuit breaker and worker message priority", () => {
       items: [{ id: "H-1-1", isMergeable: false }],
       readyIds: [],
     };
-    const finalActions = orch.processTransitions(finalSnap);
+    const finalActions = orch.processTransitions(finalSnap, now);
     const finalRebase = finalActions.find(a => a.type === "daemon-rebase");
 
     if (finalRebase) {

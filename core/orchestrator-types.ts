@@ -151,6 +151,8 @@ export interface OrchestratorConfig {
   maxMergeRetries: number;
   /** Max consecutive rebaser worker launches before marking stuck. Default: 3. */
   maxRebaseAttempts: number;
+  /** How long merge conflicts can stay unchanged before the orchestrator retries or escalates rebase handling. Default: 15 minutes. */
+  rebaseRetryStaleMs: number;
   /** Max review rounds before marking stuck. Default: 3. */
   maxReviewRounds: number;
   /** Whether to check CI on main after merge and fix-forward if broken. Default: true. */
@@ -251,6 +253,8 @@ export interface Action {
   prNumber?: number;
   /** For notify actions, the message to send. */
   message?: string;
+  /** When true, skip the normal worker-nudge fallback and escalate directly to the rebaser path. */
+  escalateToRebaser?: boolean;
   /** For launch actions, the base branch to stack on (e.g., "ninthwave/H-1-1"). */
   baseBranch?: string;
   /** For set-commit-status actions, the status state. */
@@ -462,6 +466,7 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   reviewAutoFix: "off",
   maxMergeRetries: 3,
   maxRebaseAttempts: 3,
+  rebaseRetryStaleMs: 15 * 60 * 1000,
   maxReviewRounds: 3,
   fixForward: true,
   maxFixForwardRetries: 2,

@@ -452,6 +452,63 @@ describe("Orchestrator", () => {
     expect(actions2.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
   });
 
+  it("ci-pending stale conflict resends once after retry interval", () => {
+    orch = new Orchestrator({ rebaseRetryStaleMs: 60_000 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+    const start = new Date("2026-04-02T12:00:00Z");
+    const actions1 = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "open", isMergeable: false }]),
+      start,
+    );
+    expect(actions1.filter((a) => a.type === "daemon-rebase")).toHaveLength(1);
+    expect(orch.getItem("H-1-1")!.rebaseRequested).toBe(true);
+    expect(orch.getItem("H-1-1")!.rebaseNudgeCount).toBe(0);
+
+    const actions2 = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "open", isMergeable: false }]),
+      new Date(start.getTime() + 61_000),
+    );
+
+    const rebaseActions = actions2.filter((a) => a.type === "daemon-rebase");
+    expect(rebaseActions).toHaveLength(1);
+    expect(rebaseActions[0]!.escalateToRebaser).toBe(false);
+    expect(orch.getItem("H-1-1")!.rebaseNudgeCount).toBe(1);
+  });
+
+  it("ci-pending escalates to rebaser after second stale interval", () => {
+    orch = new Orchestrator({ rebaseRetryStaleMs: 60_000 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+    const start = new Date("2026-04-02T12:00:00Z");
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "open", isMergeable: false }]),
+      start,
+    );
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "open", isMergeable: false }]),
+      new Date(start.getTime() + 61_000),
+    );
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "open", isMergeable: false }]),
+      new Date(start.getTime() + 122_000),
+    );
+
+    const rebaseActions = actions.filter((a) => a.type === "daemon-rebase");
+    expect(rebaseActions).toHaveLength(1);
+    expect(rebaseActions[0]!.escalateToRebaser).toBe(true);
+    expect(orch.getItem("H-1-1")!.rebaseNudgeCount).toBe(2);
+  });
+
   it("ci-pending rebase flag resets on state change", () => {
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -471,6 +528,72 @@ describe("Orchestrator", () => {
       snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
     );
     expect(orch.getItem("H-1-1")!.rebaseRequested).toBe(false);
+  });
+
+  it("clears stale retry bookkeeping when CI restarts", () => {
+    orch = new Orchestrator({ rebaseRetryStaleMs: 60_000 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-failed");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.rebaseRequested = true;
+    orch.getItem("H-1-1")!.lastRebaseNudgeAt = "2026-04-02T12:00:00.000Z";
+    orch.getItem("H-1-1")!.rebaseNudgeCount = 1;
+
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pending", prState: "open", isMergeable: false, eventTime: "2026-04-02T12:01:00.000Z" }]),
+      new Date("2026-04-02T12:01:00.000Z"),
+    );
+
+    const item = orch.getItem("H-1-1")!;
+    expect(item.state).toBe("ci-pending");
+    expect(item.rebaseRequested).toBe(false);
+    expect(item.rebaseNudgeCount).toBe(0);
+    expect(item.lastRebaseNudgeAt).toBe("2026-04-02T12:01:00.000Z");
+  });
+
+  it("clears stale retry bookkeeping when new commit activity appears", () => {
+    orch = new Orchestrator({ rebaseRetryStaleMs: 60_000 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-failed");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.rebaseRequested = true;
+    orch.getItem("H-1-1")!.lastRebaseNudgeAt = "2026-04-02T12:00:00.000Z";
+    orch.getItem("H-1-1")!.rebaseNudgeCount = 1;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open", isMergeable: false, lastCommitTime: "2026-04-02T12:01:00.000Z" }]),
+      new Date("2026-04-02T12:01:00.000Z"),
+    );
+
+    const item = orch.getItem("H-1-1")!;
+    expect(actions.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
+    expect(item.rebaseRequested).toBe(false);
+    expect(item.rebaseNudgeCount).toBe(0);
+    expect(item.lastRebaseNudgeAt).toBe("2026-04-02T12:01:00.000Z");
+  });
+
+  it("clears stale retry bookkeeping when mergeability recovers", () => {
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.rebaseRequested = true;
+    orch.getItem("H-1-1")!.lastRebaseNudgeAt = "2026-04-02T12:00:00.000Z";
+    orch.getItem("H-1-1")!.rebaseNudgeCount = 1;
+    orch.getItem("H-1-1")!.rebaseAttemptCount = 2;
+
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open", isMergeable: true }]),
+      new Date("2026-04-02T12:02:00.000Z"),
+    );
+
+    const item = orch.getItem("H-1-1")!;
+    expect(item.rebaseRequested).toBe(false);
+    expect(item.lastRebaseNudgeAt).toBeUndefined();
+    expect(item.rebaseNudgeCount).toBeUndefined();
+    expect(item.rebaseAttemptCount).toBe(0);
   });
 
   // ── 8. CI fail recovery ────────────────────────────────────────

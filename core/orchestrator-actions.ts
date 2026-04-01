@@ -651,6 +651,7 @@ export function executeDaemonRebase(
   deps: OrchestratorDeps,
 ): ActionResult {
   const branch = `ninthwave/${item.id}`;
+  const escalateToRebaser = action.escalateToRebaser === true;
 
   // Try daemon-side rebase if the dep is available
   if (deps.daemonRebase) {
@@ -670,12 +671,14 @@ export function executeDaemonRebase(
     }
   }
 
-  // Daemon rebase failed -- prefer sending message to live worker over launching rebaser.
-  // The original worker knows the code best and can resolve conflicts properly.
   const message = action.message || "Please rebase onto latest main.";
-  deps.writeInbox(inboxProjectRoot(item, ctx), item.id, message);
-  if (item.workspaceRef) {
-    return { success: true };
+  if (!escalateToRebaser) {
+    // Daemon rebase failed -- prefer sending message to the live worker first.
+    // The original worker knows the code best and can resolve conflicts properly.
+    deps.writeInbox(inboxProjectRoot(item, ctx), item.id, message);
+    if (item.workspaceRef) {
+      return { success: true };
+    }
   }
 
   // Circuit breaker: stop launching rebasers after maxRebaseAttempts
@@ -705,6 +708,11 @@ export function executeDaemonRebase(
     } catch (e: unknown) {
       deps.warn?.(`[Orchestrator] Rebaser worker launch failed for ${item.id}: ${e instanceof Error ? e.message : e}`);
     }
+  }
+
+  if (escalateToRebaser && item.workspaceRef) {
+    deps.writeInbox(inboxProjectRoot(item, ctx), item.id, message);
+    return { success: true };
   }
 
   // No live worker, no rebaser -- log warning
