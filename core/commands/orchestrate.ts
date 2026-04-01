@@ -436,8 +436,58 @@ export type InteractiveEngineTransportMessage =
   | { type: "result"; result: OrchestrateLoopResult }
   | { type: "fatal"; error: string };
 
+export const TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_ENV = "NINTHWAVE_TEST_ENGINE_STARTUP_FAIL";
+export const TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE = "Test-only forced interactive engine startup failure.";
+
+const MAX_ENGINE_DIAGNOSTIC_LINES = 3;
+
+function formatInteractiveEngineFatal(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : String(error).trim();
+  const stackLines = error instanceof Error && typeof error.stack === "string"
+    ? error.stack
+      .split("\n")
+      .slice(1)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => line !== message)
+      .slice(0, MAX_ENGINE_DIAGNOSTIC_LINES - 1)
+    : [];
+  return ["Engine failed during startup.", ...(message ? [message] : []), ...stackLines].join("\n");
+}
+
+function pushEngineDiagnosticLines(buffer: string[], chunk: Buffer | string): void {
+  for (const rawLine of chunk.toString().split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    buffer.push(line);
+    if (buffer.length > MAX_ENGINE_DIAGNOSTIC_LINES) buffer.shift();
+  }
+}
+
+function formatEngineDisconnectReason(opts: {
+  childError?: Error;
+  childCloseSignal: NodeJS.Signals | null;
+  childCloseCode: number | null;
+  startupDiagnostics: string[];
+}): string {
+  if (opts.childError?.message) return opts.childError.message;
+  if (opts.startupDiagnostics.length > 0) {
+    return ["Engine failed during startup.", ...opts.startupDiagnostics].join("\n");
+  }
+  if (opts.childCloseSignal) return `Engine exited via ${opts.childCloseSignal}.`;
+  if (opts.childCloseCode !== null) return `Engine exited with code ${opts.childCloseCode}.`;
+  return "The watch engine closed unexpectedly.";
+}
+
+function maybeTriggerInteractiveEngineStartupFailureForTest(isInteractiveEngineChild: boolean): void {
+  if (!isInteractiveEngineChild) return;
+  if (process.env[TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_ENV] !== "1") return;
+  throw new Error(TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE);
+}
+
 export interface InteractiveEngineChildProcess {
   stdout?: NodeJS.ReadableStream | null;
+  stderr?: NodeJS.ReadableStream | null;
   stdin?: NodeJS.WritableStream | null;
   on(event: "close", listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
   on(event: "error", listener: (error: Error) => void): this;
@@ -503,9 +553,9 @@ export function spawnInteractiveEngineChild(
   projectRoot: string,
   spawnFn: typeof spawn = spawn,
 ): InteractiveEngineChildProcess {
-  return spawnFn(process.argv[0]!, [process.argv[1]!, "orchestrate", ...childArgs], {
+  return spawnFn(process.argv[0]!, [process.argv[1]!, ...childArgs], {
     cwd: projectRoot,
-    stdio: ["pipe", "pipe", "inherit"],
+    stdio: ["pipe", "pipe", "pipe"],
   }) as unknown as InteractiveEngineChildProcess;
 }
 
@@ -752,11 +802,13 @@ function renderEngineRecoveryOverlay(
   reason?: string,
 ): string[] {
   const title = "Engine disconnected";
-  const detail = reason?.trim() || "The watch engine exited before acknowledging all controls.";
+  const detailLines = (reason?.split("\n") ?? ["The watch engine exited before acknowledging all controls."])
+    .map((line) => line.trim())
+    .filter(Boolean);
   const hint = "Press r to restart or q to quit";
   const contentLines = [
     "",
-    `  ${detail}`,
+    ...detailLines.map((line) => `  ${line}`),
     "",
     `  ${hint}`,
     "",
@@ -1065,6 +1117,8 @@ export async function runInteractiveWatchOperatorSession(
       let childCloseSignal: NodeJS.Signals | null = null;
       let childError: Error | undefined;
       let stdoutBuffer = "";
+      let engineReady = false;
+      const startupDiagnostics: string[] = [];
 
       const child = spawnChild(opts.childArgs, opts.projectRoot);
       bindControlSender((command) => writeInteractiveEngineControl(child.stdin, command));
@@ -1092,9 +1146,11 @@ export async function runInteractiveWatchOperatorSession(
           try {
             message = JSON.parse(trimmed) as InteractiveEngineTransportMessage;
           } catch {
+            if (!engineReady) pushEngineDiagnosticLines(startupDiagnostics, trimmed);
             continue;
           }
           if (message.type === "snapshot") {
+            engineReady = true;
             lastSnapshot = {
               daemonState: message.event.state,
               runtime: message.event.runtime,
@@ -1110,6 +1166,7 @@ export async function runInteractiveWatchOperatorSession(
             continue;
           }
           if (message.type === "result") {
+            engineReady = true;
             childResult = message.result;
             continue;
           }
@@ -1119,9 +1176,18 @@ export async function runInteractiveWatchOperatorSession(
         }
       };
 
+      const onChildStderr = (chunk: Buffer | string) => {
+        if (engineReady) return;
+        pushEngineDiagnosticLines(startupDiagnostics, chunk);
+      };
+
       if (child.stdout) {
         child.stdout.setEncoding?.("utf8");
         child.stdout.on("data", onChildData);
+      }
+      if (child.stderr) {
+        child.stderr.setEncoding?.("utf8");
+        child.stderr.on("data", onChildStderr);
       }
 
       try {
@@ -1145,6 +1211,9 @@ export async function runInteractiveWatchOperatorSession(
         bindControlSender(() => {});
         if (child.stdout) {
           child.stdout.removeListener("data", onChildData);
+        }
+        if (child.stderr) {
+          child.stderr.removeListener("data", onChildStderr);
         }
       }
 
@@ -1173,12 +1242,12 @@ export async function runInteractiveWatchOperatorSession(
       }
 
       opts.tuiState.engineDisconnected = true;
-      opts.tuiState.engineDisconnectReason = childError?.message
-        ?? (childCloseSignal
-          ? `Engine exited via ${childCloseSignal}.`
-          : childCloseCode !== null
-            ? `Engine exited with code ${childCloseCode}.`
-            : "The watch engine closed unexpectedly.");
+      opts.tuiState.engineDisconnectReason = formatEngineDisconnectReason({
+        childError,
+        childCloseSignal,
+        childCloseCode,
+        startupDiagnostics,
+      });
 
       if (!manageKeyboard) {
         render();
@@ -3017,6 +3086,8 @@ export async function cmdOrchestrate(
   let crewUrl = parsed.crewUrl;
   let connectMode = parsed.connectMode;
 
+  try {
+
   // ── Pre-flight environment validation ────────────────────────────────
   if (!skipPreflight) {
     const pf = preflight(undefined, projectRoot);
@@ -4222,6 +4293,7 @@ export async function cmdOrchestrate(
         continue;
       }
 
+      maybeTriggerInteractiveEngineStartupFailureForTest(isInteractiveEngineChild);
       const result = await engineRunner.run(abortController.signal);
 
       if (isInteractiveEngineChild) {
@@ -4341,5 +4413,17 @@ export async function cmdOrchestrate(
 
     process.removeListener("SIGINT", sigintHandler);
     process.removeListener("SIGTERM", sigtermHandler);
+  }
+  } catch (error) {
+    if (!parsed.isInteractiveEngineChild) throw error;
+    try {
+      process.stdout.write(JSON.stringify({
+        type: "fatal",
+        error: formatInteractiveEngineFatal(error),
+      } satisfies InteractiveEngineTransportMessage) + "\n");
+    } catch {
+      // Last-ditch reporting only.
+    }
+    process.exit(1);
   }
 }

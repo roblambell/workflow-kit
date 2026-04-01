@@ -37,6 +37,7 @@ import {
   shouldShowStartupArmingWindow,
   createRuntimeControlHandlers,
   runInteractiveWatchOperatorSession,
+  spawnInteractiveEngineChild,
   createWatchEngineRunner,
   createDetachedDaemonEngineRunner,
   createInteractiveChildEngineRunner,
@@ -44,6 +45,7 @@ import {
   INTERACTIVE_WATCH_STAGE_WARN_MS,
   ARMING_WINDOW_MS,
   LOG_BUFFER_MAX,
+  TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE,
   type LogEntry,
   type LogLevelFilter,
   type OrchestrateLoopDeps,
@@ -5204,6 +5206,18 @@ describe("shared engine wrappers", () => {
 });
 
 describe("interactive watch operator session", () => {
+  it("spawns the interactive engine child via flag-style CLI args", () => {
+    const spawnFn = vi.fn(() => ({}) as InteractiveEngineChildProcess);
+
+    spawnInteractiveEngineChild(["--_interactive-engine-child", "--items", "H-TRS-3"], "/project", spawnFn as any);
+
+    expect(spawnFn).toHaveBeenCalledWith(
+      process.argv[0],
+      [process.argv[1], "--_interactive-engine-child", "--items", "H-TRS-3"],
+      expect.objectContaining({ cwd: "/project", stdio: ["pipe", "pipe", "pipe"] }),
+    );
+  });
+
   function makeOperatorStdin() {
     const listeners: Record<string, Function[]> = {};
     return {
@@ -5313,13 +5327,19 @@ describe("interactive watch operator session", () => {
   function makeOperatorChild() {
     const child = new EventEmitter() as EventEmitter & InteractiveEngineChildProcess & {
       stdout: EventEmitter & NodeJS.ReadableStream & { setEncoding: ReturnType<typeof vi.fn> };
+      stderr: EventEmitter & NodeJS.ReadableStream & { setEncoding: ReturnType<typeof vi.fn> };
       stdin: { write: ReturnType<typeof vi.fn> };
       emitLine: (message: unknown) => void;
+      emitStdoutText: (text: string) => void;
+      emitStderrText: (text: string) => void;
     };
     const stdout = new EventEmitter() as EventEmitter & NodeJS.ReadableStream & { setEncoding: ReturnType<typeof vi.fn> };
+    const stderr = new EventEmitter() as EventEmitter & NodeJS.ReadableStream & { setEncoding: ReturnType<typeof vi.fn> };
     stdout.setEncoding = vi.fn();
+    stderr.setEncoding = vi.fn();
     const stdin = { write: vi.fn(() => true) };
     child.stdout = stdout;
+    child.stderr = stderr;
     child.stdin = stdin as any;
     child.kill = vi.fn(() => {
       queueMicrotask(() => child.emit("close", null, "SIGTERM"));
@@ -5327,6 +5347,12 @@ describe("interactive watch operator session", () => {
     });
     child.emitLine = (message: unknown) => {
       stdout.emit("data", JSON.stringify(message) + "\n");
+    };
+    child.emitStdoutText = (text: string) => {
+      stdout.emit("data", text);
+    };
+    child.emitStderrText = (text: string) => {
+      stderr.emit("data", text);
     };
     return child;
   }
@@ -5442,6 +5468,77 @@ describe("interactive watch operator session", () => {
     expect(result.completionAction).toBe("quit");
     expect((stdin.setRawMode as any).mock.calls).toContainEqual([false]);
     expect(writes.some((chunk) => chunk.includes("\x1B[?1049l"))).toBe(true);
+  });
+
+  it("shows a structured startup fatal from the engine child", async () => {
+    const stdin = makeOperatorStdin();
+    const { stream: stdout, writes } = makeOperatorStdout();
+    const tuiState = makeOperatorTuiState();
+    const child = makeOperatorChild();
+
+    const sessionPromise = runInteractiveWatchOperatorSession({
+      projectRoot: "/project",
+      childArgs: ["--items", "H-TRS-3"],
+      tuiState,
+      log: () => {},
+      initialSnapshot: {
+        daemonState: makeOperatorSnapshot().state,
+        runtime: makeOperatorSnapshot().runtime,
+      },
+      watchMode: true,
+      stdin,
+      stdout,
+      spawnChild: () => child,
+    });
+
+    await Promise.resolve();
+    child.emitLine({
+      type: "fatal",
+      error: `Engine failed during startup.\n${TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE}`,
+    });
+    child.emit("close", 1, null);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    (stdin as any)._emit("data", "q");
+    await sessionPromise;
+
+    expect(writes.join("")).toContain("Engine disconnected");
+    expect(writes.join("")).toContain(TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE);
+  });
+
+  it("shows buffered stderr when the engine exits before its first snapshot", async () => {
+    const stdin = makeOperatorStdin();
+    const { stream: stdout, writes } = makeOperatorStdout();
+    const tuiState = makeOperatorTuiState();
+    const child = makeOperatorChild();
+
+    const sessionPromise = runInteractiveWatchOperatorSession({
+      projectRoot: "/project",
+      childArgs: ["--items", "H-TRS-3"],
+      tuiState,
+      log: () => {},
+      initialSnapshot: {
+        daemonState: makeOperatorSnapshot().state,
+        runtime: makeOperatorSnapshot().runtime,
+      },
+      watchMode: true,
+      stdin,
+      stdout,
+      spawnChild: () => child,
+    });
+
+    await Promise.resolve();
+    child.emitStderrText("Error: startup config missing\n");
+    child.emit("close", 1, null);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    (stdin as any)._emit("data", "q");
+    await sessionPromise;
+
+    expect(writes.join("")).toContain("Engine failed during startup.");
+    expect(writes.join("")).toContain("Error: startup config missing");
   });
 
   it("restarts after disconnect and keeps rendering engine-confirmed state", async () => {
