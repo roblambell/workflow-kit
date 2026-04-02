@@ -6,7 +6,7 @@ import { join } from "path";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import type { SeedAgentFilesDeps } from "../core/agent-files.ts";
-import { readAgentFileContent, seedAgentFiles, syncCopilotInstructionsFromClaude } from "../core/agent-files.ts";
+import { readAgentFileContent, seedAgentFiles } from "../core/agent-files.ts";
 import { renderAgentArtifact } from "../core/ai-tools.ts";
 import type { RunResult } from "../core/types.ts";
 
@@ -263,7 +263,7 @@ describe("seedAgentFiles", () => {
     rmSync(worktree, { recursive: true, force: true });
   });
 
-  it("seeds explicit inbox and rebase instructions in implementer artifacts", () => {
+  it("seeds explicit inbox, CI ownership, and rebase instructions in implementer artifacts", () => {
     const hubRoot = makeTmpDir();
     const worktree = makeTmpDir();
     const localContent = readFileSync(join(import.meta.dirname, "..", "agents", "implementer.md"), "utf-8");
@@ -282,8 +282,10 @@ describe("seedAgentFiles", () => {
     seedAgentFiles(worktree, hubRoot, deps);
 
     const claudeAgent = join(worktree, ".claude/agents/implementer.md");
+    const codexAgent = join(worktree, ".codex/agents/ninthwave-implementer.toml");
     const githubAgent = join(worktree, ".github/agents/ninthwave-implementer.agent.md");
     const claudePrompt = readFileSync(claudeAgent, "utf-8");
+    const codexPrompt = readFileSync(codexAgent, "utf-8");
     const githubPrompt = readFileSync(githubAgent, "utf-8");
 
     expect(claudePrompt).toContain("nw inbox --check YOUR_TODO_ID");
@@ -291,6 +293,13 @@ describe("seedAgentFiles", () => {
     expect(claudePrompt).toContain("set the timeout to the longest practical value available");
     expect(claudePrompt).toContain("immediately run the same wait command again");
     expect(claudePrompt).toContain("The daemon owns that lifecycle automation");
+    expect(claudePrompt).toContain("Opening the PR did **not** end your responsibility for this work item.");
+    expect(claudePrompt).toContain("A PR that is red in CI is still your job until you either push a candidate fix or post a concrete blocker comment");
+    expect(claudePrompt).toContain("Investigate the failure, implement the fix, and run the relevant tests locally");
+    expect(claudePrompt).toContain("nw heartbeat --progress 1.0 --label \"Fix pushed\"");
+    expect(claudePrompt).toContain("If CI fails again later, re-enter this same investigate → test → push loop on the next CI-failure message.");
+    expect(claudePrompt).toContain("do **not** return to idle just because you already attempted one fix");
+    expect(claudePrompt).toContain("Required outcome: after each CI-failure message, stay with the item until you have either pushed a new candidate fix or posted a real blocker comment on the PR.");
     expect(claudePrompt).toContain("Do not assume the daemon will perform the rebase for you.");
     expect(claudePrompt).toContain("Some daemon nudges may be plain-language inbox messages");
     expect(claudePrompt).toContain("if you receive one in either structured or plain-language form, you are required to act on it.");
@@ -300,8 +309,12 @@ describe("seedAgentFiles", () => {
     expect(claudePrompt).toContain("gh pr list --head \"$BASE_BRANCH\" --state merged --json number --limit 1");
     expect(claudePrompt).toContain("Do **not** `git rebase --abort` just because conflicts appeared");
     expect(claudePrompt).toContain("Required outcome: do not go back to idle until the branch is either successfully rebased and force-pushed, or you have posted the blocker comment for a genuinely non-trivial conflict");
+    expect(codexPrompt).toContain("Opening the PR did **not** end your responsibility for this work item.");
+    expect(codexPrompt).toContain("Fix pushed");
     expect(githubPrompt).toContain("Do not assume the daemon will perform the rebase for you.");
     expect(githubPrompt).toContain("Some daemon nudges may be plain-language inbox messages");
+    expect(githubPrompt).toContain("Opening the PR did **not** end your responsibility for this work item.");
+    expect(githubPrompt).toContain("If CI fails again later, re-enter this same investigate → test → push loop on the next CI-failure message.");
 
     rmSync(hubRoot, { recursive: true, force: true });
     rmSync(worktree, { recursive: true, force: true });

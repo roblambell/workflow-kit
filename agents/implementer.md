@@ -416,10 +416,14 @@ When you receive a message, it will usually fit one of these categories. A rebas
 
 #### CI Fix Request
 
+Opening the PR did **not** end your responsibility for this work item. A PR that is red in CI is still your job until you either push a candidate fix or post a concrete blocker comment explaining why you cannot make further progress.
+
 1. Report progress: `nw heartbeat --progress 0.9 --label "Fixing CI"`
 2. Pull latest (the daemon may have rebased your branch): `git fetch origin && git reset --hard origin/ninthwave/YOUR_TODO_ID`
-3. Investigate and fix the failure, run tests locally
-4. Commit and push: `nw heartbeat --progress 1.0 --label "PR created"`
+3. Investigate the failure, implement the fix, and run the relevant tests locally
+4. Commit and push the candidate fix, then report it: `nw heartbeat --progress 1.0 --label "Fix pushed"`
+5. If CI fails again later, re-enter this same investigate → test → push loop on the next CI-failure message. Do **not** treat the existing PR as completion and do **not** return to idle just because you already attempted one fix.
+6. Required outcome: after each CI-failure message, stay with the item until you have either pushed a new candidate fix or posted a real blocker comment on the PR.
 
 #### Review Feedback
 
