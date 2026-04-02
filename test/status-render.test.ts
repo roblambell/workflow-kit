@@ -2603,7 +2603,7 @@ describe("buildStatusLayout", () => {
       },
     });
     const footerText = layout.footerLines.map(stripAnsi);
-    expect(footerText[2]).toContain("shift+tab merge");
+    expect(footerText[2]).toContain("(shift+tab to toggle)");
     expect(footerText[3]).toContain("GitHub errors: auth 2, network 1");
   });
 
@@ -2663,11 +2663,12 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("› auto");
-    expect(footerText).toContain("shift+tab merge");
+    expect(footerText).toContain("(shift+tab to toggle)");
     expect(footerText).toContain("Esc/p pause");
     expect(footerText).toContain("q quit");
     expect(footerText).toContain("c controls");
     expect(footerText).toContain("? help");
+    expect(footerText).not.toContain("·");
     expect(footerText).not.toContain("scroll");
   });
 
@@ -2678,7 +2679,7 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("‖ manual");
-    expect(footerText).toContain("shift+tab merge");
+    expect(footerText).toContain("(shift+tab to toggle)");
     expect(footerText).toContain("Esc/p pause");
     expect(footerText).toContain("c controls");
   });
@@ -2690,7 +2691,7 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("» bypass");
-    expect(footerText).toContain("shift+tab merge");
+    expect(footerText).toContain("(shift+tab to toggle)");
     expect(footerText).toContain("Esc/p pause");
     expect(footerText).toContain("c controls");
   });
@@ -2701,7 +2702,7 @@ describe("buildStatusLayout", () => {
       mergeStrategy: "bypass",
     });
     const footerLine = stripAnsi(layout.footerLines[2] ?? "");
-    expect(footerLine).toContain("» bypass · shift+tab merge · Esc/p pause");
+    expect(footerLine).toContain("» bypass (shift+tab to toggle)  Esc/p pause");
     expect(footerLine.length).toBeLessThanOrEqual(80);
   });
 
@@ -2715,7 +2716,7 @@ describe("buildStatusLayout", () => {
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("‖ manual (5s)");
     expect(footerText).not.toContain("› auto ->");
-    expect(footerText).toContain("shift+tab merge");
+    expect(footerText).toContain("(shift+tab to toggle)");
     expect(footerText).toContain("Esc/p pause");
     expect(footerText).toContain("c controls");
   });
@@ -2797,7 +2798,7 @@ describe("buildStatusLayout", () => {
       updateState: makeUpdateState({ latestVersion: "123.456.789.1011" }),
     });
     const footerText = layout.footerLines.map(stripAnsi);
-    expect(footerText[2]).toContain("shift+tab merge");
+    expect(footerText[2]).toContain("(shift+tab to toggle)");
     expect(footerText[3]).toContain("update");
     expect(footerText[3]).toContain("...");
   });
@@ -3572,6 +3573,7 @@ describe("renderPausedOverlay", () => {
     expect(text).toContain("Watch controls are paused.");
     expect(text).toContain("Esc/p resume");
     expect(text).toContain("q quit");
+    expect(text).not.toContain("·");
 
     const pausedLine = lines.map(stripAnsi).find((line) => line.includes("Watch controls are paused."));
     expect(pausedLine).toBeDefined();
@@ -4536,6 +4538,7 @@ describe("buildStatusLayout footer controls hint", () => {
       mergeStrategy: "manual",
     });
     const footerText = stripAnsi(layout.footerLines.join("\n"));
+    expect(footerText).toContain("(shift+tab to toggle)");
     expect(footerText).toContain("c controls");
     expect(footerText).toContain("? help");
   });

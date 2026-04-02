@@ -153,7 +153,21 @@ function formatStrategyFooterLine(
   pendingStrategyCountdownSeconds?: number,
 ): string {
   const badge = strategyFooterIndicator(strategy, pendingStrategy, pendingStrategyCountdownSeconds);
-  return `  ${badge} ${DIM}· shift+tab merge · Esc/p pause · q quit · c controls · ? help${RESET}`;
+  return `  ${badge} ${formatShortcutChord("shift+tab", "to toggle", { wrapInParens: true })}  ${formatShortcutHint("Esc/p", "pause")}  ${formatShortcutHint("q", "quit")}  ${formatShortcutHint("c", "controls")}  ${formatShortcutHint("?", "help")}`;
+}
+
+function formatShortcutHint(key: string, label: string): string {
+  return `${RESET}${key}${DIM} ${label}${RESET}`;
+}
+
+function formatShortcutChord(
+  key: string,
+  label: string,
+  options?: { wrapInParens?: boolean },
+): string {
+  const rendered = `${RESET}${key}${DIM} ${label}${RESET}`;
+  if (!options?.wrapInParens) return rendered;
+  return `${DIM}(${rendered}${DIM})${RESET}`;
 }
 
 function formatGitHubApiWarningText(
@@ -2695,7 +2709,7 @@ export function renderPausedOverlay(
   const contentLines = [
     `${BOLD}${YELLOW}Watch controls are paused.${RESET}`,
   ];
-  const overlayHint = "Esc/p resume · q quit";
+  const overlayHint = `${formatShortcutHint("Esc/p", "resume")}  ${formatShortcutHint("q", "quit")}`;
 
   const maxContentWidth = Math.max(
     overlayTitle.length,
