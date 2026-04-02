@@ -2,7 +2,7 @@
 // Provides temp git repo setup/teardown and fixture utilities.
 
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { isAbsolute, join } from "path";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { tmpdir } from "os";
 import { afterEach } from "vitest";
@@ -320,6 +320,18 @@ export function ensureCompiledCli(): string {
   return COMPILED_CLI_PATH;
 }
 
+function resolveCompiledCliPath(): string {
+  const override = process.env.NINTHWAVE_COMPILED_CLI_PATH;
+  if (!override) return ensureCompiledCli();
+
+  const resolvedPath = isAbsolute(override) ? override : join(PROJECT_ROOT, override);
+  if (!existsSync(resolvedPath)) {
+    throw new Error(`Compiled CLI not found at ${resolvedPath}`);
+  }
+
+  return resolvedPath;
+}
+
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -353,7 +365,7 @@ export function startCompiledCli(
 ): CompiledCliHandle {
   const transcriptDir = setupTempDir("nw-compiled-cli-");
   const transcriptPath = join(transcriptDir, "transcript.txt");
-  const child = spawn("script", buildScriptArgs(ensureCompiledCli(), args, transcriptPath), {
+  const child = spawn("script", buildScriptArgs(resolveCompiledCliPath(), args, transcriptPath), {
     cwd,
     env: { ...process.env, ...options.env },
     stdio: ["ignore", "pipe", "pipe"],

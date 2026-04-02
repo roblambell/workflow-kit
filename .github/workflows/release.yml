@@ -49,6 +49,9 @@ jobs:
       - name: Build binary
         run: bun build --compile --target=${{ matrix.target }} core/cli.ts --outfile dist/ninthwave
 
+      - name: Smoke test — packaged orchestration startup
+        run: NINTHWAVE_COMPILED_CLI_PATH=dist/ninthwave bun run smoke:compiled-orchestrate-startup
+
       - name: Package release tarball
         run: |
           VERSION=$(cat VERSION)
