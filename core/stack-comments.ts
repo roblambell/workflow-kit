@@ -17,6 +17,9 @@ export interface GhCommentClient {
 
 /** Hidden HTML comment marker to identify ninthwave stack comments. */
 export const STACK_COMMENT_MARKER = "<!-- ninthwave-stack-comment -->";
+const STACK_COMMENT_HEADING = "This change is part of the following stack:";
+const STACK_COMMENT_FOOTER =
+  "<sub>Change orchestrated by [Ninthwave](https://ninthwave.sh).</sub>";
 
 /**
  * Build a git-spice-style markdown comment showing the dependency stack.
@@ -27,29 +30,24 @@ export const STACK_COMMENT_MARKER = "<!-- ninthwave-stack-comment -->";
  * @returns Markdown string for the stack comment
  */
 export function buildStackComment(
-  baseBranch: string,
+  _baseBranch: string,
   stack: StackEntry[],
   currentPrNumber: number,
 ): string {
   const lines: string[] = [
     STACK_COMMENT_MARKER,
-    "📦 **Stack** (managed by ninthwave)",
+    STACK_COMMENT_HEADING,
     "",
-    `* \`${baseBranch}\``,
   ];
 
   for (let i = 0; i < stack.length; i++) {
     const entry = stack[i];
-    const indent = "  ".repeat(i + 1);
-    const prText = `#${entry.prNumber} ${entry.title}`;
-
-    if (entry.prNumber === currentPrNumber) {
-      lines.push(`${indent}* **${prText}** ← this PR`);
-    } else {
-      lines.push(`${indent}* ${prText}`);
-    }
+    const indent = "    ".repeat(i);
+    const marker = entry.prNumber === currentPrNumber ? " ◀" : "";
+    lines.push(`${indent}- #${entry.prNumber}${marker}`);
   }
 
+  lines.push("", STACK_COMMENT_FOOTER);
   return lines.join("\n");
 }
 
