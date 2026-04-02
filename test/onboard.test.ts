@@ -958,11 +958,12 @@ describe("cmdNoArgs", () => {
     });
   });
 
-  it("persists durable startup selections before launching watch", async () => {
+  it("persists the full durable startup payload before launching watch", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
     const savedUpdates: Array<Record<string, unknown>> = [];
+    let watchArgs: string[] = [];
 
     await cmdNoArgs(projectDir, {
       isTTY: true,
@@ -976,20 +977,64 @@ describe("cmdNoArgs", () => {
         mergeStrategy: "auto" as MergeStrategy,
         wipLimit: 4,
         allSelected: false,
-        reviewMode: "mine" as const,
-        connectionAction: null,
+        reviewMode: "all" as const,
+        connectionAction: { type: "connect" as const },
+        aiTools: ["opencode", "copilot"],
+        aiTool: "opencode",
       }),
-      runWatch: async () => {},
+      runWatch: async (args) => { watchArgs = args; },
     });
 
     expect(savedUpdates).toHaveLength(1);
-    expect(savedUpdates[0]).toMatchObject({
+    expect(savedUpdates[0]).toEqual({
       backend_mode: "headless",
       merge_strategy: "auto",
+      review_mode: "all",
+      wip_limit: 4,
+      collaboration_mode: "share",
+      ai_tools: ["opencode", "copilot"],
+    });
+    expect(watchArgs).toContain("--connect");
+    expect(watchArgs).toContain("--tool");
+    expect(watchArgs).toContain("opencode,copilot");
+  });
+
+  it("passes join codes at runtime without saving them to config", async () => {
+    const projectDir = setupTempRepo();
+    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
+
+    const savedUpdates: Array<Record<string, unknown>> = [];
+    let watchArgs: string[] = [];
+
+    await cmdNoArgs(projectDir, {
+      isTTY: true,
+      parseWorkItems: () => [fakeWorkItem("H-1", "Task")],
+      isDaemonRunning: () => null,
+      loadConfig: () => ({ review_external: false, schedule_enabled: false }),
+      saveUserConfig: (updates) => savedUpdates.push(updates as Record<string, unknown>),
+      runInteractiveFlow: async () => ({
+        itemIds: ["H-1"],
+        backendMode: "auto",
+        mergeStrategy: "manual" as MergeStrategy,
+        wipLimit: 4,
+        allSelected: false,
+        reviewMode: "mine" as const,
+        connectionAction: { type: "join" as const, code: "k2f9ab3x7yplqm4n" },
+      }),
+      runWatch: async (args) => { watchArgs = args; },
+    });
+
+    expect(watchArgs).toContain("--crew");
+    expect(watchArgs).toContain("K2F9-AB3X-7YPL-QM4N");
+    expect(savedUpdates).toHaveLength(1);
+    expect(savedUpdates[0]).toMatchObject({
+      backend_mode: "auto",
+      merge_strategy: "manual",
       review_mode: "mine",
       wip_limit: 4,
-      collaboration_mode: "local",
+      collaboration_mode: "join",
     });
-    expect(savedUpdates[0]?.ai_tools).toBeUndefined();
+    expect(savedUpdates[0]).not.toHaveProperty("code");
+    expect(JSON.stringify(savedUpdates[0])).not.toContain("K2F9-AB3X-7YPL-QM4N");
   });
 });

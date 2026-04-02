@@ -93,7 +93,11 @@ import {
 } from "../core/daemon.ts";
 import type { CrewBroker, CrewRemoteItemSnapshot, CrewStatus } from "../core/crew.ts";
 import { readCrewCode, crewCodePath } from "../core/crew.ts";
-import { shouldEnterInteractive } from "../core/interactive.ts";
+import {
+  buildStartupPersistenceUpdates,
+  shouldEnterInteractive,
+  type InteractiveResult,
+} from "../core/interactive.ts";
 import { listWorkItems } from "../core/work-item-files.ts";
 import { completeMergedWorkItemCleanup } from "../core/commands/reconcile.ts";
 import * as launchModule from "../core/commands/launch.ts";
@@ -5536,6 +5540,51 @@ describe("resolveInteractiveStartupConfig", () => {
     expect(result.defaults.backendMode).toBe("auto");
     expect(result.defaults.reviewMode).toBe("mine");
     expect(result.skipToolStep).toBe(true);
+  });
+
+  it("builds full durable startup updates while keeping join codes runtime-only", () => {
+    const startupConfig = resolveInteractiveStartupConfig(
+      { review_external: false, schedule_enabled: false },
+      {
+        ai_tools: ["opencode", "copilot"],
+        backend_mode: "cmux",
+        merge_strategy: "auto",
+        review_mode: "all",
+        collaboration_mode: "share",
+      },
+    );
+    const result: InteractiveResult = {
+      itemIds: ["H-1"],
+      mergeStrategy: "auto",
+      wipLimit: 6,
+      allSelected: false,
+      reviewMode: "all",
+      connectionAction: { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
+    };
+
+    const persisted = buildStartupPersistenceUpdates(result, {
+      backendMode: startupConfig.defaults.backendMode,
+      savedToolIds: startupConfig.savedToolIds,
+    });
+    const runtime = resolveStartupCollaborationAction(
+      { connectMode: true, crewUrl: "wss://config.example" },
+      result.connectionAction,
+    );
+
+    expect(persisted).toEqual({
+      backend_mode: "cmux",
+      merge_strategy: "auto",
+      review_mode: "all",
+      wip_limit: 6,
+      collaboration_mode: "join",
+      ai_tools: ["opencode", "copilot"],
+    });
+    expect(JSON.stringify(persisted)).not.toContain("K2F9-AB3X-7YPL-QM4N");
+    expect(runtime).toEqual({
+      connectMode: false,
+      crewCode: "K2F9-AB3X-7YPL-QM4N",
+      crewUrl: "wss://config.example",
+    });
   });
 });
 

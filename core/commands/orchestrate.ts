@@ -3905,9 +3905,9 @@ export async function cmdOrchestrate(
     interactiveReviewMode = result.reviewMode;
     interactiveSkipReview = result.reviewMode === "off";
     try {
-      saveUserConfig(buildStartupPersistenceUpdates({
-        ...result,
+      saveUserConfig(buildStartupPersistenceUpdates(result, {
         backendMode: startupBackendMode,
+        savedToolIds: interactiveStartupConfig.savedToolIds,
       }));
     } catch {
       // best-effort persistence only

@@ -425,7 +425,10 @@ export async function cmdNoArgs(
   if (!result) return; // User cancelled
 
   try {
-    doSaveUserConfig(buildStartupPersistenceUpdates(result));
+    doSaveUserConfig(buildStartupPersistenceUpdates(result, {
+      backendMode: defaultSettings.backendMode,
+      savedToolIds: userConfig.ai_tools,
+    }));
   } catch {
     // best-effort persistence only
   }

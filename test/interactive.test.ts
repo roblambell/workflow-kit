@@ -435,6 +435,19 @@ describe("buildStartupPersistenceUpdates", () => {
   it("leaves ai_tools undefined when the tool step was skipped", () => {
     expect(buildStartupPersistenceUpdates(baseResult).ai_tools).toBeUndefined();
   });
+
+  it("fills in the durable backend and saved tools when startup skips them", () => {
+    expect(buildStartupPersistenceUpdates({
+      ...baseResult,
+      backendMode: undefined,
+    }, {
+      backendMode: "cmux",
+      savedToolIds: ["opencode", "copilot"],
+    })).toMatchObject({
+      backend_mode: "cmux",
+      ai_tools: ["opencode", "copilot"],
+    });
+  });
 });
 
 // ── runInteractiveFlow ───────────────────────────────────────────────

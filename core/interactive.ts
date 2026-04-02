@@ -72,6 +72,11 @@ export interface InteractiveDeps {
   skipToolStep?: boolean;
 }
 
+export interface StartupPersistenceOptions {
+  backendMode?: PersistedBackendMode;
+  savedToolIds?: string[];
+}
+
 // ── Default prompt using readline ────────────────────────────────────
 
 const defaultPrompt: PromptFn = (question: string): Promise<string> => {
@@ -449,15 +454,20 @@ export async function confirmSummary(
 
 export function buildStartupPersistenceUpdates(
   result: InteractiveResult,
+  options: StartupPersistenceOptions = {},
 ): Partial<UserConfig> {
   const aiTools = result.aiTools && result.aiTools.length > 0
     ? [...result.aiTools]
     : result.aiTool
     ? [result.aiTool]
+    : options.savedToolIds && options.savedToolIds.length > 0
+    ? [...options.savedToolIds]
     : undefined;
 
+  const backendMode = result.backendMode ?? options.backendMode;
+
   return {
-    ...(result.backendMode ? { backend_mode: result.backendMode } : {}),
+    ...(backendMode ? { backend_mode: backendMode } : {}),
     merge_strategy: result.mergeStrategy === "auto" ? "auto" : "manual",
     review_mode: result.reviewMode,
     wip_limit: result.wipLimit,
