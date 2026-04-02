@@ -7,7 +7,7 @@
 // because tests that mock process.exit (e.g., version-bump.test.ts)
 // would neuter the guard. SIGKILL cannot be intercepted or mocked.
 
-const GLOBAL_TIMEOUT_MS = 120_000;
+const GLOBAL_TIMEOUT_MS = 180_000;
 const MEMORY_LIMIT_MB = 1_024; // 1 GB RSS ceiling
 const MEMORY_CHECK_INTERVAL_MS = 5_000;
 

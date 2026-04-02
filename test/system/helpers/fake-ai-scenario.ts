@@ -25,6 +25,7 @@ export interface FakeAiScenario {
   behavior?: FakeAiBehavior;
   exitCode?: number;
   sleepMs?: number;
+  sleepBeforeHeartbeat?: boolean;
   stdout?: string[];
   stderr?: string[];
   heartbeat?: FakeAiHeartbeat;
@@ -57,11 +58,18 @@ export interface FakeAiState {
   signal: string;
 }
 
+export function fakeAiDefaultRunId(itemId: string, agent: string): string {
+  return `${itemId}-${agent}`;
+}
+
 function serializeScenario(scenario: FakeAiScenario): string {
   const lines: string[] = [];
   lines.push(`behavior=${scenario.behavior ?? "success"}`);
   if (scenario.exitCode != null) lines.push(`exitCode=${scenario.exitCode}`);
   if (scenario.sleepMs != null) lines.push(`sleepMs=${scenario.sleepMs}`);
+  if (scenario.sleepBeforeHeartbeat != null) {
+    lines.push(`sleepBeforeHeartbeat=${scenario.sleepBeforeHeartbeat ? "1" : "0"}`);
+  }
   for (const line of scenario.stdout ?? []) lines.push(`stdout=${line}`);
   for (const line of scenario.stderr ?? []) lines.push(`stderr=${line}`);
   if (scenario.heartbeat) {

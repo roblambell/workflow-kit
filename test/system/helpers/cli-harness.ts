@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, readdirSync, writeFileSync } from "fs";
 import {
   spawn,
   spawnSync,
@@ -46,6 +46,41 @@ export interface CliProcessHandle {
   exitCode: number | null;
   closed: boolean;
   exited: Promise<number | null>;
+}
+
+export interface FakeGhCheckRun {
+  state: string;
+  name: string;
+  link: string;
+  completedAt?: string;
+}
+
+export interface FakeGhCommitCheckRun {
+  name: string;
+  status: string;
+  conclusion: string | null;
+}
+
+export interface FakeGhPrRecord {
+  number: number;
+  branch: string;
+  state: "open" | "merged";
+  title: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  headSha: string;
+  mergeable: "MERGEABLE" | "CONFLICTING";
+  reviewDecision: string;
+  checks: FakeGhCheckRun[];
+  baseRefName: string;
+  mergeCommitSha?: string;
+}
+
+export interface FakeGhState {
+  nextPrNumber: number;
+  prs: FakeGhPrRecord[];
+  commitChecks?: Record<string, FakeGhCommitCheckRun[]>;
 }
 
 function encodeHeadlessRef(ref: string): string {
@@ -180,6 +215,46 @@ export class CliHarness {
   readOrchestratorLog(): string {
     const path = this.orchestratorLogPath();
     return existsSync(path) ? readFileSync(path, "utf-8") : "";
+  }
+
+  writeOrchestratorState(state: DaemonState): void {
+    writeFileSync(this.orchestratorStatePath(), JSON.stringify(state, null, 2) + "\n", "utf-8");
+  }
+
+  fakeGhStatePath(): string {
+    return join(this.stateDir, "fake-gh.json");
+  }
+
+  readFakeGhState(): FakeGhState {
+    const path = this.fakeGhStatePath();
+    if (!existsSync(path)) {
+      return { nextPrNumber: 1, prs: [] };
+    }
+    return JSON.parse(readFileSync(path, "utf-8")) as FakeGhState;
+  }
+
+  writeFakeGhState(state: FakeGhState): void {
+    writeFileSync(this.fakeGhStatePath(), JSON.stringify(state, null, 2) + "\n", "utf-8");
+  }
+
+  updateFakeGhState(update: (state: FakeGhState) => void): FakeGhState {
+    const state = this.readFakeGhState();
+    update(state);
+    this.writeFakeGhState(state);
+    return state;
+  }
+
+  reviewVerdictPath(itemId: string): string {
+    return join(this.stateDir, "tmp", `nw-verdict-${itemId}.json`);
+  }
+
+  inboxMessages(itemId: string): string[] {
+    const dir = join(this.stateDir, "inbox", itemId);
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((entry) => entry.endsWith(".msg"))
+      .sort()
+      .map((entry) => readFileSync(join(dir, entry), "utf-8"));
   }
 
   async waitForProcessOutput(

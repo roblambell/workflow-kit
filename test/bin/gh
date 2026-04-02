@@ -27,9 +27,16 @@ interface FakePrRecord {
   mergeCommitSha?: string;
 }
 
+interface FakeCommitCheckRun {
+  name: string;
+  status: string;
+  conclusion: string | null;
+}
+
 interface FakeGhState {
   nextPrNumber: number;
   prs: FakePrRecord[];
+  commitChecks?: Record<string, FakeCommitCheckRun[]>;
 }
 
 const args = process.argv.slice(2);
@@ -39,6 +46,7 @@ const statePath = process.env.NINTHWAVE_FAKE_GH_STATE_PATH
 const repoNameWithOwner = process.env.NINTHWAVE_FAKE_GH_REPO ?? "ninthwave-sh/test-system";
 const defaultBranch = process.env.NINTHWAVE_FAKE_GH_DEFAULT_BRANCH ?? "main";
 const autoCreatePrs = process.env.NINTHWAVE_FAKE_GH_AUTO_CREATE_PRS !== "0";
+const defaultCommitChecks = process.env.NINTHWAVE_FAKE_GH_DEFAULT_COMMIT_CHECKS ?? "pass";
 
 function fail(message: string): never {
   console.error(message);
@@ -251,11 +259,17 @@ function handleLabelCreate(): void {
 function handleApi(): void {
   const path = args.find((arg) => arg.startsWith("repos/")) ?? "";
   const jq = args.includes("--jq") ? args[args.indexOf("--jq") + 1] ?? "" : "";
+  const state = loadState();
 
-  if (path.endsWith("/check-runs")) {
-    printJson([
-      { name: "test", status: "completed", conclusion: "success" },
-    ]);
+  if (path.includes("/commits/") && path.endsWith("/check-runs")) {
+    const sha = path.split("/commits/")[1]?.split("/check-runs")[0] ?? "";
+    const checkRuns = state.commitChecks?.[sha] ?? defaultCommitCheckRuns();
+    printJson(checkRuns);
+    return;
+  }
+
+  if (path.includes("/statuses/")) {
+    printJson({ ok: true });
     return;
   }
 
@@ -265,6 +279,17 @@ function handleApi(): void {
   }
 
   printJson([]);
+}
+
+function defaultCommitCheckRuns(): FakeCommitCheckRun[] {
+  switch (defaultCommitChecks) {
+    case "pending":
+      return [{ name: "test", status: "in_progress", conclusion: null }];
+    case "fail":
+      return [{ name: "test", status: "completed", conclusion: "failure" }];
+    default:
+      return [{ name: "test", status: "completed", conclusion: "success" }];
+  }
 }
 
 function handlePrComment(): void {
