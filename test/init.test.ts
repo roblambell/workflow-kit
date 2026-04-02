@@ -1720,6 +1720,90 @@ describe("initProject -- agent selection", () => {
     expect(existsSync(join(projectDir, ".claude/agents/reviewer.md"))).toBe(false);
   });
 
+  it("filters executed agent installs to opts.agentSelection.installDisplayPaths", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    const opts: InitProjectOpts = {
+      agentSelection: {
+        agents: ["implementer.md"],
+        toolDirs: [AGENT_TARGET_DIRS[0]!, AGENT_TARGET_DIRS[1]!],
+        installDisplayPaths: [".opencode/agents/implementer.md"],
+      },
+    };
+
+    initProject(projectDir, bundleDir, deps, opts);
+
+    expect(existsSync(join(projectDir, ".opencode/agents/implementer.md"))).toBe(true);
+    expect(existsSync(join(projectDir, ".claude/agents/implementer.md"))).toBe(false);
+  });
+
+  it("leaves stale excluded managed copies untouched when installDisplayPaths skips them", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    const excludedPath = join(projectDir, ".opencode/agents/implementer.md");
+    mkdirSync(join(projectDir, ".opencode/agents"), { recursive: true });
+    writeFileSync(excludedPath, "# stale excluded agent\n");
+
+    const opts: InitProjectOpts = {
+      agentSelection: {
+        agents: ["implementer.md"],
+        toolDirs: [AGENT_TARGET_DIRS[0]!, AGENT_TARGET_DIRS[1]!],
+        installDisplayPaths: [".claude/agents/implementer.md"],
+      },
+    };
+
+    initProject(projectDir, bundleDir, deps, opts);
+
+    expect(readFileSync(excludedPath, "utf-8")).toBe("# stale excluded agent\n");
+    expect(readFileSync(join(projectDir, ".claude/agents/implementer.md"), "utf-8")).toContain(
+      "set the timeout to the longest practical value available",
+    );
+  });
+
+  it("does not prune excluded managed copies while selected entries still refresh", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    const selectedPath = join(projectDir, ".claude/agents/implementer.md");
+    const excludedPath = join(projectDir, ".claude/agents/reviewer.md");
+    mkdirSync(join(projectDir, ".claude/agents"), { recursive: true });
+    writeFileSync(selectedPath, "# stale selected agent\n");
+    writeFileSync(excludedPath, "# stale excluded agent\n");
+
+    const opts: InitProjectOpts = {
+      agentSelection: {
+        agents: ["implementer.md", "reviewer.md"],
+        toolDirs: [AGENT_TARGET_DIRS[0]!],
+        installDisplayPaths: [".claude/agents/implementer.md"],
+      },
+    };
+
+    initProject(projectDir, bundleDir, deps, opts);
+
+    expect(readFileSync(selectedPath, "utf-8")).toContain(
+      "set the timeout to the longest practical value available",
+    );
+    expect(existsSync(excludedPath)).toBe(true);
+    expect(readFileSync(excludedPath, "utf-8")).toBe("# stale excluded agent\n");
+  });
+
   it("installs no agents when selection is empty", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");

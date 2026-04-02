@@ -302,6 +302,8 @@ export interface AgentSelection {
   /** Tool target directory indices into AGENT_TARGET_DIRS */
   toolDirs: { dir: string; suffix: string; tool: string }[];
   /** Actionable managed-copy preview entries selected during interactive init. */
+  installDisplayPaths?: string[];
+  /** Backwards-compatible alias for older callers; prefer installDisplayPaths. */
   selectedDisplayPaths?: string[];
 }
 
@@ -422,9 +424,11 @@ export function filterCopyPlan(
   plan: CopyPlan[],
   selection: AgentSelection,
 ): CopyPlan[] {
-  if (!selection.selectedDisplayPaths) return plan;
+  const installDisplayPaths =
+    selection.installDisplayPaths ?? selection.selectedDisplayPaths;
+  if (!installDisplayPaths) return plan;
 
-  const selectedDisplayPaths = new Set(selection.selectedDisplayPaths);
+  const selectedDisplayPaths = new Set(installDisplayPaths);
   return plan.filter((entry) =>
     entry.status === "up-to-date" || selectedDisplayPaths.has(entry.displayPath)
   );
@@ -746,10 +750,14 @@ export async function interactiveAgentSelection(
     })),
   ];
 
-  const selectedDisplayPaths = await checkbox("Will install:", actionableChoices);
-  if (selectedDisplayPaths.length === 0) {
+  const installDisplayPaths = await checkbox("Will install:", actionableChoices);
+  if (installDisplayPaths.length === 0) {
     console.log(`${DIM}No install actions selected -- skipping agent writes.${RESET}`);
-    return { ...selection, selectedDisplayPaths: [] };
+    return {
+      ...selection,
+      installDisplayPaths: [],
+      selectedDisplayPaths: [],
+    };
   }
 
   console.log();
@@ -761,5 +769,9 @@ export async function interactiveAgentSelection(
     return null;
   }
 
-  return { ...selection, selectedDisplayPaths };
+  return {
+    ...selection,
+    installDisplayPaths,
+    selectedDisplayPaths: installDisplayPaths,
+  };
 }
