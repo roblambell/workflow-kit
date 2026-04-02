@@ -215,6 +215,13 @@ function tryListPrs(
   }
 }
 
+function shouldIgnoreLegacyMissingLineage(
+  item: Pick<WorkItem, "lineageToken">,
+  matchMode: string,
+): boolean {
+  return Boolean(item.lineageToken) && matchMode === "missing-lineage";
+}
+
 export function validatePickupCandidate(
   item: WorkItem,
   projectRoot: string,
@@ -246,15 +253,14 @@ export function validatePickupCandidate(
           existingPrNumber: pr.number,
         };
       }
+      if (shouldIgnoreLegacyMissingLineage(item, match.mode)) continue;
+      return {
+        status: "blocked",
+        code: "stale",
+        branchName,
+        failureReason: stalePrFailureReason(item, branchName, "open", pr, match.mode),
+      };
     }
-    const stalePr = openPrs[0]!;
-    const match = classifyPrMetadataMatch({ title: stalePr.title, body: stalePr.body }, item);
-    return {
-      status: "blocked",
-      code: "stale",
-      branchName,
-      failureReason: stalePrFailureReason(item, branchName, "open", stalePr, match.mode),
-    };
   }
 
   const mergedPrs = tryListPrs(deps, targetRepo, branchName, "merged");
@@ -271,15 +277,14 @@ export function validatePickupCandidate(
             `("${pr.title}"). Remove or reconcile the stale queue item instead of relaunching it.`,
         };
       }
+      if (shouldIgnoreLegacyMissingLineage(item, match.mode)) continue;
+      return {
+        status: "blocked",
+        code: "stale",
+        branchName,
+        failureReason: stalePrFailureReason(item, branchName, "merged", pr, match.mode),
+      };
     }
-    const stalePr = mergedPrs[0]!;
-    const match = classifyPrMetadataMatch({ title: stalePr.title, body: stalePr.body }, item);
-    return {
-      status: "blocked",
-      code: "stale",
-      branchName,
-      failureReason: stalePrFailureReason(item, branchName, "merged", stalePr, match.mode),
-    };
   }
 
   return { status: "launch", targetRepo, branchName };

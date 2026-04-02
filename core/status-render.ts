@@ -728,7 +728,9 @@ export function formatItemRow(
   const progressWidth = progressText ? stripAnsiForWidth(progressText).length + 1 : 0;
   const title = truncateTitle(item.title || item.id, Math.max(4, titleWidth - progressWidth));
   const repo = item.repoLabel ? ` ${DIM}[${item.repoLabel}]${RESET}` : "";
-  const reason = item.failureReason ? ` ${DIM}(${item.failureReason})${RESET}` : "";
+  const reason = item.failureReason
+    ? ` ${DIM}(${truncateTitle(item.failureReason, 72)})${RESET}`
+    : "";
   const telemetry = formatTelemetrySuffix(item);
 
   // Selection highlight: replace leading 2-space indent with bold ">" prefix
@@ -738,6 +740,23 @@ export function formatItemRow(
   const modeTag = headlessModeTag(item);
 
   return `${prefix}${iconColor}${icon}${RESET} ${id}${color}${stateCell}${RESET}${remoteDot} ${durationCell}${timeoutExtensions} ${depCol}${title}${progressSuffix}${modeTag}${repo}${reason}${telemetry}`;
+}
+
+function pushWrappedDetailField(
+  lines: string[],
+  label: string,
+  value: string,
+  color: string = "",
+): void {
+  const wrapped = wrapDetailText(value, 72);
+  if (wrapped.length === 0) return;
+
+  const prefix = `  ${DIM}${label}:${RESET}`;
+  const paddedPrefix = `${prefix}${" ".repeat(Math.max(1, 10 - label.length))}`;
+  lines.push(`${paddedPrefix}${color}${wrapped[0]}${RESET}`);
+  for (const line of wrapped.slice(1)) {
+    lines.push(`             ${color}${line}${RESET}`);
+  }
 }
 
 /**
@@ -2390,9 +2409,9 @@ export function formatItemDetail(
 
   // Failure / CI status
   if (item.state === "blocked" && item.failureReason) {
-    lines.push(`  ${DIM}Blocked:${RESET}   ${YELLOW}${item.failureReason}${RESET}`);
+    pushWrappedDetailField(lines, "Blocked", item.failureReason, YELLOW);
   } else if (item.failureReason) {
-    lines.push(`  ${DIM}CI:${RESET}        ${RED}${item.failureReason}${RESET}`);
+    pushWrappedDetailField(lines, "CI", item.failureReason, RED);
   } else if (item.state === "ci-failed") {
     lines.push(`  ${DIM}CI:${RESET}        ${RED}Failed${RESET}`);
   } else if (item.state === "blocked") {

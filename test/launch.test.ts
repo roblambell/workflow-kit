@@ -406,6 +406,81 @@ describe("validatePickupCandidate", () => {
     expect(result.failureReason).toContain("Resolve the stale PR");
   });
 
+  it("ignores open legacy PRs without lineage for tokenized items", () => {
+    const repo = setupTempRepo();
+    const workDir = setupWorkItemsDir(repo);
+    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
+    const item = parseWorkItems(workDir, worktreeDir).find((candidate) => candidate.id === "M-CI-1")!;
+    item.lineageToken = "8d641d84-5065-4e72-8b72-c087812ef2cb";
+    const deps = createMockLaunchDeps();
+    deps.prList.mockImplementation((_repo: string, _branch: string, state: string) => {
+      if (state === "open") {
+        return {
+          ok: true as const,
+          data: [{ number: 7, title: "fix: stale launch from previous cycle", body: "## Work Item Reference\nID: M-CI-1\n" }],
+        };
+      }
+      return { ok: true as const, data: [] as Array<{ number: number; title: string }> };
+    });
+
+    const result = validatePickupCandidate(item, repo, deps);
+
+    expect(result.status).toBe("launch");
+  });
+
+  it("ignores merged legacy PRs without lineage for tokenized items", () => {
+    const repo = setupTempRepo();
+    const workDir = setupWorkItemsDir(repo);
+    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
+    const item = parseWorkItems(workDir, worktreeDir).find((candidate) => candidate.id === "M-CI-1")!;
+    item.lineageToken = "8d641d84-5065-4e72-8b72-c087812ef2cb";
+    const deps = createMockLaunchDeps();
+    deps.prList.mockImplementation((_repo: string, _branch: string, state: string) => {
+      if (state === "open") return { ok: true as const, data: [] as Array<{ number: number; title: string }> };
+      return {
+        ok: true as const,
+        data: [{ number: 42, title: "fix: old merged launch", body: "## Work Item Reference\nID: M-CI-1\n" }],
+      };
+    });
+
+    const result = validatePickupCandidate(item, repo, deps);
+
+    expect(result.status).toBe("launch");
+  });
+
+  it("still blocks true lineage mismatches after ignoring legacy no-lineage PRs", () => {
+    const repo = setupTempRepo();
+    const workDir = setupWorkItemsDir(repo);
+    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
+    const item = parseWorkItems(workDir, worktreeDir).find((candidate) => candidate.id === "M-CI-1")!;
+    item.lineageToken = "8d641d84-5065-4e72-8b72-c087812ef2cb";
+    const deps = createMockLaunchDeps();
+    deps.prList.mockImplementation((_repo: string, _branch: string, state: string) => {
+      if (state === "open") {
+        return {
+          ok: true as const,
+          data: [
+            { number: 7, title: "fix: stale launch from previous cycle", body: "## Work Item Reference\nID: M-CI-1\n" },
+            {
+              number: 8,
+              title: "fix: current cycle but wrong lineage",
+              body: "## Work Item Reference\nID: M-CI-1\nLineage: 11111111-1111-4111-8111-111111111111\n",
+            },
+          ],
+        };
+      }
+      return { ok: true as const, data: [] as Array<{ number: number; title: string }> };
+    });
+
+    const result = validatePickupCandidate(item, repo, deps);
+
+    expect(result.status).toBe("blocked");
+    if (result.status !== "blocked") throw new Error("expected blocked result");
+    expect(result.code).toBe("stale");
+    expect(result.failureReason).toContain("open PR #8");
+    expect(result.failureReason).toContain("non-matching work item metadata (mismatch)");
+  });
+
   it("returns unlaunchable when the target repo cannot be resolved", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);

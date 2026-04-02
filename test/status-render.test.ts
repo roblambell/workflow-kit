@@ -567,6 +567,18 @@ describe("formatItemRow", () => {
     expect(row).toContain("Blocked");
     expect(row).toContain("launch-blocked: missing repo");
   });
+
+  it("truncates long failure reasons inline", () => {
+    const item = makeStatusItem({
+      state: "blocked",
+      failureReason:
+        "launch-blocked: this is an intentionally long failure reason that should stay compact in the main status table instead of stretching the row beyond the visible area",
+    });
+    const row = stripAnsi(formatItemRow(item, 48));
+    expect(row).toContain("launch-blocked: this is an intentionally long failure reason");
+    expect(row).toContain("...");
+    expect(row).not.toContain("instead of stretching the row beyond the visible area");
+  });
   it("includes repo label when present", () => {
     const item = makeStatusItem({ repoLabel: "my-repo" });
     const row = stripAnsi(formatItemRow(item, 40));
@@ -3883,6 +3895,23 @@ describe("formatItemDetail", () => {
     expect(text).toContain("CI Failed");
     expect(text).toContain("Tests timed out");
     expect(text).toContain("timeout after 30s");
+  });
+
+  it("wraps long blocked reasons without truncating them", () => {
+    const item = makeStatusItem({
+      id: "H-BLK-2",
+      state: "blocked",
+      failureReason:
+        "launch-blocked: this detail view should show the full explanation for a very long blocked reason so operators can read the whole thing without losing the tail of the message",
+    });
+
+    const lines = formatItemDetail(item);
+    const text = lines.map(stripAnsi).join("\n");
+
+    expect(text).toContain("Blocked:");
+    expect(text).toContain("this detail view should show the full explanation");
+    expect(text).toContain("losing the tail of the message");
+    expect(text).not.toContain("...");
   });
 
   it("renders done state", () => {

@@ -8,6 +8,7 @@ import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
+  classifyPrMetadataMatch,
   normalizeTitleForComparison,
   prMetadataMatchesWorkItem,
   prTitleMatchesWorkItem,
@@ -254,6 +255,15 @@ describe("prMetadataMatchesWorkItem", () => {
         { id: "H-MUX-1", title: "brand new work", lineageToken: LINEAGE },
       ),
     ).toBe(false);
+  });
+
+  it("classifies missing lineage separately from real mismatches", () => {
+    expect(
+      classifyPrMetadataMatch(
+        { title: "brand new work" },
+        { id: "H-MUX-1", title: "brand new work", lineageToken: LINEAGE },
+      ),
+    ).toEqual({ matches: false, mode: "missing-lineage" });
   });
 });
 
