@@ -37,6 +37,10 @@ export interface DaemonStateItem {
   lastTransition: string;
   ciFailCount: number;
   retryCount: number;
+  /** Active timeout grace deadline for a stalled worker, when set. */
+  timeoutDeadline?: string;
+  /** Number of operator-requested timeout extensions already used. */
+  timeoutExtensionCount?: number;
   /** cmux workspace reference for the review worker session. */
   reviewWorkspaceRef?: string;
   /** Whether this item's review has been completed (approved). */
@@ -627,6 +631,8 @@ export function serializeOrchestratorState(
         lastTransition: item.lastTransition,
         ciFailCount: item.ciFailCount,
         retryCount: item.retryCount,
+        ...(item.timeoutDeadline ? { timeoutDeadline: item.timeoutDeadline } : {}),
+        ...(item.timeoutExtensionCount != null ? { timeoutExtensionCount: item.timeoutExtensionCount } : {}),
         ...(item.reviewWorkspaceRef ? { reviewWorkspaceRef: item.reviewWorkspaceRef } : {}),
         ...(item.reviewCompleted ? { reviewCompleted: item.reviewCompleted } : {}),
         ...(item.reviewRound ? { reviewRound: item.reviewRound } : {}),

@@ -512,6 +512,32 @@ export type InteractiveEngineTransportMessage =
 
 export const TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_ENV = "NINTHWAVE_TEST_ENGINE_STARTUP_FAIL";
 export const TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE = "Test-only forced interactive engine startup failure.";
+export const TEST_ORCH_LAUNCH_TIMEOUT_MS_ENV = "NINTHWAVE_TEST_ORCH_LAUNCH_TIMEOUT_MS";
+export const TEST_ORCH_ACTIVITY_TIMEOUT_MS_ENV = "NINTHWAVE_TEST_ORCH_ACTIVITY_TIMEOUT_MS";
+export const TEST_ORCH_GRACE_PERIOD_MS_ENV = "NINTHWAVE_TEST_ORCH_GRACE_PERIOD_MS";
+
+function parseTestNonNegativeIntEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function loadTestOrchestratorConfigOverrides(): {
+  launchTimeoutMs?: number;
+  activityTimeoutMs?: number;
+  gracePeriodMs?: number;
+} {
+  const launchTimeoutMs = parseTestNonNegativeIntEnv(TEST_ORCH_LAUNCH_TIMEOUT_MS_ENV);
+  const activityTimeoutMs = parseTestNonNegativeIntEnv(TEST_ORCH_ACTIVITY_TIMEOUT_MS_ENV);
+  const gracePeriodMs = parseTestNonNegativeIntEnv(TEST_ORCH_GRACE_PERIOD_MS_ENV);
+
+  return {
+    ...(launchTimeoutMs !== undefined ? { launchTimeoutMs } : {}),
+    ...(activityTimeoutMs !== undefined ? { activityTimeoutMs } : {}),
+    ...(gracePeriodMs !== undefined ? { gracePeriodMs } : {}),
+  };
+}
 
 const MAX_ENGINE_DIAGNOSTIC_LINES = 3;
 
@@ -3932,6 +3958,7 @@ export async function cmdOrchestrate(
   // Create orchestrator
   // skipReview: CLI --no-review, interactive "off" mode, or --review-wip-limit 0 disables AI review gate
   const skipReview = cliSkipReview || interactiveSkipReview || reviewWipLimit === 0;
+  const testOrchestratorConfigOverrides = loadTestOrchestratorConfigOverrides();
   let orch = new Orchestrator({
     wipLimit,
     mergeStrategy,
@@ -3939,6 +3966,7 @@ export async function cmdOrchestrate(
     fixForward,
     skipReview,
     ...((tuiMode || isInteractiveEngineChild) ? {} : { gracePeriodMs: 0 }),
+    ...testOrchestratorConfigOverrides,
     ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
   });
   for (const id of itemIds) {

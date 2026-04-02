@@ -38,6 +38,7 @@ const statePath = process.env.NINTHWAVE_FAKE_GH_STATE_PATH
   ?? join(repoRoot, ".ninthwave", "test-system", "fake-gh.json");
 const repoNameWithOwner = process.env.NINTHWAVE_FAKE_GH_REPO ?? "ninthwave-sh/test-system";
 const defaultBranch = process.env.NINTHWAVE_FAKE_GH_DEFAULT_BRANCH ?? "main";
+const autoCreatePrs = process.env.NINTHWAVE_FAKE_GH_AUTO_CREATE_PRS !== "0";
 
 function fail(message: string): never {
   console.error(message);
@@ -170,7 +171,9 @@ function handlePrList(): void {
   const state = loadState();
   const head = args[args.indexOf("--head") + 1] ?? "";
   const desiredState = args[args.indexOf("--state") + 1] ?? "open";
-  const record = ensurePrRecord(state, head);
+  const record = autoCreatePrs
+    ? ensurePrRecord(state, head)
+    : state.prs.find((entry) => entry.branch === head);
   saveState(state);
 
   if (!record || record.state !== desiredState) {

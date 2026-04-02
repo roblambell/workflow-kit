@@ -162,6 +162,8 @@ export function reconstructState(
     state: string;
     ciFailCount: number;
     retryCount: number;
+    timeoutDeadline?: string;
+    timeoutExtensionCount?: number;
     prNumber: number | null;
     priorPrNumbers?: number[];
     reviewWorkspaceRef?: string;
@@ -193,6 +195,8 @@ export function reconstructState(
         state: si.state,
         ciFailCount: si.ciFailCount,
         retryCount: si.retryCount,
+        timeoutDeadline: si.timeoutDeadline,
+        timeoutExtensionCount: si.timeoutExtensionCount,
         prNumber: si.prNumber,
         priorPrNumbers: si.priorPrNumbers,
         reviewWorkspaceRef: si.reviewWorkspaceRef,
@@ -228,6 +232,8 @@ export function reconstructState(
     if (saved) {
       item.ciFailCount = saved.ciFailCount;
       item.retryCount = saved.retryCount;
+      if (saved.timeoutDeadline) item.timeoutDeadline = saved.timeoutDeadline;
+      if (saved.timeoutExtensionCount != null) item.timeoutExtensionCount = saved.timeoutExtensionCount;
       if (saved.prNumber != null) item.prNumber = saved.prNumber;
       if (saved.priorPrNumbers?.length) item.priorPrNumbers = [...saved.priorPrNumbers];
       if (saved.reviewWorkspaceRef) item.reviewWorkspaceRef = saved.reviewWorkspaceRef;

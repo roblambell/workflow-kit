@@ -8,10 +8,15 @@ artifact_dir="${state_dir}/fake-ai-worker/${run_id}"
 context_file="${artifact_dir}/context.env"
 state_file="${artifact_dir}/state.env"
 prompt_copy="${artifact_dir}/prompt.txt"
+launches_file="${artifact_dir}/launches.log"
 heartbeat_dir="${state_dir}/heartbeats"
 heartbeat_file="${heartbeat_dir}/${NINTHWAVE_LAUNCH_ITEM_ID:-unknown}.json"
 
 mkdir -p "${artifact_dir}"
+printf '%s|%s|%s\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  "${NINTHWAVE_LAUNCH_AGENT:-}" \
+  "${NINTHWAVE_LAUNCH_ITEM_ID:-}" >> "${launches_file}"
 
 json_escape() {
   printf '%s' "${1}" | sed 's/\\/\\\\/g; s/"/\\"/g'

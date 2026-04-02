@@ -71,6 +71,10 @@ function serializeScenario(scenario: FakeAiScenario): string {
   return `${lines.join("\n")}\n`;
 }
 
+export function writeFakeAiScenario(path: string, scenario: FakeAiScenario): void {
+  writeFileSync(path, serializeScenario(scenario), "utf-8");
+}
+
 function parseKeyValueFile(path: string): Record<string, string> {
   const raw = readFileSync(path, "utf-8");
   const result: Record<string, string> = {};
@@ -103,7 +107,7 @@ export function createFakeAiRun(
   const runId = options.runId ?? `fake-ai-${Date.now()}`;
   const scenarioPath = fakeAiScenarioPath(projectRoot, runId);
   mkdirSync(join(projectRoot, ".ninthwave", "test-system"), { recursive: true });
-  writeFileSync(scenarioPath, serializeScenario(scenario), "utf-8");
+  writeFakeAiScenario(scenarioPath, scenario);
 
   return {
     runId,
@@ -163,6 +167,22 @@ export function readFakeAiState(stateDir: string, runId: string): FakeAiState {
 
 export function readFakeAiPrompt(stateDir: string, runId: string): string {
   return readFileSync(join(fakeAiArtifactDir(stateDir, runId), "prompt.txt"), "utf-8");
+}
+
+export function readFakeAiLaunches(stateDir: string, runId: string): Array<{
+  ts: string;
+  agent: string;
+  itemId: string;
+}> {
+  const path = join(fakeAiArtifactDir(stateDir, runId), "launches.log");
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [ts = "", agent = "", itemId = ""] = line.split("|");
+      return { ts, agent, itemId };
+    });
 }
 
 export function fakeAiHeartbeatPath(stateDir: string, itemId: string): string {

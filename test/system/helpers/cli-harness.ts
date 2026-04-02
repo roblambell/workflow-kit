@@ -110,14 +110,18 @@ export class CliHarness {
 
   start(
     args: string[],
-    options: { env?: Record<string, string>; stdin?: string } = {},
+    options: { env?: Record<string, string>; stdin?: string; keepStdinOpen?: boolean } = {},
   ): CliProcessHandle {
     const child = spawn("bun", ["run", CLI_PATH, ...args], {
       cwd: this.projectRoot,
       env: this.env(options.env),
       stdio: ["pipe", "pipe", "pipe"],
     });
-    child.stdin.end(options.stdin ?? "");
+    if (options.keepStdinOpen) {
+      if (options.stdin) child.stdin.write(options.stdin);
+    } else {
+      child.stdin.end(options.stdin ?? "");
+    }
 
     const handle: CliProcessHandle = {
       child,
@@ -222,6 +226,10 @@ export class CliHarness {
       handle.child.kill("SIGKILL");
       return await handle.exited;
     }
+  }
+
+  writeToProcess(handle: CliProcessHandle, input: string): void {
+    handle.child.stdin.write(input);
   }
 
   async waitForOrchestratorState<T>(
