@@ -14,7 +14,7 @@ Ninthwave
   · L-BF-3      Queued           -        Add retry logic to webhook handler
   ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ◌ 1 verifying  ● 1 in review  ◌ 1 ci pending  ▸ 1 implementing  ✗ 1 ci failed  · 2 queued                     7 items
-  › auto (shift+tab to cycle) · c controls · ? help
+  › auto · shift+tab merge · Esc/p pause · q quit · c controls · ? help
 
 
 

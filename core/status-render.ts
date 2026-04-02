@@ -138,7 +138,7 @@ function formatStrategyFooterLine(
   pendingStrategyCountdownSeconds?: number,
 ): string {
   const badge = strategyFooterIndicator(strategy, pendingStrategy, pendingStrategyCountdownSeconds);
-  return `  ${badge} ${DIM}(shift+tab to cycle) · c controls · ? help${RESET}`;
+  return `  ${badge} ${DIM}· shift+tab merge · Esc/p pause · q quit · c controls · ? help${RESET}`;
 }
 
 function formatGitHubApiWarningText(
@@ -2465,8 +2465,9 @@ export function renderHelpOverlay(
     `  +/-         Adjust WIP limit`,
     `  ?           Toggle this help overlay`,
     `  Enter/i     Item detail panel`,
-    `  Escape      Close overlay/detail`,
-    `  q           Quit`,
+    `  Escape      Close overlay / pause or resume dashboard`,
+    `  p           Pause or resume dashboard`,
+    `  q           Quit from any TUI state`,
     `  Ctrl+C x2   Quit (double-tap)`,
     `  d           Toggle blocker sub-lines`,
     `  x           Extend worker timeout`,
@@ -2578,6 +2579,63 @@ export function renderHelpOverlay(
 }
 
 // ─── Controls overlay ───────────────────────────────────────────────────────
+
+/**
+ * Render the paused overlay using the same boxed modal style as other TUI overlays.
+ */
+export function renderPausedOverlay(
+  termWidth: number,
+  termRows: number,
+): string[] {
+  const overlayTitle = "Paused";
+  const contentLines = [
+    `${BOLD}${YELLOW}Watch controls are paused.${RESET}`,
+  ];
+  const overlayHint = "Esc/p resume · q quit";
+
+  const maxContentWidth = Math.max(
+    overlayTitle.length,
+    overlayHint.length,
+    ...contentLines.map((line) => stripAnsiForWidth(line).length),
+  );
+  const innerWidth = Math.min(maxContentWidth + 4, termWidth - 4);
+  const boxWidth = innerWidth + 2;
+  const leftMargin = Math.max(0, Math.floor((termWidth - boxWidth) / 2));
+  const marginPad = " ".repeat(leftMargin);
+  const boxLines: string[] = [];
+
+  boxLines.push(`${marginPad}┌${"─".repeat(innerWidth)}┐`);
+
+  const titlePad = Math.max(0, Math.floor((innerWidth - overlayTitle.length) / 2));
+  boxLines.push(`${marginPad}│${" ".repeat(titlePad)}${BOLD}${overlayTitle}${RESET}${" ".repeat(Math.max(0, innerWidth - titlePad - overlayTitle.length))}│`);
+  boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
+
+  for (const line of contentLines) {
+    const plain = stripAnsiForWidth(line);
+    const renderedPlain = truncateTitle(plain, Math.max(0, innerWidth - 2));
+    const rendered = renderedPlain === plain ? line : renderedPlain;
+    const renderedLen = stripAnsiForWidth(rendered).length;
+    const linePad = Math.max(0, Math.floor((innerWidth - renderedLen) / 2));
+    boxLines.push(`${marginPad}│${" ".repeat(linePad)}${rendered}${" ".repeat(Math.max(0, innerWidth - linePad - renderedLen))}│`);
+  }
+
+  boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
+  const hintPad = Math.max(0, Math.floor((innerWidth - overlayHint.length) / 2));
+  boxLines.push(`${marginPad}│${" ".repeat(hintPad)}${DIM}${overlayHint}${RESET}${" ".repeat(Math.max(0, innerWidth - hintPad - overlayHint.length))}│`);
+  boxLines.push(`${marginPad}└${"─".repeat(innerWidth)}┘`);
+
+  const totalBoxHeight = boxLines.length;
+  const topPad = Math.max(0, Math.floor((termRows - totalBoxHeight) / 2));
+  const output: string[] = [];
+  for (let i = 0; i < topPad; i++) {
+    output.push("");
+  }
+  output.push(...boxLines);
+  while (output.length < termRows) {
+    output.push("");
+  }
+  return output.slice(0, termRows);
+}
 
 export { collaborationLabel, reviewModeLabel } from "./tui-settings.ts";
 

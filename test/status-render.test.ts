@@ -54,6 +54,7 @@ import {
   type LogEntry,
   renderHelpOverlay,
   renderControlsOverlay,
+  renderPausedOverlay,
   renderDetailOverlay,
   collaborationLabel,
   reviewModeLabel,
@@ -2601,7 +2602,7 @@ describe("buildStatusLayout", () => {
       },
     });
     const footerText = layout.footerLines.map(stripAnsi);
-    expect(footerText[2]).toContain("shift+tab to cycle");
+    expect(footerText[2]).toContain("shift+tab merge");
     expect(footerText[3]).toContain("GitHub errors: auth 2, network 1");
   });
 
@@ -2661,11 +2662,11 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("› auto");
-    expect(footerText).toContain("(shift+tab to cycle)");
+    expect(footerText).toContain("shift+tab merge");
+    expect(footerText).toContain("Esc/p pause");
+    expect(footerText).toContain("q quit");
     expect(footerText).toContain("c controls");
     expect(footerText).toContain("? help");
-    // Old shortcuts should NOT appear
-    expect(footerText).not.toContain("quit");
     expect(footerText).not.toContain("scroll");
   });
 
@@ -2676,7 +2677,8 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("‖ manual");
-    expect(footerText).toContain("(shift+tab to cycle)");
+    expect(footerText).toContain("shift+tab merge");
+    expect(footerText).toContain("Esc/p pause");
     expect(footerText).toContain("c controls");
   });
 
@@ -2687,7 +2689,8 @@ describe("buildStatusLayout", () => {
     });
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("» bypass");
-    expect(footerText).toContain("(shift+tab to cycle)");
+    expect(footerText).toContain("shift+tab merge");
+    expect(footerText).toContain("Esc/p pause");
     expect(footerText).toContain("c controls");
   });
 
@@ -2697,7 +2700,7 @@ describe("buildStatusLayout", () => {
       mergeStrategy: "bypass",
     });
     const footerLine = stripAnsi(layout.footerLines[2] ?? "");
-    expect(footerLine).toContain("» bypass (shift+tab to cycle)");
+    expect(footerLine).toContain("» bypass · shift+tab merge · Esc/p pause");
     expect(footerLine.length).toBeLessThanOrEqual(80);
   });
 
@@ -2711,7 +2714,8 @@ describe("buildStatusLayout", () => {
     const footerText = layout.footerLines.map(stripAnsi).join("\n");
     expect(footerText).toContain("‖ manual (5s)");
     expect(footerText).not.toContain("› auto ->");
-    expect(footerText).toContain("(shift+tab to cycle)");
+    expect(footerText).toContain("shift+tab merge");
+    expect(footerText).toContain("Esc/p pause");
     expect(footerText).toContain("c controls");
   });
 
@@ -2748,7 +2752,7 @@ describe("buildStatusLayout", () => {
       updateState: makeUpdateState({ latestVersion: "123.456.789.1011" }),
     });
     const footerText = layout.footerLines.map(stripAnsi);
-    expect(footerText[2]).toContain("shift+tab to cycle");
+    expect(footerText[2]).toContain("shift+tab merge");
     expect(footerText[3]).toContain("update");
     expect(footerText[3]).toContain("...");
   });
@@ -3411,8 +3415,17 @@ describe("renderHelpOverlay", () => {
     expect(text).toContain("j/k");
     expect(text).toContain("Ctrl+C");   // double-tap quit
     expect(text).toContain("Escape");   // dismiss help
+    expect(text).toContain("p");        // pause/resume
     expect(text).toContain("?");        // toggle help
     expect(text).not.toContain("split view");
+  });
+
+  it("explains layered Escape and p pause-resume behavior", () => {
+    const lines = renderHelpOverlay(100, 40);
+    const text = stripAnsi(lines.join("\n"));
+    expect(text).toContain("Escape      Close overlay / pause or resume dashboard");
+    expect(text).toContain("p           Pause or resume dashboard");
+    expect(text).toContain("q           Quit from any TUI state");
   });
 
   it("documents timeout extension shortcut", () => {
@@ -3501,6 +3514,38 @@ describe("renderTuiFrame with showHelp", () => {
     const output = chunks.join("");
     const text = stripAnsi(output);
     expect(text).toContain("Ninthwave");
+  });
+});
+
+describe("renderPausedOverlay", () => {
+  it("renders a centered paused message with resume and quit hints", () => {
+    const lines = renderPausedOverlay(80, 24);
+    const text = lines.map(stripAnsi).join("\n");
+
+    expect(lines).toHaveLength(24);
+    expect(text).toContain("Paused");
+    expect(text).toContain("Watch controls are paused.");
+    expect(text).toContain("Esc/p resume");
+    expect(text).toContain("q quit");
+
+    const pausedLine = lines.map(stripAnsi).find((line) => line.includes("Watch controls are paused."));
+    expect(pausedLine).toBeDefined();
+
+    const inner = pausedLine!.slice(pausedLine!.indexOf("│") + 1, pausedLine!.lastIndexOf("│"));
+    const leftPad = inner.indexOf("Watch controls are paused.");
+    const rightPad = inner.length - leftPad - "Watch controls are paused.".length;
+    expect(Math.abs(leftPad - rightPad)).toBeLessThanOrEqual(1);
+  });
+
+  it("stays within terminal bounds and uses boxed overlay chrome", () => {
+    const lines = renderPausedOverlay(44, 12);
+    const nonEmpty = lines.filter((line) => line.trim().length > 0).map(stripAnsi);
+
+    expect(nonEmpty[0]).toMatch(/┌─+┐/);
+    expect(nonEmpty[nonEmpty.length - 1]).toMatch(/└─+┘/);
+    for (const line of lines) {
+      expect(stripAnsiForWidth(line).length).toBeLessThanOrEqual(44);
+    }
   });
 });
 

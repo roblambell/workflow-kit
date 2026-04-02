@@ -95,6 +95,7 @@ import {
   renderFullScreenFrame,
   renderHelpOverlay,
   renderControlsOverlay,
+  renderPausedOverlay,
   renderDetailOverlay,
   clampScrollOffset,
   scrollStatusItemIntoView,
@@ -1150,20 +1151,6 @@ function renderEngineRecoveryOverlay(
     detailLines,
     "Press r to restart or q to quit",
     RED,
-  );
-}
-
-function renderPausedOverlay(
-  termWidth: number,
-  termRows: number,
-): string[] {
-  return renderCenteredOverlay(
-    termWidth,
-    termRows,
-    "Paused",
-    ["Watch controls are paused."],
-    "Press Escape or p to resume · q quits",
-    YELLOW,
   );
 }
 
