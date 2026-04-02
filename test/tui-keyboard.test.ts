@@ -44,6 +44,8 @@ function makeTuiState(overrides: Partial<TuiState> = {}): TuiState {
   return {
     scrollOffset: 0,
     viewOptions: { showBlockerDetail: true },
+    paused: false,
+    pendingPaused: undefined,
     wipLimit: 3,
     mergeStrategy: "manual" as MergeStrategy,
     pendingStrategy: undefined,
@@ -191,6 +193,61 @@ describe("setupKeyboardShortcuts", () => {
     cleanup();
   });
 
+  it("Escape pauses from the base dashboard", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onPauseChange = vi.fn();
+    const state = makeTuiState({ onPauseChange });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b");
+
+    expect(state.pendingPaused).toBe(true);
+    expect(onPauseChange).toHaveBeenCalledWith(true);
+    cleanup();
+  });
+
+  it("Escape resumes from the paused overlay", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onPauseChange = vi.fn();
+    const state = makeTuiState({ paused: true, onPauseChange });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b");
+
+    expect(state.pendingPaused).toBe(false);
+    expect(onPauseChange).toHaveBeenCalledWith(false);
+    cleanup();
+  });
+
+  it("p toggles pause and resume", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onPauseChange = vi.fn();
+    const state = makeTuiState({ onPauseChange });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "p");
+    expect(state.pendingPaused).toBe(true);
+    expect(onPauseChange).toHaveBeenNthCalledWith(1, true);
+
+    applyRuntimeSnapshotToTuiState(state, {
+      paused: true,
+      mergeStrategy: state.mergeStrategy,
+      wipLimit: state.wipLimit ?? 3,
+      reviewMode: state.reviewMode,
+      collaborationMode: state.collaborationMode,
+    });
+    expect(state.paused).toBe(true);
+    expect(state.pendingPaused).toBeUndefined();
+
+    stdin.emit("data", "p");
+    expect(state.pendingPaused).toBe(false);
+    expect(onPauseChange).toHaveBeenNthCalledWith(2, false);
+    cleanup();
+  });
+
   it("? key toggles help overlay", () => {
     const ac = new AbortController();
     const stdin = makeFakeStdin();
@@ -258,6 +315,50 @@ describe("setupKeyboardShortcuts", () => {
     stdin.emit("data", "\x1b");
     expect(state.showControls).toBe(false);
     expect(state.viewOptions.showControls).toBe(false);
+    cleanup();
+  });
+
+  it("Escape dismisses overlays before pausing", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onPauseChange = vi.fn();
+
+    const helpState = makeTuiState({ showHelp: true, onPauseChange });
+    helpState.viewOptions.showHelp = true;
+    let cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, helpState);
+    stdin.emit("data", "\x1b");
+    expect(helpState.showHelp).toBe(false);
+    expect(onPauseChange).not.toHaveBeenCalled();
+    cleanup();
+
+    const controlsState = makeTuiState({ showControls: true, onPauseChange });
+    controlsState.viewOptions.showControls = true;
+    cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, controlsState);
+    stdin.emit("data", "\x1b");
+    expect(controlsState.showControls).toBe(false);
+    expect(onPauseChange).not.toHaveBeenCalled();
+    cleanup();
+
+    const detailState = makeTuiState({ detailItemId: "X-1", onPauseChange });
+    cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, detailState);
+    stdin.emit("data", "\x1b");
+    expect(detailState.detailItemId).toBeNull();
+    expect(onPauseChange).not.toHaveBeenCalled();
+    cleanup();
+
+    const joinState = makeTuiState({
+      showControls: true,
+      collaborationJoinInputActive: true,
+      collaborationJoinInputValue: "CODE",
+      collaborationIntent: "join",
+      onPauseChange,
+    });
+    joinState.viewOptions.showControls = true;
+    cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, joinState);
+    stdin.emit("data", "\x1b");
+    expect(joinState.showControls).toBe(true);
+    expect(joinState.collaborationJoinInputActive).toBe(false);
+    expect(onPauseChange).not.toHaveBeenCalled();
     cleanup();
   });
 
@@ -365,6 +466,20 @@ describe("setupKeyboardShortcuts", () => {
     cleanup();
   });
 
+  it("q still routes shutdown while paused", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onShutdown = vi.fn();
+    const state = makeTuiState({ paused: true, onShutdown });
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "q");
+
+    expect(onShutdown).toHaveBeenCalledTimes(1);
+    expect(ac.signal.aborted).toBe(false);
+    cleanup();
+  });
+
   it("double Ctrl+C still quits while help is visible", () => {
     vi.useFakeTimers();
     const ac = new AbortController();
@@ -372,6 +487,27 @@ describe("setupKeyboardShortcuts", () => {
     const onShutdown = vi.fn();
     const state = makeTuiState({ showHelp: true, onShutdown });
     state.viewOptions.showHelp = true;
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x03");
+    expect(state.ctrlCPending).toBe(true);
+    expect(onShutdown).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1000);
+    stdin.emit("data", "\x03");
+
+    expect(onShutdown).toHaveBeenCalledTimes(1);
+    expect(ac.signal.aborted).toBe(false);
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("double Ctrl+C still quits while paused", () => {
+    vi.useFakeTimers();
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onShutdown = vi.fn();
+    const state = makeTuiState({ paused: true, onShutdown });
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "\x03");
@@ -693,6 +829,7 @@ describe("controls overlay row navigation", () => {
     expect(onUpdate).toHaveBeenCalled();
 
     applyRuntimeSnapshotToTuiState(state, {
+      paused: state.paused ?? false,
       mergeStrategy: state.mergeStrategy,
       wipLimit: state.wipLimit ?? 3,
       reviewMode: state.reviewMode,
@@ -713,6 +850,7 @@ describe("controls overlay row navigation", () => {
     expect(onCollaborationLocal).toHaveBeenCalledTimes(1);
 
     applyRuntimeSnapshotToTuiState(state, {
+      paused: state.paused ?? false,
       mergeStrategy: state.mergeStrategy,
       wipLimit: state.wipLimit ?? 3,
       reviewMode: state.reviewMode,
@@ -787,6 +925,7 @@ describe("controls overlay row navigation", () => {
     expect(state.collaborationJoinInputActive).toBe(false);
 
     applyRuntimeSnapshotToTuiState(state, {
+      paused: state.paused ?? false,
       mergeStrategy: state.mergeStrategy,
       wipLimit: state.wipLimit ?? 3,
       reviewMode: state.reviewMode,
@@ -836,6 +975,7 @@ describe("controls overlay row navigation", () => {
     expect(onReviewChange).toHaveBeenCalledWith("ninthwave-prs");
 
     applyRuntimeSnapshotToTuiState(state, {
+      paused: state.paused ?? false,
       mergeStrategy: state.mergeStrategy,
       wipLimit: state.wipLimit ?? 3,
       reviewMode: "ninthwave-prs",
@@ -879,6 +1019,7 @@ describe("controls overlay row navigation", () => {
     expect(onStrategyChange).toHaveBeenCalledWith("auto");
 
     applyRuntimeSnapshotToTuiState(state, {
+      paused: state.paused ?? false,
       mergeStrategy: "auto",
       wipLimit: state.wipLimit ?? 3,
       reviewMode: state.reviewMode,
@@ -1062,6 +1203,7 @@ describe("Shift+Tab merge strategy cycle", () => {
     expect(onStrategyChange).toHaveBeenCalledWith("manual");
 
     applyRuntimeSnapshotToTuiState(state, {
+      paused: state.paused ?? false,
       mergeStrategy: "manual",
       wipLimit: state.wipLimit ?? 3,
       reviewMode: state.reviewMode,
@@ -1090,6 +1232,7 @@ describe("Shift+Tab merge strategy cycle", () => {
     expect(state.pendingStrategy).toBe("bypass");
     vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS + 1);
     applyRuntimeSnapshotToTuiState(state, {
+      paused: state.paused ?? false,
       mergeStrategy: "bypass",
       wipLimit: state.wipLimit ?? 3,
       reviewMode: state.reviewMode,
@@ -1100,6 +1243,7 @@ describe("Shift+Tab merge strategy cycle", () => {
     stdin.emit("data", "\x1B[Z");
     vi.advanceTimersByTime(STRATEGY_DEBOUNCE_MS + 1);
     applyRuntimeSnapshotToTuiState(state, {
+      paused: state.paused ?? false,
       mergeStrategy: "auto",
       wipLimit: state.wipLimit ?? 3,
       reviewMode: state.reviewMode,

@@ -39,7 +39,7 @@ import { type Multiplexer, createMux, muxTypeForWorkspaceRef, resolveBackend } f
 import { resolveCmuxBinary } from "../cmux-resolve.ts";
 import { resolveSessionName } from "../tmux.ts";
 import { reconcile, completeMergedWorkItemCleanup } from "./reconcile.ts";
-import { die, warn, info, ALT_SCREEN_ON, ALT_SCREEN_OFF, BOLD, RED, RESET } from "../output.ts";
+import { die, warn, info, ALT_SCREEN_ON, ALT_SCREEN_OFF, BOLD, RED, RESET, YELLOW } from "../output.ts";
 import { confirmPrompt } from "../prompt.ts";
 import { shouldEnterInteractive, runInteractiveFlow } from "../interactive.ts";
 import type { WorkItem, LogEntry } from "../types.ts";
@@ -140,6 +140,7 @@ import { parseWatchArgs, validateItemIds, type ParsedWatchArgs } from "./watch-a
 import {
   setupKeyboardShortcuts,
   applyRuntimeSnapshotToTuiState,
+  isTuiPaused,
   filterLogsByLevel,
   pushLogBuffer,
   LOG_BUFFER_MAX,
@@ -166,7 +167,7 @@ export { buildSnapshotAsync, isWorkerAlive, isWorkerAliveWithCache, getWorktreeL
 export { buildSnapshot } from "../snapshot.ts";
 export { reconstructState } from "../reconstruct.ts";
 export { parseWatchArgs, validateItemIds, type ParsedWatchArgs } from "./watch-args.ts";
-export { setupKeyboardShortcuts, applyRuntimeSnapshotToTuiState, filterLogsByLevel, pushLogBuffer, LOG_BUFFER_MAX, REVIEW_MODE_CYCLE, COLLABORATION_MODE_CYCLE, type TuiState, type TuiRuntimeSnapshot, type LogLevelFilter, type CollaborationMode, type ReviewMode } from "../tui-keyboard.ts";
+export { setupKeyboardShortcuts, applyRuntimeSnapshotToTuiState, isTuiPaused, filterLogsByLevel, pushLogBuffer, LOG_BUFFER_MAX, REVIEW_MODE_CYCLE, COLLABORATION_MODE_CYCLE, type TuiState, type TuiRuntimeSnapshot, type LogLevelFilter, type CollaborationMode, type ReviewMode } from "../tui-keyboard.ts";
 export { processExternalReviews, type ExternalReviewDeps } from "../external-review.ts";
 export { processScheduledTasks, type ScheduleLoopDeps } from "../schedule-processing.ts";
 export { forkDaemon } from "../daemon.ts";
@@ -495,6 +496,7 @@ export function detectTuiMode(isDaemonChild: boolean, jsonFlag: boolean, isTTY: 
 }
 
 export interface InteractiveEngineTransportRuntime {
+  paused: boolean;
   mergeStrategy: MergeStrategy;
   wipLimit: number;
   reviewMode: "off" | "ninthwave-prs" | "all-prs";
@@ -1092,16 +1094,14 @@ export interface TuiDetailSnapshot {
   descriptionBody?: string;
 }
 
-function renderEngineRecoveryOverlay(
+function renderCenteredOverlay(
   termWidth: number,
   termRows: number,
-  reason?: string,
+  title: string,
+  detailLines: string[],
+  hint: string,
+  titleColor: string,
 ): string[] {
-  const title = "Engine disconnected";
-  const detailLines = (reason?.split("\n") ?? ["The watch engine exited before acknowledging all controls."])
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const hint = "Press r to restart or q to quit";
   const contentLines = [
     "",
     ...detailLines.map((line) => `  ${line}`),
@@ -1118,7 +1118,7 @@ function renderEngineRecoveryOverlay(
 
   boxLines.push(`${marginPad}┌${"─".repeat(innerWidth)}┐`);
   const titlePad = Math.max(0, Math.floor((innerWidth - title.length) / 2));
-  boxLines.push(`${marginPad}│${" ".repeat(titlePad)}${BOLD}${RED}${title}${RESET}${" ".repeat(Math.max(0, innerWidth - titlePad - title.length))}│`);
+  boxLines.push(`${marginPad}│${" ".repeat(titlePad)}${BOLD}${titleColor}${title}${RESET}${" ".repeat(Math.max(0, innerWidth - titlePad - title.length))}│`);
   boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
   for (const line of contentLines) {
     const visible = line.length > innerWidth - 2 ? `${line.slice(0, Math.max(0, innerWidth - 5))}...` : line;
@@ -1135,12 +1135,45 @@ function renderEngineRecoveryOverlay(
   return output.slice(0, termRows);
 }
 
-type ActiveTuiOverlay = "engine-recovery" | "help" | "controls" | "detail" | "none";
+function renderEngineRecoveryOverlay(
+  termWidth: number,
+  termRows: number,
+  reason?: string,
+): string[] {
+  const detailLines = (reason?.split("\n") ?? ["The watch engine exited before acknowledging all controls."])
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return renderCenteredOverlay(
+    termWidth,
+    termRows,
+    "Engine disconnected",
+    detailLines,
+    "Press r to restart or q to quit",
+    RED,
+  );
+}
+
+function renderPausedOverlay(
+  termWidth: number,
+  termRows: number,
+): string[] {
+  return renderCenteredOverlay(
+    termWidth,
+    termRows,
+    "Paused",
+    ["Watch controls are paused."],
+    "Press Escape or p to resume · q quits",
+    YELLOW,
+  );
+}
+
+type ActiveTuiOverlay = "engine-recovery" | "help" | "controls" | "paused" | "detail" | "none";
 
 function resolveActiveTuiOverlay(tuiState: TuiState): ActiveTuiOverlay {
   if (tuiState.engineDisconnected) return "engine-recovery";
   if (tuiState.showHelp || tuiState.viewOptions.showHelp) return "help";
   if (tuiState.showControls || tuiState.viewOptions.showControls) return "controls";
+  if (isTuiPaused(tuiState)) return "paused";
   if (tuiState.detailItemId) return "detail";
   return "none";
 }
@@ -1216,6 +1249,12 @@ export function renderTuiPanelFrameFromStatusItems(
         activeRowIndex: tuiState.controlsRowIndex,
       });
       const content = controlsLines.join("\n");
+      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+      break;
+    }
+    case "paused": {
+      const overlayLines = renderPausedOverlay(termWidth, termRows);
+      const content = overlayLines.join("\n");
       write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
       break;
     }
@@ -4003,6 +4042,7 @@ export async function cmdOrchestrate(
   let operatorLastSnapshot: InteractiveEngineSnapshotRenderState = {
     daemonState: initialState,
     runtime: {
+      paused: false,
       mergeStrategy: orch.config.mergeStrategy,
       wipLimit,
       reviewMode: initialReviewMode,
@@ -4088,6 +4128,8 @@ export async function cmdOrchestrate(
         reviewMode: initialReviewMode,
         ...(futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
     },
+    paused: false,
+    pendingPaused: undefined,
     wipLimit,
     pendingWipLimit: undefined,
     mergeStrategy: orch.config.mergeStrategy,

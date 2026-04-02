@@ -2740,6 +2740,7 @@ describe("setupKeyboardShortcuts", () => {
     expect(changedStrategies).toEqual(["manual"]);
 
     applyRuntimeSnapshotToTuiState(tuiState, {
+      paused: false,
       mergeStrategy: "manual",
       wipLimit: 3,
       reviewMode: "off",
@@ -2772,6 +2773,7 @@ describe("setupKeyboardShortcuts", () => {
     expect(tuiState.mergeStrategy).toBe("manual");
 
     applyRuntimeSnapshotToTuiState(tuiState, {
+      paused: false,
       mergeStrategy: "auto",
       wipLimit: 3,
       reviewMode: "off",
@@ -2802,6 +2804,7 @@ describe("setupKeyboardShortcuts", () => {
     vi.advanceTimersByTime(5001);
     expect(tuiState.mergeStrategy).toBe("auto");
     applyRuntimeSnapshotToTuiState(tuiState, {
+      paused: false,
       mergeStrategy: "manual",
       wipLimit: 3,
       reviewMode: "off",
@@ -2814,6 +2817,7 @@ describe("setupKeyboardShortcuts", () => {
     vi.advanceTimersByTime(5001);
     expect(tuiState.mergeStrategy).toBe("manual");
     applyRuntimeSnapshotToTuiState(tuiState, {
+      paused: false,
       mergeStrategy: "bypass",
       wipLimit: 3,
       reviewMode: "off",
@@ -2826,6 +2830,7 @@ describe("setupKeyboardShortcuts", () => {
     vi.advanceTimersByTime(5001);
     expect(tuiState.mergeStrategy).toBe("bypass");
     applyRuntimeSnapshotToTuiState(tuiState, {
+      paused: false,
       mergeStrategy: "auto",
       wipLimit: 3,
       reviewMode: "off",
@@ -2859,6 +2864,7 @@ describe("setupKeyboardShortcuts", () => {
       (stdin as any)._emit("data", "\x1B[Z");
       vi.advanceTimersByTime(5001);
       applyRuntimeSnapshotToTuiState(tuiState, {
+        paused: false,
         mergeStrategy: tuiState.pendingStrategy ?? tuiState.mergeStrategy,
         wipLimit: 3,
         reviewMode: "off",
@@ -5109,7 +5115,7 @@ describe("resolveInteractiveStartupConfig", () => {
 });
 
 describe("createRuntimeControlHandlers", () => {
-  it("persists merge, review, and WIP changes while keeping collaboration runtime-only", () => {
+  it("persists merge, review, and WIP changes while keeping pause and collaboration runtime-only", () => {
     const savedUpdates: Array<Record<string, unknown>> = [];
     const sentControls: Array<Record<string, unknown>> = [];
     let currentWipLimit = 3;
@@ -5131,6 +5137,7 @@ describe("createRuntimeControlHandlers", () => {
     const joinResult = handlers.onCollaborationJoinSubmit?.("ABCD-1234");
     const localResult = handlers.onCollaborationLocal?.();
     const extendResult = handlers.onExtendTimeout?.("ENG-1");
+    handlers.onPauseChange?.(true);
     handlers.onStrategyChange?.("auto");
     handlers.onReviewChange?.("all-prs");
     handlers.onWipChange?.(1);
@@ -5142,6 +5149,7 @@ describe("createRuntimeControlHandlers", () => {
       { type: "set-collaboration-mode", mode: "joined", code: "ABCD-1234", source: "keyboard" },
       { type: "set-collaboration-mode", mode: "local", source: "keyboard" },
       { type: "extend-timeout", itemId: "ENG-1", source: "keyboard" },
+      { type: "set-paused", paused: true, source: "keyboard" },
       { type: "set-merge-strategy", strategy: "auto", source: "keyboard" },
       { type: "set-review-mode", mode: "all-prs", source: "keyboard" },
       { type: "set-wip-limit", limit: 4, source: "keyboard" },
@@ -5663,6 +5671,7 @@ describe("watch engine runner", () => {
       progressLabel: "Writing code",
     });
     expect(snapshots[0]!.runtime).toEqual({
+      paused: false,
       mergeStrategy: "manual",
       wipLimit: 2,
       reviewMode: "ninthwave-prs",
@@ -5700,6 +5709,7 @@ describe("watch engine runner", () => {
     );
 
     const runPromise = runner.run();
+    runner.sendControl({ type: "set-paused", paused: true, source: "test-0" });
     runner.sendControl({ type: "set-review-mode", mode: "off", source: "test-1" });
     runner.sendControl({ type: "set-collaboration-mode", mode: "shared", source: "test-2" });
     runner.sendControl({ type: "set-wip-limit", limit: 4, source: "test-3" });
@@ -5708,18 +5718,21 @@ describe("watch engine runner", () => {
     await runPromise;
 
     expect(logs.map((entry) => entry.event)).toEqual([
+      "pause_state_changed",
       "review_mode_changed",
       "collaboration_mode_changed",
       "wip_limit_changed",
     ]);
     expect(snapshots).toHaveLength(2);
     expect(snapshots[0]!.runtime).toEqual({
+      paused: false,
       mergeStrategy: "manual",
       wipLimit: 2,
       reviewMode: "ninthwave-prs",
       collaborationMode: "local",
     });
     expect(snapshots[1]!.runtime).toEqual({
+      paused: true,
       mergeStrategy: "auto",
       wipLimit: 4,
       reviewMode: "off",
@@ -5877,6 +5890,7 @@ describe("shared engine wrappers", () => {
       } as any);
 
       const runPromise = runner.run();
+      runner.sendControl({ type: "set-paused", paused: true, source: "test-pause" });
       runner.sendControl({ type: "set-review-mode", mode: "all-prs", source: "test-review" });
       runner.sendControl({ type: "set-collaboration-mode", mode: "shared", source: "test-collab" });
       runner.sendControl({ type: "set-wip-limit", limit: 4, source: "test-wip" });
@@ -5901,18 +5915,21 @@ describe("shared engine wrappers", () => {
     expect(detached).toEqual(interactive);
     expect(detached.logEvents).toEqual([
       "engine_log_forwarded",
+      "pause_state_changed",
       "review_mode_changed",
       "collaboration_mode_changed",
       "wip_limit_changed",
     ]);
     expect(detached.snapshotRuntimes).toEqual([
       {
+        paused: false,
         mergeStrategy: "manual",
         wipLimit: 2,
         reviewMode: "ninthwave-prs",
         collaborationMode: "local",
       },
       {
+        paused: true,
         mergeStrategy: "auto",
         wipLimit: 4,
         reviewMode: "all-prs",
@@ -5983,6 +6000,8 @@ describe("interactive watch operator session", () => {
     return {
       scrollOffset: 0,
       viewOptions: { showBlockerDetail: true, mergeStrategy: "manual" },
+      paused: false,
+      pendingPaused: undefined,
       wipLimit: 2,
       pendingWipLimit: undefined,
       mergeStrategy: "manual",
@@ -6051,6 +6070,7 @@ describe("interactive watch operator session", () => {
       },
       pollSnapshot: { items: [], readyIds: [] },
       runtime: {
+        paused: false,
         mergeStrategy: "manual",
         wipLimit: 2,
         reviewMode: "ninthwave-prs",
@@ -6506,6 +6526,7 @@ describe("interactive watch operator session", () => {
       event: {
         ...makeOperatorSnapshot("Restarted snapshot"),
         runtime: {
+          paused: false,
           mergeStrategy: "auto",
           wipLimit: 4,
           reviewMode: "all-prs",
@@ -6518,6 +6539,7 @@ describe("interactive watch operator session", () => {
 
     const result = await sessionPromise;
     expect(result.lastSnapshot.runtime).toEqual({
+      paused: false,
       mergeStrategy: "auto",
       wipLimit: 4,
       reviewMode: "all-prs",

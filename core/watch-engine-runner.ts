@@ -27,6 +27,7 @@ export interface WatchEngineSnapshotEvent {
   pollIntervalMs?: number;
   interactiveTiming?: InteractiveWatchTiming;
   runtime: {
+    paused: boolean;
     mergeStrategy: MergeStrategy;
     wipLimit: number;
     reviewMode: ReviewMode;
@@ -49,6 +50,7 @@ export interface RuntimeCollaborationActionResult {
 }
 
 export type WatchEngineControlCommand =
+  | { type: "set-paused"; paused: boolean; source?: string }
   | { type: "set-merge-strategy"; strategy: MergeStrategy; source?: string }
   | { type: "set-wip-limit"; limit: number; source?: string }
   | { type: "set-review-mode"; mode: ReviewMode; source?: string }
@@ -58,6 +60,7 @@ export type WatchEngineControlCommand =
   | { type: "shutdown"; source?: string };
 
 export interface RuntimeControlHandlers {
+  onPauseChange?: (paused: boolean) => void;
   onStrategyChange?: (strategy: MergeStrategy) => void;
   onWipChange?: (delta: number) => void;
   onReviewChange?: (mode: ReviewMode) => void;
@@ -82,6 +85,9 @@ export function createRuntimeControlHandlers(
   const saveUserConfigFn = deps.saveUserConfigFn ?? saveUserConfig;
 
   return {
+    onPauseChange: (paused) => {
+      deps.sendControl({ type: "set-paused", paused, source: "keyboard" });
+    },
     onStrategyChange: (strategy) => {
       deps.sendControl({ type: "set-merge-strategy", strategy, source: "keyboard" });
       const persisted = mergeStrategyToPersisted(strategy);
@@ -191,6 +197,7 @@ function snapshotToHeartbeatMap(snapshot: PollSnapshot | undefined): Map<string,
 export function createWatchEngineRunner(
   deps: WatchEngineRunnerDeps,
 ): WatchEngineRunner {
+  let paused = false;
   let reviewMode = deps.initialReviewMode;
   let collaborationMode = deps.initialCollaborationMode;
   let activeAbortController: AbortController | undefined;
@@ -201,6 +208,18 @@ export function createWatchEngineRunner(
 
   const sendControl = (command: WatchEngineControlCommand) => {
     switch (command.type) {
+      case "set-paused": {
+        if (paused === command.paused) return;
+        paused = command.paused;
+        emitLog({
+          ts: new Date().toISOString(),
+          level: "info",
+          event: "pause_state_changed",
+          paused,
+          source: command.source ?? "runtime-control",
+        });
+        return;
+      }
       case "set-merge-strategy": {
         deps.orch.setMergeStrategy(command.strategy);
         return;
@@ -295,6 +314,7 @@ export function createWatchEngineRunner(
                 ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
                 ...(interactiveTiming ? { interactiveTiming } : {}),
                 runtime: {
+                  paused,
                   mergeStrategy: deps.orch.config.mergeStrategy,
                   wipLimit: deps.getWipLimit(),
                   reviewMode,

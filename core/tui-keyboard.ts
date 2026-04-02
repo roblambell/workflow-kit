@@ -101,6 +101,10 @@ type CollaborationJoinSubmitHandler = (code: string) => void | CollaborationActi
 export interface TuiState {
   scrollOffset: number;
   viewOptions: ViewOptions;
+  /** Canonical paused state from the latest engine runtime snapshot. */
+  paused?: boolean;
+  /** Pending paused state awaiting engine acknowledgement. */
+  pendingPaused?: boolean;
   /** Engine-confirmed WIP limit from the latest snapshot. */
   wipLimit?: number;
   /** Pending WIP limit request awaiting engine acknowledgement. */
@@ -169,6 +173,8 @@ export interface TuiState {
   statusLayout?: FrameLayout | null;
   /** Called after a debounced merge strategy change is applied. */
   onStrategyChange?: (strategy: MergeStrategy) => void;
+  /** Called when the paused state changes via keyboard control. */
+  onPauseChange?: (paused: boolean) => void;
   /** Called when the user cycles panel mode via Tab (for preference persistence). */
   onPanelModeChange?: (mode: PanelMode) => void;
   /** Called when the user presses +/- to adjust WIP limit. Receives the delta (+1 or -1). */
@@ -200,16 +206,24 @@ export interface TuiState {
 }
 
 export interface TuiRuntimeSnapshot {
+  paused: boolean;
   mergeStrategy: MergeStrategy;
   wipLimit: number;
   reviewMode: ReviewMode;
   collaborationMode: CollaborationMode;
 }
 
+export function isTuiPaused(
+  tuiState: Pick<TuiState, "paused" | "pendingPaused">,
+): boolean {
+  return tuiState.pendingPaused ?? tuiState.paused ?? false;
+}
+
 export function applyRuntimeSnapshotToTuiState(
   tuiState: TuiState,
   runtime: TuiRuntimeSnapshot,
 ): void {
+  tuiState.paused = runtime.paused;
   tuiState.wipLimit = runtime.wipLimit;
   tuiState.mergeStrategy = runtime.mergeStrategy;
   tuiState.viewOptions.mergeStrategy = runtime.mergeStrategy;
@@ -232,6 +246,9 @@ export function applyRuntimeSnapshotToTuiState(
   }
   if (tuiState.pendingWipLimit === runtime.wipLimit) {
     tuiState.pendingWipLimit = undefined;
+  }
+  if (tuiState.pendingPaused === runtime.paused) {
+    tuiState.pendingPaused = undefined;
   }
 
   if (!tuiState.collaborationJoinInputActive) {
@@ -639,6 +656,17 @@ export function setupKeyboardShortcuts(
     }
   };
 
+  const setPaused = (paused: boolean) => {
+    if (!tuiState) return;
+    const currentPaused = isTuiPaused(tuiState);
+    if (paused === currentPaused) return;
+    const canonicalPaused = tuiState.paused ?? false;
+    tuiState.pendingPaused = paused === canonicalPaused && tuiState.pendingPaused === undefined
+      ? undefined
+      : paused;
+    tuiState.onPauseChange?.(paused);
+  };
+
   const onData = (key: string) => {
     // q still exits immediately (discoverable via ? help overlay)
     if (key === "q") {
@@ -779,6 +807,19 @@ export function setupKeyboardShortcuts(
       }
     }
 
+    if (isTuiPaused(tuiState)) {
+      switch (key) {
+        case "\x1b":
+        case "p":
+          setPaused(false);
+          break;
+        default:
+          return;
+      }
+      tuiState.onUpdate?.();
+      return;
+    }
+
     switch (key) {
       case "?":
         toggleHelp();
@@ -797,8 +838,11 @@ export function setupKeyboardShortcuts(
           tuiState.detailScrollOffset = 0;
           tuiState.logScrollOffset = tuiState.savedLogScrollOffset ?? 0;
         } else {
-          handled = false;
+          setPaused(true);
         }
+        break;
+      case "p":
+        setPaused(!isTuiPaused(tuiState));
         break;
       case "d":
         tuiState.viewOptions.showBlockerDetail = !tuiState.viewOptions.showBlockerDetail;
