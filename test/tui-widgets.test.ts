@@ -14,12 +14,14 @@ import {
   toCheckboxItems,
   type WidgetIO,
   type CheckboxItem,
+  type CheckboxListController,
   type SingleSelectOption,
   type TextInputResult,
 } from "../core/tui-widgets.ts";
 import type { WorkItem } from "../core/types.ts";
 import type { MergeStrategy } from "../core/orchestrator.ts";
 import type { AiToolProfile } from "../core/ai-tools.ts";
+import type { StartupItemsRefreshResult } from "../core/startup-items.ts";
 
 // ── Test helpers ────────────────────────────────────────────────────
 
@@ -97,6 +99,24 @@ function makeCheckboxItems(count: number): CheckboxItem[] {
     label: `Item ${i + 1}`,
     checked: false,
   }));
+}
+
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error?: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => queueMicrotask(resolve));
 }
 
 function getLastRenderedFrame(output: string): string {
@@ -352,6 +372,71 @@ describe("runCheckboxList", () => {
     expect(frame).toContain("> [x] Item 4 [high]");
     expect(frame).toContain("      deps: T-2, T-3");
     expect(frame).not.toContain("Item 1");
+  });
+
+  it("replaces checkbox items after first render and preserves surviving selections", async () => {
+    const { io, sendKeys } = createMockIO();
+    let controller: CheckboxListController | undefined;
+    const items: CheckboxItem[] = [
+      { id: "__ALL__", label: "All", checked: true },
+      { id: "A-1", label: "A-1  First", checked: true },
+      { id: "B-2", label: "B-2  Second", checked: true },
+    ];
+
+    const resultPromise = runCheckboxList(io, items, {
+      linkAllId: "__ALL__",
+      bindController: (nextController) => {
+        controller = nextController;
+      },
+    });
+
+    sendKeys(["\x1B[B", "\x1B[B", " "]); // Keep __ALL__ checked but uncheck B-2.
+    controller!.replaceState({
+      title: "Refreshed",
+      linkAllId: "__ALL__",
+      items: [
+        { id: "__ALL__", label: "All", checked: true },
+        { id: "B-2", label: "B-2  Second", checked: true },
+        { id: "C-3", label: "C-3  Third", checked: true },
+      ],
+    });
+    sendKeys(["\r"]);
+
+    const result = await resultPromise;
+    expect(result.selectedIds).toContain("__ALL__");
+    expect(result.selectedIds).toContain("C-3");
+    expect(result.selectedIds).not.toContain("B-2");
+  });
+
+  it("shows a visible notice when replaced items clear removed selections", async () => {
+    const { io, sendKeys, getOutput } = createMockIO();
+    let controller: CheckboxListController | undefined;
+    const items: CheckboxItem[] = [
+      { id: "A-1", label: "A-1  First", checked: true },
+      { id: "B-2", label: "B-2  Second", checked: false },
+    ];
+
+    const resultPromise = runCheckboxList(io, items, {
+      bindController: (nextController) => {
+        controller = nextController;
+      },
+    });
+
+    const replaced = controller!.replaceState({
+      title: "Refreshed",
+      noticeMessage: "Removed merged items: A-1. Cleared selection for A-1",
+      items: [
+        { id: "B-2", label: "B-2  Second", checked: false },
+        { id: "C-3", label: "C-3  Third", checked: true },
+      ],
+    });
+    sendKeys(["\x1B[B", "\r"]);
+
+    const result = await resultPromise;
+    const frame = getLastRenderedFrame(getOutput());
+    expect(replaced.removedSelectedIds).toEqual(["A-1"]);
+    expect(result.selectedIds).toEqual(["C-3"]);
+    expect(frame).toContain("Removed merged items: A-1. Cleared selection for A-1");
   });
 });
 
@@ -1243,6 +1328,95 @@ describe("runSelectionScreen", () => {
     expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
     expect(result!.cancelled).toBe(false);
+  });
+
+  it("swaps to refreshed items in place after the first paint", async () => {
+    const { io, sendKeyBatches, getOutput } = createMockIO();
+    const refresh = createDeferred<StartupItemsRefreshResult>();
+    const items = [
+      makeWorkItem("A-1", "First task", "high"),
+      makeWorkItem("B-2", "Second task", "medium"),
+    ];
+
+    const resultPromise = runSelectionScreen(io, items, 4, {
+      refreshItems: () => refresh.promise,
+    });
+
+    expect(getLastRenderedFrame(getOutput())).toContain("A-1  First task");
+
+    refresh.resolve({
+      localItems: items,
+      activeItems: [items[1]!],
+      prunedItems: [{ id: "A-1", prNumber: 42, matchMode: "lineage" }],
+      diff: {
+        keptItemIds: ["B-2"],
+        removedItemIds: ["A-1"],
+        addedItemIds: [],
+      },
+      changes: [
+        {
+          id: "A-1",
+          type: "removed",
+          reason: "merged-pruned",
+          prNumber: 42,
+          matchMode: "lineage",
+        },
+      ],
+    });
+    await flushMicrotasks();
+
+    const refreshedFrame = getLastRenderedFrame(getOutput());
+    expect(refreshedFrame).toContain("B-2  Second task");
+    expect(refreshedFrame).not.toContain("A-1  First task");
+    expect(refreshedFrame).toContain("Removed merged items: A-1. Cleared selection for A-1");
+
+    sendKeyBatches(["\r"], ["\r"]);
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.itemIds).toEqual(["B-2"]);
+  });
+
+  it("ignores late refresh results after the user cancels", async () => {
+    const { io, sendKeys, getOutput } = createMockIO();
+    const refresh = createDeferred<StartupItemsRefreshResult>();
+    const items = [
+      makeWorkItem("A-1", "First task", "high"),
+      makeWorkItem("B-2", "Second task", "medium"),
+    ];
+
+    const resultPromise = runSelectionScreen(io, items, 4, {
+      refreshItems: () => refresh.promise,
+    });
+
+    sendKeys(["\x1B"]);
+    const result = await resultPromise;
+    expect(result).toBeNull();
+
+    const outputBeforeRefresh = getOutput();
+    refresh.resolve({
+      localItems: items,
+      activeItems: [items[1]!],
+      prunedItems: [{ id: "A-1", prNumber: 42, matchMode: "lineage" }],
+      diff: {
+        keptItemIds: ["B-2"],
+        removedItemIds: ["A-1"],
+        addedItemIds: [],
+      },
+      changes: [
+        {
+          id: "A-1",
+          type: "removed",
+          reason: "merged-pruned",
+          prNumber: 42,
+          matchMode: "lineage",
+        },
+      ],
+    });
+    await flushMicrotasks();
+
+    expect(getOutput()).toBe(outputBeforeRefresh);
+    expect(getOutput()).not.toContain("Removed merged items: A-1");
   });
 
   it("returns null when cancelled at item selection", async () => {

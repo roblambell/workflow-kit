@@ -4,6 +4,7 @@
 // Designed for the alt-screen buffer -- no readline dependency.
 
 import { BOLD, DIM, GREEN, YELLOW, CYAN, RESET, RED } from "./output.ts";
+import type { StartupItemsRefreshResult } from "./startup-items.ts";
 import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
@@ -213,6 +214,24 @@ export interface CheckboxListResult {
   allSelected: boolean;
 }
 
+export interface CheckboxListReplaceResult {
+  removedSelectedIds: string[];
+}
+
+export interface CheckboxListViewState {
+  items: CheckboxItem[];
+  title?: string;
+  linkAllId?: string;
+  noticeMessage?: string;
+  validate?: (selectedIds: string[]) => string | null;
+}
+
+export interface CheckboxListController {
+  replaceState: (nextState: CheckboxListViewState) => CheckboxListReplaceResult;
+  setNotice: (message: string) => void;
+  clearNotice: () => void;
+}
+
 export interface SingleSelectOption<T> {
   value: T;
   label: string;
@@ -272,10 +291,49 @@ export interface SelectionScreenResult {
  * toggling it checks/unchecks all others, and unchecking any item auto-unchecks it
  * while re-checking the last unchecked item re-checks it.
  */
+function replaceCheckboxItems(
+  currentItems: CheckboxItem[],
+  nextItems: CheckboxItem[],
+  previousLinkAllId?: string,
+  nextLinkAllId?: string,
+): CheckboxListReplaceResult & { items: CheckboxItem[] } {
+  const previousCheckedById = new Map(currentItems.map((item) => [item.id, item.checked] as const));
+  const nextIdSet = new Set(nextItems.map((item) => item.id));
+  const previousLinkAllChecked = previousLinkAllId
+    ? previousCheckedById.get(previousLinkAllId)
+    : undefined;
+  const removedSelectedIds = currentItems
+    .filter((item) => item.checked)
+    .map((item) => item.id)
+    .filter((id) => id !== previousLinkAllId && !nextIdSet.has(id));
+
+  const items = nextItems.map((item) => {
+    const previousChecked = previousCheckedById.get(item.id);
+    if (previousChecked !== undefined) {
+      return { ...item, checked: previousChecked };
+    }
+    if (item.id === nextLinkAllId && previousLinkAllChecked !== undefined) {
+      return { ...item, checked: previousLinkAllChecked };
+    }
+    if (nextLinkAllId && item.id !== nextLinkAllId && previousLinkAllChecked !== undefined) {
+      return { ...item, checked: previousLinkAllChecked };
+    }
+    return { ...item };
+  });
+
+  return { items, removedSelectedIds };
+}
+
 export function runCheckboxList(
   io: WidgetIO,
   items: CheckboxItem[],
-  opts: { title?: string; errorMessage?: string; linkAllId?: string; validate?: (selectedIds: string[]) => string | null } = {},
+  opts: {
+    title?: string;
+    errorMessage?: string;
+    linkAllId?: string;
+    validate?: (selectedIds: string[]) => string | null;
+    bindController?: (controller: CheckboxListController) => void;
+  } = {},
 ): Promise<CheckboxListResult> {
   return new Promise((resolve) => {
     if (items.length === 0) {
@@ -283,9 +341,14 @@ export function runCheckboxList(
       return;
     }
 
+    let currentItems = items.map((item) => ({ ...item }));
+    let title = opts.title;
+    let linkAllId = opts.linkAllId;
+    let validate = opts.validate;
     let cursor = 0;
     let scrollOffset = 0;
     let error = opts.errorMessage ?? "";
+    let notice = "";
     let warningAcked = false;
 
     const render = () => {
@@ -296,7 +359,7 @@ export function runCheckboxList(
       const footerLines = 3; // blank + instructions + blank
       const viewportHeight = Math.max(1, rows - headerLines - footerLines);
 
-      const { lines, itemStartLines, itemEndLines } = buildCheckboxRenderLines(items, cursor, opts.linkAllId);
+      const { lines, itemStartLines, itemEndLines } = buildCheckboxRenderLines(currentItems, cursor, linkAllId);
       const totalRenderedLines = lines.length;
       const cursorStartLine = itemStartLines[cursor] ?? 0;
       const cursorEndLine = itemEndLines[cursor] ?? cursorStartLine + 1;
@@ -313,17 +376,18 @@ export function runCheckboxList(
       let out = CURSOR_HOME;
 
       // Title
-      const title = opts.title ?? "Select items";
-      out += `${BOLD}${title}${RESET}${CLEAR_LINE}\n`;
+      out += `${BOLD}${title ?? "Select items"}${RESET}${CLEAR_LINE}\n`;
 
       // Selected count (exclude sentinel from both numerator and denominator)
-      const countItems = opts.linkAllId ? items.filter((i) => i.id !== opts.linkAllId) : items;
+      const countItems = linkAllId ? currentItems.filter((i) => i.id !== linkAllId) : currentItems;
       const selectedCount = countItems.filter((i) => i.checked).length;
       out += `${DIM}${selectedCount}/${countItems.length} selected${RESET}${CLEAR_LINE}\n`;
 
-      // Error line (or blank)
+      // Error/notice line (or blank)
       if (error) {
         out += `${RED}${error}${RESET}${CLEAR_LINE}\n`;
+      } else if (notice) {
+        out += `${YELLOW}${notice}${RESET}${CLEAR_LINE}\n`;
       } else {
         out += `${CLEAR_LINE}\n`;
       }
@@ -365,36 +429,38 @@ export function runCheckboxList(
           break;
         case "\x1B[B": // Down arrow
         case "j":
-          cursor = Math.min(items.length - 1, cursor + 1);
+          cursor = Math.min(currentItems.length - 1, cursor + 1);
           break;
         case " ": { // Space -- toggle
-          const linkId = opts.linkAllId;
+          const linkId = linkAllId;
           if (linkId) {
-            const item = items[cursor]!;
+            const item = currentItems[cursor]!;
             if (item.id === linkId) {
               // Toggling __ALL__: set all items to match new state
               const newState = !item.checked;
-              for (const i of items) i.checked = newState;
+              for (const i of currentItems) i.checked = newState;
             } else {
               // Toggling a regular item (sentinel stays independent)
               item.checked = !item.checked;
             }
           } else {
-            items[cursor]!.checked = !items[cursor]!.checked;
+            currentItems[cursor]!.checked = !currentItems[cursor]!.checked;
           }
           break;
         }
         case "a": { // Toggle all regular items (sentinel stays independent)
-          const linkId = opts.linkAllId;
-          const regularItems = linkId ? items.filter((i) => i.id !== linkId) : items;
+          const regularItems = linkAllId
+            ? currentItems.filter((i) => i.id !== linkAllId)
+            : currentItems;
           const allChecked = regularItems.every((i) => i.checked);
           for (const item of regularItems) item.checked = !allChecked;
           break;
         }
         case "\r": { // Enter -- confirm
-          const linkId = opts.linkAllId;
-          const allItem = linkId ? items.find((i) => i.id === linkId) : null;
-          const regularItems = linkId ? items.filter((i) => i.id !== linkId) : items;
+          const allItem = linkAllId ? currentItems.find((i) => i.id === linkAllId) : null;
+          const regularItems = linkAllId
+            ? currentItems.filter((i) => i.id !== linkAllId)
+            : currentItems;
           const regularSelected = regularItems.filter((i) => i.checked);
           if (regularSelected.length === 0) {
             error = "Select at least one item";
@@ -402,9 +468,9 @@ export function runCheckboxList(
             return;
           }
           // Validate selection (e.g., dependency warnings)
-          if (opts.validate && !warningAcked) {
+          if (validate && !warningAcked) {
             const selectedIds = regularSelected.map((i) => i.id);
-            const warning = opts.validate(selectedIds);
+            const warning = validate(selectedIds);
             if (warning) {
               error = warning;
               warningAcked = true;
@@ -414,7 +480,7 @@ export function runCheckboxList(
           }
           io.offKey(handler);
           resolve({
-            selectedIds: items.filter((i) => i.checked).map((i) => i.id),
+            selectedIds: currentItems.filter((i) => i.checked).map((i) => i.id),
             cancelled: false,
             allSelected: allItem?.checked ?? false,
           });
@@ -434,6 +500,42 @@ export function runCheckboxList(
 
       render();
     };
+
+    opts.bindController?.({
+      replaceState: (nextState) => {
+        const replaced = replaceCheckboxItems(
+          currentItems,
+          nextState.items,
+          linkAllId,
+          nextState.linkAllId,
+        );
+        const currentCursorId = currentItems[cursor]?.id;
+        currentItems = replaced.items;
+        title = nextState.title;
+        linkAllId = nextState.linkAllId;
+        validate = nextState.validate;
+        notice = nextState.noticeMessage ?? "";
+        error = "";
+        warningAcked = false;
+        const nextCursor = currentCursorId
+          ? currentItems.findIndex((item) => item.id === currentCursorId)
+          : -1;
+        cursor = nextCursor >= 0
+          ? nextCursor
+          : Math.max(0, Math.min(cursor, currentItems.length - 1));
+        render();
+        return { removedSelectedIds: replaced.removedSelectedIds };
+      },
+      setNotice: (message) => {
+        notice = message;
+        error = "";
+        render();
+      },
+      clearNotice: () => {
+        notice = "";
+        render();
+      },
+    });
 
     io.onKey(handler);
     render();
@@ -1074,6 +1176,75 @@ export function toCheckboxItems(items: WorkItem[]): CheckboxItem[] {
   });
 }
 
+function createStartupSelectionState(
+  items: WorkItem[],
+): CheckboxListViewState {
+  const sorted = sortWorkItems(items);
+  const hasCurrentItems = sorted.length > 0;
+  const itemMap = new Map(sorted.map((item) => [item.id, item] as const));
+  const validateDeps = (selectedIds: string[]): string | null => {
+    const selectedSet = new Set(selectedIds);
+    const missing: string[] = [];
+    for (const id of selectedIds) {
+      const item = itemMap.get(id);
+      if (!item) continue;
+      for (const dep of item.dependencies) {
+        if (itemMap.has(dep) && !selectedSet.has(dep) && !missing.includes(dep)) {
+          missing.push(dep);
+        }
+      }
+    }
+    if (missing.length === 0) return null;
+    return `Deps not selected: ${missing.join(", ")} -- will start without waiting. Enter again to confirm.`;
+  };
+
+  return hasCurrentItems
+    ? {
+      items: [
+        {
+          id: ALL_SENTINEL_ID,
+          label: "All \u2014 includes future items",
+          checked: true,
+        },
+        ...toCheckboxItems(sorted),
+      ],
+      title: `Ninthwave \u00b7 Select work items (${sorted.length} available)`,
+      linkAllId: ALL_SENTINEL_ID,
+      validate: validateDeps,
+    }
+    : {
+      items: [
+        {
+          id: FUTURE_TASKS_ID,
+          label: "Future tasks",
+          detail: "Start automatically when new work arrives",
+          checked: true,
+        },
+      ],
+      title: "Ninthwave \u00b7 No work items queued",
+    };
+}
+
+function summarizeStartupRefreshNotice(
+  refreshResult: StartupItemsRefreshResult,
+  removedSelectedIds: string[],
+): string | null {
+  const prunedIds = refreshResult.changes
+    .filter((change) => change.type === "removed" && change.reason === "merged-pruned")
+    .map((change) => change.id);
+
+  if (prunedIds.length === 0 && removedSelectedIds.length === 0) {
+    return null;
+  }
+
+  const prunedLabel = prunedIds.length > 0 ? `Removed merged items: ${prunedIds.join(", ")}` : null;
+  const clearedLabel = removedSelectedIds.length > 0
+    ? `Cleared selection for ${removedSelectedIds.join(", ")}`
+    : null;
+
+  return [prunedLabel, clearedLabel].filter(Boolean).join(". ");
+}
+
 /**
  * Run the full TUI selection screen flow:
  * 1. Checkbox list for item selection
@@ -1101,6 +1272,8 @@ export async function runSelectionScreen(
     showConnectionStep?: boolean;
     /** Installed AI tools for the tool selection step. Empty/single = skip screen. */
     installedTools?: AiToolProfile[];
+    /** One-shot async refresh for pruning merged startup items after first paint. */
+    refreshItems?: () => Promise<StartupItemsRefreshResult>;
     /** Pre-selected tool IDs for multi-select (from saved config). */
     savedToolIds?: string[];
   } = {},
@@ -1111,63 +1284,52 @@ export async function runSelectionScreen(
     reviewMode: opts.defaultSettings?.reviewMode ?? opts.defaultReviewMode ?? TUI_SETTINGS_DEFAULTS.reviewMode,
     collaborationMode: opts.defaultSettings?.collaborationMode ?? TUI_SETTINGS_DEFAULTS.collaborationMode,
   };
-  const sorted = sortWorkItems(items);
-  const hasCurrentItems = sorted.length > 0;
-  const checkboxItemsWithAll: CheckboxItem[] = hasCurrentItems
-    ? [
-      {
-        id: ALL_SENTINEL_ID,
-        label: "All \u2014 includes future items",
-        checked: true,
-      },
-      ...toCheckboxItems(sorted),
-    ]
-    : [
-      {
-        id: FUTURE_TASKS_ID,
-        label: "Future tasks",
-        detail: "Start automatically when new work arrives",
-        checked: true,
-      },
-    ];
-
-  // Build dependency validator: warn when selected items have deps in the
-  // list that aren't selected (those deps will be treated as already complete).
-  const itemMap = new Map(sorted.map((t) => [t.id, t]));
-  const validateDeps = (selectedIds: string[]): string | null => {
-    const selectedSet = new Set(selectedIds);
-    const missing: string[] = [];
-    for (const id of selectedIds) {
-      const item = itemMap.get(id);
-      if (!item) continue;
-      for (const dep of item.dependencies) {
-        if (itemMap.has(dep) && !selectedSet.has(dep) && !missing.includes(dep)) {
-          missing.push(dep);
-        }
-      }
-    }
-    if (missing.length === 0) return null;
-    return `Deps not selected: ${missing.join(", ")} -- will start without waiting. Enter again to confirm.`;
-  };
+  let currentSortedItems = sortWorkItems(items);
+  const hasCurrentItems = currentSortedItems.length > 0;
+  const initialSelectionState = createStartupSelectionState(currentSortedItems);
 
   // Step 1: Item selection
   io.write(CLEAR_SCREEN + HIDE_CURSOR);
-  const itemResult = await runCheckboxList(io, checkboxItemsWithAll, {
-    title: hasCurrentItems
-      ? `Ninthwave \u00b7 Select work items (${sorted.length} available)`
-      : "Ninthwave \u00b7 No work items queued",
-    ...(hasCurrentItems
-      ? {
-        linkAllId: ALL_SENTINEL_ID,
-        validate: validateDeps,
-      }
-      : {}),
+  let itemListController: CheckboxListController | null = null;
+  let itemSelectionOpen = true;
+  const itemResultPromise = runCheckboxList(io, initialSelectionState.items, {
+    title: initialSelectionState.title,
+    linkAllId: initialSelectionState.linkAllId,
+    validate: initialSelectionState.validate,
+    bindController: (controller) => {
+      itemListController = controller;
+    },
   });
+  const refreshPromise = hasCurrentItems && opts.refreshItems
+    ? opts.refreshItems()
+      .then((refreshResult) => {
+        if (!itemSelectionOpen || !itemListController) return;
+        currentSortedItems = sortWorkItems(refreshResult.activeItems);
+        const nextSelectionState = createStartupSelectionState(refreshResult.activeItems);
+        const replaced = itemListController.replaceState(nextSelectionState);
+        const notice = summarizeStartupRefreshNotice(
+          refreshResult,
+          replaced.removedSelectedIds,
+        );
+        if (notice) {
+          itemListController.setNotice(notice);
+        } else {
+          itemListController.clearNotice();
+        }
+      })
+      .catch(() => {
+        // Keep the local-first picker visible even when pruning checks fail.
+      })
+    : null;
+  const itemResult = await itemResultPromise;
+  itemSelectionOpen = false;
 
   if (itemResult.cancelled) {
     io.write(SHOW_CURSOR);
     return null;
   }
+
+  void refreshPromise;
 
   // Filter synthetic sentinels from the selected ids.
   const futureOnly = !hasCurrentItems && itemResult.selectedIds.includes(FUTURE_TASKS_ID);
@@ -1229,7 +1391,7 @@ export async function runSelectionScreen(
     itemLines = [
       `${BOLD}Items (${selectedItemIds.length}):${RESET}`,
       ...selectedItemIds.map((id) => {
-        const item = sorted.find((t) => t.id === id);
+        const item = currentSortedItems.find((t) => t.id === id);
         return `  ${CYAN}${id}${RESET}  ${item?.title ?? ""}`;
       }),
     ];

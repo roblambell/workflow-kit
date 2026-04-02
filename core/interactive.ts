@@ -12,6 +12,7 @@ import type { MergeStrategy } from "./orchestrator.ts";
 import type { ConnectionAction } from "./commands/crew.ts";
 import { formatInvalidCrewCodeMessage, parseCrewCode } from "./commands/crew.ts";
 import type { AiToolProfile } from "./ai-tools.ts";
+import type { StartupItemsRefreshResult } from "./startup-items.ts";
 import {
   STARTUP_COLLABORATION_MODE_OPTIONS,
   STARTUP_MERGE_STRATEGY_OPTIONS,
@@ -62,6 +63,8 @@ export interface InteractiveDeps {
   defaultSettings?: TuiSettingsDefaults;
   /** Pre-detected installed AI tool profiles. Skip tool step if undefined or single entry. */
   installedTools?: AiToolProfile[];
+  /** One-shot async startup refresh applied after the picker first paints. */
+  refreshStartupItems?: () => Promise<StartupItemsRefreshResult>;
   /** Pre-selected tool IDs from user config (multi-select). */
   savedToolIds?: string[];
   /** When true, skip the AI tool step (tool already determined by --tool or user config). */
@@ -472,6 +475,7 @@ export async function runTuiSelectionFlow(
       defaultSettings: deps.defaultSettings,
       showConnectionStep: deps.showConnectionStep,
       installedTools: deps.skipToolStep ? undefined : deps.installedTools,
+      refreshItems: deps.refreshStartupItems,
       savedToolIds: deps.savedToolIds,
     });
     if (!result || result.cancelled) return null;

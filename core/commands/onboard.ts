@@ -37,7 +37,11 @@ import { applyGithubToken } from "../gh.ts";
 import { ensureMuxInteractiveOrDie } from "../mux.ts";
 import { requireCrewCode } from "./crew.ts";
 import { resolveTuiSettingsDefaults } from "../tui-settings.ts";
-import { loadRunnableStartupItems } from "../startup-items.ts";
+import {
+  loadLocalStartupItems,
+  refreshRunnableStartupItems,
+  type StartupItemsRefreshResult,
+} from "../startup-items.ts";
 import {
   runCheckboxList,
   createProcessIO,
@@ -92,6 +96,12 @@ export interface NoArgsDeps extends OnboardDeps {
   existsSync?: typeof existsSync;
   parseWorkItems?: (workDir: string, worktreeDir: string, projectRoot?: string) => WorkItem[];
   loadStartupItems?: (workDir: string, worktreeDir: string, projectRoot: string) => WorkItem[];
+  refreshStartupItems?: (
+    workDir: string,
+    worktreeDir: string,
+    projectRoot: string,
+    previousItems: ReadonlyArray<WorkItem>,
+  ) => Promise<StartupItemsRefreshResult>;
   isDaemonRunning?: (projectRoot: string) => number | null;
   ensureMux?: (args: string[]) => Promise<void>;
   runInteractiveFlow?: (todos: WorkItem[], defaultWipLimit: number, deps?: InteractiveDeps) => Promise<InteractiveResult | null>;
@@ -332,7 +342,8 @@ export async function cmdNoArgs(
     ?? ((workDir: string, worktreeDir: string, projectRoot: string) =>
       deps.parseWorkItems
         ? deps.parseWorkItems(workDir, worktreeDir, projectRoot)
-        : loadRunnableStartupItems(workDir, worktreeDir, projectRoot).activeItems);
+        : loadLocalStartupItems(workDir, worktreeDir, projectRoot));
+  const doRefreshStartupItems = deps.refreshStartupItems ?? refreshRunnableStartupItems;
   const checkDaemon = deps.isDaemonRunning ?? isDaemonRunning;
   const doEnsureMux = deps.ensureMux ?? ensureMuxInteractiveOrDie;
   const helpFn = deps.printHelp ?? printHelp;
@@ -403,6 +414,9 @@ export async function cmdNoArgs(
     defaultReviewMode,
     defaultSettings,
     installedTools,
+    refreshStartupItems: checkExists(workDir)
+      ? () => doRefreshStartupItems(workDir, worktreeDir, projectRoot, todos)
+      : undefined,
     savedToolIds: userConfig.ai_tools,
   });
   if (!result) return; // User cancelled

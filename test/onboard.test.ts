@@ -26,6 +26,7 @@ import type { WorkItem } from "../core/types.ts";
 import type { InteractiveResult } from "../core/interactive.ts";
 import type { MergeStrategy } from "../core/orchestrator.ts";
 import type { CheckboxItem } from "../core/tui-widgets.ts";
+import type { StartupItemsRefreshResult } from "../core/startup-items.ts";
 
 afterEach(() => {
   cleanupTempRepos();
@@ -603,6 +604,69 @@ describe("cmdNoArgs", () => {
     });
 
     expect(seenTodos.map((item) => item.id)).toEqual(["H-ACTIVE-1"]);
+  });
+
+  it("passes local items immediately and defers startup pruning refresh", async () => {
+    const projectDir = setupTempRepo();
+    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
+
+    const localItems = [
+      fakeWorkItem("H-LOCAL-1", "Local task"),
+      fakeWorkItem("H-LOCAL-2", "Another task"),
+    ];
+    let resolveRefresh!: (result: StartupItemsRefreshResult) => void;
+    const refreshPromise = new Promise<StartupItemsRefreshResult>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    let refreshCalled = false;
+    let seenRefreshResult: StartupItemsRefreshResult | undefined;
+
+    await cmdNoArgs(projectDir, {
+      isTTY: true,
+      parseWorkItems: () => localItems,
+      refreshStartupItems: async (_workDir, _worktreeDir, _projectRoot, previousItems) => {
+        refreshCalled = true;
+        expect(previousItems.map((item) => item.id)).toEqual(["H-LOCAL-1", "H-LOCAL-2"]);
+        return refreshPromise;
+      },
+      isDaemonRunning: () => null,
+      ensureMux: async () => {},
+      loadConfig: () => ({ review_external: false, schedule_enabled: false }),
+      runInteractiveFlow: async (todos, _defaultWipLimit, deps) => {
+        expect(todos.map((item) => item.id)).toEqual(["H-LOCAL-1", "H-LOCAL-2"]);
+        expect(refreshCalled).toBe(false);
+
+        const deferredRefresh = deps?.refreshStartupItems;
+        expect(deferredRefresh).toBeTypeOf("function");
+
+        const pendingRefresh = deferredRefresh!();
+        expect(refreshCalled).toBe(true);
+
+        resolveRefresh({
+          localItems,
+          activeItems: [localItems[1]!],
+          prunedItems: [{ id: "H-LOCAL-1", prNumber: 42, matchMode: "lineage" }],
+          diff: {
+            keptItemIds: ["H-LOCAL-2"],
+            removedItemIds: ["H-LOCAL-1"],
+            addedItemIds: [],
+          },
+          changes: [
+            {
+              id: "H-LOCAL-1",
+              type: "removed",
+              reason: "merged-pruned",
+              prNumber: 42,
+              matchMode: "lineage",
+            },
+          ],
+        });
+        seenRefreshResult = await pendingRefresh;
+        return null;
+      },
+    });
+
+    expect(seenRefreshResult?.activeItems.map((item) => item.id)).toEqual(["H-LOCAL-2"]);
   });
 
   it("passes --watch when allSelected is true", async () => {
