@@ -11,10 +11,10 @@ import { calculateMemoryWipLimit } from "../orchestrator.ts";
 import { computeDefaultWipLimit } from "./orchestrate.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { cleanupStalePartitions } from "../partitions.ts";
-import { resolveRepo, getWorktreeInfo } from "../cross-repo.ts";
+import { getWorktreeInfo } from "../cross-repo.ts";
 import { cmdConflicts } from "./conflicts.ts";
 import { applyGithubToken } from "../gh.ts";
-import { launchSingleItem } from "./launch.ts";
+import { launchSingleItem, validatePickupCandidate } from "./launch.ts";
 import type { WorkItem } from "../types.ts";
 import { selectAiTool } from "../tool-select.ts";
 
@@ -163,6 +163,15 @@ export async function cmdRunItems(
       }
 
       const item = itemMap.get(id)!;
+      const validation = validatePickupCandidate(item, projectRoot);
+      if (validation.status === "blocked") {
+        warn(`Blocking ${id}: ${validation.failureReason}`);
+        continue;
+      }
+      if (validation.status === "skip-with-pr") {
+        warn(`Skipping ${id}: existing PR #${validation.existingPrNumber} already matches this item.`);
+        continue;
+      }
       const result = launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux);
       if (!result) {
         die(`Failed to launch ${id}. Aborting remaining items.`);
@@ -248,17 +257,7 @@ export async function cmdStart(
     }
   }
 
-  // Resolve ALL repos before launching any workers
   const resolvedRepos = new Map<string, string>();
-  for (const id of ids) {
-    const item = itemMap.get(id)!;
-    try {
-      const targetRepo = resolveRepo(item.repoAlias, projectRoot);
-      resolvedRepos.set(id, targetRepo);
-    } catch (err) {
-      die(`Failed to resolve repo for ${id}: ${(err as Error).message}`);
-    }
-  }
 
   // Check for file-level conflicts between selected items (warn only)
   if (ids.length > 1) {
@@ -315,6 +314,16 @@ export async function cmdStart(
       break;
     }
     const item = itemMap.get(id)!;
+    const validation = validatePickupCandidate(item, projectRoot);
+    if (validation.status === "blocked") {
+      warn(`Blocking ${id}: ${validation.failureReason}`);
+      continue;
+    }
+    if (validation.status === "skip-with-pr") {
+      warn(`Skipping ${id}: existing PR #${validation.existingPrNumber} already matches this item.`);
+      continue;
+    }
+    resolvedRepos.set(id, validation.targetRepo);
     launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux);
     launched.push(id);
   }

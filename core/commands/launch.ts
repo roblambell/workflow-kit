@@ -17,7 +17,7 @@ import {
 import { type Multiplexer, getMux } from "../mux.ts";
 import { allocatePartition, getPartitionFor, releasePartition } from "../partitions.ts";
 import { resolveRepo, writeCrossRepoIndex, removeCrossRepoIndex, ensureWorktreeExcluded } from "../cross-repo.ts";
-import { readWorkItem } from "../work-item-files.ts";
+import { classifyPrMetadataMatch, readWorkItem } from "../work-item-files.ts";
 import { prList as defaultPrList } from "../gh.ts";
 import { headlessLogFilePath } from "../headless.ts";
 import { cleanInbox } from "./inbox.ts";
@@ -103,6 +103,27 @@ export interface LaunchResult {
   existingPrNumber?: number;
 }
 
+export type PickupCandidateValidationCode = "merged" | "stale" | "unlaunchable";
+
+export type PickupCandidateValidation =
+  | {
+    status: "launch";
+    targetRepo: string;
+    branchName: string;
+  }
+  | {
+    status: "skip-with-pr";
+    targetRepo: string;
+    branchName: string;
+    existingPrNumber: number;
+  }
+  | {
+    status: "blocked";
+    code: PickupCandidateValidationCode;
+    branchName: string;
+    failureReason: string;
+  };
+
 type RuntimeMuxResolver = () => Multiplexer;
 
 function resolveRuntimeLaunchMux(
@@ -164,6 +185,104 @@ export function extractItemText(workDir: string, targetId: string): string {
   const item = readWorkItem(workDir, targetId);
   if (!item) return "";
   return item.rawText;
+}
+
+function stalePrFailureReason(
+  item: WorkItem,
+  branchName: string,
+  state: "open" | "merged",
+  pr: { number: number; title: string; body?: string },
+  matchMode: string,
+): string {
+  return (
+    `launch-blocked: ${branchName} has ${state} PR #${pr.number} with ` +
+    `non-matching work item metadata (${matchMode}): "${pr.title}". ` +
+    `Resolve the stale PR before relaunching ${item.id}.`
+  );
+}
+
+function tryListPrs(
+  deps: Pick<LaunchGitDeps, "prList">,
+  targetRepo: string,
+  branchName: string,
+  state: "open" | "merged",
+): Array<{ number: number; title: string; body?: string }> {
+  try {
+    const result = deps.prList(targetRepo, branchName, state);
+    return result.ok ? result.data : [];
+  } catch {
+    return [];
+  }
+}
+
+export function validatePickupCandidate(
+  item: WorkItem,
+  projectRoot: string,
+  deps: Pick<LaunchGitDeps, "prList"> = defaultLaunchGitDeps,
+): PickupCandidateValidation {
+  const branchName = `ninthwave/${item.id}`;
+
+  let targetRepo: string;
+  try {
+    targetRepo = resolveRepo(item.repoAlias, projectRoot);
+  } catch (error) {
+    return {
+      status: "blocked",
+      code: "unlaunchable",
+      branchName,
+      failureReason: `launch-blocked: ${(error as Error).message}`,
+    };
+  }
+
+  const openPrs = tryListPrs(deps, targetRepo, branchName, "open");
+  if (openPrs.length > 0) {
+    for (const pr of openPrs) {
+      const match = classifyPrMetadataMatch({ title: pr.title, body: pr.body }, item);
+      if (match.matches) {
+        return {
+          status: "skip-with-pr",
+          targetRepo,
+          branchName,
+          existingPrNumber: pr.number,
+        };
+      }
+    }
+    const stalePr = openPrs[0]!;
+    const match = classifyPrMetadataMatch({ title: stalePr.title, body: stalePr.body }, item);
+    return {
+      status: "blocked",
+      code: "stale",
+      branchName,
+      failureReason: stalePrFailureReason(item, branchName, "open", stalePr, match.mode),
+    };
+  }
+
+  const mergedPrs = tryListPrs(deps, targetRepo, branchName, "merged");
+  if (mergedPrs.length > 0) {
+    for (const pr of mergedPrs) {
+      const match = classifyPrMetadataMatch({ title: pr.title, body: pr.body }, item);
+      if (match.matches) {
+        return {
+          status: "blocked",
+          code: "merged",
+          branchName,
+          failureReason:
+            `launch-blocked: ${item.id} already has merged PR #${pr.number} ` +
+            `("${pr.title}"). Remove or reconcile the stale queue item instead of relaunching it.`,
+        };
+      }
+    }
+    const stalePr = mergedPrs[0]!;
+    const match = classifyPrMetadataMatch({ title: stalePr.title, body: stalePr.body }, item);
+    return {
+      status: "blocked",
+      code: "stale",
+      branchName,
+      failureReason: stalePrFailureReason(item, branchName, "merged", stalePr, match.mode),
+    };
+  }
+
+  return { status: "launch", targetRepo, branchName };
 }
 
 // ── Branch and worktree management ──────────────────────────────────

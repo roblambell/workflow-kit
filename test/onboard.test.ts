@@ -908,6 +908,7 @@ describe("cmdNoArgs", () => {
       parseWorkItems: () => [fakeWorkItem("H-1", "Task")],
       isDaemonRunning: () => null,
       loadConfig: () => ({ review_external: true, schedule_enabled: false }),
+      loadUserConfig: () => ({}),
       runInteractiveFlow: async (_todos, _wip, deps) => {
         interactiveCalled = true;
         // Verify that the deps include the correct defaultReviewMode

@@ -2119,6 +2119,11 @@ describe("executeLaunch stale branch cleanup", () => {
       closeWorkspace: () => true,
       fetchOrigin: () => {},
       ffMerge: () => {},
+      validatePickupCandidate: (item) => ({
+        status: "launch",
+        targetRepo: "/tmp/proj",
+        branchName: `ninthwave/${item.id}`,
+      }),
       ...overrides,
     };
   }
@@ -2210,6 +2215,38 @@ describe("executeLaunch stale branch cleanup", () => {
       unlinkSync(heartbeatFilePath(ctx.projectRoot, "H-1-1"));
     } catch { /* ignore */ }
   });
+
+  it("transitions invalid launch candidates to blocked without retries or launch side effects", () => {
+    const orch = new Orchestrator({ wipLimit: 1 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "launching");
+
+    const cleanStaleBranch = vi.fn();
+    const launchSingleItem = vi.fn(() => ({ worktreePath: "/tmp/wt", workspaceRef: "workspace:1" }));
+    const deps = makeMinimalDeps({
+      validatePickupCandidate: () => ({
+        status: "blocked",
+        code: "unlaunchable",
+        branchName: "ninthwave/H-1-1",
+        failureReason: "launch-blocked: Repo 'missing-repo' not found.",
+      }),
+      cleanStaleBranch,
+      launchSingleItem,
+    });
+
+    const result = orch.executeAction({ type: "launch", itemId: "H-1-1" }, ctx, deps);
+    const item = orch.getItem("H-1-1")!;
+
+    expect(result.success).toBe(false);
+    expect(item.state).toBe("blocked");
+    expect(item.failureReason).toContain("missing-repo");
+    expect(item.retryCount).toBe(0);
+    expect(item.workspaceRef).toBeUndefined();
+    expect(item.worktreePath).toBeUndefined();
+    expect(cleanStaleBranch).not.toHaveBeenCalled();
+    expect(launchSingleItem).not.toHaveBeenCalled();
+  });
 });
 
 // ── Stacked launch race guard (H-SL-1) ─────────────────────────────
@@ -2226,6 +2263,11 @@ describe("executeLaunch stacked dep race guard", () => {
       closeWorkspace: () => true,
       fetchOrigin: () => {},
       ffMerge: () => {},
+      validatePickupCandidate: (item) => ({
+        status: "launch",
+        targetRepo: "/tmp/proj",
+        branchName: `ninthwave/${item.id}`,
+      }),
       ...overrides,
     };
   }
@@ -2371,6 +2413,11 @@ describe("executeMerge conflict-aware rebase", () => {
       closeWorkspace: () => true,
       fetchOrigin: () => {},
       ffMerge: () => {},
+      validatePickupCandidate: (item) => ({
+        status: "launch",
+        targetRepo: "/tmp/proj",
+        branchName: `ninthwave/${item.id}`,
+      }),
       ...overrides,
     };
   }
@@ -2543,6 +2590,11 @@ describe("executeMerge admin override", () => {
       closeWorkspace: () => true,
       fetchOrigin: () => {},
       ffMerge: () => {},
+      validatePickupCandidate: (item) => ({
+        status: "launch",
+        targetRepo: "/tmp/proj",
+        branchName: `ninthwave/${item.id}`,
+      }),
       ...overrides,
     };
   }
@@ -3448,6 +3500,11 @@ describe("rebaser worker state transitions", () => {
       closeWorkspace: () => true,
       fetchOrigin: () => {},
       ffMerge: () => {},
+      validatePickupCandidate: (item) => ({
+        status: "launch",
+        targetRepo: "/tmp/proj",
+        branchName: `ninthwave/${item.id}`,
+      }),
       ...overrides,
     };
   }
@@ -3619,6 +3676,11 @@ describe("rebase circuit breaker and worker message priority", () => {
       closeWorkspace: () => true,
       fetchOrigin: () => {},
       ffMerge: () => {},
+      validatePickupCandidate: (item) => ({
+        status: "launch",
+        targetRepo: "/tmp/proj",
+        branchName: `ninthwave/${item.id}`,
+      }),
       ...overrides,
     };
   }
@@ -3846,6 +3908,11 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
       closeWorkspace: () => true,
       fetchOrigin: () => {},
       ffMerge: () => {},
+      validatePickupCandidate: (item) => ({
+        status: "launch",
+        targetRepo: "/tmp/proj",
+        branchName: `ninthwave/${item.id}`,
+      }),
       ...overrides,
     };
   }

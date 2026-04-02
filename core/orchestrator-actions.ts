@@ -7,6 +7,7 @@ import { existsSync, unlinkSync } from "fs";
 import { getWorktreeInfo, listCrossRepoEntries } from "./cross-repo.ts";
 import { heartbeatFilePath, writeHeartbeat } from "./daemon.ts";
 import { cleanInbox } from "./commands/inbox.ts";
+import { validatePickupCandidate } from "./commands/launch.ts";
 import { NINTHWAVE_FOOTER, ORCHESTRATOR_LINK } from "./gh.ts";
 import {
   type OrchestratorHandle,
@@ -127,6 +128,19 @@ export function executeLaunch(
   ctx: ExecutionContext,
   deps: OrchestratorDeps,
 ): ActionResult {
+  const validation = (deps.validatePickupCandidate ?? validatePickupCandidate)(item.workItem, ctx.projectRoot);
+  if (validation.status === "blocked") {
+    orch.transition(item, "blocked");
+    item.failureReason = validation.failureReason;
+    return { success: false, error: validation.failureReason };
+  }
+
+  if (validation.status === "skip-with-pr") {
+    item.prNumber = validation.existingPrNumber;
+    orch.transition(item, "ci-pending");
+    return { success: true };
+  }
+
   // Clean stale branches before launching (H-ORC-4).
   // When a work item ID is reused with different work, the old branch may have
   // merged PRs that cause workers to falsely exit as "done".

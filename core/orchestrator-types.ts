@@ -2,6 +2,7 @@
 // Self-contained: no imports from orchestrator.ts or orchestrator-actions.ts.
 
 import type { WorkItem, Priority } from "./types.ts";
+import type { PickupCandidateValidation } from "./commands/launch.ts";
 
 // ── State types ──────────────────────────────────────────────────────
 
@@ -299,6 +300,10 @@ export function getNextTool(ctx: ExecutionContext): string {
 
 /** External dependencies injected into executeAction. */
 export interface OrchestratorDeps {
+  validatePickupCandidate?: (
+    item: WorkItem,
+    projectRoot: string,
+  ) => PickupCandidateValidation;
   launchSingleItem: (
     item: WorkItem,
     workDir: string,

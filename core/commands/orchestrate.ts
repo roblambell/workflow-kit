@@ -28,7 +28,7 @@ import { parseWorkItems } from "../parser.ts";
 import { resolveRepo, bootstrapRepo } from "../cross-repo.ts";
 import { scanExternalPRs } from "./pr-monitor.ts";
 import type { ConnectionAction } from "./crew.ts";
-import { launchSingleItem, launchReviewWorker, launchRebaserWorker, launchForwardFixerWorker } from "./launch.ts";
+import { launchSingleItem, launchReviewWorker, launchRebaserWorker, launchForwardFixerWorker, validatePickupCandidate } from "./launch.ts";
 import { cleanStaleBranchForReuse } from "../branch-cleanup.ts";
 import { selectAiTools, detectInstalledAITools } from "../tool-select.ts";
 import { cleanSingleWorktree } from "./clean.ts";
@@ -4099,6 +4099,7 @@ export async function cmdOrchestrate(
 
   const ctx: ExecutionContext = { projectRoot, worktreeDir, workDir, aiTool, aiTools, nextToolIndex: 0, hubRepoNwo };
   const actionDeps: OrchestratorDeps = {
+    validatePickupCandidate: (item, projRoot) => validatePickupCandidate(item, projRoot),
     launchSingleItem: (item, workDir, worktreeDir, projectRoot, aiTool, baseBranch, forceWorkerLaunch) =>
       launchSingleItem(item, workDir, worktreeDir, projectRoot, aiTool, mux, { baseBranch, forceWorkerLaunch, hubRepoNwo }),
     cleanStaleBranch: (item, projRoot) => {
