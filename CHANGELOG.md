@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.11] - 2026-04-02
+
+### Added
+- surface blocked items in status (M-JIT-4) (#586)
+- apply preview install skips without pruning (H-WI-2) (#575)
+- paint startup status tui immediately (H-SUI-3) (#574)
+- add init preview selection (H-WI-1) (#572)
+- refresh startup picker after first paint (H-SUI-2) (#569)
+- preserve crew_url on init reruns (H-CRW-3) (#568)
+- wire crew URL precedence into orchestration (H-CRW-2) (#567)
+- add crew_url project config support (H-CRW-1) (#564)
+
+### Changed
+- validate launch pickup candidates (H-JIT-3) (#584)
+- add blocked terminal state (H-JIT-2) (#580)
+- speed startup and watch discovery (H-JIT-1) (#578)
+- split startup item refresh phases (H-SUI-1) (#566)
+- add deterministic AI launch override seam (H-TEST-1) (#565)
+
+### Fixed
+- correct packaged CLI self-respawn argv (H-PBR-1) (#579)
+- refine TUI footer shortcut styling (M-TFT-1) (#576)
+- show closing footer before TUI shutdown (L-TQF-1) (#573)
+- match stacked PR comment format (H-SPC-1) (#563)
+- align release bundle marker checks
+
 ## [0.3.10] - 2026-04-02
 
 ### Added
