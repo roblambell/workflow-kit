@@ -3,15 +3,31 @@
 
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { spawnSync } from "child_process";
+import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { tmpdir } from "os";
 import { afterEach } from "vitest";
 import { normalizeDomain } from "../core/parser.ts";
 
 const TEST_DIR = import.meta.dirname;
+const PROJECT_ROOT = join(TEST_DIR, "..");
+const COMPILED_CLI_PATH = join(PROJECT_ROOT, "dist", "ninthwave");
 
 // Track temp dirs for cleanup
 const tempDirs: string[] = [];
+let compiledCliReady = false;
+
+export interface ProcessHandle {
+  child: ChildProcess;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  closed: boolean;
+  exited: Promise<number | null>;
+}
+
+export interface CompiledCliHandle extends ProcessHandle {
+  transcriptPath: string;
+}
 
 /**
  * Create a minimal temp git repo. Returns its path.
@@ -282,6 +298,132 @@ export function setupTempRepoWithRemote(): string {
   git(local, "push", "-u", "origin", "main", "--quiet");
 
   return local;
+}
+
+export function ensureCompiledCli(): string {
+  if (!compiledCliReady) {
+    const result = spawnSync("bun", ["run", "build"], {
+      cwd: PROJECT_ROOT,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    if (result.status !== 0) {
+      throw new Error(`bun run build failed: ${(result.stderr || result.stdout || "").trim()}`);
+    }
+    compiledCliReady = true;
+  }
+
+  if (!existsSync(COMPILED_CLI_PATH)) {
+    throw new Error(`Compiled CLI not found at ${COMPILED_CLI_PATH}`);
+  }
+
+  return COMPILED_CLI_PATH;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function buildScriptArgs(
+  command: string,
+  args: string[],
+  transcriptPath: string,
+): string[] {
+  if (process.platform === "darwin") {
+    return ["-q", transcriptPath, command, ...args];
+  }
+
+  if (process.platform === "linux") {
+    return [
+      "-q",
+      "-e",
+      "-c",
+      [command, ...args].map(shellQuote).join(" "),
+      transcriptPath,
+    ];
+  }
+
+  throw new Error(`Compiled smoke PTY is unsupported on ${process.platform}`);
+}
+
+export function startCompiledCli(
+  cwd: string,
+  args: string[],
+  options: { env?: Record<string, string> } = {},
+): CompiledCliHandle {
+  const transcriptDir = setupTempDir("nw-compiled-cli-");
+  const transcriptPath = join(transcriptDir, "transcript.txt");
+  const child = spawn("script", buildScriptArgs(ensureCompiledCli(), args, transcriptPath), {
+    cwd,
+    env: { ...process.env, ...options.env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  const handle: CompiledCliHandle = {
+    child,
+    transcriptPath,
+    stdout: "",
+    stderr: "",
+    exitCode: null,
+    closed: false,
+    exited: new Promise<number | null>((resolve) => {
+      child.stdout?.on("data", (chunk: string | Buffer) => {
+        handle.stdout += chunk.toString();
+      });
+      child.stderr?.on("data", (chunk: string | Buffer) => {
+        handle.stderr += chunk.toString();
+      });
+      child.on("close", (code) => {
+        handle.exitCode = code;
+        handle.closed = true;
+        resolve(code);
+      });
+    }),
+  };
+
+  return handle;
+}
+
+export function readCapturedOutput(handle: CompiledCliHandle): string {
+  const transcript = existsSync(handle.transcriptPath)
+    ? readFileSync(handle.transcriptPath, "utf-8")
+    : "";
+  return `${handle.stdout}\n${transcript}`;
+}
+
+export async function waitForCapturedOutput(
+  handle: CompiledCliHandle,
+  pattern: string | RegExp,
+  options: { timeoutMs?: number } = {},
+): Promise<string> {
+  return waitFor(() => {
+    const text = readCapturedOutput(handle);
+    if (!text) return false;
+    if (typeof pattern === "string") return text.includes(pattern) ? text : false;
+    return pattern.test(text) ? text : false;
+  }, {
+    timeoutMs: options.timeoutMs,
+    description: `captured output to match ${String(pattern)}`,
+  });
+}
+
+export async function stopProcess(
+  handle: ProcessHandle,
+  signal: NodeJS.Signals = "SIGTERM",
+  timeoutMs = 5_000,
+): Promise<number | null> {
+  if (handle.exitCode !== null) return handle.exitCode;
+  handle.child.kill(signal);
+  try {
+    await waitFor(() => handle.closed ? true : false, {
+      timeoutMs,
+      description: "process exit",
+    });
+    return handle.exitCode;
+  } catch {
+    handle.child.kill("SIGKILL");
+    return await handle.exited;
+  }
 }
 
 /**
