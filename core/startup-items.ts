@@ -138,13 +138,21 @@ export function loadLocalStartupItems(
   return parseWorkItems(workDir, worktreeDir, projectRoot);
 }
 
+export function loadDiscoveryStartupItems(
+  workDir: string,
+  worktreeDir: string,
+  projectRoot: string,
+): WorkItem[] {
+  return loadLocalStartupItems(workDir, worktreeDir, projectRoot);
+}
+
 export function loadRunnableStartupItems(
   workDir: string,
   worktreeDir: string,
   projectRoot: string,
   checkPr: SyncPrCheck = checkPrStatusDetailed,
 ): StartupReplayPruneResult {
-  const parsedItems = loadLocalStartupItems(workDir, worktreeDir, projectRoot);
+  const parsedItems = loadDiscoveryStartupItems(workDir, worktreeDir, projectRoot);
   return pruneMergedStartupReplayItems(parsedItems, projectRoot, checkPr);
 }
 
@@ -170,7 +178,7 @@ export async function refreshRunnableStartupItems(
   previousItems: ReadonlyArray<WorkItem>,
   checkPr: AsyncPrCheck = checkPrStatusDetailedAsync,
 ): Promise<StartupItemsRefreshResult> {
-  const localItems = loadLocalStartupItems(workDir, worktreeDir, projectRoot);
+  const localItems = loadDiscoveryStartupItems(workDir, worktreeDir, projectRoot);
   const { activeItems, prunedItems } = await pruneMergedStartupReplayItemsAsync(localItems, projectRoot, checkPr);
   const diff = diffStartupItemIds(previousItems, activeItems);
   const prunedById = new Map(prunedItems.map((item) => [item.id, item] as const));

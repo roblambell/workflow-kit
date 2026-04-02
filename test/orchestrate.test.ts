@@ -46,6 +46,7 @@ import {
   renderTuiPanelFrameFromStatusItems,
   runTuiStartupPreparation,
   resolveInteractiveStartupConfig,
+  loadDiscoveryStartupItems,
   loadLocalStartupItems,
   pruneMergedStartupReplayItems,
   refreshRunnableStartupItems,
@@ -320,6 +321,49 @@ describe("refreshRunnableStartupItems", () => {
           type: "added",
           reason: "local-add",
         },
+      ]);
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("loadDiscoveryStartupItems", () => {
+  it("loads local queue items before any replay pruning", () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "ninthwave-startup-discovery-"));
+    const workDir = join(projectRoot, ".ninthwave", "work");
+    const worktreeDir = join(projectRoot, ".ninthwave", ".worktrees");
+
+    try {
+      mkdirSync(workDir, { recursive: true });
+      mkdirSync(worktreeDir, { recursive: true });
+
+      writeFileSync(
+        join(workDir, "2-startup-discovery--H-DISC-1.md"),
+        [
+          "# Refactor: Discovery item (H-DISC-1)",
+          "",
+          "**Priority:** High",
+          "**Depends on:** None",
+          "**Domain:** startup-items",
+          `**Lineage:** ${STARTUP_LINEAGE}`,
+          "",
+          "Acceptance: Test startup item parsing",
+        ].join("\n"),
+      );
+
+      const discoveredItems = loadDiscoveryStartupItems(workDir, worktreeDir, projectRoot);
+      expect(discoveredItems.map((item) => item.id)).toEqual(["H-DISC-1"]);
+
+      const replay = pruneMergedStartupReplayItems(
+        discoveredItems,
+        projectRoot,
+        () => `H-DISC-1\t61\tmerged\t\t\tDiscovery item\t${STARTUP_LINEAGE}`,
+      );
+
+      expect(replay.activeItems).toEqual([]);
+      expect(replay.prunedItems).toEqual([
+        { id: "H-DISC-1", prNumber: 61, matchMode: "lineage" },
       ]);
     } finally {
       rmSync(projectRoot, { recursive: true, force: true });
@@ -4591,6 +4635,83 @@ describe("orchestrateLoop watch mode", () => {
 
     const watchNewLog = logs.find((l) => l.event === "watch_new_items");
     expect(watchNewLog?.newIds).toEqual(["E-1-1"]);
+  });
+
+  it("watch scans still discover new items when main refresh fails", async () => {
+    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const logs: LogEntry[] = [];
+    const launchCalls: string[] = [];
+    const fetchOriginMock = vi.fn(() => {
+      throw new Error("origin unavailable");
+    });
+    const ffMergeMock = vi.fn(() => {
+      throw new Error("local main is dirty");
+    });
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (o): PollSnapshot => {
+        const item = o.getItem("E-FAST-1");
+        if (!item) return { items: [], readyIds: [] };
+        if (item.state === "queued" || item.state === "ready") {
+          return { items: [], readyIds: [item.id] };
+        }
+        if (item.state === "launching") {
+          return { items: [{ id: item.id, workerAlive: true }], readyIds: [] };
+        }
+        if (item.state === "implementing") {
+          return {
+            items: [{ id: item.id, prNumber: 12, prState: "open", ciStatus: "pass" }],
+            readyIds: [],
+          };
+        }
+        if (item.state === "reviewing") {
+          return {
+            items: [{
+              id: item.id,
+              prNumber: 12,
+              prState: "open",
+              ciStatus: "pass",
+              reviewVerdict: {
+                verdict: "approve" as const,
+                summary: "OK",
+                blockingCount: 0,
+                nonBlockingCount: 0,
+                architectureScore: 8,
+                codeQualityScore: 9,
+                performanceScore: 7,
+                testCoverageScore: 8,
+                unresolvedDecisions: 0,
+                criticalGaps: 0,
+                confidence: 9,
+              },
+            }],
+            readyIds: [],
+          };
+        }
+        return { items: [], readyIds: [] };
+      },
+      sleep: () => Promise.resolve(),
+      log: (entry) => logs.push(entry),
+      actionDeps: mockActionDeps({
+        fetchOrigin: fetchOriginMock,
+        ffMerge: ffMergeMock,
+        launchSingleItem: vi.fn((workItem) => {
+          launchCalls.push(workItem.id);
+          return { worktreePath: "/tmp/test/item-fast-watch", workspaceRef: `workspace:${workItem.id}` };
+        }),
+      }),
+      scanWorkItems: () => [makeWorkItem("E-FAST-1")],
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, { watch: true, maxIterations: 50 });
+
+    expect(fetchOriginMock).toHaveBeenCalled();
+    expect(ffMergeMock).toHaveBeenCalled();
+    expect(launchCalls).toEqual(["E-FAST-1"]);
+    expect(orch.getItem("E-FAST-1")?.state).toBe("done");
+
+    const watchNewLog = logs.find((l) => l.event === "watch_new_items");
+    expect(watchNewLog?.newIds).toEqual(["E-FAST-1"]);
   });
 
   it("watch mode default interval is 30 seconds", async () => {
