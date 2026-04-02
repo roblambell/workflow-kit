@@ -401,6 +401,28 @@ export function prMerge(
   return result.exitCode === 0;
 }
 
+/** Get a PR's current base branch. Returns null on failure. */
+export function getPrBaseBranch(repoRoot: string, prNumber: number): string | null {
+  const result = prView(repoRoot, prNumber, ["baseRefName"]);
+  if (!result.ok) return null;
+  const baseRefName = result.data.baseRefName;
+  return typeof baseRefName === "string" && baseRefName.trim().length > 0
+    ? baseRefName
+    : null;
+}
+
+/** Retarget a PR to a new base branch. Returns true on success, false on failure. */
+export function retargetPrBase(repoRoot: string, prNumber: number, baseBranch: string): boolean {
+  const result = ghInRepo(repoRoot, [
+    "pr",
+    "edit",
+    String(prNumber),
+    "--base",
+    baseBranch,
+  ]);
+  return result.exitCode === 0;
+}
+
 /** Post a comment on a PR. Returns true on success, false on failure. */
 export function prComment(
   repoRoot: string,

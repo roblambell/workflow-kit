@@ -56,6 +56,29 @@ function resolveDefaultBranch(
   return fallback;
 }
 
+const DEP_DONE_STATES: ReadonlySet<string> = new Set([
+  "done",
+  "merged",
+  "forward-fix-pending",
+  "fix-forward-failed",
+]);
+
+function resolveExpectedPrBase(
+  orch: OrchestratorHandle,
+  item: OrchestratorItem,
+  defaultBranch: string,
+): string {
+  if (!item.baseBranch) return defaultBranch;
+
+  const depId = item.baseBranch.replace(/^ninthwave\//, "");
+  const dep = orch.getItem(depId);
+  if (!dep || DEP_DONE_STATES.has(dep.state)) {
+    return defaultBranch;
+  }
+
+  return item.baseBranch;
+}
+
 /**
  * Bootstrap a target repo for a cross-repo item.
  * On success, sets resolvedRepoRoot and transitions to launching.
@@ -129,7 +152,6 @@ export function executeLaunch(
   if (action.baseBranch) {
     const depId = action.baseBranch.replace(/^ninthwave\//, "");
     const dep = orch.getItem(depId);
-    const DEP_DONE_STATES: ReadonlySet<string> = new Set(["done", "merged", "forward-fix-pending", "fix-forward-failed"]);
     if (!dep || DEP_DONE_STATES.has(dep.state)) {
       deps.warn?.(`Dependency ${depId} is now ${dep?.state ?? "unknown"} -- clearing baseBranch for ${item.id} to launch from main`);
       action.baseBranch = undefined;
@@ -205,6 +227,41 @@ export function executeMerge(
 
   const repoRoot = item.resolvedRepoRoot ?? ctx.projectRoot;
   const defaultBranch = resolveDefaultBranch(item, repoRoot, deps);
+  const expectedBase = resolveExpectedPrBase(orch, item, defaultBranch);
+
+  if (deps.getPrBaseBranch) {
+    const actualBase = deps.getPrBaseBranch(repoRoot, prNum);
+    if (!actualBase) {
+      deps.warn?.(`Could not verify PR #${prNum} base branch for ${item.id}; blocking auto-merge`);
+      orch.transition(item, "ci-passed");
+      return { success: false, error: `Could not verify base branch for PR #${prNum}; merge blocked` };
+    }
+
+    if (actualBase !== expectedBase) {
+      if (deps.retargetPrBase?.(repoRoot, prNum, expectedBase)) {
+        item.baseBranch = expectedBase === defaultBranch ? undefined : expectedBase;
+        deps.warn?.(
+          `Retargeted PR #${prNum} for ${item.id} from ${actualBase} to ${expectedBase}; waiting for CI before merge`,
+        );
+        orch.transition(item, "ci-pending");
+        return {
+          success: false,
+          error: `Retargeted PR #${prNum} from ${actualBase} to ${expectedBase}; waiting for CI`,
+        };
+      }
+
+      deps.warn?.(
+        `PR #${prNum} for ${item.id} targets ${actualBase} but expected ${expectedBase}; blocking auto-merge`,
+      );
+      orch.transition(item, "ci-passed");
+      return {
+        success: false,
+        error: `PR #${prNum} targets ${actualBase} but expected ${expectedBase}; merge blocked`,
+      };
+    }
+
+    item.baseBranch = expectedBase === defaultBranch ? undefined : expectedBase;
+  }
 
   // Resolve the dependency branch SHA before merge. After merge, GitHub may
   // auto-delete the branch, making the ref unresolvable. The SHA is used as

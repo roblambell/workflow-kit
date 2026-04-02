@@ -549,6 +549,32 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).not.toContain("--watch");
   });
 
+  it("uses the runnable startup loader for the interactive picker", async () => {
+    const projectDir = setupTempRepo();
+    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
+
+    const allItems = [
+      fakeWorkItem("H-MERGED-1", "Merged task"),
+      fakeWorkItem("H-ACTIVE-1", "Active task"),
+    ];
+    const runnableItems = [allItems[1]!];
+    let seenTodos: WorkItem[] = [];
+
+    await cmdNoArgs(projectDir, {
+      isTTY: true,
+      parseWorkItems: () => allItems,
+      loadStartupItems: () => runnableItems,
+      isDaemonRunning: () => null,
+      loadConfig: () => ({ review_external: false, schedule_enabled: false }),
+      runInteractiveFlow: async (todos) => {
+        seenTodos = todos;
+        return null;
+      },
+    });
+
+    expect(seenTodos.map((item) => item.id)).toEqual(["H-ACTIVE-1"]);
+  });
+
   it("passes --watch when allSelected is true", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });

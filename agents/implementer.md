@@ -290,7 +290,12 @@ If your system prompt includes `BASE_BRANCH: <branch>`, you are stacked on a dep
 gh pr create --base $BASE_BRANCH --title "..." --body "..."
 ```
 
-This gives reviewers a clean diff showing only your changes, not the dependency's changes. When the dependency merges, GitHub will automatically retarget your PR to main.
+This gives reviewers a clean diff showing only your changes, not the dependency's changes.
+
+Before you use `--base $BASE_BRANCH`, confirm the dependency branch is still live. If the dependency has already merged, do **not** keep targeting the stale branch just because `BASE_BRANCH` was present in your startup prompt.
+
+- If `gh pr list --head "$BASE_BRANCH" --state merged --json number --limit 1` shows a merged PR for the dependency branch, create your PR normally without `--base`.
+- If `gh pr create --base $BASE_BRANCH ...` fails because the base branch is gone or stale, fetch the default branch, rebase onto it, and retry `gh pr create` without `--base`.
 
 If `BASE_BRANCH` is **not** set in your system prompt, create the PR normally (no `--base` flag needed -- it defaults to main).
 

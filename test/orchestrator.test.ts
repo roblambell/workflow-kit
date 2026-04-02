@@ -1252,6 +1252,96 @@ describe("Orchestrator", () => {
       expect(item.mergeFailCount).toBe(0);
     });
 
+    it("merge: retargets stale child PR bases to the default branch and waits for CI", () => {
+      const getPrBaseBranch = vi.fn(() => "ninthwave/H-1-1");
+      const retargetPrBase = vi.fn(() => true);
+      const prMerge = vi.fn(() => true);
+      const warn = vi.fn();
+      const deps = mockDeps({ getPrBaseBranch, retargetPrBase, prMerge, warn });
+
+      orch.addItem(makeWorkItem("H-1-1"));
+      orch.hydrateState("H-1-1", "merged");
+      orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
+      orch.getItem("H-1-2")!.reviewCompleted = true;
+      orch.hydrateState("H-1-2", "merging");
+      orch.getItem("H-1-2")!.prNumber = 42;
+      orch.getItem("H-1-2")!.baseBranch = "ninthwave/H-1-1";
+
+      const result = orch.executeAction(
+        { type: "merge", itemId: "H-1-2", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Retargeted PR #42 from ninthwave/H-1-1 to main");
+      expect(getPrBaseBranch).toHaveBeenCalledWith(defaultCtx.projectRoot, 42);
+      expect(retargetPrBase).toHaveBeenCalledWith(defaultCtx.projectRoot, 42, "main");
+      expect(prMerge).not.toHaveBeenCalled();
+      expect(orch.getItem("H-1-2")!.state).toBe("ci-pending");
+      expect(orch.getItem("H-1-2")!.baseBranch).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Retargeted PR #42 for H-1-2 from ninthwave/H-1-1 to main"),
+      );
+    });
+
+    it("merge: blocks auto-merge when stale PR base cannot be retargeted", () => {
+      const getPrBaseBranch = vi.fn(() => "ninthwave/H-1-1");
+      const retargetPrBase = vi.fn(() => false);
+      const prMerge = vi.fn(() => true);
+      const warn = vi.fn();
+      const deps = mockDeps({ getPrBaseBranch, retargetPrBase, prMerge, warn });
+
+      orch.addItem(makeWorkItem("H-1-1"));
+      orch.hydrateState("H-1-1", "done");
+      orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
+      orch.getItem("H-1-2")!.reviewCompleted = true;
+      orch.hydrateState("H-1-2", "merging");
+      orch.getItem("H-1-2")!.prNumber = 42;
+      orch.getItem("H-1-2")!.baseBranch = "ninthwave/H-1-1";
+
+      const result = orch.executeAction(
+        { type: "merge", itemId: "H-1-2", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("merge blocked");
+      expect(retargetPrBase).toHaveBeenCalledWith(defaultCtx.projectRoot, 42, "main");
+      expect(prMerge).not.toHaveBeenCalled();
+      expect(orch.getItem("H-1-2")!.state).toBe("ci-passed");
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("targets ninthwave/H-1-1 but expected main; blocking auto-merge"),
+      );
+    });
+
+    it("merge: preserves legitimate stacked PR bases while parent is still in flight", () => {
+      const getPrBaseBranch = vi.fn(() => "ninthwave/H-1-1");
+      const retargetPrBase = vi.fn(() => true);
+      const prMerge = vi.fn(() => true);
+      const deps = mockDeps({ getPrBaseBranch, retargetPrBase, prMerge });
+
+      orch.addItem(makeWorkItem("H-1-1"));
+      orch.hydrateState("H-1-1", "ci-passed");
+      orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
+      orch.getItem("H-1-2")!.reviewCompleted = true;
+      orch.hydrateState("H-1-2", "merging");
+      orch.getItem("H-1-2")!.prNumber = 42;
+      orch.getItem("H-1-2")!.baseBranch = "ninthwave/H-1-1";
+
+      const result = orch.executeAction(
+        { type: "merge", itemId: "H-1-2", prNumber: 42 },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(retargetPrBase).not.toHaveBeenCalled();
+      expect(prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 42, { admin: undefined });
+      expect(orch.getItem("H-1-2")!.baseBranch).toBe("ninthwave/H-1-1");
+    });
+
     it("merge: fails gracefully when no PR number", () => {
       const deps = mockDeps();
       orch.addItem(makeWorkItem("H-1-1"));

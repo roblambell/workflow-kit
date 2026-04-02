@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import * as shell from "../core/shell.ts";
-import { prMerge, prComment, getRepoOwner, resolveGithubToken, applyGithubToken, setCommitStatus, prHeadSha, ensureDomainLabels } from "../core/gh.ts";
+import { prMerge, prComment, getRepoOwner, resolveGithubToken, applyGithubToken, setCommitStatus, prHeadSha, ensureDomainLabels, getPrBaseBranch, retargetPrBase } from "../core/gh.ts";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 
 const runSpy = vi.spyOn(shell, "run");
@@ -136,6 +136,50 @@ describe("prComment", () => {
       ["pr", "comment", "5", "--body", body],
       { cwd: "/repo" },
     );
+  });
+});
+
+describe("getPrBaseBranch", () => {
+  it("returns the current base branch when gh pr view succeeds", () => {
+    runSpy.mockReturnValue({
+      stdout: JSON.stringify({ baseRefName: "main" }),
+      stderr: "",
+      exitCode: 0,
+    });
+
+    const result = getPrBaseBranch("/repo", 42);
+
+    expect(result).toBe("main");
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      ["pr", "view", "42", "--json", "baseRefName"],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("returns null when gh pr view fails", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "boom", exitCode: 1 });
+    expect(getPrBaseBranch("/repo", 42)).toBeNull();
+  });
+});
+
+describe("retargetPrBase", () => {
+  it("returns true when gh pr edit succeeds", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "", exitCode: 0 });
+
+    const result = retargetPrBase("/repo", 42, "main");
+
+    expect(result).toBe(true);
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      ["pr", "edit", "42", "--base", "main"],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("returns false when gh pr edit fails", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "boom", exitCode: 1 });
+    expect(retargetPrBase("/repo", 42, "main")).toBe(false);
   });
 });
 

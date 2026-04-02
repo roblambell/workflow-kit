@@ -26,7 +26,6 @@ import type { ProjectConfig, UserConfig } from "../config.ts";
 import { initProject } from "./init.ts";
 import { getBundleDir } from "../paths.ts";
 import { isDaemonRunning } from "../daemon.ts";
-import { parseWorkItems } from "../parser.ts";
 import { runInteractiveFlow } from "../interactive.ts";
 import type { InteractiveResult, InteractiveDeps } from "../interactive.ts";
 import { loadConfig, loadUserConfig, saveUserConfig } from "../config.ts";
@@ -34,9 +33,11 @@ import { printHelp } from "../help.ts";
 import { AI_TOOL_PROFILES } from "../ai-tools.ts";
 import type { AiToolProfile } from "../ai-tools.ts";
 import { detectInstalledAITools } from "../tool-select.ts";
+import { applyGithubToken } from "../gh.ts";
 import { ensureMuxInteractiveOrDie } from "../mux.ts";
 import { requireCrewCode } from "./crew.ts";
 import { resolveTuiSettingsDefaults } from "../tui-settings.ts";
+import { loadRunnableStartupItems } from "../startup-items.ts";
 import {
   runCheckboxList,
   createProcessIO,
@@ -89,7 +90,8 @@ export interface OnboardDeps {
 export interface NoArgsDeps extends OnboardDeps {
   isTTY?: boolean;
   existsSync?: typeof existsSync;
-  parseWorkItems?: (workDir: string, worktreeDir: string) => WorkItem[];
+  parseWorkItems?: (workDir: string, worktreeDir: string, projectRoot?: string) => WorkItem[];
+  loadStartupItems?: (workDir: string, worktreeDir: string, projectRoot: string) => WorkItem[];
   isDaemonRunning?: (projectRoot: string) => number | null;
   ensureMux?: (args: string[]) => Promise<void>;
   runInteractiveFlow?: (todos: WorkItem[], defaultWipLimit: number, deps?: InteractiveDeps) => Promise<InteractiveResult | null>;
@@ -326,7 +328,11 @@ export async function cmdNoArgs(
 ): Promise<void> {
   const isTTY = deps.isTTY ?? (process.stdin.isTTY === true);
   const checkExists = deps.existsSync ?? existsSync;
-  const doParseT = deps.parseWorkItems ?? parseWorkItems;
+  const doLoadStartupItems = deps.loadStartupItems
+    ?? ((workDir: string, worktreeDir: string, projectRoot: string) =>
+      deps.parseWorkItems
+        ? deps.parseWorkItems(workDir, worktreeDir, projectRoot)
+        : loadRunnableStartupItems(workDir, worktreeDir, projectRoot).activeItems);
   const checkDaemon = deps.isDaemonRunning ?? isDaemonRunning;
   const doEnsureMux = deps.ensureMux ?? ensureMuxInteractiveOrDie;
   const helpFn = deps.printHelp ?? printHelp;
@@ -375,7 +381,8 @@ export async function cmdNoArgs(
   // Zero-item repos continue into the same startup path instead of blocking in a pre-watch wait loop.
   let todos: WorkItem[] = [];
   if (checkExists(workDir)) {
-    todos = doParseT(workDir, worktreeDir);
+    applyGithubToken(projectRoot);
+    todos = doLoadStartupItems(workDir, worktreeDir, projectRoot);
   }
 
   await doEnsureMux([]);

@@ -296,6 +296,8 @@ describe("seedAgentFiles", () => {
     expect(claudePrompt).toContain("if you receive one in either structured or plain-language form, you are required to act on it.");
     expect(claudePrompt).toContain("If `BASE_BRANCH` is set in your prompt: `git fetch origin $BASE_BRANCH --quiet && git rebase origin/$BASE_BRANCH`");
     expect(claudePrompt).toContain("If `BASE_BRANCH` is not set: `git fetch origin main --quiet && git rebase origin/main`");
+    expect(claudePrompt).toContain("If the dependency has already merged, do **not** keep targeting the stale branch");
+    expect(claudePrompt).toContain("gh pr list --head \"$BASE_BRANCH\" --state merged --json number --limit 1");
     expect(claudePrompt).toContain("Do **not** `git rebase --abort` just because conflicts appeared");
     expect(claudePrompt).toContain("Required outcome: do not go back to idle until the branch is either successfully rebased and force-pushed, or you have posted the blocker comment for a genuinely non-trivial conflict");
     expect(githubPrompt).toContain("Do not assume the daemon will perform the rebase for you.");

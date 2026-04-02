@@ -321,6 +321,10 @@ export interface OrchestratorDeps {
   closeWorkspace: (workspaceRef: string) => boolean;
   fetchOrigin: (repoRoot: string, branch: string) => void;
   ffMerge: (repoRoot: string, branch: string) => void;
+  /** Get the current GitHub base branch for a PR. Returns null when unavailable. */
+  getPrBaseBranch?: (repoRoot: string, prNumber: number) => string | null;
+  /** Retarget a PR to a new GitHub base branch. */
+  retargetPrBase?: (repoRoot: string, prNumber: number, baseBranch: string) => boolean;
   /** Check if a PR is mergeable (no conflicts). Returns true if mergeable, false if conflicting. */
   checkPrMergeable?: (repoRoot: string, prNumber: number) => boolean;
   /**

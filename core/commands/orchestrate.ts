@@ -25,14 +25,14 @@ import {
 } from "../orchestrator.ts";
 import { parseWorkItems } from "../parser.ts";
 import { resolveRepo, bootstrapRepo } from "../cross-repo.ts";
-import { scanExternalPRs, checkPrStatusDetailed, type PrStatusPollResult } from "./pr-monitor.ts";
+import { scanExternalPRs } from "./pr-monitor.ts";
 import type { ConnectionAction } from "./crew.ts";
 import { launchSingleItem, launchReviewWorker, launchRebaserWorker, launchForwardFixerWorker } from "./launch.ts";
 import { cleanStaleBranchForReuse } from "../branch-cleanup.ts";
 import { selectAiTools, detectInstalledAITools } from "../tool-select.ts";
 import { cleanSingleWorktree } from "./clean.ts";
 import { writeInbox } from "./inbox.ts";
-import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrCommentsAsync, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI, checkCommitCIAsync as ghCheckCommitCIAsync, getDefaultBranch as ghGetDefaultBranch, ensureDomainLabels, listPrComments, updatePrComment, ghFailureKindLabel } from "../gh.ts";
+import { prMerge, prComment, checkPrMergeable, getRepoOwner, applyGithubToken, fetchTrustedPrCommentsAsync, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI, checkCommitCIAsync as ghCheckCommitCIAsync, getDefaultBranch as ghGetDefaultBranch, ensureDomainLabels, listPrComments, updatePrComment, ghFailureKindLabel, getPrBaseBranch as ghGetPrBaseBranch, retargetPrBase as ghRetargetPrBase } from "../gh.ts";
 import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush, daemonRebase } from "../git.ts";
 import { run } from "../shell.ts";
 import { type Multiplexer, createMux, muxTypeForWorkspaceRef, resolveBackend } from "../mux.ts";
@@ -119,7 +119,7 @@ import {
   scheduleTriggerDir,
 } from "../schedule-runner.ts";
 import { listScheduledTasks as listScheduledTasksFromDir } from "../schedule-files.ts";
-import { classifyPrMetadataMatch, type PrMetadataMatchMode } from "../work-item-files.ts";
+import { loadRunnableStartupItems } from "../startup-items.ts";
 import {
   getPassiveUpdateState,
   getPassiveUpdateStartupState,
@@ -166,6 +166,11 @@ import {
 export { buildSnapshotAsync, isWorkerAlive, isWorkerAliveWithCache, getWorktreeLastCommitTime, getWorktreeLastCommitTimeAsync } from "../snapshot.ts";
 export { buildSnapshot } from "../snapshot.ts";
 export { reconstructState } from "../reconstruct.ts";
+export {
+  pruneMergedStartupReplayItems,
+  type StartupReplayPrune,
+  type StartupReplayPruneResult,
+} from "../startup-items.ts";
 export { parseWatchArgs, validateItemIds, type ParsedWatchArgs } from "./watch-args.ts";
 export { setupKeyboardShortcuts, applyRuntimeSnapshotToTuiState, isTuiPaused, filterLogsByLevel, pushLogBuffer, LOG_BUFFER_MAX, REVIEW_MODE_CYCLE, COLLABORATION_MODE_CYCLE, type TuiState, type TuiRuntimeSnapshot, type LogLevelFilter, type CollaborationMode, type ReviewMode } from "../tui-keyboard.ts";
 export { processExternalReviews, type ExternalReviewDeps } from "../external-review.ts";
@@ -186,70 +191,6 @@ export type { LogEntry } from "../types.ts";
 
 export function structuredLog(entry: LogEntry): void {
   console.log(JSON.stringify(entry));
-}
-
-export interface StartupReplayPrune {
-  id: string;
-  prNumber?: number;
-  matchMode: PrMetadataMatchMode;
-}
-
-export interface StartupReplayPruneResult {
-  activeItems: WorkItem[];
-  prunedItems: StartupReplayPrune[];
-}
-
-function normalizePrPollResult(result: string | null | PrStatusPollResult): PrStatusPollResult {
-  if (typeof result === "string" || result == null) {
-    return { statusLine: result ?? "" };
-  }
-  return result;
-}
-
-export function pruneMergedStartupReplayItems(
-  workItems: WorkItem[],
-  projectRoot: string,
-  checkPr: (id: string, projectRoot: string) => string | null | PrStatusPollResult = checkPrStatusDetailed,
-): StartupReplayPruneResult {
-  const activeItems: WorkItem[] = [];
-  const prunedItems: StartupReplayPrune[] = [];
-
-  for (const item of workItems) {
-    const statusLine = normalizePrPollResult(checkPr(item.id, projectRoot)).statusLine;
-    if (!statusLine) {
-      activeItems.push(item);
-      continue;
-    }
-
-    const parts = statusLine.split("\t");
-    const status = parts[2];
-    if (status !== "merged") {
-      activeItems.push(item);
-      continue;
-    }
-
-    const prNumber = parts[1] ? parseInt(parts[1]!, 10) : undefined;
-    const match = classifyPrMetadataMatch(
-      {
-        title: parts[5] ?? "",
-        lineageToken: parts[6] ?? "",
-      },
-      item,
-    );
-
-    if (!match.matches) {
-      activeItems.push(item);
-      continue;
-    }
-
-    prunedItems.push({
-      id: item.id,
-      ...(prNumber != null ? { prNumber } : {}),
-      matchMode: match.mode,
-    });
-  }
-
-  return { activeItems, prunedItems };
 }
 
 export interface TmuxStartupInfo {
@@ -3543,8 +3484,7 @@ export async function cmdOrchestrate(
   applyGithubToken(projectRoot);
 
   const loadRunnableWorkItems = (source: "startup" | "watch-scan" | "run-more"): WorkItem[] => {
-    const parsedItems = parseWorkItems(workDir, worktreeDir, projectRoot);
-    const { activeItems, prunedItems } = pruneMergedStartupReplayItems(parsedItems, projectRoot);
+    const { activeItems, prunedItems } = loadRunnableStartupItems(workDir, worktreeDir, projectRoot);
     if (prunedItems.length > 0) {
       log({
         ts: new Date().toISOString(),
@@ -3835,6 +3775,8 @@ export async function cmdOrchestrate(
     readScreen: (ref, lines) => muxForWorkspaceRef(ref).readScreen(ref, lines),
     fetchOrigin,
     ffMerge,
+    getPrBaseBranch: (repoRoot, prNumber) => ghGetPrBaseBranch(repoRoot, prNumber),
+    retargetPrBase: (repoRoot, prNumber, baseBranch) => ghRetargetPrBase(repoRoot, prNumber, baseBranch),
     checkPrMergeable,
     daemonRebase,
     warn: (message) =>
