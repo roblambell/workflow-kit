@@ -40,6 +40,7 @@ import {
   pruneManagedGeneratedEntries,
 } from "./setup.ts";
 import { AI_TOOL_PROFILES } from "../ai-tools.ts";
+import { loadConfig } from "../config.ts";
 
 // --- Detection types ---
 
@@ -520,11 +521,21 @@ export function detectAll(
 /**
  * Generate .ninthwave/config.json content.
  */
-export function generateConfig(_detection: DetectionResult): string {
-  const config = {
+export function generateConfig(
+  _detection: DetectionResult,
+  existingConfig?: { crew_url?: string },
+): string {
+  const config: {
+    review_external: boolean;
+    schedule_enabled: boolean;
+    crew_url?: string;
+  } = {
     review_external: false,
     schedule_enabled: false,
   };
+  if (existingConfig?.crew_url) {
+    config.crew_url = existingConfig.crew_url;
+  }
   return JSON.stringify(config, null, 2) + "\n";
 }
 
@@ -775,8 +786,9 @@ export function initProject(
 
   // 4. Write config with detected values (always overwrite -- init is authoritative)
   const configPath = join(projectDir, ".ninthwave/config.json");
+  const existingConfig = loadConfig(projectDir);
   mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
-  writeFileSync(configPath, generateConfig(detection));
+  writeFileSync(configPath, generateConfig(detection, existingConfig));
   console.log("Configured:");
   console.log(`  .ninthwave/config.json ${DIM}(project settings)${RESET}`);
 

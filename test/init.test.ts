@@ -505,6 +505,30 @@ describe("generateConfig", () => {
     expect(Object.keys(parsed)).toEqual(["review_external", "schedule_enabled"]);
   });
 
+  it("includes an existing valid crew_url override when provided", () => {
+    const detection: DetectionResult = {
+      ci: null,
+      testCommand: null,
+      mux: null,
+      aiTools: [],
+      repoType: "single",
+      observabilityBackends: [],
+      workspace: null,
+    };
+
+    const config = generateConfig(detection, {
+      crew_url: "wss://crew.example/ws",
+    });
+    const parsed = JSON.parse(config);
+
+    expect(parsed.crew_url).toBe("wss://crew.example/ws");
+    expect(Object.keys(parsed)).toEqual([
+      "review_external",
+      "schedule_enabled",
+      "crew_url",
+    ]);
+  });
+
   it("produces pretty-printed JSON ending with newline", () => {
     const detection: DetectionResult = {
       ci: null,
@@ -770,7 +794,11 @@ describe("initProject", () => {
     mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
     writeFileSync(
       join(projectDir, ".ninthwave/config.json"),
-      JSON.stringify({ review_external: true, schedule_enabled: true }),
+      JSON.stringify({
+        review_external: true,
+        schedule_enabled: true,
+        crew_url: "wss://crew.example/ws",
+      }),
     );
 
     const deps: InitDeps = {
@@ -787,6 +815,7 @@ describe("initProject", () => {
     // Should reflect fresh defaults (init always writes defaults)
     expect(config.review_external).toBe(false);
     expect(config.schedule_enabled).toBe(false);
+    expect(config.crew_url).toBe("wss://crew.example/ws");
   });
 
   it("prints detection summary to console", () => {
@@ -1432,6 +1461,25 @@ describe("initProject config.json", () => {
     );
     // Workspace data is no longer written to config.json
     expect(configJson).not.toHaveProperty("workspace");
+    expect(Object.keys(configJson)).toEqual(["review_external", "schedule_enabled"]);
+  });
+
+  it("fresh init does not invent crew_url", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+
+    const configJson = JSON.parse(
+      readFileSync(join(projectDir, ".ninthwave/config.json"), "utf-8"),
+    );
+
+    expect(configJson).not.toHaveProperty("crew_url");
     expect(Object.keys(configJson)).toEqual(["review_external", "schedule_enabled"]);
   });
 });
