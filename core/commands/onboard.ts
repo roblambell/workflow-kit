@@ -80,6 +80,7 @@ export interface OnboardDeps {
   prompt?: PromptFn;
   getBundleDir?: () => string;
   widgetIO?: WidgetIO;
+  runCheckboxList?: typeof runCheckboxList;
   saveUserConfig?: (updates: Partial<UserConfig>) => void;
 }
 
@@ -170,6 +171,7 @@ export async function onboard(
 ): Promise<void> {
   const commandExists = deps.commandExists ?? defaultCommandExists;
   const prompt = deps.prompt ?? defaultPrompt;
+  const doRunCheckboxList = deps.runCheckboxList ?? runCheckboxList;
   const doSaveUserConfig = deps.saveUserConfig ?? saveUserConfig;
   let bundleDir: string;
   try {
@@ -202,7 +204,7 @@ export async function onboard(
     console.log();
     console.log("  ninthwave works with AI coding assistants. Install one:");
     for (const t of AI_TOOL_PROFILES) {
-      console.log(`    ${BOLD}${t.installCmd}${RESET}`);
+      console.log(`    ${BOLD}${t.displayName}:${RESET} ${t.installCmd}`);
     }
     console.log();
     console.log(`  ${DIM}Claude Code is recommended.${RESET}`);
@@ -233,7 +235,7 @@ export async function onboard(
     io.write(CLEAR_SCREEN + HIDE_CURSOR);
     let toolResult;
     try {
-      toolResult = await runCheckboxList(io, toolItems, {
+      toolResult = await doRunCheckboxList(io, toolItems, {
         title: "Ninthwave \u00b7 AI coding tool",
         validate: (ids) => ids.length > 0 ? null : "Select at least one tool",
       });

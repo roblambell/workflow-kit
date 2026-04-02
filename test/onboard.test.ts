@@ -24,6 +24,7 @@ import {
 import type { WorkItem } from "../core/types.ts";
 import type { InteractiveResult } from "../core/interactive.ts";
 import type { MergeStrategy } from "../core/orchestrator.ts";
+import type { CheckboxItem } from "../core/tui-widgets.ts";
 
 afterEach(() => {
   cleanupTempRepos();
@@ -229,6 +230,8 @@ describe("onboard", () => {
     const output = logs.join("\n");
     expect(output).toContain("No AI coding tool found");
     expect(output).toContain("Install an AI tool");
+    expect(output).toContain("Codex CLI:");
+    expect(output).toContain("npm install -g @openai/codex");
   });
 
   it("runs full flow when an AI tool is found", async () => {
@@ -307,6 +310,34 @@ describe("onboard", () => {
 
     const projectConfig = JSON.parse(readFileSync(join(projectDir, ".ninthwave", "config.json"), "utf8"));
     expect(projectConfig).not.toHaveProperty("ai_tools");
+  });
+
+  it("shows Codex in the onboarding tool picker and persists the selection", async () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle");
+    const savedUpdates: Array<{ ai_tools?: string[] }> = [];
+    let renderedItems: CheckboxItem[] = [];
+
+    await onboard(projectDir, {
+      commandExists: (cmd) => cmd === "claude" || cmd === "codex",
+      prompt: async () => "",
+      getBundleDir: () => bundleDir,
+      widgetIO: {
+        write: () => {},
+        onKey: () => {},
+        offKey: () => {},
+        getRows: () => 24,
+        getCols: () => 80,
+      },
+      runCheckboxList: async (_io, items) => {
+        renderedItems = items;
+        return { cancelled: false, selectedIds: ["codex"], allSelected: false };
+      },
+      saveUserConfig: (updates) => savedUpdates.push(updates),
+    });
+
+    expect(renderedItems.map((item) => item.label)).toEqual(["Claude Code", "Codex CLI"]);
+    expect(savedUpdates).toContainEqual({ ai_tools: ["codex"] });
   });
 });
 

@@ -51,7 +51,8 @@ const defaultPrompt: PromptFn = (question: string): Promise<string> => {
 
 /**
  * Detect all installed AI coding tools.
- * Returns matching AiToolProfile entries in preference order (claude > opencode > copilot).
+ * Returns matching AiToolProfile entries in preference order
+ * (claude > opencode > codex > copilot).
  */
 export function detectInstalledAITools(
   commandExists: CommandChecker = defaultCommandExists,

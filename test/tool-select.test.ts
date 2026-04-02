@@ -69,6 +69,17 @@ describe("selectAiTool", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it("uses saved codex preference when non-interactive with multiple tools", async () => {
+    const result = await selectAiTool(
+      { projectRoot: "/fake", isInteractive: false },
+      stubDeps({
+        commandExists: (cmd) => cmd === "claude" || cmd === "codex",
+        loadUserConfig: () => ({ ai_tools: ["codex"] }),
+      }),
+    );
+    expect(result).toBe("codex");
+  });
+
   it("falls back to first installed when non-interactive with no user preference", async () => {
     const result = await selectAiTool(
       { projectRoot: "/fake", isInteractive: false },
@@ -224,6 +235,16 @@ describe("selectAiTools", () => {
     expect(save).toHaveBeenCalledWith({ ai_tools: ["claude", "opencode"] });
   });
 
+  it("persists codex in explicit tool override order", async () => {
+    const save = vi.fn();
+    const result = await selectAiTools(
+      { toolOverride: "codex,claude", projectRoot: "/fake", isInteractive: true },
+      stubDeps({ saveUserConfig: save }),
+    );
+    expect(result).toEqual(["codex", "claude"]);
+    expect(save).toHaveBeenCalledWith({ ai_tools: ["codex", "claude"] });
+  });
+
   it("handles single --tool override as single-element array", async () => {
     const save = vi.fn();
     const result = await selectAiTools(
@@ -245,6 +266,16 @@ describe("selectAiTools", () => {
     );
     expect(result).toEqual(["claude", "opencode"]);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it("returns saved ai_tools including codex", async () => {
+    const result = await selectAiTools(
+      { projectRoot: "/fake", isInteractive: false },
+      stubDeps({
+        loadUserConfig: () => ({ ai_tools: ["opencode", "codex"] }),
+      }),
+    );
+    expect(result).toEqual(["opencode", "codex"]);
   });
 
   it("falls back to first installed when no user preference exists (non-interactive)", async () => {
@@ -329,14 +360,15 @@ describe("detectInstalledAITools", () => {
   });
 
   it("returns matching tools in profile order", () => {
-    const result = detectInstalledAITools((cmd) => cmd === "opencode" || cmd === "claude");
-    expect(result).toHaveLength(2);
+    const result = detectInstalledAITools((cmd) => cmd === "opencode" || cmd === "claude" || cmd === "codex");
+    expect(result).toHaveLength(3);
     expect(result[0]!.id).toBe("claude");
     expect(result[1]!.id).toBe("opencode");
+    expect(result[2]!.id).toBe("codex");
   });
 
   it("returns all tools when all installed", () => {
     const result = detectInstalledAITools(() => true);
-    expect(result.length).toBeGreaterThanOrEqual(3);
+    expect(result.map((tool) => tool.id)).toEqual(["claude", "opencode", "codex", "copilot"]);
   });
 });

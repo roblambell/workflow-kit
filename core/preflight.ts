@@ -9,6 +9,10 @@ import type { RunResult } from "./types.ts";
 import { run as defaultRun } from "./shell.ts";
 import { AI_TOOL_PROFILES } from "./ai-tools.ts";
 
+function formatAiToolInstallDetail(): string {
+  return `Install one: ${AI_TOOL_PROFILES.map((tool) => `${tool.displayName}: ${tool.installCmd}`).join("; ")}`;
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 
 /** Shell runner signature -- injectable for testing. */
@@ -62,7 +66,7 @@ export function checkGh(runner: ShellRunner): CheckResult {
   return { status: "pass", message: "gh CLI installed and authenticated" };
 }
 
-/** Check: at least one AI tool available (claude, opencode, copilot). */
+/** Check: at least one AI tool available (claude, opencode, codex, copilot). */
 export function checkAiTool(runner: ShellRunner): CheckResult {
   const tools = AI_TOOL_PROFILES.map((p) => p.command);
   const found: string[] = [];
@@ -78,7 +82,7 @@ export function checkAiTool(runner: ShellRunner): CheckResult {
     return {
       status: "fail",
       message: `No AI tool available (need ${tools.join(", ")})`,
-      detail: "Install: curl -fsSL https://claude.ai/install.sh | bash",
+      detail: formatAiToolInstallDetail(),
     };
   }
 

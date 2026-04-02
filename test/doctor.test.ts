@@ -136,11 +136,26 @@ describe("checkAiTool", () => {
     expect(result.message).toContain("opencode");
   });
 
+  it("passes when only codex is available", () => {
+    const runner = mockRunner({
+      "which codex": {
+        stdout: "/usr/local/bin/codex",
+        stderr: "",
+        exitCode: 0,
+      },
+    });
+    const result = checkAiTool(runner);
+    expect(result.status).toBe("pass");
+    expect(result.message).toContain("codex");
+  });
+
   it("fails when no AI tool is available", () => {
     const runner = allFailRunner();
     const result = checkAiTool(runner);
     expect(result.status).toBe("fail");
     expect(result.message).toContain("No AI tool");
+    expect(result.detail).toContain("Codex CLI");
+    expect(result.detail).toContain("npm install -g @openai/codex");
   });
 });
 
@@ -499,5 +514,13 @@ describe("formatDoctorOutput", () => {
     const output = formatDoctorOutput(doctor);
     // Failed checks should have detail/install hints
     expect(output).toContain("Install:");
+  });
+
+  it("surfaces Codex install guidance when no AI tools are available", () => {
+    const repo = setupTempRepo();
+    const doctor = runDoctor(repo, allFailRunner());
+    const output = formatDoctorOutput(doctor);
+    expect(output).toContain("Codex CLI");
+    expect(output).toContain("npm install -g @openai/codex");
   });
 });

@@ -39,7 +39,7 @@ When `REVIEW_TYPE` is `todo` (default), you are reviewing a PR from a ninthwave 
 
 Then read the project instruction files:
 
-1. Check for `CLAUDE.md`, `AGENTS.md`, or `.github/copilot-instructions.md` at the project root -- read whichever exists
+1. Check for `CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md` at the project root -- read the ones that exist, and treat them as read-only project inputs (never create, overwrite, or prune them)
 2. Check for `REVIEW.md` at the project root -- read it if present for project-specific review conventions
 3. Note any coding standards, test conventions, or architectural patterns referenced in these files
 

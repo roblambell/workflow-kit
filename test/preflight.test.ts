@@ -74,6 +74,9 @@ describe("checkAiTool (preflight)", () => {
     const result = checkAiTool(allFailRunner());
     expect(result.status).toBe("fail");
     expect(result.message).toContain("No AI tool");
+    expect(result.message).toContain("codex");
+    expect(result.detail).toContain("Codex CLI");
+    expect(result.detail).toContain("npm install -g @openai/codex");
   });
 
   it("passes when at least one tool is found", () => {
@@ -83,6 +86,15 @@ describe("checkAiTool (preflight)", () => {
     const result = checkAiTool(runner);
     expect(result.status).toBe("pass");
     expect(result.message).toContain("claude");
+  });
+
+  it("passes when codex is the only available tool", () => {
+    const runner = mockRunner({
+      "which codex": { stdout: "/usr/local/bin/codex", stderr: "", exitCode: 0 },
+    });
+    const result = checkAiTool(runner);
+    expect(result.status).toBe("pass");
+    expect(result.message).toContain("codex");
   });
 });
 
@@ -339,8 +351,9 @@ describe("preflight", () => {
 
   it("includes remediation detail in error messages", () => {
     const result = preflight(allFailRunner());
-    // gh check detail: "Install: brew install gh"
+    // gh and AI-tool checks both include install guidance.
     expect(result.errors.some((e) => e.includes("brew install gh"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("@openai/codex"))).toBe(true);
   });
 });
 

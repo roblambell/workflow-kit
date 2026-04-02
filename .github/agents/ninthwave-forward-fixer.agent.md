@@ -30,7 +30,7 @@ Read the following variables from your system prompt (written to `.ninthwave/.pr
 
 Before making any changes:
 
-1. **The project instruction file** at the project root -- check for `CLAUDE.md`, `AGENTS.md`, or `.github/copilot-instructions.md` (read whichever exists)
+1. **Project instruction files** at the project root -- check for `CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md`; read the ones that exist, and treat them as read-only project inputs (never create, overwrite, or prune them)
 2. **Any coding standards** referenced in the project instructions
 
 The project instruction file is the source of truth for project-specific conventions. Follow it.
