@@ -23,7 +23,7 @@ cd ~/code/ninthwave
 bun run core/cli.ts init --yes
 ```
 
-That refreshes managed copies under `.claude/`, `.opencode/`, and `.github/agents/` from the canonical sources. Project instruction files such as `CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md` are user-owned inputs, so init reads them but never creates, overwrites, or prunes them. This repo keeps generated tool copies untracked via repo-local `.gitignore` rules so only the canonical sources are committed here; normal user repos can choose their own tracking policy.
+That refreshes managed copies under `.claude/`, `.opencode/`, `.codex/agents/`, and `.github/agents/` from the canonical sources. Project instruction files such as `CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md` are user-owned inputs, so init reads them but never creates, overwrites, or prunes them. In particular, Codex support is implemented through generated `.codex/agents/ninthwave-*.toml` artifacts; ninthwave does not manage root `AGENTS.md`. This repo keeps generated tool copies untracked via repo-local `.gitignore` rules so only the canonical sources are committed here; normal user repos can choose their own tracking policy.
 
 ### Testing in another project
 
@@ -63,7 +63,7 @@ ninthwave/                          # The repo IS the installable bundle
 - **Self-contained bundle.** The repo itself is the installable unit. Brew installs the compiled binary + resource files. Dev mode runs TypeScript directly via Bun.
 - **Project-specific context lives in the project**, not in ninthwave. The worker reads project-owned instruction files (`CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, etc.) for coding conventions, test commands, and architecture docs, and treats them as read-only inputs.
 - **Skills are installed as managed copies** -- `ninthwave init` copies `skills/` into `.claude/skills/` so tools can discover them without depending on a fixed bundle path.
-- **Agents are copied to all tool directories** -- `.claude/agents/`, `.opencode/agents/`, `.github/agents/`. Any team member works regardless of tool.
+- **Agents are copied to all tool directories** -- `.claude/agents/`, `.opencode/agents/`, `.codex/agents/`, `.github/agents/`. Any team member works regardless of tool. Codex gets generated `.toml` artifacts; root `AGENTS.md` remains a project-owned input.
 - **Expected skills are soft dependencies** -- `/review`, `/qa`, etc. are used if available, with built-in fallbacks when they're not.
 
 ### Key Files

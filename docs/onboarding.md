@@ -66,13 +66,13 @@ sequenceDiagram
 
     Note over O,D: Step 2: AI tool detection
     O->>D: detectInstalledAITools()
-    D-->>O: [claude, opencode, ...] or []
+    D-->>O: [claude, opencode, codex, copilot] or []
 
     alt No AI tool found
         O->>U: Install an AI tool and re-run
         Note over O: Return (bail)
     else One found
-        O->>U: Found Claude Code. Use it? [Y/n]
+        O->>U: Found one supported tool. Use it? [Y/n]
         U-->>O: Y
     else Multiple found
         O->>U: Choose [1-N]
@@ -149,7 +149,7 @@ flowchart TD
 
     B -->|Yes| C["Detect project AI tools<br/><code>detectProjectTools()</code>"]
     C --> D{Tools found?}
-    D -->|Yes| E["Use detected tools<br/>(e.g., Claude Code, OpenCode)"]
+    D -->|Yes| E["Use detected tools<br/>(e.g., Claude Code, OpenCode, Codex CLI)"]
     D -->|No| F["Fall back to ALL tool dirs"]
     E & F --> G["Checkbox: which agents?<br/>implementer ✓ reviewer ✓ forward-fixer ✓<br/><i>all pre-selected</i>"]
     G --> H["Preview managed files to create"]
@@ -176,6 +176,7 @@ flowchart TD
 |---|---|---|---|
 | Claude Code | `.claude/` exists | `.claude/agents/` | `.md` |
 | OpenCode | `.opencode/` or `.opencode.json` exists | `.opencode/agents/` | `.md` |
+| Codex CLI | `.codex/agents/` exists | `.codex/agents/` | `.toml` (prefixed `ninthwave-`) |
 | GitHub Copilot | `.github/copilot-instructions.md` (user-managed) or `.github/agents/` exists | `.github/agents/` | `.agent.md` (prefixed `ninthwave-`) |
 
 ---
@@ -189,7 +190,7 @@ flowchart TD
 | CI provider | `.github/workflows/*.{yml,yaml}` exists | `ci_provider` | `.ninthwave/config` |
 | Test command | `package.json` scripts: `test:ci` > `test` > first `test*` | `test_command` | `.ninthwave/config` |
 | Interactive backend | `which cmux`, else `which tmux` | *(none persisted by init)* | detection summary only |
-| AI tools | `.claude/`, `.opencode/`, `.github/copilot-instructions.md` (user-managed), `.github/agents/` | `AI_TOOLS` | `.ninthwave/config` |
+| AI tools | `.claude/`, `.opencode/`, `.codex/agents/`, `.github/copilot-instructions.md` (user-managed), `.github/agents/` | `AI_TOOLS` | `.ninthwave/config` |
 | Repo type | `package.json` workspaces or `pnpm-workspace.yaml` | `REPO_TYPE` | `.ninthwave/config` |
 | Workspace config | Resolve workspace globs → packages list, detect turbo | *(structured)* | `.ninthwave/config.json` |
 | Observability | `SENTRY_AUTH_TOKEN`, `PAGERDUTY_API_TOKEN`, `LINEAR_API_KEY` env vars | *(informational)* | *(summary only)* |
@@ -228,9 +229,13 @@ Every file and directory created during onboarding, plus the user-managed instru
 | `.opencode/agents/implementer.md` | File | If OpenCode selected | Yes (refreshed) | Repo policy | Implementation agent prompt |
 | `.opencode/agents/reviewer.md` | File | If OpenCode selected | Yes (refreshed) | Repo policy | PR review agent prompt |
 | `.opencode/agents/forward-fixer.md` | File | If OpenCode selected | Yes (refreshed) | Repo policy | CI fix-forward agent prompt |
+| `.codex/agents/ninthwave-implementer.toml` | File | If Codex CLI selected | Yes (refreshed) | Repo policy | Implementation agent prompt rendered as Codex TOML |
+| `.codex/agents/ninthwave-reviewer.toml` | File | If Codex CLI selected | Yes (refreshed) | Repo policy | PR review agent prompt rendered as Codex TOML |
+| `.codex/agents/ninthwave-forward-fixer.toml` | File | If Codex CLI selected | Yes (refreshed) | Repo policy | CI fix-forward agent prompt rendered as Codex TOML |
 | `.github/agents/ninthwave-implementer.agent.md` | File | If Copilot selected | Yes (refreshed) | Repo policy | Implementation agent prompt |
 | `.github/agents/ninthwave-reviewer.agent.md` | File | If Copilot selected | Yes (refreshed) | Repo policy | PR review agent prompt |
 | `.github/agents/ninthwave-forward-fixer.agent.md` | File | If Copilot selected | Yes (refreshed) | Repo policy | CI fix-forward agent prompt |
+| `AGENTS.md` | File | Never created by ninthwave | Never | Repo policy | User-managed project instructions (read-only input) |
 | `.github/copilot-instructions.md` | File | Never created by ninthwave | Never | Repo policy | User-managed Copilot project instructions (read-only input) |
 
 ### Other project files
@@ -267,7 +272,7 @@ No project-level files are created in global mode.
 
 ## 7. Directory Tree
 
-Resulting project structure after `nw init` in a project with Claude Code, OpenCode, and Copilot detected:
+Resulting project structure after `nw init` in a project with Claude Code, OpenCode, Codex CLI, and Copilot detected:
 
 ```
 project-root/
@@ -299,6 +304,12 @@ project-root/
 │       ├── reviewer.md
 │       └── forward-fixer.md
 │
+├── .codex/                              # managed copies (if detected)
+│   └── agents/
+│       ├── ninthwave-implementer.toml
+│       ├── ninthwave-reviewer.toml
+│       └── ninthwave-forward-fixer.toml
+│
 ├── .github/                             # regular repo metadata + managed copies
 │   ├── agents/
 │   │   ├── ninthwave-implementer.agent.md
@@ -306,11 +317,12 @@ project-root/
 │   │   └── ninthwave-forward-fixer.agent.md
 │   └── copilot-instructions.md          # optional user-managed Copilot instructions
 │
+├── AGENTS.md                            # optional user-managed project instructions
 ├── .gitignore                           # repo-local policy (optional)
 └── .worktrees/                          # created later by orchestrator, gitignored
 ```
 
-By default, `nw init` writes portable managed copies into the project. In the ninthwave repo itself, those generated copies are ignored so only the canonical sources in `skills/`, `agents/`, and `CLAUDE.md` stay tracked. Project instruction files such as `CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md` remain user-owned inputs; init reads them but never creates, refreshes, or prunes them.
+By default, `nw init` writes portable managed copies into the project. In the ninthwave repo itself, those generated copies are ignored so only the canonical sources in `skills/`, `agents/`, and `CLAUDE.md` stay tracked. Project instruction files such as `CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md` remain user-owned inputs; init reads them but never creates, refreshes, or prunes them. For Codex, the managed boundary is `.codex/agents/ninthwave-*.toml` only.
 
 ---
 
@@ -341,6 +353,7 @@ If a project wants generated tool copies to stay untracked, add repo-local root 
 /.claude/agents/
 /.claude/skills/
 /.opencode/agents/
+/.codex/agents/
 /.github/agents/
 ```
 
@@ -391,6 +404,7 @@ Running `nw init` multiple times is safe:
 | Schedule example file | Only created if `schedules/` dir is new |
 | Skill managed copies | Re-copied from the canonical bundle |
 | Agent managed copies | Refreshed when stale, left alone when already current |
+| `AGENTS.md` | Preserved as a user-managed input if present; never written or pruned by init |
 | `.github/copilot-instructions.md` | Preserved as a user-managed input if present; never written or pruned by init |
 | `.ninthwave/.gitignore` | Written once if missing, then preserved |
 | `nw` CLI alias | Skipped if already in PATH |

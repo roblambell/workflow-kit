@@ -26,7 +26,7 @@ Work items are markdown files in `.ninthwave/work/`. That directory is the live 
 
 Looking back happens through GitHub PRs, git history, `nw history <ID>` for an item's state timeline, and `nw logs` for orchestration events. The missing `done/` lane is intentional.
 
-Each item gets its own git worktree and a full native instance of [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview), [OpenCode](https://opencode.ai), or [Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli), you can jump into and steer.
+Each item gets its own git worktree and a full native instance of [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview), [OpenCode](https://opencode.ai), [Codex CLI](https://github.com/openai/codex), or [Copilot CLI](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli), which you can jump into and steer.
 
 The orchestrator monitors CI, coordinates between implementer and review agents, external feedback, and merges approved PRs. Dependent items stack as chained PRs - reviewers get clean diffs.
 
@@ -39,6 +39,8 @@ brew install ninthwave-sh/tap/ninthwave
 ```
 
 Requires [gh](https://cli.github.com). Interactive backends are optional: install [tmux](https://github.com/tmux/tmux/wiki) or [cmux](https://cmux.com) if you want attachable terminal sessions, or run headless by default.
+
+Supported AI tools: Claude Code, OpenCode, Codex CLI, and GitHub Copilot CLI. `nw init` manages generated tool artifacts such as `.codex/agents/ninthwave-*.toml`, but project instruction files like `AGENTS.md` remain user-owned inputs that ninthwave does not create or overwrite. For Codex-specific setup details, see [docs/codex-cli.md](docs/codex-cli.md).
 
 ## Getting started
 

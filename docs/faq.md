@@ -15,7 +15,7 @@ Instead of running one AI session at a time -- writing code, creating a PR, wait
 - **Git** -- version control (you already have this)
 - **GitHub CLI (`gh`)** -- for PR operations. Install via `brew install gh` and authenticate with `gh auth login`
 - **Optional interactive backend** -- install [tmux](https://github.com/tmux/tmux/wiki) or [cmux](https://cmux.com) if you want attachable terminal sessions. Headless works by default, so neither mux is mandatory. `tmux` is a broadly available terminal option; `cmux` gives the richest sidebar/progress UI on macOS
-- **An AI coding tool** -- at least one of: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCode](https://opencode.ai), or [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli)
+- **An AI coding tool** -- at least one of: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCode](https://opencode.ai), [Codex CLI](https://github.com/openai/codex), or [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli)
 
 ### How do I install ninthwave?
 
@@ -47,7 +47,7 @@ This auto-detects your project structure (CI system, AI tools, monorepo layout) 
 
 - `.ninthwave/` directory with configuration
 - Managed skill copies for `/decompose`
-- Managed agent files (implementer, reviewer, forward-fixer) in your AI tool directories
+- Managed agent files (for example `.claude/agents/*.md`, `.codex/agents/ninthwave-*.toml`, or `.github/agents/*.agent.md`) in your AI tool directories
 
 Project instruction files such as `CLAUDE.md`, `AGENTS.md`, and `.github/copilot-instructions.md` are read-only inputs. ninthwave reads them for context and tool detection, but does not create, overwrite, or prune them.
 
@@ -274,11 +274,11 @@ nw logs --item H-1   # Filter to one item
 
 ### How do I use ninthwave with different AI tools?
 
-ninthwave supports Claude Code, OpenCode, and GitHub Copilot CLI. When you run `nw init`, it auto-detects which tools are configured in your project (for example via `.claude/`, `.opencode/`, `.github/agents/`, or a user-managed `.github/copilot-instructions.md`) and writes managed agent/skill copies for each.
+ninthwave supports Claude Code, OpenCode, Codex CLI, and GitHub Copilot CLI. When you run `nw init`, it auto-detects which tools are configured in your project (for example via `.claude/`, `.opencode/`, `.codex/agents/`, `.github/agents/`, or a user-managed `.github/copilot-instructions.md`) and writes managed agent/skill copies for each.
 
 Switching tools doesn't require code changes -- ninthwave orchestrates at the session level, launching whichever tool is configured and sending it the work item prompt.
 
-Most user repos can choose whether to commit those generated copies. The ninthwave repo itself ignores them and tracks only the canonical sources in `skills/`, `agents/`, and the root `CLAUDE.md`.
+Most user repos can choose whether to commit those generated copies. The ninthwave repo itself ignores them and tracks only the canonical sources in `skills/`, `agents/`, and the root `CLAUDE.md`. User-owned instruction files such as `AGENTS.md` stay outside that managed-artifact set, so ninthwave will not create or overwrite them. See the [Codex CLI guide](codex-cli.md) for the Codex-specific command shapes and `.codex/agents/` details.
 
 ---
 
