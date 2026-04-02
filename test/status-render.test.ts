@@ -55,6 +55,7 @@ import {
   renderHelpOverlay,
   renderControlsOverlay,
   renderPausedOverlay,
+  renderStartupOverlay,
   renderDetailOverlay,
   collaborationLabel,
   reviewModeLabel,
@@ -3590,6 +3591,38 @@ describe("renderPausedOverlay", () => {
     for (const line of lines) {
       expect(stripAnsiForWidth(line).length).toBeLessThanOrEqual(44);
     }
+  });
+});
+
+describe("renderStartupOverlay", () => {
+  it("renders a centered loading overlay with stable phase copy", () => {
+    const lines = renderStartupOverlay(80, 24, {
+      phaseLabel: "Preparing runtime",
+      detailLines: ["Bootstrapping the watch queue."],
+    });
+    const text = lines.map(stripAnsi).join("\n");
+
+    expect(lines).toHaveLength(24);
+    expect(text).toContain("Loading");
+    expect(text).toContain("Preparing runtime");
+    expect(text).toContain("Bootstrapping the watch queue.");
+    expect(text).toContain("Actions stay blocked until startup completes");
+  });
+
+  it("switches to failure chrome when startup reports an error", () => {
+    const lines = renderStartupOverlay(60, 16, {
+      title: "Startup failed",
+      phaseLabel: "Restoring runtime state",
+      detailLines: ["startup config missing"],
+      hint: "Startup did not finish",
+      tone: "error",
+    });
+    const text = lines.map(stripAnsi).join("\n");
+
+    expect(text).toContain("Startup failed");
+    expect(text).toContain("Restoring runtime state");
+    expect(text).toContain("startup config missing");
+    expect(text).toContain("Startup did not finish");
   });
 });
 

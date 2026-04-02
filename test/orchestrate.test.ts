@@ -44,6 +44,7 @@ import {
   createInteractiveChildEngineRunner,
   bootstrapTuiUpdateNotice,
   renderTuiPanelFrameFromStatusItems,
+  runTuiStartupPreparation,
   resolveInteractiveStartupConfig,
   loadLocalStartupItems,
   pruneMergedStartupReplayItems,
@@ -6196,6 +6197,7 @@ describe("interactive watch operator session", () => {
       savedLogScrollOffset: 0,
       statusLayout: null,
       engineDisconnected: false,
+      startupOverlay: undefined,
       ...overrides,
     };
   }
@@ -6275,6 +6277,92 @@ describe("interactive watch operator session", () => {
     };
     return child;
   }
+
+  it("renders the status shell immediately with a startup overlay before the first snapshot", async () => {
+    const stdin = makeOperatorStdin();
+    const { stream: stdout, writes } = makeOperatorStdout();
+    const tuiState = makeOperatorTuiState({
+      startupOverlay: {
+        phaseLabel: "Preparing runtime",
+        detailLines: ["Waiting for startup preparation."],
+      },
+    });
+    const child = makeOperatorChild();
+
+    const sessionPromise = runInteractiveWatchOperatorSession({
+      projectRoot: "/project",
+      childArgs: ["--items", "H-TRS-3"],
+      tuiState,
+      log: () => {},
+      initialSnapshot: {
+        daemonState: makeOperatorSnapshot("Queued snapshot").state,
+        runtime: makeOperatorSnapshot("Queued snapshot").runtime,
+      },
+      watchMode: true,
+      stdin,
+      stdout,
+      spawnChild: () => child,
+    });
+
+    await Promise.resolve();
+
+    const initialOutput = writes.join("");
+    expect(initialOutput).toContain("Loading");
+    expect(initialOutput).toContain("Preparing runtime");
+    expect(initialOutput).not.toContain("Queued snapshot");
+
+    child.emitLine({
+      type: "startup",
+      overlay: {
+        phaseLabel: "Restoring runtime state",
+        detailLines: ["Recovering queued workspaces."],
+      },
+    });
+    await Promise.resolve();
+
+    expect(writes.join("")).toContain("Restoring runtime state");
+
+    child.emitLine({ type: "snapshot", event: makeOperatorSnapshot("Live snapshot") });
+    await Promise.resolve();
+
+    expect(tuiState.startupOverlay).toBeUndefined();
+    expect(writes.join("")).toContain("Live snapshot");
+
+    (stdin as any)._emit("data", "q");
+    await sessionPromise;
+  });
+
+  it("runTuiStartupPreparation renders before prep resolves and delays execution until ready", async () => {
+    const tuiState = makeOperatorTuiState();
+    const render = vi.fn();
+    const execute = vi.fn(async () => "ready");
+    let resolvePrepare!: (value: string) => void;
+    const prepare = vi.fn(() => new Promise<string>((resolve) => {
+      resolvePrepare = resolve;
+    }));
+
+    const promise = runTuiStartupPreparation({
+      tuiState,
+      render,
+      initialOverlay: {
+        phaseLabel: "Preparing runtime",
+        detailLines: ["Bootstrapping watch state."],
+      },
+      prepare,
+      execute,
+    });
+
+    await Promise.resolve();
+
+    expect(render).toHaveBeenCalled();
+    expect(tuiState.startupOverlay?.phaseLabel).toBe("Preparing runtime");
+    expect(execute).not.toHaveBeenCalled();
+
+    resolvePrepare("prepared");
+    await expect(promise).resolves.toBe("ready");
+    expect(execute).toHaveBeenCalledWith("prepared");
+    expect(tuiState.startupOverlay).toBeUndefined();
+  });
 
   it("re-renders from snapshot payloads while the engine is blocked", async () => {
     const stdin = makeOperatorStdin();
@@ -6649,6 +6737,53 @@ describe("interactive watch operator session", () => {
     await sessionPromise;
 
     expect(writes.join("")).toContain("Engine failed during startup.");
+    expect(writes.join("")).toContain("Error: startup config missing");
+  });
+
+  it("keeps startup phase copy visible before surfacing a pre-snapshot startup failure", async () => {
+    const stdin = makeOperatorStdin();
+    const { stream: stdout, writes } = makeOperatorStdout();
+    const tuiState = makeOperatorTuiState({
+      startupOverlay: {
+        phaseLabel: "Preparing runtime",
+        detailLines: ["Bootstrapping watch state."],
+      },
+    });
+    const child = makeOperatorChild();
+
+    const sessionPromise = runInteractiveWatchOperatorSession({
+      projectRoot: "/project",
+      childArgs: ["--items", "H-TRS-3"],
+      tuiState,
+      log: () => {},
+      initialSnapshot: {
+        daemonState: makeOperatorSnapshot().state,
+        runtime: makeOperatorSnapshot().runtime,
+      },
+      watchMode: true,
+      stdin,
+      stdout,
+      spawnChild: () => child,
+    });
+
+    await Promise.resolve();
+    child.emitLine({
+      type: "startup",
+      overlay: {
+        phaseLabel: "Restoring runtime state",
+        detailLines: ["Recovering queued workspaces."],
+      },
+    });
+    await Promise.resolve();
+    child.emitStderrText("Error: startup config missing\n");
+    child.emit("close", 1, null);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    (stdin as any)._emit("data", "q");
+    await sessionPromise;
+
+    expect(writes.join("")).toContain("Restoring runtime state");
     expect(writes.join("")).toContain("Error: startup config missing");
   });
 

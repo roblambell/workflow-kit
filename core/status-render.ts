@@ -98,6 +98,19 @@ export interface ViewOptions {
   inlineModeIndicatorOnTitle?: boolean;
 }
 
+export interface StartupOverlayState {
+  /** Optional override for the overlay title. */
+  title?: string;
+  /** Stable phase label shown during startup preparation. */
+  phaseLabel: string;
+  /** Optional supporting copy shown under the phase label. */
+  detailLines?: string[];
+  /** Optional footer hint. */
+  hint?: string;
+  /** Loading uses cyan, error uses red. */
+  tone?: "loading" | "error";
+}
+
 /**
  * Return the styled icon badge for a merge strategy.
  * Reused by the TUI footer and the help overlay (M-TUI-5).
@@ -2404,6 +2417,91 @@ export function formatItemDetail(
 }
 
 // ─── Help overlay ────────────────────────────────────────────────────────────
+
+export function renderCenteredOverlay(
+  termWidth: number,
+  termRows: number,
+  opts: {
+    title: string;
+    contentLines: string[];
+    hint: string;
+    titleColor?: string;
+  },
+): string[] {
+  const {
+    title,
+    contentLines,
+    hint,
+    titleColor = RESET,
+  } = opts;
+  const maxContentWidth = Math.max(
+    title.length,
+    hint.length,
+    ...contentLines.map((line) => stripAnsiForWidth(line).length),
+  );
+  const innerWidth = Math.min(maxContentWidth + 4, termWidth - 4);
+  const boxWidth = innerWidth + 2;
+  const leftMargin = Math.max(0, Math.floor((termWidth - boxWidth) / 2));
+  const marginPad = " ".repeat(leftMargin);
+  const boxLines: string[] = [];
+
+  boxLines.push(`${marginPad}┌${"─".repeat(innerWidth)}┐`);
+
+  const titlePad = Math.max(0, Math.floor((innerWidth - title.length) / 2));
+  boxLines.push(`${marginPad}│${" ".repeat(titlePad)}${BOLD}${titleColor}${title}${RESET}${" ".repeat(Math.max(0, innerWidth - titlePad - title.length))}│`);
+  boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
+
+  const maxContentDisplay = innerWidth - 2;
+  for (const line of contentLines) {
+    const displayLen = stripAnsiForWidth(line).length;
+    let rendered = line;
+    if (displayLen > maxContentDisplay) {
+      let visible = 0;
+      let cutIdx = 0;
+      const plain = stripAnsiForWidth(line);
+      for (let i = 0; i < plain.length && visible < maxContentDisplay - 3; i++) {
+        visible++;
+        cutIdx = i + 1;
+      }
+      rendered = plain.slice(0, cutIdx) + "...";
+    }
+    const renderedLen = stripAnsiForWidth(rendered).length;
+    const rightPad = Math.max(0, innerWidth - 2 - renderedLen);
+    boxLines.push(`${marginPad}│  ${rendered}${" ".repeat(rightPad)}│`);
+  }
+
+  boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
+  const hintPad = Math.max(0, Math.floor((innerWidth - hint.length) / 2));
+  boxLines.push(`${marginPad}│${" ".repeat(hintPad)}${DIM}${hint}${RESET}${" ".repeat(Math.max(0, innerWidth - hintPad - hint.length))}│`);
+  boxLines.push(`${marginPad}└${"─".repeat(innerWidth)}┘`);
+
+  const totalBoxHeight = boxLines.length;
+  const topPad = Math.max(0, Math.floor((termRows - totalBoxHeight) / 2));
+  const output: string[] = [];
+  for (let i = 0; i < topPad; i++) output.push("");
+  output.push(...boxLines);
+  while (output.length < termRows) output.push("");
+  return output.slice(0, termRows);
+}
+
+export function renderStartupOverlay(
+  termWidth: number,
+  termRows: number,
+  overlay: StartupOverlayState,
+): string[] {
+  const title = overlay.title ?? (overlay.tone === "error" ? "Startup failed" : "Loading");
+  const titleColor = overlay.tone === "error" ? RED : CYAN;
+  const contentLines = [
+    `${BOLD}${titleColor}${overlay.phaseLabel}${RESET}`,
+    ...(overlay.detailLines?.map((line) => `${DIM}${line}${RESET}`) ?? []),
+  ];
+  return renderCenteredOverlay(termWidth, termRows, {
+    title,
+    contentLines,
+    hint: overlay.hint ?? "Actions stay blocked until startup completes",
+    titleColor,
+  });
+}
 
 /**
  * Render the full-screen help overlay as an array of lines.

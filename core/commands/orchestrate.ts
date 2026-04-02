@@ -47,6 +47,7 @@ import { ID_IN_FILENAME, PRIORITY_NUM } from "../types.ts";
 import { loadConfig, saveConfig, loadUserConfig, saveUserConfig } from "../config.ts";
 import type { ProjectConfig, UserConfig } from "../config.ts";
 import {
+  collaborationIntentFromMode,
   persistedCollaborationModeToRuntime,
   resolveTuiSettingsDefaults,
   type TuiSettingsDefaults,
@@ -97,12 +98,15 @@ import {
   renderControlsOverlay,
   renderPausedOverlay,
   renderDetailOverlay,
+  renderCenteredOverlay,
+  renderStartupOverlay,
   clampScrollOffset,
   scrollStatusItemIntoView,
   buildPanelLayout,
   renderPanelFrame,
   MIN_FULLSCREEN_ROWS,
   type StatusItem,
+  type StartupOverlayState,
   type ViewOptions,
   type CrewStatusInfo,
   type PanelMode,
@@ -452,6 +456,42 @@ export interface InteractiveEngineTransportRuntime {
   collaborationMode: "local" | "shared" | "joined";
 }
 
+export const INTERACTIVE_STARTUP_OVERLAYS = {
+  preparingRuntime: {
+    phaseLabel: "Preparing runtime",
+    detailLines: [
+      "Loading work queue and startup settings.",
+      "The status shell is live while startup finishes.",
+    ],
+  },
+  preparingQueue: {
+    phaseLabel: "Preparing work queue",
+    detailLines: [
+      "Checking labels and cross-repo metadata.",
+      "Execution stays blocked until the queue is safe to run.",
+    ],
+  },
+  restoringState: {
+    phaseLabel: "Restoring runtime state",
+    detailLines: [
+      "Reconnecting workspaces and replaying queued state.",
+      "Existing overlays will take over once startup completes.",
+    ],
+  },
+  connectingSession: {
+    phaseLabel: "Connecting collaboration",
+    detailLines: [
+      "Finishing crew session setup before actions unlock.",
+    ],
+  },
+  startingEngine: {
+    phaseLabel: "Starting orchestrator",
+    detailLines: [
+      "Launching the watch engine and waiting for the first live snapshot.",
+    ],
+  },
+} as const satisfies Record<string, StartupOverlayState>;
+
 export interface InteractiveEngineSnapshotRenderState {
   daemonState: DaemonState;
   runtime: InteractiveEngineTransportRuntime;
@@ -461,6 +501,7 @@ export interface InteractiveEngineSnapshotRenderState {
 
 export type InteractiveEngineTransportMessage =
   | { type: "snapshot"; event: WatchEngineSnapshotEvent }
+  | { type: "startup"; overlay: StartupOverlayState }
   | { type: "log"; entry: LogEntry }
   | { type: "result"; result: OrchestrateLoopResult }
   | { type: "control-result"; requestId: string; result: RuntimeCollaborationActionResult }
@@ -513,6 +554,17 @@ function maybeTriggerInteractiveEngineStartupFailureForTest(isInteractiveEngineC
   if (!isInteractiveEngineChild) return;
   if (process.env[TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_ENV] !== "1") return;
   throw new Error(TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE);
+}
+
+function emitInteractiveEngineStartupOverlay(
+  isInteractiveEngineChild: boolean,
+  overlay: StartupOverlayState,
+): void {
+  if (!isInteractiveEngineChild) return;
+  process.stdout.write(JSON.stringify({
+    type: "startup",
+    overlay,
+  } satisfies InteractiveEngineTransportMessage) + "\n");
 }
 
 export interface InteractiveEngineChildProcess {
@@ -1050,47 +1102,6 @@ export interface TuiDetailSnapshot {
   descriptionBody?: string;
 }
 
-function renderCenteredOverlay(
-  termWidth: number,
-  termRows: number,
-  title: string,
-  detailLines: string[],
-  hint: string,
-  titleColor: string,
-): string[] {
-  const contentLines = [
-    "",
-    ...detailLines.map((line) => `  ${line}`),
-    "",
-    `  ${hint}`,
-    "",
-  ];
-  const maxContentWidth = Math.max(title.length, ...contentLines.map((line) => line.length));
-  const innerWidth = Math.min(maxContentWidth + 4, termWidth - 4);
-  const boxWidth = innerWidth + 2;
-  const leftMargin = Math.max(0, Math.floor((termWidth - boxWidth) / 2));
-  const marginPad = " ".repeat(leftMargin);
-  const boxLines: string[] = [];
-
-  boxLines.push(`${marginPad}┌${"─".repeat(innerWidth)}┐`);
-  const titlePad = Math.max(0, Math.floor((innerWidth - title.length) / 2));
-  boxLines.push(`${marginPad}│${" ".repeat(titlePad)}${BOLD}${titleColor}${title}${RESET}${" ".repeat(Math.max(0, innerWidth - titlePad - title.length))}│`);
-  boxLines.push(`${marginPad}│${" ".repeat(innerWidth)}│`);
-  for (const line of contentLines) {
-    const visible = line.length > innerWidth - 2 ? `${line.slice(0, Math.max(0, innerWidth - 5))}...` : line;
-    const rightPad = Math.max(0, innerWidth - 2 - visible.length);
-    boxLines.push(`${marginPad}│  ${visible}${" ".repeat(rightPad)}│`);
-  }
-  boxLines.push(`${marginPad}└${"─".repeat(innerWidth)}┘`);
-
-  const topPad = Math.max(0, Math.floor((termRows - boxLines.length) / 2));
-  const output: string[] = [];
-  for (let i = 0; i < topPad; i++) output.push("");
-  output.push(...boxLines);
-  while (output.length < termRows) output.push("");
-  return output.slice(0, termRows);
-}
-
 function renderEngineRecoveryOverlay(
   termWidth: number,
   termRows: number,
@@ -1099,17 +1110,15 @@ function renderEngineRecoveryOverlay(
   const detailLines = (reason?.split("\n") ?? ["The watch engine exited before acknowledging all controls."])
     .map((line) => line.trim())
     .filter(Boolean);
-  return renderCenteredOverlay(
-    termWidth,
-    termRows,
-    "Engine disconnected",
-    detailLines,
-    "Press r to restart or q to quit",
-    RED,
-  );
+  return renderCenteredOverlay(termWidth, termRows, {
+    title: "Engine disconnected",
+    contentLines: detailLines,
+    hint: "Press r to restart or q to quit",
+    titleColor: RED,
+  });
 }
 
-type ActiveTuiOverlay = "engine-recovery" | "help" | "controls" | "paused" | "detail" | "none";
+type ActiveTuiOverlay = "engine-recovery" | "help" | "controls" | "paused" | "detail" | "startup" | "none";
 
 function resolveActiveTuiOverlay(tuiState: TuiState): ActiveTuiOverlay {
   if (tuiState.engineDisconnected) return "engine-recovery";
@@ -1117,6 +1126,7 @@ function resolveActiveTuiOverlay(tuiState: TuiState): ActiveTuiOverlay {
   if (tuiState.showControls || tuiState.viewOptions.showControls) return "controls";
   if (isTuiPaused(tuiState)) return "paused";
   if (tuiState.detailItemId) return "detail";
+  if (tuiState.startupOverlay) return "startup";
   return "none";
 }
 
@@ -1220,6 +1230,12 @@ export function renderTuiPanelFrameFromStatusItems(
 
       tuiState.detailItemId = null;
       renderDefaultPanel();
+      break;
+    }
+    case "startup": {
+      const overlayLines = renderStartupOverlay(termWidth, termRows, tuiState.startupOverlay!);
+      const content = overlayLines.join("\n");
+      write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
       break;
     }
     case "none": {
@@ -1343,6 +1359,45 @@ export interface InteractiveWatchOperatorSessionResult {
   lastSnapshot: InteractiveEngineSnapshotRenderState;
 }
 
+export interface TuiStartupPreparationOptions<TPrepared, TResult> {
+  tuiState: TuiState;
+  render: () => void;
+  initialOverlay: StartupOverlayState;
+  prepare: (updateOverlay: (overlay: StartupOverlayState) => void) => Promise<TPrepared>;
+  execute: (prepared: TPrepared) => Promise<TResult> | TResult;
+}
+
+export async function runTuiStartupPreparation<TPrepared, TResult>(
+  opts: TuiStartupPreparationOptions<TPrepared, TResult>,
+): Promise<TResult> {
+  let currentOverlay = opts.initialOverlay;
+  const updateOverlay = (overlay: StartupOverlayState) => {
+    currentOverlay = overlay;
+    opts.tuiState.startupOverlay = currentOverlay;
+    opts.render();
+  };
+
+  updateOverlay(currentOverlay);
+
+  try {
+    const prepared = await opts.prepare(updateOverlay);
+    opts.tuiState.startupOverlay = undefined;
+    opts.render();
+    return await opts.execute(prepared);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    opts.tuiState.startupOverlay = {
+      title: "Startup failed",
+      phaseLabel: currentOverlay.phaseLabel,
+      detailLines: [message],
+      hint: "Startup did not finish",
+      tone: "error",
+    };
+    opts.render();
+    throw error;
+  }
+}
+
 export async function runInteractiveWatchOperatorSession(
   opts: InteractiveWatchOperatorSessionOptions,
 ): Promise<InteractiveWatchOperatorSessionResult> {
@@ -1452,8 +1507,14 @@ export async function runInteractiveWatchOperatorSession(
             if (!engineReady) pushEngineDiagnosticLines(startupDiagnostics, trimmed);
             continue;
           }
+          if (message.type === "startup") {
+            opts.tuiState.startupOverlay = message.overlay;
+            render();
+            continue;
+          }
           if (message.type === "snapshot") {
             engineReady = true;
+            opts.tuiState.startupOverlay = undefined;
             lastSnapshot = {
               daemonState: message.event.state,
               runtime: message.event.runtime,
@@ -1761,6 +1822,12 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
         write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
         break;
       }
+      case "startup": {
+        const overlayLines = renderStartupOverlay(termWidth, termRows, tuiState.startupOverlay!);
+        const content = overlayLines.join("\n");
+        write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
+        break;
+      }
       case "none": {
         renderDefaultPanel();
         break;
@@ -1817,6 +1884,248 @@ export function bootstrapTuiUpdateNotice(
     .catch(() => {
       // Best-effort only. Keep any cached notice already shown.
     });
+}
+
+interface InteractiveOperatorParentSessionOptions {
+  projectRoot: string;
+  parsed: ParsedWatchArgs;
+  log: (entry: LogEntry) => void;
+  logBuffer: PanelLogEntry[];
+  workItemMap: Map<string, WorkItem>;
+  itemIds: string[];
+  mergeStrategy: MergeStrategy;
+  wipLimit: number;
+  toolOverride?: string;
+  watchMode: boolean;
+  futureOnlyStartup: boolean;
+  reviewMode: "off" | "ninthwave-prs" | "all-prs";
+  collaborationMode: "local" | "shared" | "joined";
+  bypassEnabled: boolean;
+  fixForward: boolean;
+  reviewAutoFix?: "off" | "direct" | "pr";
+  crewCode?: string;
+  connectMode: boolean;
+  crewUrl?: string;
+  loadRunnableWorkItems: (source: "startup" | "watch-scan" | "run-more") => WorkItem[];
+}
+
+async function runInteractiveOperatorParentSession(
+  opts: InteractiveOperatorParentSessionOptions,
+): Promise<void> {
+  const daemonStartedAt = new Date().toISOString();
+  let currentItemIds = [...opts.itemIds];
+  let currentToolOverride = opts.toolOverride;
+
+  const buildQueuedState = (
+    itemIds: string[],
+    runtime: InteractiveEngineTransportRuntime,
+  ): InteractiveEngineSnapshotRenderState => {
+    const orch = new Orchestrator({
+      wipLimit: runtime.wipLimit,
+      mergeStrategy: runtime.mergeStrategy,
+      bypassEnabled: opts.bypassEnabled,
+      fixForward: opts.fixForward,
+      skipReview: runtime.reviewMode === "off",
+      gracePeriodMs: 0,
+      ...(opts.reviewAutoFix !== undefined ? { reviewAutoFix: opts.reviewAutoFix } : {}),
+    });
+    for (const id of itemIds) {
+      const workItem = opts.workItemMap.get(id);
+      if (workItem) orch.addItem(workItem);
+    }
+    return {
+      daemonState: serializeOrchestratorState(orch.getAllItems(), process.pid, daemonStartedAt, {
+        wipLimit: runtime.wipLimit,
+        ...(opts.futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
+      }),
+      runtime,
+    };
+  };
+
+  let operatorLastSnapshot = buildQueuedState(currentItemIds, {
+    paused: false,
+    mergeStrategy: opts.mergeStrategy,
+    wipLimit: opts.wipLimit,
+    reviewMode: opts.reviewMode,
+    collaborationMode: opts.collaborationMode,
+  });
+
+  let sendRuntimeControl = (_command: WatchEngineControlCommand) => {};
+  let requestCollaborationFromEngine = async (
+    _request: RuntimeCollaborationActionRequest,
+  ): Promise<RuntimeCollaborationActionResult> => ({
+    error: "Collaboration engine unavailable.",
+  });
+
+  const tuiState: TuiState = {
+    scrollOffset: 0,
+    viewOptions: {
+      showBlockerDetail: true,
+      sessionStartedAt: daemonStartedAt,
+      mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
+      collaborationMode: operatorLastSnapshot.runtime.collaborationMode,
+      collaborationIntent: collaborationIntentFromMode(operatorLastSnapshot.runtime.collaborationMode),
+      collaborationJoinInputActive: false,
+      collaborationJoinInputValue: "",
+      collaborationBusy: false,
+      reviewMode: operatorLastSnapshot.runtime.reviewMode,
+      ...(opts.futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
+    },
+    paused: false,
+    pendingPaused: undefined,
+    wipLimit: operatorLastSnapshot.runtime.wipLimit,
+    pendingWipLimit: undefined,
+    mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
+    pendingStrategy: undefined,
+    pendingStrategyDeadlineMs: undefined,
+    pendingStrategyTimer: undefined,
+    pendingStrategyCountdownTimer: undefined,
+    bypassEnabled: opts.bypassEnabled,
+    ctrlCPending: false,
+    ctrlCTimestamp: 0,
+    showHelp: false,
+    showControls: false,
+    controlsRowIndex: 0,
+    collaborationMode: operatorLastSnapshot.runtime.collaborationMode,
+    pendingCollaborationMode: undefined,
+    collaborationIntent: collaborationIntentFromMode(operatorLastSnapshot.runtime.collaborationMode),
+    collaborationJoinInputActive: false,
+    collaborationJoinInputValue: "",
+    collaborationBusy: false,
+    reviewMode: operatorLastSnapshot.runtime.reviewMode,
+    pendingReviewMode: undefined,
+    panelMode: readLayoutPreference(opts.projectRoot),
+    logBuffer: opts.logBuffer,
+    logScrollOffset: 0,
+    logLevelFilter: "all",
+    selectedItemId: undefined,
+    visibleItemIds: [],
+    detailItemId: null,
+    detailScrollOffset: 0,
+    detailContentLines: 0,
+    savedLogScrollOffset: 0,
+    statusLayout: null,
+    sessionCode: opts.crewCode,
+    engineDisconnected: false,
+    startupOverlay: INTERACTIVE_STARTUP_OVERLAYS.preparingRuntime,
+  };
+
+  const runtimeControlHandlers = createRuntimeControlHandlers({
+    sendControl: (command) => {
+      sendRuntimeControl(command);
+    },
+    getWipLimit: () => tuiState.pendingWipLimit ?? tuiState.wipLimit ?? operatorLastSnapshot.runtime.wipLimit,
+    requestCollaborationAction: async (request) => {
+      const result = await requestCollaborationFromEngine(request);
+      if (!result.error && result.code) {
+        tuiState.sessionCode = result.code;
+      }
+      return result;
+    },
+  });
+  Object.assign(tuiState, runtimeControlHandlers, {
+    onPanelModeChange: (mode: PanelMode) => writeLayoutPreference(opts.projectRoot, mode),
+  });
+
+  void bootstrapTuiUpdateNotice(tuiState.viewOptions, {
+    onUpdate: () => tuiState.onUpdate?.(),
+  });
+
+  cleanStateFile(opts.projectRoot);
+  writeStateFile(opts.projectRoot, operatorLastSnapshot.daemonState);
+  writePidFile(opts.projectRoot, process.pid);
+
+  try {
+    while (true) {
+      const childArgs = buildInteractiveEngineChildArgs(opts.parsed, {
+        itemIds: currentItemIds,
+        mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
+        wipLimit: operatorLastSnapshot.runtime.wipLimit,
+        toolOverride: currentToolOverride,
+        skipReview: operatorLastSnapshot.runtime.reviewMode === "off",
+        reviewMode: operatorLastSnapshot.runtime.reviewMode,
+        watchMode: opts.watchMode,
+        futureOnlyStartup: opts.futureOnlyStartup,
+        crewCode: tuiState.sessionCode,
+        connectMode: operatorLastSnapshot.runtime.collaborationMode === "shared",
+        crewUrl: opts.crewUrl,
+        bypassEnabled: opts.bypassEnabled,
+      });
+
+      const operatorResult = await runInteractiveWatchOperatorSession({
+        projectRoot: opts.projectRoot,
+        childArgs,
+        tuiState,
+        log: opts.log,
+        initialSnapshot: operatorLastSnapshot,
+        watchMode: opts.watchMode,
+        bindControlSender: (sender) => {
+          sendRuntimeControl = sender;
+        },
+        bindCollaborationRequester: (requester) => {
+          requestCollaborationFromEngine = requester;
+        },
+      });
+      operatorLastSnapshot = operatorResult.lastSnapshot;
+
+      if (operatorResult.completionAction === "run-more") {
+        const freshItems = opts.loadRunnableWorkItems("run-more");
+        const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.wipLimit, {
+          showConnectionStep: false,
+          skipToolStep: true,
+        });
+        if (!interactiveResult) {
+          break;
+        }
+
+        const freshMap = new Map<string, WorkItem>();
+        for (const item of freshItems) {
+          freshMap.set(item.id, item);
+          opts.workItemMap.set(item.id, item);
+        }
+        currentItemIds = interactiveResult.itemIds.filter((id) => freshMap.has(id));
+        if (currentItemIds.length === 0) {
+          break;
+        }
+        if (interactiveResult.aiTools && interactiveResult.aiTools.length > 0) {
+          currentToolOverride = interactiveResult.aiTools.join(",");
+        } else if (interactiveResult.aiTool) {
+          currentToolOverride = interactiveResult.aiTool;
+        }
+        operatorLastSnapshot = buildQueuedState(currentItemIds, operatorLastSnapshot.runtime);
+        tuiState.startupOverlay = INTERACTIVE_STARTUP_OVERLAYS.preparingRuntime;
+        opts.log({
+          ts: new Date().toISOString(),
+          level: "info",
+          event: "run_more_restart",
+          newItems: currentItemIds,
+        });
+        continue;
+      }
+
+      if (operatorResult.completionAction === "clean") {
+        for (const item of operatorLastSnapshot.daemonState.items) {
+          if (item.state !== "done") continue;
+          try {
+            if (item.workspaceRef) {
+              createMux(muxTypeForWorkspaceRef(item.workspaceRef), opts.projectRoot).closeWorkspace(item.workspaceRef);
+            }
+            cleanSingleWorktree(item.id, join(opts.projectRoot, ".ninthwave", ".worktrees"), opts.projectRoot);
+          } catch {
+            // Best-effort cleanup only.
+          }
+        }
+      }
+
+      break;
+    }
+  } finally {
+    cleanStateFile(opts.projectRoot);
+    cleanPidFile(opts.projectRoot);
+    if (operatorLastSnapshot.daemonState.items.length > 0) {
+      console.log(formatExitSummary(operatorLastSnapshot.daemonState.items, operatorLastSnapshot.daemonState.startedAt));
+    }
+  }
 }
 
 // ── Sidebar display sync ──────────────────────────────────────────
@@ -3357,6 +3666,7 @@ export async function cmdOrchestrate(
   let crewCode = parsed.crewCode;
   let crewUrl = parsed.crewUrl;
   let connectMode = parsed.connectMode;
+  let usedInteractiveOperatorParentSession = false;
 
   try {
 
@@ -3483,6 +3793,7 @@ export async function cmdOrchestrate(
 
   // Apply custom GitHub token before any startup PR polling so replay pruning,
   // selection, and watch scans all see the same authenticated view.
+  emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.preparingRuntime);
   applyGithubToken(projectRoot);
 
   const loadRunnableWorkItems = (source: "startup" | "watch-scan" | "run-more"): WorkItem[] => {
@@ -3582,6 +3893,42 @@ export async function cmdOrchestrate(
     die(`Item ${unknownIds[0]} not found in work item files`);
   }
 
+  const startupReviewMode = interactiveReviewMode === "off"
+    ? "off" as const
+    : interactiveReviewMode === "all"
+      ? "all-prs" as const
+      : "ninthwave-prs" as const;
+  const startupCollaborationMode = crewCode
+    ? (connectMode ? "shared" as const : "joined" as const)
+    : persistedCollaborationModeToRuntime(interactiveStartupConfig.defaults.collaborationMode);
+
+  if (tuiMode && !isInteractiveEngineChild) {
+    usedInteractiveOperatorParentSession = true;
+    await runInteractiveOperatorParentSession({
+      projectRoot,
+      parsed,
+      log,
+      logBuffer,
+      workItemMap,
+      itemIds,
+      mergeStrategy,
+      wipLimit,
+      toolOverride,
+      watchMode,
+      futureOnlyStartup,
+      reviewMode: startupReviewMode,
+      collaborationMode: startupCollaborationMode,
+      bypassEnabled,
+      fixForward,
+      ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
+      ...(crewCode ? { crewCode } : {}),
+      connectMode,
+      ...(crewUrl ? { crewUrl } : {}),
+      loadRunnableWorkItems,
+    });
+    return;
+  }
+
   // Create orchestrator
   // skipReview: CLI --no-review, interactive "off" mode, or --review-wip-limit 0 disables AI review gate
   const skipReview = cliSkipReview || interactiveSkipReview || reviewWipLimit === 0;
@@ -3599,6 +3946,7 @@ export async function cmdOrchestrate(
   }
 
   // Pre-create domain labels so workers don't need to (one API call per unique domain)
+  emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.preparingQueue);
   const domainSet = new Set(itemIds.map(id => workItemMap.get(id)!.domain));
   if (fixForward) domainSet.add("verify");
   ensureDomainLabels(projectRoot, [...domainSet]);
@@ -3636,6 +3984,7 @@ export async function cmdOrchestrate(
 
   // Real action dependencies -- create mux before state reconstruction so
   // workspace refs can be recovered from live workspaces.
+  emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.restoringState);
   const resolvedBackend = resolveBackend({
     env: process.env,
     checkBinary: (name: string): boolean => {
@@ -3880,6 +4229,7 @@ export async function cmdOrchestrate(
   };
 
   if (connectMode && !crewCode) {
+    emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.connectingSession);
     info("Sharing session via ninthwave.sh...");
     const result = await applyRuntimeCollaborationAction(collaborationState, { action: "share", source: "startup" }, {
       projectRoot,
@@ -3896,6 +4246,7 @@ export async function cmdOrchestrate(
   }
 
   if (crewCode) {
+    emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.connectingSession);
     if (!collaborationState.crewBroker) {
       info(`Joining session via ninthwave.sh (${crewCode})...`);
       const result = await applyRuntimeCollaborationAction(collaborationState, {
@@ -4399,6 +4750,7 @@ export async function cmdOrchestrate(
       wipLimit = limit;
     },
   });
+  emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.startingEngine);
   sendRuntimeControl = engineRunner.sendControl;
 
   if (isInteractiveEngineChild) {
@@ -4701,71 +5053,73 @@ export async function cmdOrchestrate(
       keepRunning = false;
     }
   } finally {
-    // Close workspaces for terminal items only (done, stuck, merged).
-    // In-flight workers (implementing, ci-pending, etc.) may still be actively
-    // running -- leave their workspaces open so they survive orchestrator restarts.
-    // On restart, reconstructState recovers their workspace refs.
-    const terminalStates = new Set(["done", "stuck", "merged"]);
-    const closedWorkspaces: string[] = [];
-    for (const item of orch.getAllItems()) {
-      if (terminalStates.has(item.state) && item.workspaceRef) {
-        try {
-          muxForWorkspaceRef(item.workspaceRef).closeWorkspace(item.workspaceRef);
-          closedWorkspaces.push(item.id);
-        } catch {
-          // Non-fatal -- best-effort cleanup
+    if (!usedInteractiveOperatorParentSession) {
+      // Close workspaces for terminal items only (done, stuck, merged).
+      // In-flight workers (implementing, ci-pending, etc.) may still be actively
+      // running -- leave their workspaces open so they survive orchestrator restarts.
+      // On restart, reconstructState recovers their workspace refs.
+      const terminalStates = new Set(["done", "stuck", "merged"]);
+      const closedWorkspaces: string[] = [];
+      for (const item of orch.getAllItems()) {
+        if (terminalStates.has(item.state) && item.workspaceRef) {
+          try {
+            muxForWorkspaceRef(item.workspaceRef).closeWorkspace(item.workspaceRef);
+            closedWorkspaces.push(item.id);
+          } catch {
+            // Non-fatal -- best-effort cleanup
+          }
         }
       }
-    }
-    if (closedWorkspaces.length > 0) {
-      log({
-        ts: new Date().toISOString(),
-        level: "info",
-        event: "shutdown_workspaces_closed",
-        itemIds: closedWorkspaces,
-        count: closedWorkspaces.length,
-      });
-    }
-
-    // Leave alternate screen buffer before restoring terminal state
-    exitAltScreen();
-    process.removeListener("exit", exitAltScreen);
-
-    // Print exit summary to stdout (persists in terminal scrollback)
-    if (tuiMode) {
-      const allItems = operatorLastSnapshot.daemonState.items;
-      if (allItems.length > 0) {
-        const summary = formatExitSummary(allItems, operatorLastSnapshot.daemonState.startedAt);
-        console.log(summary);
+      if (closedWorkspaces.length > 0) {
+        log({
+          ts: new Date().toISOString(),
+          level: "info",
+          event: "shutdown_workspaces_closed",
+          itemIds: closedWorkspaces,
+          count: closedWorkspaces.length,
+        });
       }
+
+      // Leave alternate screen buffer before restoring terminal state
+      exitAltScreen();
+      process.removeListener("exit", exitAltScreen);
+
+      // Print exit summary to stdout (persists in terminal scrollback)
+      if (tuiMode) {
+        const allItems = operatorLastSnapshot.daemonState.items;
+        if (allItems.length > 0) {
+          const summary = formatExitSummary(allItems, operatorLastSnapshot.daemonState.startedAt);
+          console.log(summary);
+        }
+      }
+
+      // Restore terminal state (disable raw mode)
+      cleanupKeyboard();
+
+      // Clean up crew broker
+      if (crewBroker) {
+        try { crewBroker.disconnect(); } catch { /* best-effort */ }
+      }
+
+      // Always clean up state file on exit (written in both daemon and interactive mode)
+      cleanStateFile(projectRoot);
+
+      // Clean up PID file on exit (both foreground and daemon child)
+      if (!isInteractiveEngineChild) {
+        cleanPidFile(projectRoot);
+      }
+      if (isDaemonChild) {
+        log({
+          ts: new Date().toISOString(),
+          level: "info",
+          event: "daemon_child_exiting",
+          pid: process.pid,
+        });
+      }
+
+      process.removeListener("SIGINT", sigintHandler);
+      process.removeListener("SIGTERM", sigtermHandler);
     }
-
-    // Restore terminal state (disable raw mode)
-    cleanupKeyboard();
-
-    // Clean up crew broker
-    if (crewBroker) {
-      try { crewBroker.disconnect(); } catch { /* best-effort */ }
-    }
-
-    // Always clean up state file on exit (written in both daemon and interactive mode)
-    cleanStateFile(projectRoot);
-
-    // Clean up PID file on exit (both foreground and daemon child)
-    if (!isInteractiveEngineChild) {
-      cleanPidFile(projectRoot);
-    }
-    if (isDaemonChild) {
-      log({
-        ts: new Date().toISOString(),
-        level: "info",
-        event: "daemon_child_exiting",
-        pid: process.pid,
-      });
-    }
-
-    process.removeListener("SIGINT", sigintHandler);
-    process.removeListener("SIGTERM", sigtermHandler);
   }
   } catch (error) {
     if (!parsed.isInteractiveEngineChild) throw error;

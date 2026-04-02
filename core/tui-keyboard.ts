@@ -9,6 +9,7 @@ import {
   type ViewOptions,
   type PanelMode,
   type LogEntry as PanelLogEntry,
+  type StartupOverlayState,
   getTerminalHeight,
   clampScrollOffset,
   detailOverlayMaxScroll,
@@ -205,6 +206,8 @@ export interface TuiState {
   engineDisconnected?: boolean;
   /** Human-readable disconnect reason shown in the recovery overlay. */
   engineDisconnectReason?: string;
+  /** Startup overlay shown before the watch runtime is safe to execute actions. */
+  startupOverlay?: StartupOverlayState;
 }
 
 export interface TuiRuntimeSnapshot {
