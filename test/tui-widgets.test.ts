@@ -128,6 +128,24 @@ function getPlainFrameLines(output: string): string[] {
   return getLastRenderedFrame(output).split("\n").map((line) => stripAnsiForWidth(line));
 }
 
+function getPlainFrameLine(output: string, pattern: string): string {
+  const line = getPlainFrameLines(output).find((frameLine) => frameLine.includes(pattern));
+  if (!line) {
+    throw new Error(`No frame line matched pattern: ${pattern}`);
+  }
+  return line;
+}
+
+function getStartupChipStart(line: string, label: string): number {
+  for (const variant of [`[${label}]`, ` ${label} `]) {
+    const index = line.indexOf(variant);
+    if (index !== -1) {
+      return index;
+    }
+  }
+  throw new Error(`No chip found for label: ${label}`);
+}
+
 // ── CheckboxList widget ─────────────────────────────────────────────
 
 describe("runCheckboxList", () => {
@@ -1986,6 +2004,57 @@ describe("runSelectionScreen -- startup settings display", () => {
     expect(result).not.toBeNull();
     expect(getOutput()).toContain("[local]");
     expect(getOutput()).toContain("Local by default, no connection");
+  });
+
+  it("renders startup chips with reserved bracket slots", async () => {
+    const { io, sendKeys, getOutput } = createMockIO();
+
+    const resultPromise = runStartupSettingsScreen(io, {
+      summaryLines: ["Items: A-1"],
+      defaultSessionLimit: 4,
+    });
+
+    const mergeLine = getPlainFrameLine(getOutput(), "> Merge");
+    const backendLine = getPlainFrameLine(getOutput(), " Backend");
+
+    expect(mergeLine).toContain(" auto ");
+    expect(mergeLine).toContain("[manual]");
+    expect(backendLine).toContain("[Auto]");
+    expect(backendLine).toContain(" tmux ");
+    expect(backendLine).toContain(" cmux ");
+    expect(backendLine).toContain(" headless ");
+
+    sendKeys(["\r"]);
+
+    const result = await resultPromise;
+    expect(result.cancelled).toBe(false);
+  });
+
+  it("keeps backend option columns fixed when moving horizontally", async () => {
+    const { io, sendKeys, getOutput } = createMockIO();
+
+    const resultPromise = runStartupSettingsScreen(io, {
+      summaryLines: ["Items: A-1"],
+      defaultSessionLimit: 4,
+    });
+    sendKeys(["\x1B[B", "\x1B[B", "\x1B[B", "\x1B[B", "\x1B[B"]);
+
+    const beforeMove = getPlainFrameLine(getOutput(), "> Backend");
+    const beforeStarts = ["Auto", "tmux", "cmux", "headless"].map((label) => getStartupChipStart(beforeMove, label));
+
+    sendKeys(["\x1B[C"]);
+
+    const afterMove = getPlainFrameLine(getOutput(), "> Backend");
+    const afterStarts = ["Auto", "tmux", "cmux", "headless"].map((label) => getStartupChipStart(afterMove, label));
+
+    expect(beforeMove).toContain("[Auto]");
+    expect(afterMove).toContain("[tmux]");
+    expect(beforeStarts).toEqual(afterStarts);
+
+    sendKeys(["\r"]);
+
+    const result = await resultPromise;
+    expect(result.cancelled).toBe(false);
   });
 
   it("settings screen title includes 'Start orchestration'", async () => {

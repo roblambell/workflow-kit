@@ -43,6 +43,13 @@ const CLEAR_LINE = "\x1B[K";
 
 const ANSI_SEQUENCE_PATTERN = /^(?:\x1b\]8;[^\x07]*\x07|\x1b\[[0-9;]*[A-Za-z])/;
 
+function renderStartupChip(label: string | number, selected: boolean): string {
+  const text = String(label);
+  return selected
+    ? `${GREEN}${BOLD}[${text}]${RESET}`
+    : `${DIM} ${text} ${RESET}`;
+}
+
 // ── Types ───────────────────────────────────────────────────────────
 
 export interface WidgetIO {
@@ -968,34 +975,22 @@ export function runStartupSettingsScreen(
     };
 
     const mergeValues = () => STARTUP_MERGE_STRATEGY_OPTIONS.map((option, index) =>
-      index === mergeIndex
-        ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
-        : `${DIM}${option.startupLabel}${RESET}`,
+      renderStartupChip(option.startupLabel, index === mergeIndex),
     );
     const reviewValues = () => REVIEW_MODE_OPTIONS.map((option, index) =>
-      index === reviewIndex
-        ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
-        : `${DIM}${option.startupLabel}${RESET}`,
+      renderStartupChip(option.startupLabel, index === reviewIndex),
     );
     const collaborationValues = () => COLLABORATION_MODE_OPTIONS.map((option, index) =>
-      index === collaborationIndex
-        ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
-        : `${DIM}${option.startupLabel}${RESET}`,
+      renderStartupChip(option.startupLabel, index === collaborationIndex),
     );
     const sessionValues = () => Array.from({ length: 10 }, (_, idx) => idx + 1).map((value) =>
-      value === sessionLimit
-        ? `${GREEN}${BOLD}[${value}]${RESET}`
-        : `${DIM}${value}${RESET}`,
+      renderStartupChip(value, value === sessionLimit),
     );
     const scheduleValues = () => SCHEDULE_ENABLED_OPTIONS.map((option, index) =>
-      index === scheduleIndex
-        ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
-        : `${DIM}${option.startupLabel}${RESET}`,
+      renderStartupChip(option.startupLabel, index === scheduleIndex),
     );
     const backendValues = () => BACKEND_MODE_OPTIONS.map((option, index) =>
-      index === backendIndex
-        ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
-        : `${DIM}${option.startupLabel}${RESET}`,
+      renderStartupChip(option.startupLabel, index === backendIndex),
     );
 
     const activeDescription = () => {
