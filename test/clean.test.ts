@@ -85,7 +85,7 @@ describe("cmdCloseWorkspaces", () => {
   it("closes matching workspaces", () => {
     const mockMux = createMockMux();
     mockMux.listWorkspaces.mockReturnValue(
-      "workspace:1 TODO H-CI-2 some title\nworkspace:2 TODO M-CI-1 another title",
+      "workspace:1 work item H-CI-2 some title\nworkspace:2 work item M-CI-1 another title",
     );
 
     const output = captureOutput(() => cmdCloseWorkspaces(mockMux));
@@ -114,7 +114,7 @@ describe("cmdCloseWorkspace", () => {
   it("closes the matching workspace", () => {
     const mockMux = createMockMux();
     mockMux.listWorkspaces.mockReturnValue(
-      "workspace:1 TODO H-CI-2 some title\nworkspace:2 TODO M-CI-1 another",
+      "workspace:1 work item H-CI-2 some title\nworkspace:2 work item M-CI-1 another",
     );
 
     captureOutput(() => cmdCloseWorkspace("H-CI-2", mockMux));
@@ -152,7 +152,7 @@ describe("cleanSingleWorktree", () => {
   it("closes workspace when mux is provided", () => {
     const deps = createMockCleanDeps();
     const mux = createMockMux();
-    mux.listWorkspaces.mockReturnValue("workspace:1 TODO H-CI-2 some title");
+    mux.listWorkspaces.mockReturnValue("workspace:1 work item H-CI-2 some title");
     const repo = setupTempRepo();
     const worktreeDir = join(repo, ".ninthwave", ".worktrees");
     mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
@@ -441,7 +441,7 @@ describe("cmdClean", () => {
     mkdirSync(join(worktreeDir, "ninthwave-H-3"), { recursive: true });
 
     mockMux.listWorkspaces.mockReturnValue(
-      "workspace:1 TODO H-1 first task\nworkspace:2 TODO H-2 second task\nworkspace:3 TODO H-3 third task",
+      "workspace:1 work item H-1 first task\nworkspace:2 work item H-2 second task\nworkspace:3 work item H-3 third task",
     );
     deps.isBranchMerged.mockReturnValue(false);
 
@@ -461,7 +461,7 @@ describe("cmdClean", () => {
     mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
 
     mockMux.listWorkspaces.mockReturnValue(
-      "workspace:1 TODO H-CI-1 first\nworkspace:2 TODO H-CI-2 second",
+      "workspace:1 work item H-CI-1 first\nworkspace:2 work item H-CI-2 second",
     );
     deps.isBranchMerged.mockReturnValue(true);
 
@@ -481,7 +481,7 @@ describe("cmdClean", () => {
     mkdirSync(join(worktreeDir, "ninthwave-H-CI-2"), { recursive: true });
 
     mockMux.listWorkspaces.mockReturnValue(
-      "workspace:1 TODO H-CI-1 first\nworkspace:2 TODO H-CI-2 second",
+      "workspace:1 work item H-CI-1 first\nworkspace:2 work item H-CI-2 second",
     );
     // H-CI-1 is merged, H-CI-2 is not
     deps.isBranchMerged.mockImplementation(
@@ -508,7 +508,7 @@ describe("cmdClean", () => {
     mkdirSync(join(worktreeDir, "ninthwave-H-CI-3"), { recursive: true });
 
     mockMux.listWorkspaces.mockReturnValue(
-      "workspace:1 TODO H-CI-1 first\nworkspace:2 TODO H-CI-2 second\nworkspace:3 TODO H-CI-3 third",
+      "workspace:1 work item H-CI-1 first\nworkspace:2 work item H-CI-2 second\nworkspace:3 work item H-CI-3 third",
     );
     deps.isBranchMerged.mockReturnValue(false);
 

@@ -10,7 +10,7 @@ import { deleteWorkItemFile } from "../work-item-files.ts";
 import { findMatchingPrForWorkItem, readWorkItem } from "../work-item-files.ts";
 
 /**
- * Remove completed items by deleting their individual todo files.
+ * Remove completed items by deleting their individual work item files.
  * Idempotent: nonexistent IDs are reported but do not cause errors.
  */
 export function cmdMarkDone(

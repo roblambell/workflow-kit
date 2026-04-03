@@ -246,9 +246,9 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
 }
 
 /**
- * Validate that all item IDs exist in the todo map.
+ * Validate that all item IDs exist in the work item map.
  * Returns array of unknown IDs (empty = all valid).
  */
-export function validateItemIds(itemIds: string[], todoMap: Map<string, WorkItem>): string[] {
-  return itemIds.filter(id => !todoMap.has(id));
+export function validateItemIds(itemIds: string[], workItemMap: Map<string, WorkItem>): string[] {
+  return itemIds.filter(id => !workItemMap.has(id));
 }

@@ -379,13 +379,11 @@ Interactive guided onboarding. Detects an AI tool, runs `initProject()`, then dr
 
 ---
 
-## 10. Legacy Migration
+## 10. Work Item Storage
 
-If `.ninthwave/todos/` exists (pre-rename), init migrates files to `.ninthwave/work/` and removes the old directory. Only happens if `.ninthwave/work/` does not already exist.
+Init creates and maintains `.ninthwave/work/` as the live queue of open work item files.
 
-This is an intentional compatibility boundary, not a stray old name: keep `.ninthwave/todos/` references in init code and migration docs until support for pre-rename repos is deliberately removed. Likewise, older docs or review notes that mention `TODOS.md` / `todo` should be treated as historical records unless they are being rewritten as current guidance.
-
-For the full keep-list of `todo` names that are protocol-, compatibility-, or history-sensitive, see [work-item terminology boundaries](work-item-terminology.md).
+The rest of the onboarding flow, generated guidance, and managed copies should use `work item` terminology consistently.
 
 **Source:** `core/commands/init.ts:691-709`
 

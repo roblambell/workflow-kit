@@ -15,4 +15,4 @@ Add a shared repo-reference utility that normalizes SSH and HTTPS git URLs, hash
 
 Acceptance: `core/repo-ref.ts` exposes the normalization and hashing helpers needed by both client and broker code. Equivalent SSH and HTTPS references normalize consistently, invalid or missing repo identity inputs are handled explicitly, and the new repo-ref test suite passes.
 
-Key files: `core/repo-ref.ts`, `test/repo-ref.test.ts`, `docs/work-item-terminology.md`
+Key files: `core/repo-ref.ts`, `test/repo-ref.test.ts`, `ARCHITECTURE.md`

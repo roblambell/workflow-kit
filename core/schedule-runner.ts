@@ -93,7 +93,7 @@ export function processScheduleQueue(
 /** Dependencies for launching a scheduled task worker. */
 export interface LaunchScheduledDeps {
   /** Create a cmux workspace. Returns workspace ref or null. */
-  launchWorkspace: (cwd: string, command: string, todoId?: string) => string | null;
+  launchWorkspace: (cwd: string, command: string, workItemId?: string) => string | null;
 }
 
 /**

@@ -57,7 +57,7 @@ function setupWorkItemsDir(files: Record<string, string> = SAMPLE_WORK_ITEM_FILE
 function makeDeps(overrides: Partial<ReconcileDeps> = {}): ReconcileDeps {
   return {
     pullRebase: () => ({ ok: true, conflict: false }),
-    getMergedTodoIds: () => [],
+    getMergedWorkItemIds: () => [],
     getOpenItemIds: (workDir: string) => {
       if (!existsSync(workDir)) return [];
       try {
@@ -120,7 +120,7 @@ describe("reconcile", () => {
 
     const deps = makeDeps({
       pullRebase: () => ({ ok: false, conflict: false, error: "network error" }),
-      getMergedTodoIds: () => {
+      getMergedWorkItemIds: () => {
         mergedCalled = true;
         return [];
       },
@@ -149,7 +149,7 @@ describe("reconcile", () => {
     let queriedProject: string | undefined;
 
     const deps = makeDeps({
-      getMergedTodoIds: (root) => {
+      getMergedWorkItemIds: (root) => {
         queriedProject = root;
         return [];
       },
@@ -164,7 +164,7 @@ describe("reconcile", () => {
     let markedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
       markDone: (ids) => {
         markedIds = ids;
       },
@@ -180,7 +180,7 @@ describe("reconcile", () => {
 
     const deps = makeDeps({
       // GitHub says these are merged, but X-GONE-1 has no work item file
-      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("X-GONE-1")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1"), mergedPr("X-GONE-1")],
       markDone: (ids) => {
         markedIds = ids;
       },
@@ -196,7 +196,7 @@ describe("reconcile", () => {
     const cleaned: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
       getWorktreeIds: () => ["M-CI-1", "H-CI-2", "C-UO-1"],
       cleanWorktree: (id) => {
         cleaned.push(id);
@@ -214,7 +214,7 @@ describe("reconcile", () => {
     let committed = false;
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [mergedPr("M-CI-1")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1")],
       commitAndPush: () => {
         committed = true;
         return true;
@@ -231,7 +231,7 @@ describe("reconcile", () => {
     let commitCalled = false;
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       markDone: () => {
         markDoneCalled = true;
       },
@@ -254,7 +254,7 @@ describe("reconcile", () => {
 
     const deps = makeDeps({
       // These IDs were merged but already have no work item files
-      getMergedTodoIds: () => [mergedPr("X-OLD-1"), mergedPr("X-OLD-2")],
+      getMergedWorkItemIds: () => [mergedPr("X-OLD-1"), mergedPr("X-OLD-2")],
       markDone: () => {
         markDoneCalled = true;
       },
@@ -274,7 +274,7 @@ describe("reconcile", () => {
     const { workDir, worktreeDir, projectRoot } = setupWorkItemsDir();
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
       getWorktreeIds: () => ["M-CI-1"],
       cleanWorktree: () => true,
       commitAndPush: () => true,
@@ -291,7 +291,7 @@ describe("reconcile", () => {
 
     const deps = makeDeps({
       // X-OLD-1 is merged but has no work item file (already removed)
-      getMergedTodoIds: () => [mergedPr("X-OLD-1")],
+      getMergedWorkItemIds: () => [mergedPr("X-OLD-1")],
       getWorktreeIds: () => ["X-OLD-1"],
       cleanWorktree: (id) => {
         cleaned.push(id);
@@ -308,7 +308,7 @@ describe("reconcile", () => {
     const { workDir, worktreeDir, projectRoot } = setupWorkItemsDir({});
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [mergedPr("M-CI-1")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1")],
     });
 
     const output = captureOutput(() => reconcile(workDir, worktreeDir, projectRoot, deps));
@@ -321,7 +321,7 @@ describe("reconcile", () => {
     let commitCalled = false;
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       commitAndPush: () => {
         commitCalled = true;
         return true;
@@ -337,7 +337,7 @@ describe("reconcile", () => {
     let closedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1"), mergedPr("H-CI-2")],
       closeStaleWorkspaces: (ids) => {
         closedIds = [...ids];
         return ids.length;
@@ -353,7 +353,7 @@ describe("reconcile", () => {
     const { workDir, worktreeDir, projectRoot } = setupWorkItemsDir();
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [mergedPr("M-CI-1")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1")],
       closeStaleWorkspaces: () => 1,
       commitAndPush: () => true,
     });
@@ -367,7 +367,7 @@ describe("reconcile", () => {
     const cleaned: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       // Worktree X-OLD-1 exists but has no work item file
       getWorktreeIds: () => ["X-OLD-1", "M-CI-1"],
       cleanWorktree: (id) => {
@@ -388,7 +388,7 @@ describe("reconcile", () => {
     const cleaned: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       // getWorktreeIds only returns ninthwave-* prefixed dirs (non-item dirs excluded)
       getWorktreeIds: () => [],
       cleanWorktree: (id) => {
@@ -405,7 +405,7 @@ describe("reconcile", () => {
     const { workDir, worktreeDir, projectRoot } = setupWorkItemsDir({});
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       getWorktreeIds: () => ["X-OLD-1", "X-OLD-2"],
       cleanWorktree: () => true,
     });
@@ -421,7 +421,7 @@ describe("reconcile", () => {
     const cleaned: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       // M-CI-1 has a matching work item file, worktree exists, but zero commits
       getWorktreeIds: () => ["M-CI-1"],
       worktreeHasCommits: () => false,
@@ -443,7 +443,7 @@ describe("reconcile", () => {
     const cleaned: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       getWorktreeIds: () => ["M-CI-1"],
       worktreeHasCommits: () => true,
       branchHasOpenPR: () => false,
@@ -462,7 +462,7 @@ describe("reconcile", () => {
     const cleaned: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       getWorktreeIds: () => ["M-CI-1"],
       worktreeHasCommits: () => false,
       branchHasOpenPR: () => true,
@@ -480,7 +480,7 @@ describe("reconcile", () => {
     const { workDir, worktreeDir, projectRoot } = setupWorkItemsDir();
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       getWorktreeIds: () => ["M-CI-1", "H-CI-2"],
       worktreeHasCommits: () => false,
       branchHasOpenPR: () => false,
@@ -497,7 +497,7 @@ describe("reconcile", () => {
     const commitCheckedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       getWorktreeIds: () => ["M-CI-1", "X-ORPHAN-1"],
       worktreeHasCommits: (id) => {
         commitCheckedIds.push(id);
@@ -519,7 +519,7 @@ describe("reconcile", () => {
     let cleanCount = 0;
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [mergedPr("M-CI-1")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1")],
       getWorktreeIds: () => ["M-CI-1"],
       worktreeHasCommits: () => false,
       branchHasOpenPR: () => false,
@@ -543,7 +543,7 @@ describe("reconcile cross-repo", () => {
     let receivedWorktreeDir: string | undefined;
 
     const deps = makeDeps({
-      getMergedTodoIds: (_root, wtDir) => {
+      getMergedWorkItemIds: (_root, wtDir) => {
         receivedWorktreeDir = wtDir;
         return [];
       },
@@ -562,7 +562,7 @@ describe("reconcile cross-repo", () => {
     writeFileSync(indexPath, "M-CI-1\t/target-repo\t/target-repo/.ninthwave/.worktrees/ninthwave-M-CI-1\n");
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [mergedPr("M-CI-1")],
+      getMergedWorkItemIds: () => [mergedPr("M-CI-1")],
       cleanWorktree: (id, wtDir, root) => {
         cleaned.push({ id, wtDir, root });
         return true;
@@ -588,7 +588,7 @@ describe("reconcile cross-repo", () => {
     writeFileSync(indexPath, "M-CI-1\t/target-repo\t/target-repo/.ninthwave/.worktrees/ninthwave-M-CI-1\n");
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [],
+      getMergedWorkItemIds: () => [],
       worktreeHasCommits: (id, _wtDir, root) => {
         commitChecks.push({ id, root });
         return false;
@@ -633,9 +633,9 @@ describe("closeWorkspacesForIds", () => {
     const closedRefs: string[] = [];
     const mux = mockMux({
       listWorkspaces: () => [
-        "workspace:1  TODO H-CI-2  (running)",
-        "workspace:2  TODO M-CI-1  (running)",
-        "workspace:3  TODO C-UO-1  (running)",
+        "workspace:1  work item H-CI-2  (running)",
+        "workspace:2  work item M-CI-1  (running)",
+        "workspace:3  work item C-UO-1  (running)",
       ].join("\n"),
       closeWorkspace: (ref) => {
         closedRefs.push(ref);
@@ -655,9 +655,9 @@ describe("closeWorkspacesForIds", () => {
     const closedRefs: string[] = [];
     const mux = mockMux({
       listWorkspaces: () => [
-        "workspace:5  TODO H-DF-2  ninthwave worker session",
-        "workspace:6  some-other-workspace without TODO pattern",
-        "workspace:7  TODO M-ABC-123  another worker",
+        "workspace:5  work item H-DF-2  ninthwave worker session",
+        "workspace:6  some-other-workspace without work item pattern",
+        "workspace:7  work item M-ABC-123  another worker",
       ].join("\n"),
       closeWorkspace: (ref) => {
         closedRefs.push(ref);
@@ -674,8 +674,8 @@ describe("closeWorkspacesForIds", () => {
     let closeCalled = false;
     const mux = mockMux({
       listWorkspaces: () => [
-        "workspace:1  TODO X-OTHER-1  (running)",
-        "workspace:2  TODO Y-OTHER-2  (running)",
+        "workspace:1  work item X-OTHER-1  (running)",
+        "workspace:2  work item Y-OTHER-2  (running)",
       ].join("\n"),
       closeWorkspace: () => {
         closeCalled = true;
@@ -767,7 +767,7 @@ describe("closeWorkspacesForIds", () => {
     const closedRefs: string[] = [];
     const mux = mockMux({
       listWorkspaces: () => [
-        "workspace:1  TODO H-CI-2  (running)",
+        "workspace:1  work item H-CI-2  (running)",
         "nw-M-WRK-1-1",
       ].join("\n"),
       closeWorkspace: (ref) => {

@@ -264,7 +264,7 @@ describe("TmuxAdapter", () => {
       expect(adapter.getLastLaunchError()).toBe("window failed");
     });
 
-    it("generates fallback window name when todoId is not provided", () => {
+    it("generates fallback window name when workItemId is not provided", () => {
       const runner = vi.fn(() => ok());
       const deps = makeDeps({ runner, layout: "windows" });
       const adapter = new TmuxAdapter(deps);
@@ -275,7 +275,7 @@ describe("TmuxAdapter", () => {
       expect(ref).toMatch(/^nw-myproject:nw_\d+$/);
     });
 
-    it("sanitizes todoId with special characters", () => {
+    it("sanitizes workItemId with special characters", () => {
       const runner = vi.fn(() => ok());
       const deps = makeDeps({ runner, layout: "windows" });
       const adapter = new TmuxAdapter(deps);

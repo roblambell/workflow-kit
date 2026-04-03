@@ -386,7 +386,7 @@ export class CliHarness {
     options: {
       tool?: string;
       autoFixMode?: "off" | "direct" | "pr";
-      reviewType?: "todo" | "external";
+      reviewType?: "work-item" | "external";
       implementerWorktreePath?: string;
       hubRepoNwo?: string;
     } = {},

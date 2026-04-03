@@ -27,7 +27,7 @@ export interface BrokerOptions {
   eventLogPath?: string;
   /** Heartbeat timeout in ms before marking a daemon as disconnected. Default: 90_000 */
   heartbeatTimeoutMs?: number;
-  /** Grace period in ms after disconnect before releasing claimed TODOs. Default: 60_000 */
+  /** Grace period in ms after disconnect before releasing claimed work items. Default: 60_000 */
   gracePeriodMs?: number;
   /** Interval in ms for the heartbeat checker loop. Default: 1_000 */
   checkIntervalMs?: number;
@@ -66,7 +66,7 @@ export interface DaemonState {
   lastHeartbeat: number;
   disconnectedAt: number | null;
   claimedItems: Set<string>;
-  /** True after grace period expired and TODOs were released. Prevents double-release. */
+  /** True after grace period expired and work items were released. Prevents double-release. */
   released: boolean;
 }
 
@@ -75,7 +75,7 @@ export interface CrewEvent {
   crew_id: string;
   daemon_id: string;
   event: "claim" | "sync" | "complete" | "disconnect" | "reconnect" | "abandon" | "schedule_claim" | "report";
-  todo_path: string;
+  work_item_path: string;
   metadata: { affinity: "author" | "pool" } | Record<string, unknown>;
 }
 
@@ -105,13 +105,13 @@ type SyncItemPayload = {
 type InboundMessage =
   | { type: "sync"; daemonId: string; items: SyncItemPayload[] }
   | { type: "claim"; requestId: string; daemonId: string }
-  | { type: "complete"; todoId: string; daemonId: string }
+  | { type: "complete"; workItemId: string; daemonId: string }
   | { type: "heartbeat"; daemonId: string; ts: string }
   | {
     type: "report";
     daemonId: string;
     event: string;
-    todoPath: string;
+    workItemPath: string;
     metadata: Record<string, unknown>;
     model?: string;
     sessionId?: string;
@@ -124,9 +124,9 @@ type InboundMessage =
   | { type: "schedule_claim"; requestId: string; daemonId: string; taskId: string; scheduleTime: string };
 
 type OutboundMessage =
-  | { type: "sync_ack"; crewCode: string; todoIds: string[] }
-  | { type: "claim_response"; requestId: string; todoId: string | null }
-  | { type: "complete_ack"; todoId: string }
+  | { type: "sync_ack"; crewCode: string; workItemIds: string[] }
+  | { type: "claim_response"; requestId: string; workItemId: string | null }
+  | { type: "complete_ack"; workItemId: string }
   | { type: "report_ack"; event: string }
   | { type: "heartbeat_ack"; ts: string }
   | { type: "reconnect_state"; resumed: string[]; released: string[]; reclaimed: string[] }
@@ -324,23 +324,23 @@ export class MockBroker {
       existing.operatorId = operatorId;
 
       if (wasDisconnected) {
-        // Determine which TODOs are still claimed vs released/re-claimed
+        // Determine which work items are still claimed vs released/re-claimed
         const resumed: string[] = [];
         const released: string[] = [];
         const reclaimed: string[] = [];
 
-        for (const todoPath of existing.claimedItems) {
-          const todo = crew.items.get(todoPath);
-          if (!todo) {
-            released.push(todoPath);
+        for (const workItemPath of existing.claimedItems) {
+          const workItem = crew.items.get(workItemPath);
+          if (!workItem) {
+            released.push(workItemPath);
             continue;
           }
-          if (todo.claimedBy === daemonId) {
-            resumed.push(todoPath);
-          } else if (todo.claimedBy !== null) {
-            reclaimed.push(todoPath);
+          if (workItem.claimedBy === daemonId) {
+            resumed.push(workItemPath);
+          } else if (workItem.claimedBy !== null) {
+            reclaimed.push(workItemPath);
           } else {
-            released.push(todoPath);
+            released.push(workItemPath);
           }
         }
 
@@ -404,7 +404,7 @@ export class MockBroker {
         this.handleClaimRequest(crew, daemonId, msg.requestId, ws);
         break;
       case "complete":
-        this.handleComplete(crew, daemonId, msg.todoId, ws);
+        this.handleComplete(crew, daemonId, msg.workItemId, ws);
         break;
       case "schedule_claim":
         this.handleScheduleClaim(crew, daemonId, msg.requestId, msg.taskId, msg.scheduleTime, ws);
@@ -414,7 +414,7 @@ export class MockBroker {
         this.send(ws, { type: "heartbeat_ack", ts: msg.ts });
         break;
       case "report":
-        this.logEvent(crew.code, daemonId, "report", msg.todoPath ?? "", msg.metadata ?? {});
+        this.logEvent(crew.code, daemonId, "report", msg.workItemPath ?? "", msg.metadata ?? {});
         this.send(ws, { type: "report_ack", event: msg.event });
         break;
     }
@@ -460,9 +460,9 @@ export class MockBroker {
       }
     }
 
-    // Respond with sync_ack containing all known todo IDs
-    const allTodoIds = Array.from(crew.items.keys());
-    this.send(ws, { type: "sync_ack", crewCode: crew.code, todoIds: allTodoIds });
+    // Respond with sync_ack containing all known work item IDs.
+    const allWorkItemIds = Array.from(crew.items.keys());
+    this.send(ws, { type: "sync_ack", crewCode: crew.code, workItemIds: allWorkItemIds });
     // Broadcast crew status after sync
     this.broadcastCrewUpdate(crew);
   }
@@ -486,7 +486,7 @@ export class MockBroker {
     );
 
     if (available.length === 0) {
-      this.send(ws, { type: "claim_response", requestId, todoId: null });
+      this.send(ws, { type: "claim_response", requestId, workItemId: null });
       return;
     }
 
@@ -502,34 +502,34 @@ export class MockBroker {
       return a.syncedAt - b.syncedAt;
     });
 
-    const todo = available[0]!;
-    todo.claimedBy = daemonId;
-    daemon.claimedItems.add(todo.path);
+    const workItem = available[0]!;
+    workItem.claimedBy = daemonId;
+    daemon.claimedItems.add(workItem.path);
 
     const affinity: "author" | "pool" =
-      operatorId !== "" && todo.author === operatorId ? "author" : "pool";
-    this.logEvent(crew.code, daemonId, "claim", todo.path, { affinity });
-    this.send(ws, { type: "claim_response", requestId, todoId: todo.path });
+      operatorId !== "" && workItem.author === operatorId ? "author" : "pool";
+    this.logEvent(crew.code, daemonId, "claim", workItem.path, { affinity });
+    this.send(ws, { type: "claim_response", requestId, workItemId: workItem.path });
     // Broadcast crew status after claim
     this.broadcastCrewUpdate(crew);
   }
 
-  private handleComplete(crew: CrewState, daemonId: string, todoId: string, ws: WebSocket): void {
-    const todo = crew.items.get(todoId);
-    if (!todo || todo.claimedBy !== daemonId) {
-      this.send(ws, { type: "error", message: `Cannot complete: ${todoId}` });
+  private handleComplete(crew: CrewState, daemonId: string, workItemId: string, ws: WebSocket): void {
+    const workItem = crew.items.get(workItemId);
+    if (!workItem || workItem.claimedBy !== daemonId) {
+      this.send(ws, { type: "error", message: `Cannot complete: ${workItemId}` });
       return;
     }
 
     const daemon = crew.daemons.get(daemonId);
     if (daemon) {
-      daemon.claimedItems.delete(todoId);
+      daemon.claimedItems.delete(workItemId);
     }
 
-    todo.completedBy = daemonId;
-    todo.claimedBy = null;
-    this.logEvent(crew.code, daemonId, "complete", todoId, {});
-    this.send(ws, { type: "complete_ack", todoId });
+    workItem.completedBy = daemonId;
+    workItem.claimedBy = null;
+    this.logEvent(crew.code, daemonId, "complete", workItemId, {});
+    this.send(ws, { type: "complete_ack", workItemId });
     // Broadcast crew status after completion
     this.broadcastCrewUpdate(crew);
   }
@@ -592,19 +592,19 @@ export class MockBroker {
           !daemon.released &&
           now - daemon.disconnectedAt > this.gracePeriodMs
         ) {
-          this.releaseDaemonTodos(crew, daemon);
+          this.releaseDaemonWorkItems(crew, daemon);
           daemon.released = true;
         }
       }
     }
   }
 
-  private releaseDaemonTodos(crew: CrewState, daemon: DaemonState): void {
-    for (const todoPath of daemon.claimedItems) {
-      const todo = crew.items.get(todoPath);
-      if (todo && todo.claimedBy === daemon.id) {
-        todo.claimedBy = null;
-        this.logEvent(crew.code, daemon.id, "abandon", todoPath, {});
+  private releaseDaemonWorkItems(crew: CrewState, daemon: DaemonState): void {
+    for (const workItemPath of daemon.claimedItems) {
+      const workItem = crew.items.get(workItemPath);
+      if (workItem && workItem.claimedBy === daemon.id) {
+        workItem.claimedBy = null;
+        this.logEvent(crew.code, daemon.id, "abandon", workItemPath, {});
       }
     }
     // Don't clear claimedItems here -- the reconnect handler needs it
@@ -615,8 +615,8 @@ export class MockBroker {
 
   /** Broadcast crew status update to all connected daemons in the crew. */
   private broadcastCrewUpdate(crew: CrewState): void {
-    const todos = Array.from(crew.items.values());
-    const availableCount = todos.filter(
+    const workItems = Array.from(crew.items.values());
+    const availableCount = workItems.filter(
       (t) =>
         t.claimedBy === null &&
         t.completedBy === null &&
@@ -625,13 +625,13 @@ export class MockBroker {
           return !dep || dep.completedBy !== null;
         }),
     ).length;
-    const claimedCount = todos.filter((t) => t.claimedBy !== null).length;
-    const completedCount = todos.filter((t) => t.completedBy !== null).length;
+    const claimedCount = workItems.filter((t) => t.claimedBy !== null).length;
+    const completedCount = workItems.filter((t) => t.completedBy !== null).length;
     const connectedDaemons = Array.from(crew.daemons.values()).filter((d) => d.ws !== null);
     const daemonNames = connectedDaemons.map((d) => d.name);
 
     // Build claimed items list for cross-daemon visibility
-    const claimedItems = todos
+    const claimedItems = workItems
       .filter((t) => t.claimedBy !== null && t.completedBy === null)
       .map((t) => ({ id: t.path, daemonId: t.claimedBy! }));
 
@@ -659,7 +659,7 @@ export class MockBroker {
     crewId: string,
     daemonId: string,
     event: CrewEvent["event"],
-    todoPath: string,
+    workItemPath: string,
     metadata: Record<string, unknown>,
   ): void {
     const entry: CrewEvent = {
@@ -667,7 +667,7 @@ export class MockBroker {
       crew_id: crewId,
       daemon_id: daemonId,
       event,
-      todo_path: todoPath,
+      work_item_path: workItemPath,
       metadata: metadata as CrewEvent["metadata"],
     };
 

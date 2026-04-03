@@ -18,9 +18,9 @@
 - Hardcoded "cmux" in error message
 
 ## Additional bug: ID collision false completion
-When TODOs reuse IDs from old cycles (H-MUX-1/H-MUX-2 existed from March 24), the orchestrator
+When work items reuse IDs from old cycles (H-MUX-1/H-MUX-2 existed from March 24), the orchestrator
 matches old merged PRs and fast-tracks new items to "done" without doing any work. Reconcile then
-deletes the TODO files. This caused a false success report and ~30 min of wasted debugging.
+deletes the work item files. This caused a false success report and ~30 min of wasted debugging.
 
 ## Decomposed into
 - H-MFV-1: Fail fast when mux unavailable (new ID to avoid collision)

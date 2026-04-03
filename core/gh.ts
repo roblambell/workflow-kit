@@ -889,7 +889,7 @@ export const defaultPrCommentClient: PrCommentClient = {
  *
  * @param repoRoot - Repo root for gh CLI context
  * @param prNumber - PR number to comment on
- * @param itemId - TODO item ID (e.g., "H-FOO-1")
+ * @param itemId - Work item ID (e.g., "H-FOO-1")
  * @param eventLine - Event description (e.g., "CI failure detected. Worker notified.")
  * @param client - PR comment client (injected for testability)
  */

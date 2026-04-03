@@ -22,9 +22,9 @@ export interface WorkItem {
   dependencies: string[]; // list of dependency IDs
   bundleWith: string[]; // list of bundle IDs
   status: Status;
-  filePath: string; // path to the individual todo file
+  filePath: string; // path to the individual work item file
   repoAlias: string; // "" | "self" | "hub" | repo name
-  rawText: string; // full markdown text of the TODO item
+  rawText: string; // full markdown text of the work item
   filePaths: string[]; // extracted file paths mentioned in the item
   testPlan: string; // extracted from **Test plan:** section (empty if not present)
   descriptionSnippet?: string; // brief snippet extracted from the markdown body for status detail views
@@ -83,7 +83,7 @@ export const ID_PATTERN = /[A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*/;
 export const ID_PATTERN_GLOBAL = /[A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*/g;
 export const ID_IN_PARENS = /\(([A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*)/;
 
-// Filename pattern: extracts ID from "--{ID}.md" suffix in todo filenames
+// Filename pattern: extracts ID from "--{ID}.md" suffix in work item filenames
 export const ID_IN_FILENAME = /--([A-Z]-[A-Za-z0-9]+-[0-9]+[a-z]*)\.md$/;
 
 // Source string for building composite regexes (keeps the pattern in one place)

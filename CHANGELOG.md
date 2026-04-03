@@ -319,14 +319,14 @@
 - add `nw history <ID>` command for item state timeline (H-OBS-2) (#311)
 - add `nw logs` command for viewing orchestration logs (H-OBS-1) (#310)
 - grouped and per-command rich help (H-CR-9) (#304)
-- interactive no-args with checkbox TODO picker (H-CR-8) (#302)
+- interactive no-args with checkbox work item picker (H-CR-8) (#302)
 - add ID pattern detection and topo-sort launching (H-CR-5) (#299)
 - decompose observability iteration and update vision (L-VIS-15) (#297)
 - wire crew mode into orchestrator and TUI (H-CRW-3) (#286)
 - token/cost tracking in worker analytics (L-CST-1) (#285)
 - add copilot trust folder advisory to nw doctor (M-DOC-1) (#284)
 - auto-commit friction entries at orchestration shutdown (M-FRC-1) (#283)
-- pre-flight check for uncommitted TODO files (H-PFL-1) (#282)
+- pre-flight check for uncommitted work item files (H-PFL-1) (#282)
 - mock crew coordination broker (H-CRW-1) (#281)
 - crew WebSocket client with reconnect (H-CRW-2) (#279)
 - live countdown timer decoupled from poll loop (H-TUI-6) (#278)
@@ -340,15 +340,15 @@
 - relay trusted PR comments to workers (M-ORC-3) (#261)
 - add keyboard toggling to status watch mode (M-ST-5) (#257)
 - add ViewOptions type and DORA metrics panel (M-ST-4) (#256)
-- make setup command interactive with agent file selection (TODO M-IST-1) (#247)
-- auto-decompose friction files into TODOs (TODO M-ADF-1) (#242)
-- vision L-VIS-13 -- decompose next iteration into TODOs (#239)
-- pre-flight environment validation in orchestrate (TODO H-PFV-1) (#237)
-- launch supervisor session and wire into orchestrate (TODO H-SUP-2) (#232)
-- vision L-VIS-12 -- decompose next iteration into TODOs (#231)
-- monorepo workspace detection in ninthwave init (TODO H-MNR-1) (#229)
-- add keyboard shortcuts and remove status pane (TODO H-TUI-2) (#228)
-- create supervisor agent prompt (TODO H-SUP-1) (#227)
+- make setup command interactive with agent file selection (work item M-IST-1) (#247)
+- auto-decompose friction files into work items (work item M-ADF-1) (#242)
+- vision L-VIS-13 -- decompose next iteration into work items (#239)
+- pre-flight environment validation in orchestrate (work item H-PFV-1) (#237)
+- launch supervisor session and wire into orchestrate (work item H-SUP-2) (#232)
+- vision L-VIS-12 -- decompose next iteration into work items (#231)
+- monorepo workspace detection in ninthwave init (work item H-MNR-1) (#229)
+- add keyboard shortcuts and remove status pane (work item H-TUI-2) (#228)
+- create supervisor agent prompt (work item H-SUP-1) (#227)
 - replace dependency tree with flat blocked-by column in status
 
 ### Changed
@@ -372,14 +372,14 @@
 - reviewer signals orchestrator via verdict file, remove PR locking
 - remove auto-merge from agent instructions (H-WR-1) (#337)
 - retire vision loop, remove L-VIS-16 DX items
-- rename todo terminology to work item in test infrastructure (M-TM-5) (#336)
+- rename work item terminology to work item in test infrastructure (M-TM-5) (#336)
 - rewire cmdNoArgs to mode-first flow (H-NX-2) (#335)
-- rename CLI user-facing strings from TODO to work item (H-TM-2) (#329)
-- rename core types and modules from todo to work-item terminology (H-TM-1) (#321)
-- drop create-todo GitHub Action and update VISION.md (H-VF-2) (#318)
+- rename CLI user-facing strings from work item to work item (H-TM-2) (#329)
+- rename core types and modules from work item to work-item terminology (H-TM-1) (#321)
+- drop create-work-item GitHub Action and update VISION.md (H-VF-2) (#318)
 - rename agent files to role-based names with scope guards (H-RN-2) (#317)
-- rename todos→work, todo/→ninthwave/, todo-→ninthwave- (H-RN-1) (#316)
-- fix license, remove gstack refs, remove todo-preview (H-CL-1) (#309)
+- rename work items→work, work item/→ninthwave/, work item-→ninthwave- (H-RN-1) (#316)
+- fix license, remove gstack refs, remove work-item-preview (H-CL-1) (#309)
 - slim Phase 7 to pre-PR sanity check (H-CL-2) (#308)
 - make status live by default, add --once flag (M-CR-10) (#303)
 - merge init and setup into unified init command (H-CR-4) (#301)
@@ -396,11 +396,11 @@
 - replace screen-scraping health detection with heartbeat-based detection (H-HB-4) (#266)
 - replace cmux set-status with nw heartbeat in worker prompt (H-HB-5) (#265)
 - condense DEPS count and DURATION columns (H-ST-3) (#255)
-- remove supervisor feature (TODO H-SR-1) (#249)
-- drop TmuxAdapter and ZellijAdapter (TODO H-SR-3) (#250)
-- remove screen-based ongoing health monitoring (TODO H-SR-2) (#248)
+- remove supervisor feature (work item H-SR-1) (#249)
+- drop TmuxAdapter and ZellijAdapter (work item H-SR-3) (#250)
+- remove screen-based ongoing health monitoring (work item H-SR-2) (#248)
 - remove decompose-friction CLI command
-- remove inline supervisor code (TODO M-SUP-3) (#233)
+- remove inline supervisor code (work item M-SUP-3) (#233)
 
 ### Fixed
 - guard stacked launch against dep race condition (H-SL-1) (#420)
@@ -444,26 +444,26 @@
 - roll back stacked dependents in pre-WIP states when base goes stuck (H-ORC-2) (#259)
 - add title comparison in buildSnapshot to prevent false completion on reused IDs
 - deduplicate CI failure notifications to prevent comment spam
-- delete stale branches before launching workers on reused TODO IDs (H-ORC-4) (#258)
-- support alphabetic suffixes in TODO ID parsing (TODO H-IDP-1) (#254)
-- drop "TODO" prefix from PR title templates (H-ST-2) (#253)
-- separator width matches data row width across terminal widths (TODO H-ST-1) (#252)
-- commit and push TODO changes before launching orchestrator (TODO H-IDP-2) (#251)
-- symlink supervisor agent files (matches todo-worker pattern)
-- make getTerminalWidth test TTY-independent (TODO M-TIS-1) (#246)
-- deduplicate daemon state transition events (TODO M-EVT-1) (#243)
-- daemon misses merged PRs that auto-merge between polls (TODO H-MRG-1) (#241)
+- delete stale branches before launching workers on reused work item IDs (H-ORC-4) (#258)
+- support alphabetic suffixes in work item ID parsing (work item H-IDP-1) (#254)
+- drop "work item" prefix from PR title templates (H-ST-2) (#253)
+- separator width matches data row width across terminal widths (work item H-ST-1) (#252)
+- commit and push work item changes before launching orchestrator (work item H-IDP-2) (#251)
+- symlink supervisor agent files (matches work-item-worker pattern)
+- make getTerminalWidth test TTY-independent (work item M-TIS-1) (#246)
+- deduplicate daemon state transition events (work item M-EVT-1) (#243)
+- daemon misses merged PRs that auto-merge between polls (work item H-MRG-1) (#241)
 
 ## 0.2.0 -- 2026-03-27
 
 Scope reduction: narrowed focus to the core orchestration pipeline.
 
 ### Removed
-- **External task backends** -- GitHub Issues, ClickUp, Sentry, PagerDuty adapters, `TaskBackend` interface, `StatusSync`, and `backend-registry` module. Work items now come exclusively from `.ninthwave/todos/` files
+- **External task backends** -- GitHub Issues, ClickUp, Sentry, PagerDuty adapters, `TaskBackend` interface, `StatusSync`, and `backend-registry` module. Work items now come exclusively from `.ninthwave/work/` files
 - **Sandboxing** -- nono process-level sandbox wrapper (`core/sandbox.ts`), policy proxy launcher (`core/proxy-launcher.ts`), `--no-sandbox` flag, and all sandbox configuration keys
 - **Remote dashboard** -- orchestrator dashboard server (`core/session-server.ts`), `SessionUrlProvider` interface, `--remote` flag, and dashboard lifecycle wiring
 - **Webhook notifications** -- Slack/Discord notification system
-- **Legacy migration commands** -- `migrate-todos` and `generate-todos` CLI commands (TODOS.md format is no longer supported)
+- **Legacy migration commands** -- `migrate-work items` and `generate-work items` CLI commands (work-items.md format is no longer supported)
 - **`--backend` flag** from `list` command
 
 ### Changed
@@ -479,12 +479,12 @@ These features were working but added surface area beyond the narrowest wedge. B
 Initial release as **ninthwave**.
 
 ### Added
-- Batch TODO orchestrator (`core/batch-todos.sh`) -- parse, order, start, merge, finalize
+- Batch work item orchestrator (`core/batch-work-items.sh`) -- parse, order, start, merge, finalize
 - `/work` skill -- 5-phase interactive workflow (select, launch, autopilot, monitor, finalize)
 - `/decompose` skill -- break feature specs into PR-sized work items with dependency mapping
 - `/ninthwave-upgrade` skill -- self-update for both global and vendored installs
-- `/todo-preview` skill -- port-isolated dev server for live testing
-- `todo-worker` agent -- autonomous implementation agent for Claude Code, OpenCode, and Copilot CLI
+- `/work-item-preview` skill -- port-isolated dev server for live testing
+- `work-item-worker` agent -- autonomous implementation agent for Claude Code, OpenCode, and Copilot CLI
 - Remote installer (`remote-install.sh`) -- one-liner global or per-project setup
 - `setup` script -- creates `.ninthwave/` project config, skill symlinks, and agent copies
 - Unit test suite -- 112 tests covering parser, batch-order, mark-done, and version-bump

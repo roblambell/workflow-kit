@@ -40,8 +40,8 @@ export interface TmuxAdapterDeps {
 }
 
 /** Construct the tmux label for a worker pane/window. */
-function workspaceName(todoId: string): string {
-  return `nw_${sanitizeName(todoId)}`;
+function workspaceName(workItemId: string): string {
+  return `nw_${sanitizeName(workItemId)}`;
 }
 
 function sessionTarget(session: string): string {
@@ -213,10 +213,10 @@ export class TmuxAdapter implements Multiplexer {
   private launchWindowWorkspace(
     cwd: string,
     command: string,
-    todoId?: string,
+    workItemId?: string,
   ): string | null {
     const session = this.getSessionName();
-    const winName = todoId ? workspaceName(todoId) : `nw_${Date.now()}`;
+    const winName = workItemId ? workspaceName(workItemId) : `nw_${Date.now()}`;
     const target = `${session}:${winName}`;
 
     this.deps.runner("tmux", ["kill-window", "-t", target]);
@@ -242,10 +242,10 @@ export class TmuxAdapter implements Multiplexer {
   private launchDashboardPane(
     cwd: string,
     command: string,
-    todoId?: string,
+    workItemId?: string,
   ): string | null {
     const session = this.getSessionName();
-    const title = todoId ? workspaceName(todoId) : `nw_${Date.now()}`;
+    const title = workItemId ? workspaceName(workItemId) : `nw_${Date.now()}`;
     if (!this.ensureDashboardStatusPane(session)) return null;
 
     const dashboardPanes = this.listDashboardPanes(session) ?? [];
@@ -294,13 +294,13 @@ export class TmuxAdapter implements Multiplexer {
   launchWorkspace(
     cwd: string,
     command: string,
-    todoId?: string,
+    workItemId?: string,
   ): string | null {
     this.lastLaunchError = undefined;
     if (!this.ensureSession()) return null;
     return this.getLayout() === "windows"
-      ? this.launchWindowWorkspace(cwd, command, todoId)
-      : this.launchDashboardPane(cwd, command, todoId);
+      ? this.launchWindowWorkspace(cwd, command, workItemId)
+      : this.launchDashboardPane(cwd, command, workItemId);
   }
 
   splitPane(_command: string): string | null {

@@ -132,14 +132,12 @@ Key files: [`core/parser.ts`](core/parser.ts) (read work items), [`core/commands
 
 Abstracts terminal multiplexer operations behind a clean interface.
 
-> **Terminology boundary:** the remaining `todoId` names in this interface are part of backend identity and prompt-launch contracts, not preferred user-facing terminology. See [docs/work-item-terminology.md](docs/work-item-terminology.md).
-
 ```typescript
 interface Multiplexer {
   readonly type: MuxType;                                           // "cmux" | "tmux"
   isAvailable(): boolean;
   diagnoseUnavailable(): string;
-  launchWorkspace(cwd: string, command: string, todoId?: string): string | null;
+  launchWorkspace(cwd: string, command: string, workItemId?: string): string | null;
   splitPane(command: string): string | null;
   sendMessage(ref: string, message: string): boolean;
   readScreen(ref: string, lines?: number): string;
@@ -153,7 +151,7 @@ interface Multiplexer {
 Shipped implementations:
 
 - `CmuxAdapter` -- wraps the cmux CLI. Workspace refs look like `workspace:1`. cmux supports sidebar-oriented status/progress updates, but it must be used from inside an active cmux session.
-- `TmuxAdapter` -- wraps tmux using a **windows-within-session** model: one tmux session per project, one `nw_<todoId>` window per worker. Refs use tmux's `session:window` target syntax, typically `{session}:nw_<todoId>` (that is, the `{session}:nw:{todoId}` worker identity encoded as a tmux window target). Message delivery is paste-then-submit: `tmux load-buffer -`, `tmux paste-buffer`, then `tmux send-keys Enter`.
+- `TmuxAdapter` -- wraps tmux using a **windows-within-session** model: one tmux session per project, one `nw_<workItemId>` window per worker. Refs use tmux's `session:window` target syntax, typically `{session}:nw_<ID>` (that is, the `{session}:nw:{workItemId}` worker identity encoded as a tmux window target). Message delivery is paste-then-submit: `tmux load-buffer -`, `tmux paste-buffer`, then `tmux send-keys Enter`.
 
 ### Multiplexer Detection Chain
 
@@ -219,7 +217,7 @@ Each work item gets an isolated AI coding session managed as follows:
 1. Create an isolated git worktree and item branch for the worker.
 2. `allocatePartition(id)` -- assigns a unique port range and DB prefix for test isolation.
 3. `seedAgentFiles(worktreePath, hubRoot)` -- copies `implementer.md` to `.claude/agents/`, `.opencode/agents/`, `.github/agents/` inside the worktree.
-4. `mux.launchWorkspace(worktreePath, command, todoId)` -- spawns the session; returns a workspace ref (e.g., `"workspace:1"` for cmux, `"{session}:nw_<ID>"` for tmux).
+4. `mux.launchWorkspace(worktreePath, command, workItemId)` -- spawns the session; returns a workspace ref (e.g., `"workspace:1"` for cmux, `"{session}:nw_<ID>"` for tmux).
 5. `sendWithReadyWait(mux, ref, prompt, ...)` -- waits for the AI prompt, sends the implementer instructions, verifies the worker starts processing.
 
 The workspace ref is stored in `OrchestratorItem.workspaceRef` for later messaging and cleanup.
@@ -243,11 +241,6 @@ Timeout thresholds (configurable via `OrchestratorConfig`): 30 minutes for a wor
 
 ---
 
-## Terminology Boundaries
+## Terminology
 
-`work item` is the preferred product term. Remaining `todo` names fall into two buckets:
-
-- **Safe to rename later:** internal comments, locals, helper names, tests, and docs that do not cross a process/file/history boundary.
-- **Must stay for now:** prompt keys like `YOUR_TODO_ID`, crew/broker JSON fields like `todoId`, reviewer mode values like `reviewType: "todo"`, mux identity parameters like `todoId`, and legacy migration paths like `.ninthwave/todos/`.
-
-The full audited keep-list lives in [docs/work-item-terminology.md](docs/work-item-terminology.md). Treat that document as the source of truth for follow-up cleanup work.
+`work item` is the canonical term across the current product, code, and docs.

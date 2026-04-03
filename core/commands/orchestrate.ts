@@ -3162,7 +3162,7 @@ export async function orchestrateLoop(
     }
   }
 
-  // Author cache for resolving git author of TODO files during sync.
+  // Author cache for resolving git author of work item files during sync.
   // Cleared each poll cycle to avoid stale data.
   const authorCache = new AuthorCache();
 
@@ -4688,7 +4688,7 @@ export async function cmdOrchestrate(
         readState: readScheduleState,
         writeState: writeScheduleState,
         launchWorker: (task, pr, ai) => launchScheduledTask(task, pr, ai, {
-          launchWorkspace: (cwd, cmd, todoId) => mux.launchWorkspace(cwd, cmd, todoId),
+          launchWorkspace: (cwd, cmd, workItemId) => mux.launchWorkspace(cwd, cmd, workItemId),
         }),
         monitorDeps: {
           listWorkspaces: () => mux.listWorkspaces(),

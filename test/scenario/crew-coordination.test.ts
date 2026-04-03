@@ -86,8 +86,8 @@ class StubCrewBroker implements CrewBroker {
     return null;
   }
 
-  complete(todoId: string): void {
-    this.completes.push(todoId);
+  complete(workItemId: string): void {
+    this.completes.push(workItemId);
   }
 
   async scheduleClaim(_taskId: string, _scheduleTime: string): Promise<boolean> {
@@ -112,7 +112,7 @@ class StubCrewBroker implements CrewBroker {
 
   report(
     _event: string,
-    _todoPath: string,
+    _workItemPath: string,
     _metadata: Record<string, unknown>,
     _opts?: { model?: string; tokenUsage?: { inputTokens: number; outputTokens: number; cacheTokens?: number } },
   ): void {

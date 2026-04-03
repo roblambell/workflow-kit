@@ -309,8 +309,8 @@ export function extractBody(rawText: string): string[] {
 }
 
 /**
- * Normalize a title for comparison by lowercasing, stripping legacy TODO ID
- * references (e.g., "(H-MUX-1)", "TODO H-MUX-1"), conventional commit
+ * Normalize a title for comparison by lowercasing, stripping inline ID
+ * references (e.g., "(H-MUX-1)"), conventional commit
  * prefixes (e.g., "fix:", "feat:"), and collapsing whitespace.
  *
  * Used to detect legacy ID collisions: when a new work item reuses an old
@@ -320,8 +320,6 @@ export function extractBody(rawText: string): string[] {
 export function normalizeTitleForComparison(title: string): string {
   return title
     .toLowerCase()
-    // Strip legacy TODO ID references: "(H-MUX-1)", "TODO H-MUX-1", "(TODO H-MUX-1)"
-    .replace(new RegExp(`\\(?TODO\\s+${ID_PATTERN_SOURCE}\\)?`, "gi"), "")
     .replace(new RegExp(`\\(${ID_PATTERN_SOURCE}\\)`, "gi"), "")
     // Strip conventional commit prefixes: "fix:", "feat:", "refactor:", etc.
     .replace(/^(fix|feat|refactor|test|docs|chore|perf|ci|build|style|revert)\s*(\([^)]*\))?\s*:\s*/i, "")

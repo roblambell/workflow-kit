@@ -28,14 +28,14 @@ Rules:
 - Do **not** script polling loops
 - Use `nw inbox --check` during active work, and `nw inbox --wait` only when you are done or idle
 
-When you invoke `nw inbox --wait YOUR_TODO_ID` through a shell tool that supports timeouts, set the timeout to the longest practical value available.
+When you invoke `nw inbox --wait YOUR_WORK_ITEM_ID` through a shell tool that supports timeouts, set the timeout to the longest practical value available.
 
-If `nw inbox --wait YOUR_TODO_ID` exits, is cancelled, or times out before printing a message, immediately run the same wait command again. Only stop waiting once the command returns an actual orchestrator message.
+If `nw inbox --wait YOUR_WORK_ITEM_ID` exits, is cancelled, or times out before printing a message, immediately run the same wait command again. Only stop waiting once the command returns an actual orchestrator message.
 
 Before you start implementation, check once for pending orchestrator messages:
 
 ```bash
-nw inbox --check YOUR_TODO_ID
+nw inbox --check YOUR_WORK_ITEM_ID
 ```
 
 During active work, check again at natural boundaries:
@@ -48,8 +48,8 @@ If `nw inbox --check` returns one or more messages, handle them immediately usin
 
 ## 1. Understand the Work Item
 
-Look for `YOUR_TODO_ID`, `YOUR_PARTITION`, `PROJECT_ROOT`, `HUB_ROOT`, `IS_HUB_LOCAL`, and `HUB_REPO_NWO` in your system prompt (written to `.ninthwave/.prompt` in your working directory by the orchestrator). These tell you:
-- **YOUR_TODO_ID**: The work item identifier (e.g., `C-2-1`, `H-3-4`)
+Look for `YOUR_WORK_ITEM_ID`, `YOUR_PARTITION`, `PROJECT_ROOT`, `HUB_ROOT`, `IS_HUB_LOCAL`, and `HUB_REPO_NWO` in your system prompt (written to `.ninthwave/.prompt` in your working directory by the orchestrator). These tell you:
+- **YOUR_WORK_ITEM_ID**: The work item identifier (e.g., `C-2-1`, `H-3-4`)
 - **YOUR_PARTITION**: The test partition number for database and port isolation
 - **PROJECT_ROOT**: Absolute path to your working directory (the git worktree checked out to your branch). All file reads and writes should be relative to this directory.
 - **HUB_ROOT**: Absolute path to the hub repo where `.ninthwave/` lives (including `.ninthwave/work/`)
@@ -152,9 +152,9 @@ Sometimes a work item requires no code change. Valid reasons include:
 The no-op PR template (replace the standard Phase 9 template):
 
 ```bash
-gh pr create --label "domain:YOUR_DOMAIN" --title "chore: close YOUR_TODO_ID -- no code change needed" --body "$(cat <<'EOF'
+gh pr create --label "domain:YOUR_DOMAIN" --title "chore: close YOUR_WORK_ITEM_ID -- no code change needed" --body "$(cat <<'EOF'
 ## Summary
-Closes YOUR_TODO_ID: <title>
+Closes YOUR_WORK_ITEM_ID: <title>
 
 **No code change needed.** This PR only removes the work item file from `.ninthwave/work/`.
 
@@ -169,7 +169,7 @@ Closes YOUR_TODO_ID: <title>
 - [x] <criterion>
 
 ## Work Item Reference
-ID: YOUR_TODO_ID
+ID: YOUR_WORK_ITEM_ID
 Lineage: <lineage token from the work item file>
 Priority: <priority>
 Source: <source>
@@ -186,7 +186,7 @@ This keeps the orchestrator's PR-based lifecycle working (the orchestrator handl
 Before you commit, check for pending orchestrator messages:
 
 ```bash
-nw inbox --check YOUR_TODO_ID
+nw inbox --check YOUR_WORK_ITEM_ID
 ```
 
 Create well-structured commits with one logical change per commit. Use conventional commit prefixes:
@@ -209,7 +209,7 @@ Check the project instruction file for the exact test commands. Use YOUR_PARTITI
 Before you run tests, check for pending orchestrator messages:
 
 ```bash
-nw inbox --check YOUR_TODO_ID
+nw inbox --check YOUR_WORK_ITEM_ID
 ```
 
 Common patterns:
@@ -262,9 +262,9 @@ nw heartbeat --progress 0.85 --label "Checked diff"
 
 Before creating the PR, delete your work item file so that merging the PR automatically marks the item as done.
 
-1. Delete the file: `rm .ninthwave/work/*--YOUR_TODO_ID.md`
-2. Verify it's gone: `ls .ninthwave/work/*--YOUR_TODO_ID.md` should return "No such file"
-3. Commit: `git add .ninthwave/work/ && git commit -m "chore: remove YOUR_TODO_ID"`
+1. Delete the file: `rm .ninthwave/work/*--YOUR_WORK_ITEM_ID.md`
+2. Verify it's gone: `ls .ninthwave/work/*--YOUR_WORK_ITEM_ID.md` should return "No such file"
+3. Commit: `git add .ninthwave/work/ && git commit -m "chore: remove YOUR_WORK_ITEM_ID"`
 
 If `git diff origin/main -- .ninthwave/work/` shows unrelated work item drift, do not create or restore other work item files by hand just to make the diff clean. Only remove your own file and leave the unrelated drift alone.
 
@@ -279,7 +279,7 @@ Skip this step entirely. The work item file lives in the hub repo, not the targe
 ### Push and create the PR
 
 ```bash
-git push -u origin ninthwave/YOUR_TODO_ID
+git push -u origin ninthwave/YOUR_WORK_ITEM_ID
 ```
 
 ### Stacked PRs (BASE_BRANCH)
@@ -304,9 +304,9 @@ If `BASE_BRANCH` is **not** set in your system prompt, create the PR normally (n
 Create the PR with `gh pr create`. Use a HEREDOC for the body. Include the `--label` flag for the domain label:
 
 ```bash
-gh pr create --label "domain:YOUR_DOMAIN" --title "fix|feat|refactor|test: <description> (YOUR_TODO_ID)" --body "$(cat <<'EOF'
+gh pr create --label "domain:YOUR_DOMAIN" --title "fix|feat|refactor|test: <description> (YOUR_WORK_ITEM_ID)" --body "$(cat <<'EOF'
 ## Summary
-Implements YOUR_TODO_ID: <title>
+Implements YOUR_WORK_ITEM_ID: <title>
 
 - <what changed>
 - <why it changed>
@@ -327,7 +327,7 @@ Implements YOUR_TODO_ID: <title>
 - [ ] <specific test cases relevant to this work item>
 
 ## Work Item Reference
-ID: YOUR_TODO_ID
+ID: YOUR_WORK_ITEM_ID
 Lineage: <lineage token from the work item file>
 Priority: <priority>
 Source: <source>
@@ -353,14 +353,14 @@ Write the entry to `.ninthwave/friction/` in your current worktree so it is comm
 ```bash
 mkdir -p .ninthwave/friction
 TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-cat > ".ninthwave/friction/${TIMESTAMP}--YOUR_TODO_ID.md" <<ENTRY
-item: YOUR_TODO_ID
+cat > ".ninthwave/friction/${TIMESTAMP}--YOUR_WORK_ITEM_ID.md" <<ENTRY
+item: YOUR_WORK_ITEM_ID
 date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 severity: low|medium|high
 description: <brief description of friction encountered>
 ENTRY
 git add .ninthwave/friction/
-git commit -m "chore: log friction for YOUR_TODO_ID"
+git commit -m "chore: log friction for YOUR_WORK_ITEM_ID"
 git push
 ```
 
@@ -385,16 +385,16 @@ You do NOT need to poll, watch, or decide on post-PR actions yourself. The daemo
 Before you stop active work, do one last non-blocking check:
 
 ```bash
-nw inbox --check YOUR_TODO_ID
+nw inbox --check YOUR_WORK_ITEM_ID
 ```
 
 Then switch into wait mode:
 
 ```bash
-nw inbox --wait YOUR_TODO_ID
+nw inbox --wait YOUR_WORK_ITEM_ID
 ```
 
-Use the longest practical shell-tool timeout for this wait. If the command exits before printing a message, immediately run the same `nw inbox --wait YOUR_TODO_ID` command again.
+Use the longest practical shell-tool timeout for this wait. If the command exits before printing a message, immediately run the same `nw inbox --wait YOUR_WORK_ITEM_ID` command again.
 
 Simply stop and wait. Your session should stay in wait mode until the orchestrator writes the next message.
 
@@ -407,7 +407,7 @@ Some daemon nudges may be plain-language inbox messages instead of structured `[
 When you are idle again after processing a message, re-enter wait mode:
 
 ```bash
-nw inbox --wait YOUR_TODO_ID
+nw inbox --wait YOUR_WORK_ITEM_ID
 ```
 
 Again: if that wait command ends before printing a message, immediately rerun it with a very long timeout.
@@ -419,7 +419,7 @@ When you receive a message, it will usually fit one of these categories. A rebas
 Opening the PR did **not** end your responsibility for this work item. A PR that is red in CI is still your job until you either push a candidate fix or post a concrete blocker comment explaining why you cannot make further progress.
 
 1. Report progress: `nw heartbeat --progress 0.9 --label "Fixing CI"`
-2. Pull latest (the daemon may have rebased your branch): `git fetch origin && git reset --hard origin/ninthwave/YOUR_TODO_ID`
+2. Pull latest (the daemon may have rebased your branch): `git fetch origin && git reset --hard origin/ninthwave/YOUR_WORK_ITEM_ID`
 3. Investigate the failure, implement the fix, and run the relevant tests locally
 4. Commit and push the candidate fix, then report it: `nw heartbeat --progress 1.0 --label "Fix pushed"`
 5. If CI fails again later, re-enter this same investigate → test → push loop on the next CI-failure message. Do **not** treat the existing PR as completion and do **not** return to idle just because you already attempted one fix.
@@ -430,7 +430,7 @@ Opening the PR did **not** end your responsibility for this work item. A PR that
 > **Note:** Feedback is pre-filtered by the toolchain to only include comments from trusted collaborators (`OWNER`, `MEMBER`, `COLLABORATOR`). The `pr-activity`/`pr-watch` commands ignore comments from non-collaborators. You can safely act on any feedback the orchestrator daemon relays.
 
 1. Report progress: `nw heartbeat --progress 0.85 --label "Addressing feedback"`
-2. Pull latest: `git fetch origin && git reset --hard origin/ninthwave/YOUR_TODO_ID`
+2. Pull latest: `git fetch origin && git reset --hard origin/ninthwave/YOUR_WORK_ITEM_ID`
 3. Address the feedback
 4. Run tests
 5. Commit and push
@@ -441,7 +441,7 @@ Opening the PR did **not** end your responsibility for this work item. A PR that
 This can arrive as either a structured `[ORCHESTRATOR]` message or a plain-language inbox nudge. In both cases, the daemon is telling **you** to rebase the PR branch now.
 
 1. Report progress: `nw heartbeat --progress 0.95 --label "Rebasing"`
-2. Pull the latest branch tip first: `git fetch origin && git reset --hard origin/ninthwave/YOUR_TODO_ID`
+2. Pull the latest branch tip first: `git fetch origin && git reset --hard origin/ninthwave/YOUR_WORK_ITEM_ID`
 3. Rebase onto the correct base branch:
    - If `BASE_BRANCH` is set in your prompt: `git fetch origin $BASE_BRANCH --quiet && git rebase origin/$BASE_BRANCH`
    - If `BASE_BRANCH` is not set: `git fetch origin main --quiet && git rebase origin/main`
@@ -457,7 +457,7 @@ This can arrive as either a structured `[ORCHESTRATOR]` message or a plain-langu
 
 #### Stop Request
 
-Clean up and exit: `ninthwave clean-single YOUR_TODO_ID`
+Clean up and exit: `ninthwave clean-single YOUR_WORK_ITEM_ID`
 
 > Use `HUB_ROOT` (not `PROJECT_ROOT`) because `clean-single` must run from the hub repo where the orchestrator state lives.
 

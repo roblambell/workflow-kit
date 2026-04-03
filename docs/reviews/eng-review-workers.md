@@ -1,4 +1,4 @@
-> **Note:** This review was written before the file-per-todo migration. TODOS.md references are historical.
+> **Note:** This review was written before the file-per-work-item migration. work-items.md references are historical.
 
 # Engineering Review: Worker Lifecycle and Communication
 
@@ -33,7 +33,7 @@ Lines 200-208 catch and discard errors from `fetchOrigin` and `ffMerge` with bar
 Lines 211-220: if `branchExists(targetRepo, branchName)` is true, the branch is force-deleted and recreated. This is correct for recovery (e.g., a previous run left a stale branch), but could destroy work-in-progress if a worker is still active on that branch. The orchestrator's WIP tracking should prevent this, but `cmdStart` (the manual CLI command) has no such guard.
 
 **Finding W-5: Prompt file race window (Low)**
-The system prompt is written to `tmpdir()` (line 257) and deleted in a `finally` block (line 274). Between write and delete, the file is world-readable and contains the full TODO text. This is a minor information leak concern on shared systems. Using `mkdtemp` + restrictive permissions would be more defensive.
+The system prompt is written to `tmpdir()` (line 257) and deleted in a `finally` block (line 274). Between write and delete, the file is world-readable and contains the full work item text. This is a minor information leak concern on shared systems. Using `mkdtemp` + restrictive permissions would be more defensive.
 
 ### 1.3 Session Launch
 
@@ -43,7 +43,7 @@ The system prompt is written to `tmpdir()` (line 257) and deleted in a `finally`
 Line 122-124: if `waitForReady` returns false (workspace never stabilized), the code warns but still sends the initial prompt. For Claude Code, this means sending "Start" before the tool is ready to receive input, which could be silently dropped. The current behavior is "best effort" -- which is pragmatic -- but there's no retry or verification that the initial prompt was received.
 
 **Finding W-7: Shell injection via `safeTitle` in Claude command construction (Medium)**
-Line 98 constructs a shell command string with `safeTitle` interpolated. The sanitization (line 242) strips `` ` ``, `$`, and `'` characters, but doesn't handle `"`, `\`, `;`, `|`, `&`, or newlines. Since the command string is passed through `mux.launchWorkspace()` which eventually hits a shell, a carefully crafted TODO title could inject additional commands. The sanitization should use allowlisting (keep only `[a-zA-Z0-9 _-]`) rather than blocklisting.
+Line 98 constructs a shell command string with `safeTitle` interpolated. The sanitization (line 242) strips `` ` ``, `$`, and `'` characters, but doesn't handle `"`, `\`, `;`, `|`, `&`, or newlines. Since the command string is passed through `mux.launchWorkspace()` which eventually hits a shell, a carefully crafted work item title could inject additional commands. The sanitization should use allowlisting (keep only `[a-zA-Z0-9 _-]`) rather than blocklisting.
 
 ### 1.4 Test Coverage Assessment
 
@@ -149,7 +149,7 @@ Line 207: `workspaces.includes(item.workspaceRef) || workspaces.includes(item.id
 
 ### 4.2 State Reconstruction After Crash
 
-`reconstructState` (orchestrate.ts line 246) recovers orchestrator state from worktree existence + PR status. `recoverWorkspaceRef` scans the workspace list for the TODO ID.
+`reconstructState` (orchestrate.ts line 246) recovers orchestrator state from worktree existence + PR status. `recoverWorkspaceRef` scans the workspace list for the work item ID.
 
 **Observation:** The reconstruction logic is thorough -- it handles all PR states and recovers workspace refs. The pre-fetch of `listWorkspaces()` (line 254) avoids N+1 shell calls.
 
@@ -162,10 +162,10 @@ When recovering an `implementing` state, the code only checks if the workspace r
 
 ### 5.1 Workspace Closing
 
-`closeWorkspacesForIds` extracts TODO IDs from workspace names via regex and closes matching workspaces.
+`closeWorkspacesForIds` extracts work item IDs from workspace names via regex and closes matching workspaces.
 
-**Finding W-18: Workspace listing regex requires specific TODO ID format (Low)**
-Line 33: `line.match(/TODO\s+([A-Z]+-[A-Za-z0-9]+-[0-9]+)/)` requires the `X-YYY-N` format. If a TODO ID uses a different format (e.g., no middle segment), the regex won't match and the workspace won't be cleaned up. The format is enforced elsewhere, but the regex doesn't match the canonical `ID_IN_PARENS` regex used by the parser.
+**Finding W-18: Workspace listing regex requires specific work item ID format (Low)**
+Line 33: `line.match(/work item\s+([A-Z]+-[A-Za-z0-9]+-[0-9]+)/)` requires the `X-YYY-N` format. If a work item ID uses a different format (e.g., no middle segment), the regex won't match and the workspace won't be cleaned up. The format is enforced elsewhere, but the regex doesn't match the canonical `ID_IN_PARENS` regex used by the parser.
 
 ### 5.2 Worktree Cleanup
 
@@ -176,8 +176,8 @@ Lines 157-175: worktree removal, branch deletion, and remote branch deletion eac
 
 At minimum, cleanup failures should be logged (not silently swallowed) so they surface during debugging.
 
-**Finding W-20: `cmdClean` without target ID closes ALL todo workspaces before checking merge status (Medium)**
-Lines 133-137: when no `targetId` is specified, `cmdCloseWorkspaces(mux)` is called first -- which closes ALL workspaces matching `TODO <ID>` patterns. Only THEN does the code check if worktrees are merged before removing them. This means active worker workspaces for non-merged items are killed before the merge check runs. The workspace close and worktree cleanup should be filtered to only target merged items (or at least warn before closing active ones).
+**Finding W-20: `cmdClean` without target ID closes ALL work item workspaces before checking merge status (Medium)**
+Lines 133-137: when no `targetId` is specified, `cmdCloseWorkspaces(mux)` is called first -- which closes ALL workspaces matching `work item <ID>` patterns. Only THEN does the code check if worktrees are merged before removing them. This means active worker workspaces for non-merged items are killed before the merge check runs. The workspace close and worktree cleanup should be filtered to only target merged items (or at least warn before closing active ones).
 
 ### 5.3 Cross-repo Cleanup
 
@@ -208,20 +208,20 @@ Lines 133-137: when no `targetId` is specified, `cmdCloseWorkspaces(mux)` is cal
 
 ### 6.2 Three-Way Merge
 
-`mergeTodosThreeWay` resolves TODOS.md conflicts by computing set differences (added/removed items relative to base).
+`mergeTodosThreeWay` resolves work-items.md conflicts by computing set differences (added/removed items relative to base).
 
 **Observation:** This is well-engineered. The realistic test case (line 914 in reconcile.test.ts) validates the core concurrent-mark-done scenario. The up-to-10-commit iterative resolve loop (line 247) handles multi-commit rebases.
 
 **Finding W-22: Three-way merge doesn't preserve item content modifications (Medium)**
-The merge only tracks additions and removals (by ID). If "ours" modifies an existing item's text (e.g., updates priority or description) while "theirs" doesn't change it, the modification is preserved because we use "ours" as the base document. But if "theirs" also modifies the same item's text differently, "theirs" changes are silently dropped -- "ours" version wins. There's no content-level merge for individual items. This is documented by the design (set-based merge, not line-based), but could surprise users who edit TODO descriptions on different branches.
+The merge only tracks additions and removals (by ID). If "ours" modifies an existing item's text (e.g., updates priority or description) while "theirs" doesn't change it, the modification is preserved because we use "ours" as the base document. But if "theirs" also modifies the same item's text differently, "theirs" changes are silently dropped -- "ours" version wins. There's no content-level merge for individual items. This is documented by the design (set-based merge, not line-based), but could surprise users who edit work item descriptions on different branches.
 
-**Finding W-23: `defaultPullRebase` abort on non-TODOS.md conflicts could leave git in bad state (Low)**
-Line 257: when non-TODOS.md files are conflicted, `rebase --abort` is called. But if the abort fails (e.g., corrupted git state), the function returns `{ ok: false, conflict: true }` without ensuring the repo is in a clean state. Subsequent operations may fail mysteriously.
+**Finding W-23: `defaultPullRebase` abort on non-work-items.md conflicts could leave git in bad state (Low)**
+Line 257: when non-work-items.md files are conflicted, `rebase --abort` is called. But if the abort fails (e.g., corrupted git state), the function returns `{ ok: false, conflict: true }` without ensuring the repo is in a clean state. Subsequent operations may fail mysteriously.
 
 ### 6.3 `defaultCommitAndPush` Race Condition
 
 **Finding W-24: Reconcile commit-and-push races with concurrent reconcile runs (Medium)**
-The reconcile flow reads TODOS.md, marks items done, then stages/commits/pushes. If two reconcile processes run concurrently (e.g., two orchestrator instances), both could read the same TODOS.md, both mark the same items done, and one push will fail. The second reconcile would need to pull-rebase-retry, but `defaultCommitAndPush` doesn't retry on push failure -- it just warns and returns false.
+The reconcile flow reads work-items.md, marks items done, then stages/commits/pushes. If two reconcile processes run concurrently (e.g., two orchestrator instances), both could read the same work-items.md, both mark the same items done, and one push will fail. The second reconcile would need to pull-rebase-retry, but `defaultCommitAndPush` doesn't retry on push failure -- it just warns and returns false.
 
 The three-way merge resolves the rebase conflict, but the commit-push sequence isn't atomic. This is mitigated by the fact that concurrent orchestrators are unlikely in practice, but the code doesn't defend against it.
 
@@ -254,8 +254,8 @@ The cmux path uses `sendMessageImpl` with paste-buffer + verification + retry. T
 
 ### 7.2 Session Naming Conflicts
 
-**Finding W-26: tmux session names don't include TODO ID (Low)**
-CmuxAdapter workspaces include the TODO title (via the `cmd` string), making them identifiable in `listWorkspaces`. TmuxAdapter uses `nw-1`, `nw-2`, etc. The `closeWorkspacesForIds` function relies on TODO ID appearing in the workspace listing -- this works for cmux (where the command string includes the ID) but may not work reliably for tmux (where the session name is just `nw-N`). The workspace identification logic in `isWorkerAlive` and `closeWorkspacesForIds` assumes the listing contains the TODO ID, which is an assumption that only holds for cmux.
+**Finding W-26: tmux session names don't include work item ID (Low)**
+CmuxAdapter workspaces include the work item title (via the `cmd` string), making them identifiable in `listWorkspaces`. TmuxAdapter uses `nw-1`, `nw-2`, etc. The `closeWorkspacesForIds` function relies on work item ID appearing in the workspace listing -- this works for cmux (where the command string includes the ID) but may not work reliably for tmux (where the session name is just `nw-N`). The workspace identification logic in `isWorkerAlive` and `closeWorkspacesForIds` assumes the listing contains the work item ID, which is an assumption that only holds for cmux.
 
 ---
 
@@ -269,7 +269,7 @@ CmuxAdapter workspaces include the TODO title (via the `cmd` string), making the
 | W-4 | Low | launch.ts | Branch collision deletes without confirmation |
 | W-5 | Low | launch.ts | Prompt file is world-readable in tmpdir |
 | W-6 | Medium | launch.ts | `waitForReady` timeout still sends prompt |
-| W-7 | Medium | launch.ts | Shell injection via TODO title in command construction |
+| W-7 | Medium | launch.ts | Shell injection via work item title in command construction |
 | W-8 | Low | mux.ts | TmuxAdapter counter resets on restart |
 | W-9 | Medium | mux.ts | TmuxAdapter `splitPane` returns wrong pane_id |
 | W-10 | Low | mux.ts | TmuxAdapter `sendMessage` has keystroke timing issues |
@@ -288,7 +288,7 @@ CmuxAdapter workspaces include the TODO title (via the `cmd` string), making the
 | W-23 | Low | reconcile.ts | Rebase abort may leave git in bad state |
 | W-24 | Medium | reconcile.ts | Concurrent reconcile has commit-push race |
 | W-25 | High | mux.ts | tmux path lacks delivery guarantees of cmux |
-| W-26 | Low | mux.ts | tmux session names don't include TODO ID |
+| W-26 | Low | mux.ts | tmux session names don't include work item ID |
 
 ### Counts by Severity
 

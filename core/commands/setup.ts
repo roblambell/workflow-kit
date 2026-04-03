@@ -280,7 +280,7 @@ export const AGENT_SOURCES = DEFAULT_CANONICAL_BUNDLE_SOURCES.agents;
 
 /** Human-readable descriptions for each agent file. */
 export const AGENT_DESCRIPTIONS: Record<string, string> = {
-  "implementer.md": "implementation agent for batch TODO processing",
+  "implementer.md": "implementation agent for batch work item processing",
   "reviewer.md": "PR code review agent",
   "forward-fixer.md": "post-merge CI failure diagnosis and fix-forward agent",
   "rebaser.md": "branch rebase agent for stacked and drifted PRs",

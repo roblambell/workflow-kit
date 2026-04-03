@@ -9,7 +9,7 @@ interface FakeWorkspace {
   command: string;
   alive: boolean;
   screenContent: string;
-  todoId?: string;
+  workItemId?: string;
   /** Messages sent to this workspace (for assertions). */
   messages: string[];
   status: { key: string; text: string; icon: string; color: string } | null;
@@ -39,7 +39,7 @@ export class FakeMux implements Multiplexer {
     return "FakeMux is always available";
   }
 
-  launchWorkspace(cwd: string, command: string, todoId?: string): string | null {
+  launchWorkspace(cwd: string, command: string, workItemId?: string): string | null {
     const ref = `workspace:${this.nextId++}`;
     this.workspaces.set(ref, {
       ref,
@@ -47,7 +47,7 @@ export class FakeMux implements Multiplexer {
       command,
       alive: true,
       screenContent: "❯ ",
-      todoId,
+      workItemId,
       messages: [],
       status: null,
       progress: null,
@@ -76,7 +76,7 @@ export class FakeMux implements Multiplexer {
     const lines: string[] = [];
     for (const ws of this.workspaces.values()) {
       if (ws.alive) {
-        lines.push(`${ws.ref}\t${ws.todoId ?? ""}\t${ws.cwd}`);
+        lines.push(`${ws.ref}\t${ws.workItemId ?? ""}\t${ws.cwd}`);
       }
     }
     return lines.join("\n");

@@ -643,27 +643,7 @@ function scaffold(
   // --- .ninthwave/ directory ---
   mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
 
-  // --- Migrate .ninthwave/todos/ → .ninthwave/work/ (if legacy directory exists) ---
-  // Compatibility boundary: keep the legacy path name until support for pre-rename
-  // repos is intentionally removed.
-  const legacyTodosDir = join(projectDir, ".ninthwave", "todos");
   const workDir = join(projectDir, ".ninthwave", "work");
-  if (existsSync(legacyTodosDir) && !existsSync(workDir)) {
-    const entries = readdirSync(legacyTodosDir);
-    mkdirSync(workDir, { recursive: true });
-    for (const entry of entries) {
-      const src = join(legacyTodosDir, entry);
-      const dst = join(workDir, entry);
-      writeFileSync(dst, readFileSync(src, "utf-8"));
-    }
-    // Remove legacy directory contents (keep parent .ninthwave/ intact)
-    for (const entry of entries) {
-      const src = join(legacyTodosDir, entry);
-      require("fs").unlinkSync(src);
-    }
-    require("fs").rmdirSync(legacyTodosDir);
-    console.log("  Migrated .ninthwave/todos/ → .ninthwave/work/");
-  }
 
   // --- .ninthwave/schedules/ directory with example ---
   const schedulesDir = join(projectDir, ".ninthwave", "schedules");

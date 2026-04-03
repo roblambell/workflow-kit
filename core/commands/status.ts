@@ -588,8 +588,8 @@ export function cmdPartitions(partitionDir: string): void {
     for (const entry of entries) {
       const filePath = join(partitionDir, entry);
       try {
-        const todoId = readFileSync(filePath, "utf-8").trim();
-        console.log(`  Partition ${entry}: ${todoId}`);
+        const workItemId = readFileSync(filePath, "utf-8").trim();
+        console.log(`  Partition ${entry}: ${workItemId}`);
       } catch {
         // skip unreadable files
       }

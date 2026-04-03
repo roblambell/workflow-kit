@@ -12,9 +12,7 @@ import { userStateDir } from "./daemon.ts";
 
 // ── Shared message types ────────────────────────────────────────────
 // Imported by mock-broker.ts for type-safe server implementation.
-// Protocol boundary: the todo* JSON field names below are serialized over the
-// crew websocket protocol, so later terminology cleanup should not rename them
-// without a coordinated broker/client migration.
+// The websocket protocol uses `workItem*` field names consistently.
 
 export interface SyncItem {
   id: string;
@@ -32,7 +30,7 @@ export interface SyncMessage {
 export interface SyncAckMessage {
   type: "sync_ack";
   crewCode: string;
-  todoIds: string[];
+  workItemIds: string[];
   telemetrySettings?: {
     sendTokenUsage?: boolean;
   };
@@ -47,18 +45,18 @@ export interface ClaimMessage {
 export interface ClaimResponseMessage {
   type: "claim_response";
   requestId: string;
-  todoId: string | null;
+  workItemId: string | null;
 }
 
 export interface CompleteMessage {
   type: "complete";
-  todoId: string;
+  workItemId: string;
   daemonId: string;
 }
 
 export interface CompleteAckMessage {
   type: "complete_ack";
-  todoId: string;
+  workItemId: string;
 }
 
 export interface HeartbeatMessage {
@@ -74,9 +72,9 @@ export interface HeartbeatAckMessage {
 
 export interface ReconnectStateMessage {
   type: "reconnect_state";
-  resumed: string[];    // TODOs still claimed by this daemon -- resume as-is
-  released: string[];   // TODOs released but unclaimed -- re-claim
-  reclaimed: string[];  // TODOs re-claimed by another daemon -- kill worker
+  resumed: string[];    // work items still claimed by this daemon -- resume as-is
+  released: string[];   // work items released but unclaimed -- re-claim
+  reclaimed: string[];  // work items re-claimed by another daemon -- kill worker
 }
 
 export interface ScheduleClaimMessage {
@@ -122,7 +120,7 @@ export interface ReportMessage {
   type: "report";
   daemonId: string;
   event: string;
-  todoPath: string;
+  workItemPath: string;
   metadata: Record<string, unknown>;
   repoUrl?: string;
   branch?: string;
@@ -246,7 +244,7 @@ function parseCrewRemoteItemSnapshot(value: unknown): CrewRemoteItemSnapshot | n
 
   const nestedItem = recordOrNull(item.item);
   const owner = recordOrNull(item.owner);
-  const id = stringOrNull(item.id) ?? stringOrNull(item.todoId);
+  const id = stringOrNull(item.id) ?? stringOrNull(item.workItemId);
   const state = parseCrewRemoteItemState(item.state);
   if (!id || !state) return null;
 
@@ -260,11 +258,7 @@ function parseCrewRemoteItemSnapshot(value: unknown): CrewRemoteItemSnapshot | n
     ?? stringOrNull(item.daemonName)
     ?? stringOrNull(owner?.name)
     ?? null;
-  const title =
-    stringOrNull(item.title)
-    ?? stringOrNull(item.todoTitle)
-    ?? stringOrNull(nestedItem?.title)
-    ?? undefined;
+  const title = stringOrNull(item.title) ?? stringOrNull(item.workItemTitle) ?? stringOrNull(nestedItem?.title) ?? undefined;
   const rawPrNumber = item.prNumber ?? nestedItem?.prNumber;
   const prNumber = numberOrNull(rawPrNumber);
   const priorPrNumbers = numberArrayOrUndefined(item.priorPrNumbers ?? nestedItem?.priorPrNumbers);
@@ -334,11 +328,11 @@ export interface CrewBroker {
   /** Send sync message with current active items and their metadata. */
   sync(items: SyncItem[]): void;
 
-  /** Claim the next available TODO. Returns todoId or null (5s timeout). */
+  /** Claim the next available work item. Returns workItemId or null (5s timeout). */
   claim(): Promise<string | null>;
 
-  /** Mark a TODO as complete. */
-  complete(todoId: string): void;
+  /** Mark a work item as complete. */
+  complete(workItemId: string): void;
 
   /** Claim a schedule slot. Returns true if granted, false if denied or timeout. */
   scheduleClaim(taskId: string, scheduleTime: string): Promise<boolean>;
@@ -358,7 +352,7 @@ export interface CrewBroker {
   /** Send a report event for an active shared session. */
   report(
     event: string,
-    todoPath: string,
+    workItemPath: string,
     metadata: Record<string, unknown>,
     opts?: { model?: string; tokenUsage?: TokenUsage },
   ): void;
@@ -509,7 +503,7 @@ export class WebSocketCrewBroker implements CrewBroker {
   private reconnectTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private pendingClaims = new Map<string, {
-    resolve: (todoId: string | null) => void;
+    resolve: (workItemId: string | null) => void;
     timer: ReturnType<typeof setTimeout>;
   }>();
   private pendingScheduleClaims = new Map<string, {
@@ -654,17 +648,17 @@ export class WebSocketCrewBroker implements CrewBroker {
     });
   }
 
-  complete(todoId: string): void {
+  complete(workItemId: string): void {
     this.send({
       type: "complete",
-      todoId,
+      workItemId,
       daemonId: this.daemonId,
     });
   }
 
   report(
     event: string,
-    todoPath: string,
+    workItemPath: string,
     metadata: Record<string, unknown>,
     opts?: { model?: string; tokenUsage?: TokenUsage },
   ): void {
@@ -677,7 +671,7 @@ export class WebSocketCrewBroker implements CrewBroker {
       type: "report",
       daemonId: this.daemonId,
       event,
-      todoPath,
+      workItemPath,
       metadata,
       ...(model ? { model } : {}),
       ...(this.sessionId ? { sessionId: this.sessionId } : {}),
@@ -748,7 +742,7 @@ export class WebSocketCrewBroker implements CrewBroker {
         if (pending) {
           clearTimeout(pending.timer);
           this.pendingClaims.delete(data.requestId);
-          pending.resolve(data.todoId ?? null);
+          pending.resolve(data.workItemId ?? null);
         }
         break;
       }

@@ -81,7 +81,7 @@ describe("system harness helpers", () => {
     expect(context.stateDir).toBe(harness.stateDir);
     expect(context.projectRoot).toBe(harness.projectRoot);
     expect(context.workspaceName).toContain("H-SYS-1");
-    expect(prompt).toContain("YOUR_TODO_ID: H-SYS-1");
+    expect(prompt).toContain("YOUR_WORK_ITEM_ID: H-SYS-1");
     expect(prompt).toContain("YOUR_PARTITION:");
     expect(prompt).toContain("PROJECT_ROOT:");
     expect(state.status).toBe("completed");

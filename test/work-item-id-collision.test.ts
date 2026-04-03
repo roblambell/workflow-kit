@@ -87,7 +87,7 @@ function setupWorkItemsDir(files: Record<string, string>): {
 function makeDeps(overrides: Partial<ReconcileDeps> = {}): ReconcileDeps {
   return {
     pullRebase: () => ({ ok: true, conflict: false }),
-    getMergedTodoIds: () => [],
+    getMergedWorkItemIds: () => [],
     getOpenItemIds: (workDir: string) => {
       if (!existsSync(workDir)) return [];
       try {
@@ -278,7 +278,7 @@ describe("reconcile: item ID collision safety", () => {
     let markedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [{ id: "H-FOO-1", prTitle: "fix: old work (H-FOO-1)" }],
+      getMergedWorkItemIds: () => [{ id: "H-FOO-1", prTitle: "fix: old work (H-FOO-1)" }],
       markDone: (ids) => {
         markedIds = ids;
       },
@@ -297,7 +297,7 @@ describe("reconcile: item ID collision safety", () => {
     let markedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [{ id: "H-FOO-1", prTitle: "fix: old work (H-FOO-1)" }],
+      getMergedWorkItemIds: () => [{ id: "H-FOO-1", prTitle: "fix: old work (H-FOO-1)" }],
       markDone: (ids) => {
         markedIds = ids;
       },
@@ -315,7 +315,7 @@ describe("reconcile: item ID collision safety", () => {
     let markedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [
+      getMergedWorkItemIds: () => [
         { id: "H-FOO-1", prTitle: "fix: old work (H-FOO-1)" }, // title mismatch
         { id: "H-BAR-1", prTitle: "fix: fix a bug (H-BAR-1)" }, // title match
       ],
@@ -335,7 +335,7 @@ describe("reconcile: item ID collision safety", () => {
     let markedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [{ id: "H-FOO-1", prTitle: "" }],
+      getMergedWorkItemIds: () => [{ id: "H-FOO-1", prTitle: "" }],
       markDone: (ids) => {
         markedIds = ids;
       },
@@ -353,7 +353,7 @@ describe("reconcile: item ID collision safety", () => {
     let markedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [{ id: "H-FOO-1", prTitle: "different title", lineageToken: LINEAGE }],
+      getMergedWorkItemIds: () => [{ id: "H-FOO-1", prTitle: "different title", lineageToken: LINEAGE }],
       markDone: (ids) => {
         markedIds = ids;
       },
@@ -370,7 +370,7 @@ describe("reconcile: item ID collision safety", () => {
     let markedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [{ id: "H-FOO-1", prTitle: "New work" }],
+      getMergedWorkItemIds: () => [{ id: "H-FOO-1", prTitle: "New work" }],
       markDone: (ids) => {
         markedIds = ids;
       },
@@ -388,7 +388,7 @@ describe("reconcile: item ID collision safety", () => {
     const cleanedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [
+      getMergedWorkItemIds: () => [
         {
           id: "H-FOO-1",
           prTitle: "fix: old work (H-FOO-1)",
@@ -422,7 +422,7 @@ describe("reconcile: item ID collision safety", () => {
     const cleanedIds: string[] = [];
 
     const deps = makeDeps({
-      getMergedTodoIds: () => [{ id: "H-FOO-1", prTitle: "fix: old work (H-FOO-1)" }],
+      getMergedWorkItemIds: () => [{ id: "H-FOO-1", prTitle: "fix: old work (H-FOO-1)" }],
       getWorktreeIds: () => ["H-FOO-1"],
       cleanWorktree: (id) => {
         cleanedIds.push(id);

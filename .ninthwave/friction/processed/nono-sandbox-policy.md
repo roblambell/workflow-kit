@@ -13,7 +13,7 @@ Required 3 manual fix commits to main before workers could run at all. Sandbox i
 
 ## Root cause
 
-The worker that implemented M-SBX-1 never tested with actual nono installed. It guessed the CLI syntax from the TODO description rather than reading `nono --help`. No integration test verifies the actual nono command works.
+The worker that implemented M-SBX-1 never tested with actual nono installed. It guessed the CLI syntax from the work item description rather than reading `nono --help`. No integration test verifies the actual nono command works.
 
 ## What needs to happen
 

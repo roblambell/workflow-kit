@@ -6,7 +6,7 @@ Three items (H-STP-1, M-SKL-1, M-TEL-1) were auto-merged via `gh pr merge --squa
 ## Root causes found and fixed
 
 ### 1. Title collision check too aggressive (CRITICAL)
-The `prTitleMatchesTodo` collision check (added in H-MID-1 / PR #206) was applied unconditionally to ALL merged PR detections. When the worker used a different PR title than the TODO title (common -- workers often rephrase), the orchestrator dropped the merge detection entirely. Fix: skip title check when the orchestrator already tracks the PR number (`orchItem.prNumber === mergedPrNum`).
+The `prTitleMatchesTodo` collision check (added in H-MID-1 / PR #206) was applied unconditionally to ALL merged PR detections. When the worker used a different PR title than the work item title (common -- workers often rephrase), the orchestrator dropped the merge detection entirely. Fix: skip title check when the orchestrator already tracks the PR number (`orchItem.prNumber === mergedPrNum`).
 
 ### 2. No merge retry limit
 `executeMerge` had no retry counter. On failure, it transitioned back to ci-passed, which re-triggered the merge action on the next poll -- creating an infinite loop. Fix: added `mergeFailCount` on OrchestratorItem and `maxMergeRetries: 3` config. After 3 failures, item transitions to stuck.

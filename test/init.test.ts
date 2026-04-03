@@ -77,7 +77,7 @@ function createFakeBundle(dir: string): string {
     join(bundleDir, "agents", "implementer.md"),
     [
       "# Implementer Agent",
-      "nw inbox --wait YOUR_TODO_ID",
+      "nw inbox --wait YOUR_WORK_ITEM_ID",
       "set the timeout to the longest practical value available",
       "immediately run the same wait command again",
       "",
@@ -710,8 +710,8 @@ describe("initProject", () => {
     expect(existsSync(join(projectDir, ".ninthwave/.gitignore"))).toBe(true);
     expect(existsSync(join(userStateDir(projectDir), "version"))).toBe(true);
 
-    // Init should NOT create TODOS.md
-    expect(existsSync(join(projectDir, "TODOS.md"))).toBe(false);
+    // Init should NOT create work itemS.md
+    expect(existsSync(join(projectDir, "work itemS.md"))).toBe(false);
 
     // Skills copied (real directories, not symlinks)
     for (const skill of ["decompose"]) {
@@ -2209,34 +2209,6 @@ describe("initProject -- preserves existing files", () => {
     expect(existsSync(join(projectDir, ".ninthwave/work/.gitkeep"))).toBe(true);
   });
 
-  it("migrates .ninthwave/todos/ to .ninthwave/work/", () => {
-    const projectDir = setupTempRepo();
-    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
-
-    // Create legacy .ninthwave/todos/ directory with a test file
-    const legacyDir = join(projectDir, ".ninthwave", "todos");
-    mkdirSync(legacyDir, { recursive: true });
-    writeFileSync(join(legacyDir, ".gitkeep"), "");
-    writeFileSync(join(legacyDir, "1-test--H-MIG-1.md"), "# Test migration (H-MIG-1)\n");
-
-    const deps: InitDeps = {
-      commandExists: (() => false) as CommandChecker,
-      getEnv: () => undefined,
-    };
-
-    initProject(projectDir, bundleDir, deps);
-
-    // Legacy directory should be removed
-    expect(existsSync(join(projectDir, ".ninthwave/todos"))).toBe(false);
-
-    // New directory should exist with migrated contents
-    expect(existsSync(join(projectDir, ".ninthwave/work"))).toBe(true);
-    expect(existsSync(join(projectDir, ".ninthwave/work/.gitkeep"))).toBe(true);
-    expect(existsSync(join(projectDir, ".ninthwave/work/1-test--H-MIG-1.md"))).toBe(true);
-    expect(readFileSync(join(projectDir, ".ninthwave/work/1-test--H-MIG-1.md"), "utf-8")).toBe(
-      "# Test migration (H-MIG-1)\n",
-    );
-  });
 
   it("copies skill directories into .claude/skills/", () => {
     const projectDir = setupTempRepo();

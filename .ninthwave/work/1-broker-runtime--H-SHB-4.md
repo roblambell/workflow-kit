@@ -6,7 +6,7 @@
 **Domain:** broker-runtime
 **Lineage:** 666e8b00-e1ee-4aea-b7ff-46520a147a67
 
-Build the Bun server runtime that exposes `POST /api/crews` and crew websocket connections on top of the extracted broker core, backed by file persistence instead of in-memory state. The runtime should restore crews, daemons, todo state, schedule claims, and reconnect or release behavior across restarts while enforcing repo-reference matching during crew creation and join.
+Build the Bun server runtime that exposes `POST /api/crews` and crew websocket connections on top of the extracted broker core, backed by file persistence instead of in-memory state. The runtime should restore crews, daemons, work item state, schedule claims, and reconnect or release behavior across restarts while enforcing repo-reference matching during crew creation and join.
 
 **Test plan:**
 - Add `test/broker-runtime.test.ts` covering create crew, join, repo mismatch rejection, persistence across restart, reconnect resume, grace-period release, and rich `remoteItems` snapshots.

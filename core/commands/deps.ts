@@ -1,4 +1,4 @@
-// deps command: show dependency chain for a TODO item.
+// deps command: show dependency chain for a work item.
 
 import { parseWorkItems } from "../parser.ts";
 import { die, BOLD, DIM, RESET } from "../output.ts";

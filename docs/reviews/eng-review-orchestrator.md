@@ -104,7 +104,7 @@ All states have documented exit transitions. External merge (`prState: "merged"`
 
 **Recommendation:** Add a test that provides a snapshot with both `prNumber`/`prState` and `ciStatus: "pass"` for an implementing item, and verify it reaches `merging` in one call.
 
-**TODO:** H-TST-1
+**work item:** H-TST-1
 
 ---
 
@@ -126,7 +126,7 @@ All states have documented exit transitions. External merge (`prState: "merged"`
 
 **Recommendation:** Add a guard in `evaluateMerge` for the `asap` strategy: if `reviewDecision === "CHANGES_REQUESTED"`, transition to `review-pending` instead of merging. This respects explicit human feedback even in the fastest merge mode.
 
-**TODO:** H-ORC-2
+**work item:** H-ORC-2
 
 ---
 
@@ -148,7 +148,7 @@ All states have documented exit transitions. External merge (`prState: "merged"`
 
 **Recommendation:** Add an optional `timeout` parameter to `run()` (default: 30s for git operations, 60s for gh API calls). Use Bun's `timeout` option in `spawnSync`. Return a timeout-specific error that callers can handle.
 
-**TODO:** H-SHL-1
+**work item:** H-SHL-1
 
 ---
 
@@ -170,7 +170,7 @@ While `mkdir` is atomic on POSIX, the issue is that `removeLockDir` in step 2 by
 
 **Recommendation:** Replace the stale-lock recovery with an atomic compare-and-swap: rename the PID file instead of deleting and recreating the directory. Or use `flock(2)` via Bun's FFI for a kernel-level lock. For now, at minimum: after writing the PID file, re-read it and verify the PID matches `process.pid` before returning (detect stolen locks).
 
-**TODO:** H-LCK-1
+**work item:** H-LCK-1
 
 ---
 
@@ -182,7 +182,7 @@ While `mkdir` is atomic on POSIX, the issue is that `removeLockDir` in step 2 by
 
 **Recommendation:** Return `success: false` if both operations fail. Log a warning if cleanup partially fails.
 
-**TODO:** L-CLN-1
+**work item:** L-CLN-1
 
 ---
 
@@ -233,7 +233,7 @@ The second merge attempt is wasted because the conflict was already detected in 
 
 Option 1 is simplest and aligns with the existing daemon state persistence.
 
-**TODO:** M-REC-1
+**work item:** M-REC-1
 
 ---
 
@@ -256,7 +256,7 @@ Option 1 is simplest and aligns with the existing daemon state persistence.
 
 **Risk:** Medium -- rebase is a critical recovery mechanism. A bug in the handler would cause items to stay in ci-failed state instead of recovering.
 
-**TODO:** M-TST-2
+**work item:** M-TST-2
 
 ---
 
@@ -266,7 +266,7 @@ Option 1 is simplest and aligns with the existing daemon state persistence.
 
 **Risk:** Medium -- review workflows are important for the `approved` merge strategy. Missing test coverage could allow regressions.
 
-**TODO:** M-TST-3
+**work item:** M-TST-3
 
 ---
 
@@ -279,7 +279,7 @@ Option 1 is simplest and aligns with the existing daemon state persistence.
 
 **Risk:** Medium -- the lock is used to prevent concurrent orchestrator instances. A bug in the lock could allow double-execution.
 
-**TODO:** M-TST-4
+**work item:** M-TST-4
 
 ---
 
@@ -289,7 +289,7 @@ Option 1 is simplest and aligns with the existing daemon state persistence.
 
 **Risk:** Low -- the function is simple and well-used indirectly through other tests. Direct tests would catch Bun version regressions.
 
-**TODO:** L-TST-5
+**work item:** L-TST-5
 
 ---
 
@@ -299,7 +299,7 @@ Option 1 is simplest and aligns with the existing daemon state persistence.
 
 **Risk:** Low -- the array-based argument passing in `Bun.spawnSync` prevents shell injection. But error message formatting and edge cases (empty stdout, trimming) could regress.
 
-**TODO:** L-TST-6
+**work item:** L-TST-6
 
 ---
 
@@ -309,7 +309,7 @@ Option 1 is simplest and aligns with the existing daemon state persistence.
 
 **Risk:** Low -- the mapping is simple and static. But since "ready" is the only status that sets `reviewDecision`, a regression would silently break the `approved` merge strategy.
 
-**TODO:** L-TST-7
+**work item:** L-TST-7
 
 ---
 
@@ -331,7 +331,7 @@ Option 1 is simplest and aligns with the existing daemon state persistence.
 
 **Recommendation:** Extract post-completion handling (analytics, commit, webhooks, cleanup) into a `handleRunComplete()` helper. Extract the per-action execution block (cost capture, logging, webhook) into a `handleActionExecution()` helper.
 
-**TODO:** L-REF-1
+**work item:** L-REF-1
 
 ---
 
@@ -349,7 +349,7 @@ Option 1 is simplest and aligns with the existing daemon state persistence.
 
 **Overall assessment:** The orchestrator is well-designed with a clean separation between the pure state machine and side-effecting execution. The dependency injection pattern is applied consistently, making the system testable. The two high-severity findings (shell timeout and lock TOCTOU) are real but have low probability of manifesting in normal operation. Test coverage is strong for the happy path but has gaps in error handling and edge cases.
 
-### Actionable TODOs created:
+### Actionable work items created:
 
 | ID | Priority | Title | Category |
 |----|----------|-------|----------|

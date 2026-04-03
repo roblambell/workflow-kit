@@ -80,7 +80,7 @@ function isGitRepo(path: string): boolean {
  */
 export function writeCrossRepoIndex(
   indexPath: string,
-  todoId: string,
+  workItemId: string,
   targetRepo: string,
   worktreePath: string,
 ): void {
@@ -88,11 +88,11 @@ export function writeCrossRepoIndex(
   const lockPath = `${indexPath}.lock`;
   acquireLock(lockPath);
   try {
-    const newLine = `${todoId}\t${targetRepo}\t${worktreePath}`;
+    const newLine = `${workItemId}\t${targetRepo}\t${worktreePath}`;
     if (existsSync(indexPath)) {
       const content = readFileSync(indexPath, "utf-8");
       const lines = content.split("\n");
-      const idx = lines.findIndex((l) => l.startsWith(`${todoId}\t`));
+      const idx = lines.findIndex((l) => l.startsWith(`${workItemId}\t`));
       if (idx >= 0) {
         // Update existing entry
         lines[idx] = newLine;
@@ -113,7 +113,7 @@ export function writeCrossRepoIndex(
  */
 export function removeCrossRepoIndex(
   indexPath: string,
-  todoId: string,
+  workItemId: string,
 ): void {
   if (!existsSync(indexPath)) return;
   const lockPath = `${indexPath}.lock`;
@@ -122,7 +122,7 @@ export function removeCrossRepoIndex(
     const content = readFileSync(indexPath, "utf-8");
     const filtered = content
       .split("\n")
-      .filter((line) => !line.startsWith(`${todoId}\t`))
+      .filter((line) => !line.startsWith(`${workItemId}\t`))
       .join("\n");
     writeFileSync(indexPath, filtered);
   } finally {
@@ -153,12 +153,12 @@ export function listCrossRepoEntries(indexPath: string): WorktreeInfo[] {
 }
 
 /**
- * Get worktree info for a TODO ID.
+ * Get worktree info for a work item ID.
  * Checks cross-repo index first, falls back to hub worktree dir.
  * Accepts optional pre-parsed entries to avoid repeated file I/O.
  */
 export function getWorktreeInfo(
-  todoId: string,
+  workItemId: string,
   indexPath: string,
   worktreeDir: string,
   cachedEntries?: WorktreeInfo[],
@@ -166,17 +166,17 @@ export function getWorktreeInfo(
   // Check cross-repo index first (use cached entries if provided)
   const entries = cachedEntries ?? listCrossRepoEntries(indexPath);
   for (const entry of entries) {
-    if (entry.itemId === todoId) {
+    if (entry.itemId === workItemId) {
       return entry;
     }
   }
 
   // Fallback: hub repo worktree (backwards compat)
-  const hubPath = join(worktreeDir, `ninthwave-${todoId}`);
+  const hubPath = join(worktreeDir, `ninthwave-${workItemId}`);
   if (existsSync(hubPath)) {
     // Derive project root from worktree dir (worktreeDir = <projectRoot>/.ninthwave/.worktrees)
     const projectRoot = dirname(dirname(worktreeDir));
-    return { itemId: todoId, repoRoot: projectRoot, worktreePath: hubPath };
+    return { itemId: workItemId, repoRoot: projectRoot, worktreePath: hubPath };
   }
 
   return null;
@@ -206,14 +206,14 @@ export type BootstrapResult =
   | { status: "failed"; reason: string };
 
 /**
- * Bootstrap a target repo for a cross-repo TODO.
+ * Bootstrap a target repo for a cross-repo work item.
  *
  * Resolution chain:
  * 1. If the repo already exists locally (sibling dir or repos.conf) → return exists.
  * 2. If a GitHub remote exists for the alias → clone it to the sibling directory.
  * 3. If neither exists → create the directory, git init, create the GitHub repo.
  *
- * @param alias - The repo alias from the TODO's Repo: field.
+ * @param alias - The repo alias from the work item's `Repo:` field.
  * @param projectRoot - The hub repo's root directory.
  * @param ghOrg - GitHub org/user for repo creation (derived from hub repo's remote).
  */

@@ -1,4 +1,4 @@
-> **Note:** This review was written before the file-per-todo migration. TODOS.md references are historical.
+> **Note:** This review was written before the file-per-work-item migration. work-items.md references are historical.
 
 # Engineering Review: Data Pipeline
 
@@ -21,11 +21,11 @@ The data pipeline modules are well-structured with good test coverage, consisten
 **Severity:** Low
 **Type:** Observability gap
 
-When an item has no ID (e.g., `### Feat: Item with no ID`), `emitItem()` returns early because `id` is empty. This is correct behavior, but there is no warning or log. Users with formatting mistakes in TODOS.md will see items silently vanish with no indication of why.
+When an item has no ID (e.g., `### Feat: Item with no ID`), `emitItem()` returns early because `id` is empty. This is correct behavior, but there is no warning or log. Users with formatting mistakes in work-items.md will see items silently vanish with no indication of why.
 
 **Current test coverage:** The `malformed.md` fixture tests that items without IDs are skipped, but doesn't verify any warning.
 
-**Recommendation:** Add an optional `warn` callback parameter to `parseTodos` (consistent with the DI pattern) that logs when items are skipped due to missing ID. Actionable -- see TODO M-DP-1.
+**Recommendation:** Add an optional `warn` callback parameter to `parseTodos` (consistent with the DI pattern) that logs when items are skipped due to missing ID. Actionable -- see work item M-DP-1.
 
 ### 1.2 No duplicate ID detection
 
@@ -34,7 +34,7 @@ When an item has no ID (e.g., `### Feat: Item with no ID`), `emitItem()` returns
 
 If two items share the same ID, both are added to the `items` array. Downstream consumers (orchestrator, dependency resolution) use `Map(items.map(i => [i.id, i]))` which silently picks the last one. The wildcard expansion second pass operates on `allIds` which would contain the duplicate.
 
-**Recommendation:** Detect duplicates during parsing and either warn or skip the duplicate. Actionable -- see TODO M-DP-2.
+**Recommendation:** Detect duplicates during parsing and either warn or skip the duplicate. Actionable -- see work item M-DP-2.
 
 ### 1.3 Dead code: unused `projectRoot` variable
 
@@ -43,7 +43,7 @@ If two items share the same ID, both are added to the `items` array. Downstream 
 
 Line 251: `const projectRoot = join(todosFile, "..", "..");` computes a project root that is never referenced. This is dead code from a refactor.
 
-**Recommendation:** Remove the dead variable. Actionable -- see TODO L-DP-3.
+**Recommendation:** Remove the dead variable. Actionable -- see work item L-DP-3.
 
 ### 1.4 Title regex stripping is greedy
 
@@ -58,16 +58,16 @@ The title-cleaning regex `title.replace(/ \([A-Z]*-[A-Za-z0-9]*-[0-9]*.*/, "")` 
 
 Would produce title `Feat: Database migration` instead of `Feat: Database migration (phase 2)`.
 
-**Recommendation:** Make the regex more precise -- match only the ID parenthetical and optional suffixes like `(bundled)`. Actionable -- see TODO L-DP-4.
+**Recommendation:** Make the regex more precise -- match only the ID parenthetical and optional suffixes like `(bundled)`. Actionable -- see work item L-DP-4.
 
 ### 1.5 UTF-8 BOM handling
 
 **Severity:** Low
 **Type:** Edge case
 
-If TODOS.md starts with a UTF-8 BOM (`\uFEFF`), the first `## ` header check would fail because the BOM character precedes it. Files saved by some Windows editors include a BOM by default.
+If work-items.md starts with a UTF-8 BOM (`\uFEFF`), the first `## ` header check would fail because the BOM character precedes it. Files saved by some Windows editors include a BOM by default.
 
-**Recommendation:** Strip BOM from content before parsing. Actionable -- see TODO L-DP-5.
+**Recommendation:** Strip BOM from content before parsing. Actionable -- see work item L-DP-5.
 
 ### 1.6 `normalizeDomain` re-reads domain file on every call
 
@@ -89,7 +89,7 @@ If TODOS.md starts with a UTF-8 BOM (`\uFEFF`), the first `## ` header check wou
 
 The token-matching regex `tokens?\s*[:=]\s*([\d,]+)` matches any occurrence of "token" followed by a number. This could produce false positives on text like "CSRF token: 12345" or "refresh token: 67890" from worker output.
 
-**Recommendation:** Anchor the match more tightly -- require "total tokens" or start-of-line position. Actionable -- see TODO L-DP-6.
+**Recommendation:** Anchor the match more tightly -- require "total tokens" or start-of-line position. Actionable -- see work item L-DP-6.
 
 ### 2.2 `commitAnalyticsFiles` doesn't unstage on dirty_index
 
@@ -98,7 +98,7 @@ The token-matching regex `tokens?\s*[:=]\s*([\d,]+)` matches any occurrence of "
 
 When `commitAnalyticsFiles` detects non-analytics files in the staging area and returns `dirty_index`, it has already staged the analytics files (via `deps.gitAdd`). Those files remain staged, which could surprise a subsequent manual commit.
 
-**Recommendation:** Unstage the analytics files before returning `dirty_index`, or document that the caller should handle this. Actionable -- see TODO L-DP-7.
+**Recommendation:** Unstage the analytics files before returning `dirty_index`, or document that the caller should handle this. Actionable -- see work item L-DP-7.
 
 ### 2.3 No schema validation on analytics file read
 
@@ -107,7 +107,7 @@ When `commitAnalyticsFiles` detects non-analytics files in the staging area and 
 
 `loadRuns` in `commands/analytics.ts` parses JSON and checks only `runTimestamp` (string) and `wallClockMs` (number). A partially corrupt file could have valid timestamp/duration but missing or wrong `items` array, producing misleading aggregate statistics.
 
-**Recommendation:** Add basic structural validation (items array exists, each item has id and state). Actionable -- see TODO L-DP-8.
+**Recommendation:** Add basic structural validation (items array exists, each item has id and state). Actionable -- see work item L-DP-8.
 
 ### 2.4 Filename collision on same-second runs
 
@@ -116,7 +116,7 @@ When `commitAnalyticsFiles` detects non-analytics files in the staging area and 
 
 The analytics filename is derived from `runTimestamp` with colons and dots replaced. If two runs start in the same millisecond (unlikely but possible with automated triggers), the second write would overwrite the first.
 
-**Observation only.** Very unlikely in practice. No TODO needed.
+**Observation only.** Very unlikely in practice. No work item needed.
 
 ---
 
@@ -129,7 +129,7 @@ The analytics filename is derived from `runTimestamp` with colons and dots repla
 
 When only one run exists, `spanDays = 0` and the code falls back to `totalItemsShipped`. This means "items per day" could show "7.0" after a single run that shipped 7 items, which is misleading -- that's items per run, not per day.
 
-**Observation only.** Minor display issue, not worth a dedicated TODO.
+**Observation only.** Minor display issue, not worth a dedicated work item.
 
 ### 3.2 `loadRuns` silently skips malformed JSON
 
@@ -138,7 +138,7 @@ When only one run exists, `spanDays = 0` and the code falls back to `totalItemsS
 
 The `catch {}` block on line 59 silently skips corrupt analytics files with no warning. This could make data loss invisible.
 
-**Recommendation:** This is the same class of issue as 1.1 -- add a warn callback or log. Could be bundled with a broader "observability for silent failures" effort. Actionable -- see TODO L-DP-8 (combined with schema validation).
+**Recommendation:** This is the same class of issue as 1.1 -- add a warn callback or log. Could be bundled with a broader "observability for silent failures" effort. Actionable -- see work item L-DP-8 (combined with schema validation).
 
 ---
 
@@ -151,7 +151,7 @@ The `catch {}` block on line 59 silently skips corrupt analytics files with no w
 
 `fireWebhook` calls `fetchFn(url, ...)` without a timeout. If the webhook endpoint hangs (TCP connection established but no response), the promise stays pending indefinitely. While fire-and-forget means orchestration isn't blocked, each pending promise holds a reference to the payload, connection, and closure -- accumulating over many events.
 
-**Recommendation:** Add `AbortController` with a timeout (e.g., 10 seconds) to the fetch call. Actionable -- see TODO M-DP-9.
+**Recommendation:** Add `AbortController` with a timeout (e.g., 10 seconds) to the fetch call. Actionable -- see work item M-DP-9.
 
 ### 4.2 No rate limiting or batching
 
@@ -160,7 +160,7 @@ The `catch {}` block on line 59 silently skips corrupt analytics files with no w
 
 Rapid orchestration events (e.g., 5 items merging in quick succession) could fire 5+ webhooks in under a second. Slack's incoming webhook rate limit is 1 per second; Discord is 5 per 2 seconds. Exceeding these limits produces 429 errors that are logged but not retried.
 
-**Recommendation:** Add a simple debounce/batch window (e.g., 2 seconds) that coalesces rapid events into a single webhook payload. Actionable -- see TODO L-DP-10.
+**Recommendation:** Add a simple debounce/batch window (e.g., 2 seconds) that coalesces rapid events into a single webhook payload. Actionable -- see work item L-DP-10.
 
 ### 4.3 No URL validation
 
@@ -169,7 +169,7 @@ Rapid orchestration events (e.g., 5 items merging in quick succession) could fir
 
 `resolveWebhookUrl` returns the raw string from env or config without checking if it's a valid URL. Invalid URLs fail at fetch time with a less clear error message.
 
-**Recommendation:** Validate URL format on resolve and warn early. Actionable -- see TODO L-DP-11.
+**Recommendation:** Validate URL format on resolve and warn early. Actionable -- see work item L-DP-11.
 
 ### 4.4 `formatWebhookText` switch has no default case
 
@@ -178,7 +178,7 @@ Rapid orchestration events (e.g., 5 items merging in quick succession) could fir
 
 The `switch (event)` on webhook event types doesn't have a `default` case. TypeScript's exhaustive checking covers this at compile time, but if a new event type is added and the switch isn't updated, the function returns `undefined` at runtime.
 
-**Observation only.** TypeScript's type system handles this. Not worth a dedicated TODO.
+**Observation only.** TypeScript's type system handles this. Not worth a dedicated work item.
 
 ---
 
@@ -191,7 +191,7 @@ The `switch (event)` on webhook event types doesn't have a `default` case. TypeS
 
 In `matchTemplates`, a new `RegExp` is constructed for each single-word keyword on each call. For N templates with K keywords matched against M descriptions, this is O(N * K * M) regex compilations. Pre-compiling regexes at template load time would improve performance.
 
-**Recommendation:** Pre-compile keyword regexes in `parseTemplate` or `loadTemplates` and store them on the `DecompositionTemplate` object. Actionable -- see TODO L-DP-12.
+**Recommendation:** Pre-compile keyword regexes in `parseTemplate` or `loadTemplates` and store them on the `DecompositionTemplate` object. Actionable -- see work item L-DP-12.
 
 ### 5.2 Template body includes Keywords metadata
 
@@ -200,7 +200,7 @@ In `matchTemplates`, a new `RegExp` is constructed for each single-word keyword 
 
 The `body` field stores the full markdown content, including the `## Keywords` section. When templates are rendered to the user (e.g., in `/decompose`), the keywords metadata section would be visible and confusing.
 
-**Recommendation:** Strip the `## Keywords` section from `body` during parsing. Actionable -- see TODO L-DP-13.
+**Recommendation:** Strip the `## Keywords` section from `body` during parsing. Actionable -- see work item L-DP-13.
 
 ### 5.3 Multi-word keyword matching can have false positives
 
@@ -222,7 +222,7 @@ Multi-word keywords use `descLower.includes(keyword)` which matches substrings. 
 
 `resolveRepo` calls `die()` (which calls `process.exit(1)`) when a repo alias cannot be resolved. This makes it impossible for callers to catch and handle the error (e.g., to skip a cross-repo item and continue with others). It also makes the function difficult to test without process-level hooks.
 
-**Recommendation:** Replace `die()` with `throw new Error(...)` and let callers decide how to handle the failure. Actionable -- see TODO M-DP-14.
+**Recommendation:** Replace `die()` with `throw new Error(...)` and let callers decide how to handle the failure. Actionable -- see work item M-DP-14.
 
 ### 6.2 Cross-repo index append without deduplication
 
@@ -231,7 +231,7 @@ Multi-word keywords use `descLower.includes(keyword)` which matches substrings. 
 
 `writeCrossRepoIndex` appends entries without checking if the ID already exists. If a worker is retried, the index accumulates duplicate entries. `getWorktreeInfo` returns the first match, so functionally this works, but it wastes space and could cause confusion during debugging.
 
-**Recommendation:** Check for existing entry before appending. Actionable -- see TODO L-DP-15.
+**Recommendation:** Check for existing entry before appending. Actionable -- see work item L-DP-15.
 
 ### 6.3 `removeCrossRepoIndex` read-filter-write race
 
@@ -280,7 +280,7 @@ Config lines like `KEY=value # this is a comment` would set the value to `"value
 
 Unknown config keys (e.g., typos like `webhook_URL` instead of `webhook_url`) are silently accepted and stored but never read. Users get no feedback that their config is misconfigured.
 
-**Recommendation:** Validate known keys and warn on unrecognized ones. Actionable -- see TODO L-DP-16.
+**Recommendation:** Validate known keys and warn on unrecognized ones. Actionable -- see work item L-DP-16.
 
 ### 7.3 Redundant domain file reading
 
@@ -292,7 +292,7 @@ Unknown config keys (e.g., typos like `webhook_URL` instead of `webhook_url`) ar
 - The Map-based approach is unused by the parser (the primary consumer)
 - Changes to the file format would need updates in two places
 
-**Recommendation:** Refactor `normalizeDomain` to accept a `Map<string, string>` (from `loadDomainMappings`) instead of a file path. This consolidates the parsing logic and enables caching. Actionable -- see TODO L-DP-17.
+**Recommendation:** Refactor `normalizeDomain` to accept a `Map<string, string>` (from `loadDomainMappings`) instead of a file path. This consolidates the parsing logic and enables caching. Actionable -- see work item L-DP-17.
 
 ---
 

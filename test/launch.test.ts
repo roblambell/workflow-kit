@@ -284,7 +284,7 @@ describe("cmdStart", () => {
 
     const promptPath = join(worktreeDir, "ninthwave-M-CI-1", ".ninthwave", ".prompt");
     const systemPrompt = readFileSync(promptPath, "utf-8");
-    expect(systemPrompt).toContain("YOUR_TODO_ID: M-CI-1");
+    expect(systemPrompt).toContain("YOUR_WORK_ITEM_ID: M-CI-1");
     expect(systemPrompt).toContain("Upgrade test CI runners from 2 to 4 vCPUs for faster execution.");
     expect(systemPrompt).toContain("Acceptance: Test workflows use 4 vCPU runners. Deploy workflows remain on 2 vCPU.");
 
@@ -292,7 +292,7 @@ describe("cmdStart", () => {
     expect(promptData).toContain("You are a focused implementation agent.");
     expect(promptData).toContain(systemPrompt);
     expect(promptData.indexOf("You are a focused implementation agent.")).toBeLessThan(
-      promptData.indexOf("YOUR_TODO_ID: M-CI-1"),
+      promptData.indexOf("YOUR_WORK_ITEM_ID: M-CI-1"),
     );
   });
 

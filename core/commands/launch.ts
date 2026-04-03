@@ -516,15 +516,13 @@ export function launchSingleItem(
     }
 
     // Build system prompt.
-    // Protocol boundary: seeded worker prompts still read YOUR_TODO_ID by name,
-    // so keep this key stable until the launcher, agents, and tests migrate together.
     const itemText = extractItemText(workDir, item.id);
     const baseBranchLine = options.baseBranch ? `BASE_BRANCH: ${options.baseBranch}\n` : "";
     const hubRepoNwoLine = options.hubRepoNwo ? `HUB_REPO_NWO: ${options.hubRepoNwo}\n` : "";
     const seededFilesLine = seededFiles.length > 0
       ? `\nNOTE: The following files were seeded into this worktree by ninthwave and should be included in your first commit: ${seededFiles.join(", ")}\n`
       : "";
-    const systemPrompt = `YOUR_TODO_ID: ${item.id}
+    const systemPrompt = `YOUR_WORK_ITEM_ID: ${item.id}
 YOUR_PARTITION: ${partition}
 PROJECT_ROOT: ${worktreePath}
 HUB_ROOT: ${projectRoot}
@@ -593,7 +591,7 @@ export function launchReviewWorker(
   repoRoot: string,
   aiTool: string,
   mux: Multiplexer = getMux(),
-  options: { baseBranch?: string; reviewType?: "todo" | "external"; implementerWorktreePath?: string; hubRepoNwo?: string; projectRoot?: string; resolveMux?: RuntimeMuxResolver; launchOverride?: LaunchOverride } = {},
+  options: { baseBranch?: string; reviewType?: "work-item" | "external"; implementerWorktreePath?: string; hubRepoNwo?: string; projectRoot?: string; resolveMux?: RuntimeMuxResolver; launchOverride?: LaunchOverride } = {},
   deps: LaunchGitDeps = defaultLaunchGitDeps,
 ): ReviewLaunchResult | null {
   let worktreePath: string | null = null;
@@ -655,9 +653,7 @@ export function launchReviewWorker(
   }
 
   // Build system prompt.
-  // Protocol boundary: reviewType="todo" and REVIEW_TYPE: todo are consumed by
-  // the seeded reviewer prompt, so treat them as a coordinated migration surface.
-  const reviewType = options.reviewType ?? "todo";
+  const reviewType = options.reviewType ?? "work-item";
   const tmpDir = join(userStateDir(repoRoot), "tmp");
   mkdirSync(tmpDir, { recursive: true });
   const verdictPath = join(tmpDir, `nw-verdict-${itemId}.json`);

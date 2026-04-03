@@ -127,8 +127,8 @@ export class HeadlessAdapter implements Multiplexer {
     return "Headless adapter is always available.";
   }
 
-  launchWorkspace(cwd: string, command: string, todoId?: string): string | null {
-    const ref = formatHeadlessWorkspaceRef(todoId?.trim() || `headless-${Date.now()}`);
+  launchWorkspace(cwd: string, command: string, workItemId?: string): string | null {
+    const ref = formatHeadlessWorkspaceRef(workItemId?.trim() || `headless-${Date.now()}`);
     const logDir = headlessLogDir(this.projectRoot);
     const pidDir = headlessPidDir(this.projectRoot);
     const logPath = headlessLogFilePath(this.projectRoot, ref);

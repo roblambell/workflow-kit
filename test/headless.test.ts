@@ -30,7 +30,7 @@ describe("HeadlessAdapter", () => {
     return projectRoot;
   }
 
-  it("launchWorkspace spawns detached worker, writes pid file, and returns todoId ref", () => {
+  it("launchWorkspace spawns detached worker, writes pid file, and returns workItemId ref", () => {
     const projectRoot = makeProjectRoot();
     const child = { pid: 4242, unref: vi.fn() } as any;
     const spawn = vi.fn(() => child) as any;

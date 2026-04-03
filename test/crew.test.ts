@@ -89,7 +89,7 @@ function startTestServer(opts?: {
           const reply: ServerMessage = opts?.syncAck ?? {
             type: "sync_ack",
             crewCode: "test-crew",
-            todoIds: [],
+            workItemIds: [],
           };
           if (opts?.syncAckDelayMs) {
             setTimeout(() => ws.send(JSON.stringify(reply)), opts.syncAckDelayMs);
@@ -249,7 +249,7 @@ describe("WebSocketCrewBroker", () => {
         message(ws: any, raw: string | Buffer) {
           const msg = JSON.parse(String(raw));
           if (msg.type === "sync") {
-            ws.send(JSON.stringify({ type: "sync_ack", crewCode: "test", todoIds: [] }));
+            ws.send(JSON.stringify({ type: "sync_ack", crewCode: "test", workItemIds: [] }));
           }
         },
         close() {},
@@ -320,7 +320,7 @@ describe("WebSocketCrewBroker", () => {
             ws.send(JSON.stringify({
               type: "claim_response",
               requestId: msg.requestId,
-              todoId: "H-TEST-1",
+              workItemId: "H-TEST-1",
             }));
           }
         },
@@ -337,8 +337,8 @@ describe("WebSocketCrewBroker", () => {
       broker.sync([]);
       await connectP;
 
-      const todoId = await broker.claim();
-      expect(todoId).toBe("H-TEST-1");
+      const workItemId = await broker.claim();
+      expect(workItemId).toBe("H-TEST-1");
       broker.disconnect();
     });
 
@@ -349,7 +349,7 @@ describe("WebSocketCrewBroker", () => {
             ws.send(JSON.stringify({
               type: "claim_response",
               requestId: msg.requestId,
-              todoId: null,
+              workItemId: null,
             }));
           }
         },
@@ -366,8 +366,8 @@ describe("WebSocketCrewBroker", () => {
       broker.sync([]);
       await connectP;
 
-      const todoId = await broker.claim();
-      expect(todoId).toBeNull();
+      const workItemId = await broker.claim();
+      expect(workItemId).toBeNull();
       broker.disconnect();
     });
 
@@ -387,10 +387,10 @@ describe("WebSocketCrewBroker", () => {
       await connectP;
 
       const start = Date.now();
-      const todoId = await broker.claim();
+      const workItemId = await broker.claim();
       const elapsed = Date.now() - start;
 
-      expect(todoId).toBeNull();
+      expect(workItemId).toBeNull();
       expect(elapsed).toBeGreaterThanOrEqual(150); // close to 200ms
       expect(elapsed).toBeLessThan(1_000);
       broker.disconnect();
@@ -403,8 +403,8 @@ describe("WebSocketCrewBroker", () => {
         heartbeatIntervalMs: 60_000,
       });
       // Never connected
-      const todoId = await broker.claim();
-      expect(todoId).toBeNull();
+      const workItemId = await broker.claim();
+      expect(workItemId).toBeNull();
     });
   });
 
@@ -492,7 +492,7 @@ describe("WebSocketCrewBroker", () => {
               syncCount++;
               if (syncCount <= 1) {
                 // First sync: send sync_ack
-                ws.send(JSON.stringify({ type: "sync_ack", crewCode: "test", todoIds: [] }));
+                ws.send(JSON.stringify({ type: "sync_ack", crewCode: "test", workItemIds: [] }));
               } else {
                 // Subsequent sync (reconnect): send reconnect_state
                 ws.send(JSON.stringify({
@@ -561,7 +561,7 @@ describe("WebSocketCrewBroker", () => {
         onMessage: (ws, msg) => {
           if (msg.type === "complete") {
             receivedComplete = msg;
-            ws.send(JSON.stringify({ type: "complete_ack", todoId: msg.todoId }));
+            ws.send(JSON.stringify({ type: "complete_ack", workItemId: msg.workItemId }));
           }
         },
       });
@@ -580,7 +580,7 @@ describe("WebSocketCrewBroker", () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(receivedComplete).not.toBeNull();
-      expect(receivedComplete.todoId).toBe("H-TEST-1");
+      expect(receivedComplete.workItemId).toBe("H-TEST-1");
       expect(receivedComplete.daemonId).toBe(broker.getDaemonId());
       broker.disconnect();
     });
@@ -703,7 +703,7 @@ describe("report method", () => {
       expect(receivedReport).not.toBeNull();
       expect(receivedReport.type).toBe("report");
       expect(receivedReport.event).toBe("pr_opened");
-      expect(receivedReport.todoPath).toBe("test-item");
+      expect(receivedReport.workItemPath).toBe("test-item");
       expect(receivedReport.metadata.prNumber).toBe(42);
       expect(receivedReport.sessionId).toMatch(/^[0-9a-f-]{36}$/);
       broker.disconnect();
@@ -718,7 +718,7 @@ describe("report method", () => {
       syncAck: {
         type: "sync_ack",
         crewCode: "test-crew",
-        todoIds: [],
+        workItemIds: [],
         telemetrySettings: { sendTokenUsage: true },
       },
       onMessage: (_ws, msg) => {
@@ -841,7 +841,7 @@ describe("report method", () => {
 
       expect(receivedEvents).toContain("session_end");
       expect(sessionEndReport.model).toBe("claude-sonnet-4-6");
-      expect(sessionEndReport.todoPath).toBe("");
+      expect(sessionEndReport.workItemPath).toBe("");
       expect(sessionEndReport.metadata).toEqual({});
       expect(sessionEndReport.sessionId).toBeDefined();
     } finally {

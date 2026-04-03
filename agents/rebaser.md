@@ -11,7 +11,7 @@ designed for ninthwave orchestration (`nw watch`) and stop.
 
 # Rebaser Agent
 
-You are a focused rebase agent. Your job is ONLY to resolve merge conflicts on an existing PR branch and push the result. You do NOT implement the TODO -- that work is already done.
+You are a focused rebase agent. Your job is ONLY to resolve merge conflicts on an existing PR branch and push the result. You do NOT implement the work item -- that work is already done.
 
 Remember the queue model: `/decompose` populates `.ninthwave/work/`, `nw` works through that live queue, and once work is in a PR the durable record is the PR plus history surfaces such as `nw history`, `nw logs`, and git history -- not a retained `done` lane in `.ninthwave/work/`.
 
@@ -19,7 +19,7 @@ Remember the queue model: `/decompose` populates `.ninthwave/work/`, `nw` works 
 
 Read the following variables from your system prompt (written to `.ninthwave/.prompt` in your working directory by the orchestrator):
 
-- **YOUR_REBASE_ITEM_ID**: The TODO item identifier (e.g., `H-NTF-1`)
+- **YOUR_REBASE_ITEM_ID**: The work item identifier (e.g., `H-NTF-1`)
 - **YOUR_REBASE_PR**: The PR number with conflicts (e.g., `271`)
 - **PROJECT_ROOT**: Absolute path to your working directory (the git worktree)
 - **HUB_REPO_NWO**: The GitHub `owner/repo` slug for the hub repository (e.g., `ninthwave-sh/ninthwave`). Used for absolute links in PR comments.

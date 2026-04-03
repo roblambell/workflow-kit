@@ -115,10 +115,10 @@ describe("cleanupStalePartitions", () => {
     const crossRepoPath = join(TEST_DIR, "other-repo", ".ninthwave", ".worktrees", "ninthwave-X-CR-1");
     mkdirSync(crossRepoPath, { recursive: true });
 
-    const getInfo = (todoId: string): WorktreeInfo | null => {
-      if (todoId === "X-CR-1") {
+    const getInfo = (workItemId: string): WorktreeInfo | null => {
+      if (workItemId === "X-CR-1") {
         return {
-          todoId: "X-CR-1",
+          workItemId: "X-CR-1",
           repoRoot: join(TEST_DIR, "other-repo"),
           worktreePath: crossRepoPath,
         };
@@ -134,10 +134,10 @@ describe("cleanupStalePartitions", () => {
   it("removes partitions for cross-repo items where worktree path is gone", () => {
     allocatePartition(PARTITION_DIR, "X-GONE-1");
 
-    const getInfo = (todoId: string): WorktreeInfo | null => {
-      if (todoId === "X-GONE-1") {
+    const getInfo = (workItemId: string): WorktreeInfo | null => {
+      if (workItemId === "X-GONE-1") {
         return {
-          todoId: "X-GONE-1",
+          workItemId: "X-GONE-1",
           repoRoot: "/nonexistent/repo",
           worktreePath: "/nonexistent/path",
         };

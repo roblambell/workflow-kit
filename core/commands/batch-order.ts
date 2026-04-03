@@ -1,4 +1,4 @@
-// batch-order command: topological sort of TODO items into dependency batches.
+// batch-order command: topological sort of work items into dependency batches.
 
 import { parseWorkItems } from "../parser.ts";
 import {
@@ -47,13 +47,13 @@ export class CircularDependencyError extends Error {
 }
 
 /**
- * Compute topological batch assignments for a set of TODO items.
+ * Compute topological batch assignments for a set of work items.
  *
  * Items are grouped into batches where all dependencies of each item in a
  * batch have been assigned to earlier batches. Items with no internal
  * dependencies (among the selected set) land in batch 1.
  *
- * @param items - All parsed TODO items (used to look up dependencies).
+ * @param items - All parsed work items (used to look up dependencies).
  * @param selectedIds - IDs of items to batch. Unknown IDs are silently skipped.
  * @returns BatchResult with assignments map (ID → batch number) and batch count.
  * @throws CircularDependencyError if a cycle prevents full resolution.

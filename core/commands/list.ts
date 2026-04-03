@@ -1,4 +1,4 @@
-// list command: display TODO items with optional filters.
+// list command: display work items with optional filters.
 
 import { parseWorkItems } from "../parser.ts";
 import { getCleanRemoteWorkItemFiles } from "../git.ts";
@@ -82,9 +82,9 @@ export function cmdList(
 
     // Iteratively find items reachable within maxDepth batches
     const included = new Set<string>(); // IDs selected so far
-    const done = new Set<string>(); // IDs not in todo files (already done)
+    const done = new Set<string>(); // IDs not in work item files (already done)
 
-    // Seed "done" with all IDs referenced as deps but not in todo files
+    // Seed "done" with all IDs referenced as deps but not in work item files
     for (const item of allItems) {
       for (const depId of item.dependencies) {
         if (!allIds.has(depId)) done.add(depId);

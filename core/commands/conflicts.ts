@@ -1,4 +1,4 @@
-// conflicts command: file-level conflict analysis between TODO items.
+// conflicts command: file-level conflict analysis between work items.
 
 import { parseWorkItems } from "../parser.ts";
 import { die, BOLD, RED, YELLOW, GREEN, RESET } from "../output.ts";

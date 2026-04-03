@@ -288,8 +288,8 @@ describe("seedAgentFiles", () => {
     const codexPrompt = readFileSync(codexAgent, "utf-8");
     const githubPrompt = readFileSync(githubAgent, "utf-8");
 
-    expect(claudePrompt).toContain("nw inbox --check YOUR_TODO_ID");
-    expect(claudePrompt).toContain("nw inbox --wait YOUR_TODO_ID");
+    expect(claudePrompt).toContain("nw inbox --check YOUR_WORK_ITEM_ID");
+    expect(claudePrompt).toContain("nw inbox --wait YOUR_WORK_ITEM_ID");
     expect(claudePrompt).toContain("set the timeout to the longest practical value available");
     expect(claudePrompt).toContain("immediately run the same wait command again");
     expect(claudePrompt).toContain("The daemon owns that lifecycle automation");

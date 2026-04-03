@@ -1,5 +1,5 @@
 // Git author resolution utilities.
-// Resolves the git author email of a TODO file via `git log --format='%ae' -1 -- <path>`.
+// Resolves the git author email of a work item file via `git log --format='%ae' -1 -- <path>`.
 // Includes a per-sync-cycle cache to avoid repeated git calls.
 
 import { execSync } from "node:child_process";

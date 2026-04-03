@@ -5146,7 +5146,7 @@ describe("orchestrateLoop crew mode", () => {
     connected?: boolean;
     claimResults?: (string | null)[];
     onSync?: (ids: string[]) => void;
-    onComplete?: (todoId: string) => void;
+    onComplete?: (workItemId: string) => void;
     onDisconnect?: () => void;
   } = {}) {
     const claimResults = [...(opts.claimResults ?? [])];
@@ -5166,9 +5166,9 @@ describe("orchestrateLoop crew mode", () => {
           claimIdx++;
           return result;
         }),
-        complete: vi.fn((todoId: string) => {
-          completedIds.push(todoId);
-          opts.onComplete?.(todoId);
+        complete: vi.fn((workItemId: string) => {
+          completedIds.push(workItemId);
+          opts.onComplete?.(workItemId);
         }),
         heartbeat: vi.fn(),
         disconnect: vi.fn(() => {

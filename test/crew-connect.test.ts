@@ -207,8 +207,8 @@ describe("WebSocketCrewBroker system test", () => {
 
     // Sync items
     broker.sync([
-      { id: "TODO-1", dependencies: [], priority: 1, author: "" },
-      { id: "TODO-2", dependencies: [], priority: 2, author: "" },
+      { id: "work item-1", dependencies: [], priority: 1, author: "" },
+      { id: "work item-2", dependencies: [], priority: 2, author: "" },
     ]);
 
     // Small delay for sync to be processed
@@ -216,15 +216,15 @@ describe("WebSocketCrewBroker system test", () => {
 
     // Claim
     const claimed = await broker.claim();
-    expect(claimed).toBe("TODO-1");
+    expect(claimed).toBe("work item-1");
 
     // Complete
-    broker.complete("TODO-1");
+    broker.complete("work item-1");
 
     // Claim next
     await new Promise((r) => setTimeout(r, 50));
     const claimed2 = await broker.claim();
-    expect(claimed2).toBe("TODO-2");
+    expect(claimed2).toBe("work item-2");
   });
 
   it("two daemons can connect to the same crew", async () => {

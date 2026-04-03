@@ -281,15 +281,10 @@ describe("readWorkItem with suffixed IDs", () => {
 
 // --- normalizeTitleForComparison with suffixed IDs ---
 
-describe("normalizeTitleForComparison strips suffixed IDs", () => {
+describe("normalizeTitleForComparison strips suffixed IDs in parens", () => {
   it("strips suffixed ID in parens", () => {
     const result = normalizeTitleForComparison("Fix: Support suffixes (H-CP-7a)");
     expect(result).toBe("support suffixes");
-  });
-
-  it("strips item reference with suffixed ID", () => {
-    const result = normalizeTitleForComparison("TODO H-CP-7a: Support suffixes");
-    expect(result).toBe(": support suffixes");
   });
 
   it("strips plain ID in parens (regression)", () => {

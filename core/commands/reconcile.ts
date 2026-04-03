@@ -1,4 +1,4 @@
-// reconcile command: synchronize todo files with GitHub PR state and clean stale worktrees.
+// reconcile command: synchronize work item files with GitHub PR state and clean stale worktrees.
 
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
@@ -27,7 +27,7 @@ export interface ReconcileDeps {
   pullRebase(projectRoot: string): { ok: boolean; conflict: boolean; error?: string };
 
   /** Get IDs and PR titles of merged ninthwave/* PRs from GitHub. Queries hub repo and any cross-repo targets. */
-  getMergedTodoIds(projectRoot: string, worktreeDir: string): Array<{
+  getMergedWorkItemIds(projectRoot: string, worktreeDir: string): Array<{
     id: string;
     prTitle: string;
     lineageToken?: string;
@@ -48,7 +48,7 @@ export interface ReconcileDeps {
   /** Close cmux workspaces for done/merged items. Returns count closed. */
   closeStaleWorkspaces(doneIds: string[]): number;
 
-  /** Stage, commit, and push todo file changes. Returns true if committed. */
+  /** Stage, commit, and push work item file changes. Returns true if committed. */
   commitAndPush(projectRoot: string, workDir: string): boolean;
 
   /** Check if a worktree has any commits beyond main. */
@@ -91,7 +91,7 @@ function defaultPullRebase(projectRoot: string): { ok: boolean; conflict: boolea
   return { ok: false, conflict: false, error: result.stderr };
 }
 
-function getMergedTodoIdsFromRepo(repoRoot: string): Array<{
+function getMergedWorkItemIdsFromRepo(repoRoot: string): Array<{
   id: string;
   prTitle: string;
   lineageToken?: string;
@@ -128,13 +128,13 @@ function getMergedTodoIdsFromRepo(repoRoot: string): Array<{
   }
 }
 
-function defaultGetMergedTodoIds(projectRoot: string, worktreeDir: string): Array<{
+function defaultGetMergedWorkItemIds(projectRoot: string, worktreeDir: string): Array<{
   id: string;
   prTitle: string;
   lineageToken?: string;
 }> {
   // Query hub repo for merged ninthwave/* PRs
-  const mergedItems = [...getMergedTodoIdsFromRepo(projectRoot)];
+  const mergedItems = [...getMergedWorkItemIdsFromRepo(projectRoot)];
 
   // Also query cross-repo targets discovered from the cross-repo index
   const indexPath = join(worktreeDir, ".cross-repo-index");
@@ -147,7 +147,7 @@ function defaultGetMergedTodoIds(projectRoot: string, worktreeDir: string): Arra
   }
   for (const repo of targetRepos) {
     try {
-      mergedItems.push(...getMergedTodoIdsFromRepo(repo));
+      mergedItems.push(...getMergedWorkItemIdsFromRepo(repo));
     } catch (e) {
       warn(`Failed to query merged PRs in ${repo}: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -156,7 +156,7 @@ function defaultGetMergedTodoIds(projectRoot: string, worktreeDir: string): Arra
   return mergedItems;
 }
 
-function defaultGetOpenTodoIds(workDir: string): string[] {
+function defaultGetOpenWorkItemIds(workDir: string): string[] {
   if (!existsSync(workDir)) return [];
   try {
     const entries = readdirSync(workDir).filter(f => f.endsWith(".md"));
@@ -194,7 +194,7 @@ function defaultCleanWorktree(id: string, worktreeDir: string, projectRoot: stri
 }
 
 function defaultCommitAndPush(projectRoot: string, workDir: string): boolean {
-  // Check if todos directory has changes
+  // Check if the work item directory has changes.
   const diffResult = run("git", ["-C", projectRoot, "diff", "--name-only", workDir]);
   // Also check for deleted (unstaged) files
   const untrackedResult = run("git", ["-C", projectRoot, "status", "--porcelain", workDir]);
@@ -206,7 +206,7 @@ function defaultCommitAndPush(projectRoot: string, workDir: string): boolean {
   const addResult = run("git", ["-C", projectRoot, "add", workDir]);
   if (addResult.exitCode !== 0) return false;
 
-  const commitResult = run("git", ["-C", projectRoot, "commit", "-m", "chore: reconcile todo files with merged PRs"]);
+  const commitResult = run("git", ["-C", projectRoot, "commit", "-m", "chore: reconcile work item files with merged PRs"]);
   if (commitResult.exitCode !== 0) return false;
 
   const pushResult = run("git", ["-C", projectRoot, "push", "--quiet"]);
@@ -301,7 +301,7 @@ function defaultCloseStaleWorkspaces(doneIds: string[]): number {
 function defaultWorktreeHasCommits(id: string, worktreeDir: string, _projectRoot: string): boolean {
   const worktreePath = join(worktreeDir, `ninthwave-${id}`);
   if (!existsSync(worktreePath)) return false;
-  // Count commits on the todo branch beyond main
+  // Count commits on the work item branch beyond main.
   return commitCount(worktreePath, "main", "HEAD") > 0;
 }
 
@@ -315,8 +315,8 @@ function defaultBranchHasOpenPR(id: string, projectRoot: string): boolean {
 export function defaultDeps(): ReconcileDeps {
   return {
     pullRebase: defaultPullRebase,
-    getMergedTodoIds: (projectRoot, worktreeDir) => defaultGetMergedTodoIds(projectRoot, worktreeDir),
-    getOpenItemIds: defaultGetOpenTodoIds,
+    getMergedWorkItemIds: (projectRoot, worktreeDir) => defaultGetMergedWorkItemIds(projectRoot, worktreeDir),
+    getOpenItemIds: defaultGetOpenWorkItemIds,
     markDone: defaultMarkDone,
     getWorktreeIds: defaultGetWorktreeIds,
     cleanWorktree: defaultCleanWorktree,
@@ -328,14 +328,14 @@ export function defaultDeps(): ReconcileDeps {
 }
 
 /**
- * Reconcile todo files with GitHub PR state and clean stale worktrees.
+ * Reconcile work item files with GitHub PR state and clean stale worktrees.
  *
  * Steps:
  * 1. git pull --rebase to get latest main
  * 2. Query gh for merged ninthwave/* PRs
- * 3. Mark merged items as done (delete their todo files)
+ * 3. Mark merged items as done (delete their work item files)
  * 4. Clean worktrees for done items
- * 5. Commit and push todo file changes if any
+ * 5. Commit and push work item file changes if any
  */
 export function reconcile(
   workDir: string,
@@ -356,9 +356,9 @@ export function reconcile(
     return;
   }
 
-  // Step 2: Get merged todo IDs from GitHub (hub + cross-repo targets)
+  // Step 2: Get merged work item IDs from GitHub (hub + cross-repo targets).
   info("Querying GitHub for merged ninthwave/* PRs...");
-  const mergedItems = deps.getMergedTodoIds(projectRoot, worktreeDir);
+  const mergedItems = deps.getMergedWorkItemIds(projectRoot, worktreeDir);
   if (mergedItems.length === 0) {
     info("No merged ninthwave/* PRs found.");
   }
@@ -487,7 +487,7 @@ export function reconcile(
   for (const wtId of postCleanWorktreeIds) {
     // Skip items already cleaned by merged-item step
     if (doneIds.has(wtId)) continue;
-    // Only check items with matching todo files (orphans already cleaned above)
+    // Only check items with matching work item files (orphans already cleaned above).
     if (!refreshedOpenIds.has(wtId)) continue;
     // Skip if the worktree has actual commits
     if (deps.worktreeHasCommits(wtId, worktreeDir, projectRoot)) continue;
@@ -518,13 +518,13 @@ export function reconcile(
     info(`Cleaned ${staleCount} stale worktree(s) with zero commits.`);
   }
 
-  // Step 5: Commit and push todo file changes if any
+  // Step 5: Commit and push work item file changes if any
   if (toMarkDone.length > 0) {
-    info("Committing and pushing todo file changes...");
+    info("Committing and pushing work item file changes...");
     if (deps.commitAndPush(projectRoot, workDir)) {
       console.log(`${GREEN}Reconciled: marked ${toMarkDone.length} item(s) done, cleaned ${cleanedCount} worktree(s), closed ${closedWorkspaces} workspace(s).${RESET}`);
     } else {
-      info("No todo file changes to commit.");
+      info("No work item file changes to commit.");
     }
   } else {
     console.log(`${GREEN}Everything in sync -- no changes needed.${RESET}`);

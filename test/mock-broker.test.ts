@@ -104,23 +104,23 @@ function syncItem(id: string, opts?: { dependencies?: string[]; priority?: numbe
 }
 
 /** Send sync and wait for sync_ack. */
-async function sendSync(ws: WebSocket, daemonId: string, todoIds: string[], itemOpts?: Record<string, { dependencies?: string[]; priority?: number; author?: string }>): Promise<void> {
-  const items = todoIds.map((id) => syncItem(id, itemOpts?.[id]));
+async function sendSync(ws: WebSocket, daemonId: string, workItemIds: string[], itemOpts?: Record<string, { dependencies?: string[]; priority?: number; author?: string }>): Promise<void> {
+  const items = workItemIds.map((id) => syncItem(id, itemOpts?.[id]));
   ws.send(JSON.stringify({ type: "sync", daemonId, items }));
   await waitForMessageByType(ws, "sync_ack");
 }
 
 /** Send claim and wait for claim_response. Returns itemId or null. */
-async function sendClaim(ws: WebSocket, daemonId: string): Promise<{ todoId: string | null; requestId: string }> {
+async function sendClaim(ws: WebSocket, daemonId: string): Promise<{ workItemId: string | null; requestId: string }> {
   const requestId = `req-${Math.random().toString(36).slice(2, 8)}`;
   ws.send(JSON.stringify({ type: "claim", requestId, daemonId }));
-  const resp = await waitForMessageByType<{ type: string; requestId: string; todoId: string | null }>(ws, "claim_response");
-  return { todoId: resp.todoId, requestId: resp.requestId };
+  const resp = await waitForMessageByType<{ type: string; requestId: string; workItemId: string | null }>(ws, "claim_response");
+  return { workItemId: resp.workItemId, requestId: resp.requestId };
 }
 
 /** Send complete and wait for complete_ack or error. Skips crew_update broadcasts. */
-async function sendComplete(ws: WebSocket, daemonId: string, todoId: string): Promise<{ type: string; todoId?: string; message?: string }> {
-  ws.send(JSON.stringify({ type: "complete", todoId, daemonId }));
+async function sendComplete(ws: WebSocket, daemonId: string, workItemId: string): Promise<{ type: string; workItemId?: string; message?: string }> {
+  ws.send(JSON.stringify({ type: "complete", workItemId, daemonId }));
   // Wait for either complete_ack or error, skipping crew_update broadcasts
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Timeout waiting for complete response")), 2000);
@@ -259,18 +259,18 @@ describe("mock-broker", () => {
       const ws2 = await connectWs(port, code, "d2", "worker-2", "bob@example.com");
 
       // d1 syncs items authored by alice and bob
-      await sendSync(ws1, "d1", ["todo-A", "todo-B"], {
-        "todo-A": { author: "alice@example.com" },
-        "todo-B": { author: "bob@example.com" },
+      await sendSync(ws1, "d1", ["work-item-A", "work-item-B"], {
+        "work-item-A": { author: "alice@example.com" },
+        "work-item-B": { author: "bob@example.com" },
       });
 
       // d1 (alice) claims -- should prefer alice-authored item (author affinity)
       const claim1 = await sendClaim(ws1, "d1");
-      expect(claim1.todoId).toBe("todo-A");
+      expect(claim1.workItemId).toBe("work-item-A");
 
       // d2 (bob) claims -- should get bob-authored item
       const claim2 = await sendClaim(ws2, "d2");
-      expect(claim2.todoId).toBe("todo-B");
+      expect(claim2.workItemId).toBe("work-item-B");
 
       ws1.close();
       ws2.close();
@@ -283,18 +283,18 @@ describe("mock-broker", () => {
       const ws1 = await connectWs(port, code, "d1", "worker-1", "alice@example.com");
 
       // Sync two items: one by alice, one by bob
-      await sendSync(ws1, "d1", ["todo-alice", "todo-bob"], {
-        "todo-alice": { author: "alice@example.com" },
-        "todo-bob": { author: "bob@example.com" },
+      await sendSync(ws1, "d1", ["work-item-alice", "work-item-bob"], {
+        "work-item-alice": { author: "alice@example.com" },
+        "work-item-bob": { author: "bob@example.com" },
       });
 
       // d1 claims -- should get alice's item first (author affinity)
       const claim1 = await sendClaim(ws1, "d1");
-      expect(claim1.todoId).toBe("todo-alice");
+      expect(claim1.workItemId).toBe("work-item-alice");
 
       // d1 claims again -- should fall back to bob's item (pool)
       const claim2 = await sendClaim(ws1, "d1");
-      expect(claim2.todoId).toBe("todo-bob");
+      expect(claim2.workItemId).toBe("work-item-bob");
 
       ws1.close();
     });
@@ -306,14 +306,14 @@ describe("mock-broker", () => {
       // No operatorId -- defaults to ""
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      await sendSync(ws, "d1", ["todo-A", "todo-B"], {
-        "todo-A": { author: "alice@example.com", priority: 2 },
-        "todo-B": { author: "bob@example.com", priority: 1 },
+      await sendSync(ws, "d1", ["work-item-A", "work-item-B"], {
+        "work-item-A": { author: "alice@example.com", priority: 2 },
+        "work-item-B": { author: "bob@example.com", priority: 1 },
       });
 
       // No operatorId means no author affinity -- should sort by priority
       const claim1 = await sendClaim(ws, "d1");
-      expect(claim1.todoId).toBe("todo-B"); // priority 1 < 2
+      expect(claim1.workItemId).toBe("work-item-B"); // priority 1 < 2
 
       ws.close();
     });
@@ -332,13 +332,13 @@ describe("mock-broker", () => {
 
       // Claim order should be by priority: 0 (high), 2 (med), 3 (low)
       const claim1 = await sendClaim(ws, "d1");
-      expect(claim1.todoId).toBe("high-pri");
+      expect(claim1.workItemId).toBe("high-pri");
 
       const claim2 = await sendClaim(ws, "d1");
-      expect(claim2.todoId).toBe("med-pri");
+      expect(claim2.workItemId).toBe("med-pri");
 
       const claim3 = await sendClaim(ws, "d1");
-      expect(claim3.todoId).toBe("low-pri");
+      expect(claim3.workItemId).toBe("low-pri");
 
       ws.close();
     });
@@ -348,15 +348,15 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      await sendSync(ws, "d1", ["todo-A"]);
+      await sendSync(ws, "d1", ["work-item-A"]);
 
       // Claim the only item
       const claim1 = await sendClaim(ws, "d1");
-      expect(claim1.todoId).toBe("todo-A");
+      expect(claim1.workItemId).toBe("work-item-A");
 
       // Try again -- should get null (no work)
       const claim2 = await sendClaim(ws, "d1");
-      expect(claim2.todoId).toBeNull();
+      expect(claim2.workItemId).toBeNull();
 
       ws.close();
     });
@@ -371,8 +371,8 @@ describe("mock-broker", () => {
       const ws2 = await connectWs(port, code, "d2", "worker-2");
 
       // d1 syncs 5 items, d2 syncs 5 items
-      const d1ItemIds = Array.from({ length: 5 }, (_, i) => `d1-todo-${i}`);
-      const d2ItemIds = Array.from({ length: 5 }, (_, i) => `d2-todo-${i}`);
+      const d1ItemIds = Array.from({ length: 5 }, (_, i) => `d1-work-item-${i}`);
+      const d2ItemIds = Array.from({ length: 5 }, (_, i) => `d2-work-item-${i}`);
 
       await sendSync(ws1, "d1", d1ItemIds);
       await sendSync(ws2, "d2", d2ItemIds);
@@ -383,10 +383,10 @@ describe("mock-broker", () => {
       // Alternate claims between the two daemons
       for (let i = 0; i < 5; i++) {
         const c1 = await sendClaim(ws1, "d1");
-        if (c1.todoId) d1Claims.push(c1.todoId);
+        if (c1.workItemId) d1Claims.push(c1.workItemId);
 
         const c2 = await sendClaim(ws2, "d2");
-        if (c2.todoId) d2Claims.push(c2.todoId);
+        if (c2.workItemId) d2Claims.push(c2.workItemId);
       }
 
       // Verify zero overlap
@@ -406,20 +406,20 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      await sendSync(ws, "d1", ["todo-A"]);
+      await sendSync(ws, "d1", ["work-item-A"]);
 
       // Claim it
       const claim = await sendClaim(ws, "d1");
-      expect(claim.todoId).toBe("todo-A");
+      expect(claim.workItemId).toBe("work-item-A");
 
       // Complete it
-      const ack = await sendComplete(ws, "d1", "todo-A");
+      const ack = await sendComplete(ws, "d1", "work-item-A");
       expect(ack.type).toBe("complete_ack");
-      expect((ack as any).todoId).toBe("todo-A");
+      expect((ack as any).workItemId).toBe("work-item-A");
 
       // Completed item should not be available for claim
       const noWork = await sendClaim(ws, "d1");
-      expect(noWork.todoId).toBeNull();
+      expect(noWork.workItemId).toBeNull();
 
       ws.close();
     });
@@ -438,9 +438,9 @@ describe("mock-broker", () => {
       const ws2 = await connectWs(port, code, "d2", "worker-2");
 
       // d1 syncs and claims an item
-      await sendSync(ws1, "d1", ["todo-A"]);
+      await sendSync(ws1, "d1", ["work-item-A"]);
       const claimed = await sendClaim(ws1, "d1");
-      expect(claimed.todoId).toBe("todo-A");
+      expect(claimed.workItemId).toBe("work-item-A");
 
       // d2 syncs so it exists in the crew
       await sendSync(ws2, "d2", []);
@@ -453,7 +453,7 @@ describe("mock-broker", () => {
 
       // d2 should now be able to claim the released item
       const reClaim = await sendClaim(ws2, "d2");
-      expect(reClaim.todoId).toBe("todo-A");
+      expect(reClaim.workItemId).toBe("work-item-A");
 
       ws2.close();
     });
@@ -468,7 +468,7 @@ describe("mock-broker", () => {
       const ws1 = await connectWs(port, code, "d1", "worker-1");
       const ws2 = await connectWs(port, code, "d2", "worker-2");
 
-      await sendSync(ws1, "d1", ["todo-A"]);
+      await sendSync(ws1, "d1", ["work-item-A"]);
       await sendClaim(ws1, "d1");
 
       await sendSync(ws2, "d2", []);
@@ -481,7 +481,7 @@ describe("mock-broker", () => {
 
       // d2 should NOT be able to claim (still in grace period)
       const noWork = await sendClaim(ws2, "d2");
-      expect(noWork.todoId).toBeNull();
+      expect(noWork.workItemId).toBeNull();
 
       ws2.close();
     });
@@ -498,7 +498,7 @@ describe("mock-broker", () => {
       const ws1 = await connectWs(port, code, "d1", "worker-1");
 
       // Sync and claim 2 items
-      await sendSync(ws1, "d1", ["todo-A", "todo-B"]);
+      await sendSync(ws1, "d1", ["work-item-A", "work-item-B"]);
       await sendClaim(ws1, "d1");
       await sendClaim(ws1, "d1");
 
@@ -511,8 +511,8 @@ describe("mock-broker", () => {
       // Connect d2 and claim one of the released items
       const ws2 = await connectWs(port, code, "d2", "worker-2");
       const d2Claim = await sendClaim(ws2, "d2");
-      expect(d2Claim.todoId).toBeTruthy();
-      const reclaimedPath = d2Claim.todoId!;
+      expect(d2Claim.workItemId).toBeTruthy();
+      const reclaimedPath = d2Claim.workItemId!;
 
       // Reconnect d1 -- should get reconnect_state
       const ws1b = await connectWs(port, code, "d1", "worker-1");
@@ -527,7 +527,7 @@ describe("mock-broker", () => {
       // Both items were released (grace expired), one was reclaimed by d2
       expect(state.reclaimed).toContain(reclaimedPath);
       // The other should be in released
-      const otherPath = reclaimedPath === "todo-A" ? "todo-B" : "todo-A";
+      const otherPath = reclaimedPath === "work-item-A" ? "work-item-B" : "work-item-A";
       expect(state.released).toContain(otherPath);
       // Nothing should be still resumed by d1
       expect(state.resumed).toHaveLength(0);
@@ -545,7 +545,7 @@ describe("mock-broker", () => {
 
       const ws1 = await connectWs(port, code, "d1", "worker-1");
 
-      await sendSync(ws1, "d1", ["todo-A"]);
+      await sendSync(ws1, "d1", ["work-item-A"]);
       await sendClaim(ws1, "d1");
 
       // Disconnect
@@ -562,7 +562,7 @@ describe("mock-broker", () => {
       }>(ws1b);
 
       expect(state.type).toBe("reconnect_state");
-      expect(state.resumed).toContain("todo-A");
+      expect(state.resumed).toContain("work-item-A");
       expect(state.released).toHaveLength(0);
       expect(state.reclaimed).toHaveLength(0);
 
@@ -580,16 +580,16 @@ describe("mock-broker", () => {
 
       // Connect and sync
       const ws1 = await connectWs(port, code, "d1", "worker-1");
-      await sendSync(ws1, "d1", ["todo-A"]);
+      await sendSync(ws1, "d1", ["work-item-A"]);
 
       // Claim
       await sendClaim(ws1, "d1");
 
       // Complete
-      await sendComplete(ws1, "d1", "todo-A");
+      await sendComplete(ws1, "d1", "work-item-A");
 
       // Sync another item
-      await sendSync(ws1, "d1", ["todo-B"]);
+      await sendSync(ws1, "d1", ["work-item-B"]);
 
       // Claim and then disconnect
       await sendClaim(ws1, "d1");
@@ -621,7 +621,7 @@ describe("mock-broker", () => {
         expect(event).toHaveProperty("crew_id");
         expect(event).toHaveProperty("daemon_id");
         expect(event).toHaveProperty("event");
-        expect(event).toHaveProperty("todo_path");
+        expect(event).toHaveProperty("work_item_path");
         expect(event).toHaveProperty("metadata");
         // Validate ts is ISO format
         expect(new Date(event.ts).toISOString()).toBe(event.ts);
@@ -655,7 +655,7 @@ describe("mock-broker", () => {
       const ws1 = await connectWs(port, code, "d1", "worker-1");
       const ws2 = await connectWs(port, code, "d2", "worker-2");
 
-      await sendSync(ws1, "d1", ["todo-A"]);
+      await sendSync(ws1, "d1", ["work-item-A"]);
       await sendClaim(ws1, "d1");
 
       await sendSync(ws2, "d2", []);
@@ -668,7 +668,7 @@ describe("mock-broker", () => {
 
       // d2 should not be able to claim (d1 is still alive)
       const result = await sendClaim(ws2, "d2");
-      expect(result.todoId).toBeNull();
+      expect(result.workItemId).toBeNull();
 
       ws1.close();
       ws2.close();
@@ -681,21 +681,21 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      await sendSync(ws, "d1", ["todo-A", "todo-B"], {
-        "todo-A": { dependencies: ["todo-B"], priority: 0, author: "alice@example.com" },
-        "todo-B": { dependencies: [], priority: 2, author: "bob@example.com" },
+      await sendSync(ws, "d1", ["work-item-A", "work-item-B"], {
+        "work-item-A": { dependencies: ["work-item-B"], priority: 0, author: "alice@example.com" },
+        "work-item-B": { dependencies: [], priority: 2, author: "bob@example.com" },
       });
 
       const crew = broker.getCrew(code);
       expect(crew).toBeDefined();
 
-      const itemA = crew!.items.get("todo-A");
+      const itemA = crew!.items.get("work-item-A");
       expect(itemA).toBeDefined();
-      expect(itemA!.dependencies).toEqual(["todo-B"]);
+      expect(itemA!.dependencies).toEqual(["work-item-B"]);
       expect(itemA!.priority).toBe(0);
       expect(itemA!.author).toBe("alice@example.com");
 
-      const itemB = crew!.items.get("todo-B");
+      const itemB = crew!.items.get("work-item-B");
       expect(itemB).toBeDefined();
       expect(itemB!.dependencies).toEqual([]);
       expect(itemB!.priority).toBe(2);
@@ -710,25 +710,25 @@ describe("mock-broker", () => {
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       // First sync: priority 2, no deps
-      await sendSync(ws, "d1", ["todo-A"], {
-        "todo-A": { dependencies: [], priority: 2, author: "alice@example.com" },
+      await sendSync(ws, "d1", ["work-item-A"], {
+        "work-item-A": { dependencies: [], priority: 2, author: "alice@example.com" },
       });
 
       const crew = broker.getCrew(code);
-      const itemAfterFirst = crew!.items.get("todo-A");
+      const itemAfterFirst = crew!.items.get("work-item-A");
       expect(itemAfterFirst!.priority).toBe(2);
       expect(itemAfterFirst!.dependencies).toEqual([]);
       expect(itemAfterFirst!.author).toBe("alice@example.com");
       const originalSyncedAt = itemAfterFirst!.syncedAt;
 
       // Re-sync with updated priority, deps, and author
-      await sendSync(ws, "d1", ["todo-A"], {
-        "todo-A": { dependencies: ["todo-B"], priority: 0, author: "bob@example.com" },
+      await sendSync(ws, "d1", ["work-item-A"], {
+        "work-item-A": { dependencies: ["work-item-B"], priority: 0, author: "bob@example.com" },
       });
 
-      const itemAfterSecond = crew!.items.get("todo-A");
+      const itemAfterSecond = crew!.items.get("work-item-A");
       expect(itemAfterSecond!.priority).toBe(0);
-      expect(itemAfterSecond!.dependencies).toEqual(["todo-B"]);
+      expect(itemAfterSecond!.dependencies).toEqual(["work-item-B"]);
       expect(itemAfterSecond!.author).toBe("bob@example.com");
       // creatorDaemonId and syncedAt should not change on upsert
       expect(itemAfterSecond!.creatorDaemonId).toBe("d1");
@@ -742,12 +742,12 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      await sendSync(ws, "d1", ["todo-A"], {
-        "todo-A": { dependencies: [], priority: 1, author: "" },
+      await sendSync(ws, "d1", ["work-item-A"], {
+        "work-item-A": { dependencies: [], priority: 1, author: "" },
       });
 
       const crew = broker.getCrew(code);
-      const wi = crew!.items.get("todo-A");
+      const wi = crew!.items.get("work-item-A");
       expect(wi).toBeDefined();
       expect(wi!.dependencies).toEqual([]);
       expect(Array.isArray(wi!.dependencies)).toBe(true);
@@ -762,19 +762,19 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      // todo-B depends on todo-A; todo-A has no dependencies
-      await sendSync(ws, "d1", ["todo-A", "todo-B"], {
-        "todo-A": { dependencies: [] },
-        "todo-B": { dependencies: ["todo-A"] },
+      // work-item-B depends on work-item-A; work-item-A has no dependencies
+      await sendSync(ws, "d1", ["work-item-A", "work-item-B"], {
+        "work-item-A": { dependencies: [] },
+        "work-item-B": { dependencies: ["work-item-A"] },
       });
 
-      // Only todo-A should be claimable (todo-B has unresolved dep)
+      // Only work-item-A should be claimable (work-item-B has unresolved dep)
       const claim1 = await sendClaim(ws, "d1");
-      expect(claim1.todoId).toBe("todo-A");
+      expect(claim1.workItemId).toBe("work-item-A");
 
-      // todo-B still blocked -- A is claimed but not completed
+      // work-item-B still blocked -- A is claimed but not completed
       const claim2 = await sendClaim(ws, "d1");
-      expect(claim2.todoId).toBeNull();
+      expect(claim2.workItemId).toBeNull();
 
       ws.close();
     });
@@ -784,19 +784,19 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      await sendSync(ws, "d1", ["todo-A", "todo-B"], {
-        "todo-A": { dependencies: [] },
-        "todo-B": { dependencies: ["todo-A"] },
+      await sendSync(ws, "d1", ["work-item-A", "work-item-B"], {
+        "work-item-A": { dependencies: [] },
+        "work-item-B": { dependencies: ["work-item-A"] },
       });
 
-      // Claim and complete todo-A
+      // Claim and complete work-item-A
       const claim1 = await sendClaim(ws, "d1");
-      expect(claim1.todoId).toBe("todo-A");
-      await sendComplete(ws, "d1", "todo-A");
+      expect(claim1.workItemId).toBe("work-item-A");
+      await sendComplete(ws, "d1", "work-item-A");
 
-      // Now todo-B should be claimable
+      // Now work-item-B should be claimable
       const claim2 = await sendClaim(ws, "d1");
-      expect(claim2.todoId).toBe("todo-B");
+      expect(claim2.workItemId).toBe("work-item-B");
 
       ws.close();
     });
@@ -806,15 +806,15 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      // todo-A depends on "unknown-item" which is not synced -- treated as
+      // work-item-A depends on "unknown-item" which is not synced -- treated as
       // externally completed (matches orchestrator semantics: untracked deps = met)
-      await sendSync(ws, "d1", ["todo-A"], {
-        "todo-A": { dependencies: ["unknown-item"] },
+      await sendSync(ws, "d1", ["work-item-A"], {
+        "work-item-A": { dependencies: ["unknown-item"] },
       });
 
       // Should be claimable since unknown deps are treated as satisfied
       const claim = await sendClaim(ws, "d1");
-      expect(claim.todoId).toBe("todo-A");
+      expect(claim.workItemId).toBe("work-item-A");
 
       ws.close();
     });
@@ -825,14 +825,14 @@ describe("mock-broker", () => {
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       // A depends on B, B depends on A -- circular
-      await sendSync(ws, "d1", ["todo-A", "todo-B"], {
-        "todo-A": { dependencies: ["todo-B"] },
-        "todo-B": { dependencies: ["todo-A"] },
+      await sendSync(ws, "d1", ["work-item-A", "work-item-B"], {
+        "work-item-A": { dependencies: ["work-item-B"] },
+        "work-item-B": { dependencies: ["work-item-A"] },
       });
 
       // Neither should be claimable
       const claim = await sendClaim(ws, "d1");
-      expect(claim.todoId).toBeNull();
+      expect(claim.workItemId).toBeNull();
 
       ws.close();
     });
@@ -843,29 +843,29 @@ describe("mock-broker", () => {
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       // C depends on B, B depends on A
-      await sendSync(ws, "d1", ["todo-A", "todo-B", "todo-C"], {
-        "todo-A": { dependencies: [] },
-        "todo-B": { dependencies: ["todo-A"] },
-        "todo-C": { dependencies: ["todo-B"] },
+      await sendSync(ws, "d1", ["work-item-A", "work-item-B", "work-item-C"], {
+        "work-item-A": { dependencies: [] },
+        "work-item-B": { dependencies: ["work-item-A"] },
+        "work-item-C": { dependencies: ["work-item-B"] },
       });
 
       // Only A is claimable initially
       const claim1 = await sendClaim(ws, "d1");
-      expect(claim1.todoId).toBe("todo-A");
-      await sendComplete(ws, "d1", "todo-A");
+      expect(claim1.workItemId).toBe("work-item-A");
+      await sendComplete(ws, "d1", "work-item-A");
 
       // Now B is claimable (A completed), but C is still blocked (B not completed)
       const claim2 = await sendClaim(ws, "d1");
-      expect(claim2.todoId).toBe("todo-B");
+      expect(claim2.workItemId).toBe("work-item-B");
 
       const claim3 = await sendClaim(ws, "d1");
-      expect(claim3.todoId).toBeNull(); // C still blocked
+      expect(claim3.workItemId).toBeNull(); // C still blocked
 
-      await sendComplete(ws, "d1", "todo-B");
+      await sendComplete(ws, "d1", "work-item-B");
 
       // Now C is claimable
       const claim4 = await sendClaim(ws, "d1");
-      expect(claim4.todoId).toBe("todo-C");
+      expect(claim4.workItemId).toBe("work-item-C");
 
       ws.close();
     });
@@ -877,31 +877,31 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1", "alice@example.com");
 
-      // todo-A: authored by alice, depends on todo-C (unresolved)
-      // todo-B: authored by someone else, no deps
-      await sendSync(ws, "d1", ["todo-A", "todo-B", "todo-C"], {
-        "todo-A": { author: "alice@example.com", dependencies: ["todo-C"], priority: 0 },
-        "todo-B": { author: "bob@example.com", dependencies: [], priority: 1 },
-        "todo-C": { author: "alice@example.com", dependencies: [], priority: 2 },
+      // work-item-A: authored by alice, depends on work-item-C (unresolved)
+      // work-item-B: authored by someone else, no deps
+      await sendSync(ws, "d1", ["work-item-A", "work-item-B", "work-item-C"], {
+        "work-item-A": { author: "alice@example.com", dependencies: ["work-item-C"], priority: 0 },
+        "work-item-B": { author: "bob@example.com", dependencies: [], priority: 1 },
+        "work-item-C": { author: "alice@example.com", dependencies: [], priority: 2 },
       });
 
-      // Despite alice-authored todo-A having highest priority, it's blocked by dep
-      // d1 should get todo-C (alice-authored, no deps) first due to author affinity
+      // Despite alice-authored work-item-A having highest priority, it's blocked by dep
+      // d1 should get work-item-C (alice-authored, no deps) first due to author affinity
       const claim1 = await sendClaim(ws, "d1");
-      expect(claim1.todoId).toBe("todo-C");
+      expect(claim1.workItemId).toBe("work-item-C");
 
-      // Next: todo-B (only remaining unblocked item, pool)
+      // Next: work-item-B (only remaining unblocked item, pool)
       const claim2 = await sendClaim(ws, "d1");
-      expect(claim2.todoId).toBe("todo-B");
+      expect(claim2.workItemId).toBe("work-item-B");
 
-      // todo-A still blocked (todo-C claimed but not completed)
+      // work-item-A still blocked (work-item-C claimed but not completed)
       const claim3 = await sendClaim(ws, "d1");
-      expect(claim3.todoId).toBeNull();
+      expect(claim3.workItemId).toBeNull();
 
-      // Complete todo-C, now todo-A is unblocked
-      await sendComplete(ws, "d1", "todo-C");
+      // Complete work-item-C, now work-item-A is unblocked
+      await sendComplete(ws, "d1", "work-item-C");
       const claim4 = await sendClaim(ws, "d1");
-      expect(claim4.todoId).toBe("todo-A");
+      expect(claim4.workItemId).toBe("work-item-A");
 
       ws.close();
     });
@@ -1059,16 +1059,16 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      await sendSync(ws, "d1", ["todo-A"]);
+      await sendSync(ws, "d1", ["work-item-A"]);
 
       // Sync same path again from different daemon -- should not overwrite creatorDaemonId
       const ws2 = await connectWs(port, code, "d2", "worker-2");
-      await sendSync(ws2, "d2", ["todo-A"]);
+      await sendSync(ws2, "d2", ["work-item-A"]);
 
       // Creator should still be d1
       const crew = broker.getCrew(code);
       expect(crew).toBeDefined();
-      const wi = crew!.items.get("todo-A");
+      const wi = crew!.items.get("work-item-A");
       expect(wi).toBeDefined();
       expect(wi!.creatorDaemonId).toBe("d1");
 
@@ -1081,10 +1081,10 @@ describe("mock-broker", () => {
       const code = await createCrew(port);
       const ws = await connectWs(port, code, "d1", "worker-1");
 
-      await sendSync(ws, "d1", ["todo-A"]);
+      await sendSync(ws, "d1", ["work-item-A"]);
 
       // Try to complete without claiming
-      const result = await sendComplete(ws, "d1", "todo-A");
+      const result = await sendComplete(ws, "d1", "work-item-A");
       expect(result.type).toBe("error");
 
       ws.close();
@@ -1111,32 +1111,32 @@ describe("mock-broker", () => {
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       // Session 1: sync items A and B. B depends on A.
-      await sendSync(ws, "d1", ["todo-A", "todo-B"], {
-        "todo-B": { dependencies: ["todo-A"] },
+      await sendSync(ws, "d1", ["work-item-A", "work-item-B"], {
+        "work-item-B": { dependencies: ["work-item-A"] },
       });
 
       // Only A is claimable (B depends on A)
       const claim1 = await sendClaim(ws, "d1");
-      expect(claim1.todoId).toBe("todo-A");
+      expect(claim1.workItemId).toBe("work-item-A");
 
       // B is still blocked
       const claim2 = await sendClaim(ws, "d1");
-      expect(claim2.todoId).toBeNull();
+      expect(claim2.workItemId).toBeNull();
 
       // Session 2: A has been delivered and removed from work dir.
       // Re-sync with only B (A is gone). The reconcile should mark A as completed.
-      await sendSync(ws, "d1", ["todo-B"], {
-        "todo-B": { dependencies: ["todo-A"] },
+      await sendSync(ws, "d1", ["work-item-B"], {
+        "work-item-B": { dependencies: ["work-item-A"] },
       });
 
       // A should now be reconcile-completed, unblocking B
       const crew = broker.getCrew(code);
-      const itemA = crew!.items.get("todo-A");
+      const itemA = crew!.items.get("work-item-A");
       expect(itemA!.completedBy).toBe("d1");
 
       // B should now be claimable
       const claim3 = await sendClaim(ws, "d1");
-      expect(claim3.todoId).toBe("todo-B");
+      expect(claim3.workItemId).toBe("work-item-B");
 
       ws.close();
     });

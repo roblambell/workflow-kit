@@ -61,7 +61,7 @@ export function closeWorkspacesForIds(
 
     // cmux format: "workspace:N <ID> <title>"
     const wsMatch = trimmed.match(/workspace:\d+/);
-    const idMatch = trimmed.match(/TODO\s+([A-Z]+-[A-Za-z0-9]+-[0-9]+)/);
+    const idMatch = trimmed.match(/([A-Z]+-[A-Za-z0-9]+-[0-9]+)/);
 
     if (wsMatch && idMatch && ids.has(idMatch[1]!)) {
       const wsRef = wsMatch[0]!;
@@ -109,8 +109,7 @@ export function cmdCloseWorkspaces(mux: Multiplexer = getMux()): void {
   for (const line of workspaces.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const itemId = trimmed.match(/TODO\s+([A-Z]+-[A-Za-z0-9]+-[0-9]+)/)?.[1]
-      ?? trimmed.match(/[A-Z]+-[A-Za-z0-9]+-[0-9]+/)?.[0];
+    const itemId = trimmed.match(/[A-Z]+-[A-Za-z0-9]+-[0-9]+/)?.[0];
 
     if (itemId) {
       const wsRef = extractWorkspaceRef(trimmed);

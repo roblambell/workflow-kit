@@ -9,7 +9,7 @@ vi.mock("../core/cmux.ts", () => ({
   launchWorkspace: vi.fn(() => "workspace:42"),
   splitPane: vi.fn(() => "surface:3"),
   readScreen: vi.fn(() => "line1\nline2\nline3\n"),
-  listWorkspaces: vi.fn(() => "workspace:1 TODO T-1 test"),
+  listWorkspaces: vi.fn(() => "workspace:1 work item T-1 test"),
   closeWorkspace: vi.fn(() => true),
   setStatus: vi.fn(() => true),
   setProgress: vi.fn(() => true),
@@ -65,7 +65,7 @@ describe("CmuxAdapter", () => {
   it("delegates listWorkspaces to cmux.listWorkspaces", () => {
     const adapter = new CmuxAdapter();
     const result = adapter.listWorkspaces();
-    expect(result).toBe("workspace:1 TODO T-1 test");
+    expect(result).toBe("workspace:1 work item T-1 test");
     expect(cmux.listWorkspaces).toHaveBeenCalled();
   });
 
