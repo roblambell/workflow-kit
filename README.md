@@ -42,7 +42,7 @@ When I'm confident in a breakdown, I leave Ninthwave in auto mode and let it mer
 
 `Plan -> /decompose -> parallel native sessions -> stacked PRs -> review + feedback loop -> checks -> merge`
 
-1. Use `/decompose` once a plan is fleshed out to turn it into markdown work items.
+1. Use `/decompose` to turn a plan into markdown work items.
 2. Run `nw` to launch parallel native sessions of your AI tool.
 3. Review small PRs while the orchestrator keeps the queue moving through review, CI, and merge.
 
