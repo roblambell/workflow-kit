@@ -107,9 +107,9 @@ export interface TuiState {
   /** Pending paused state awaiting engine acknowledgement. */
   pendingPaused?: boolean;
   /** Engine-confirmed WIP limit from the latest snapshot. */
-  wipLimit?: number;
+  sessionLimit?: number;
   /** Pending WIP limit request awaiting engine acknowledgement. */
-  pendingWipLimit?: number;
+  pendingSessionLimit?: number;
   /** Current merge strategy (per-daemon, cycled via Shift+Tab). */
   mergeStrategy: MergeStrategy;
   /** Pending merge strategy selection waiting for debounce to settle. */
@@ -181,7 +181,7 @@ export interface TuiState {
   /** Called when the user cycles panel mode via Tab (for preference persistence). */
   onPanelModeChange?: (mode: PanelMode) => void;
   /** Called when the user presses +/- to adjust WIP limit. Receives the delta (+1 or -1). */
-  onWipChange?: (delta: number) => void;
+  onSessionLimitChange?: (delta: number) => void;
   /** Called when the review mode changes from the controls overlay. */
   onReviewChange?: (mode: ReviewMode) => void;
   /** Called when the collaboration mode changes from the controls overlay. */
@@ -213,7 +213,7 @@ export interface TuiState {
 export interface TuiRuntimeSnapshot {
   paused: boolean;
   mergeStrategy: MergeStrategy;
-  wipLimit: number;
+  sessionLimit: number;
   reviewMode: ReviewMode;
   collaborationMode: CollaborationMode;
 }
@@ -229,7 +229,7 @@ export function applyRuntimeSnapshotToTuiState(
   runtime: TuiRuntimeSnapshot,
 ): void {
   tuiState.paused = runtime.paused;
-  tuiState.wipLimit = runtime.wipLimit;
+  tuiState.sessionLimit = runtime.sessionLimit;
   tuiState.mergeStrategy = runtime.mergeStrategy;
   tuiState.viewOptions.mergeStrategy = runtime.mergeStrategy;
   tuiState.reviewMode = runtime.reviewMode;
@@ -249,8 +249,8 @@ export function applyRuntimeSnapshotToTuiState(
   if (tuiState.pendingCollaborationMode === runtime.collaborationMode) {
     tuiState.pendingCollaborationMode = undefined;
   }
-  if (tuiState.pendingWipLimit === runtime.wipLimit) {
-    tuiState.pendingWipLimit = undefined;
+  if (tuiState.pendingSessionLimit === runtime.sessionLimit) {
+    tuiState.pendingSessionLimit = undefined;
   }
   if (tuiState.pendingPaused === runtime.paused) {
     tuiState.pendingPaused = undefined;
@@ -577,10 +577,10 @@ export function setupKeyboardShortcuts(
     clampControlsRowIndex();
     const row = TUI_SETTINGS_ROWS[tuiState.controlsRowIndex ?? 0] ?? TUI_SETTINGS_ROWS[0]!;
     if (row.kind === "number") {
-      const baseLimit = tuiState.pendingWipLimit ?? tuiState.wipLimit ?? 1;
+      const baseLimit = tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? 1;
       const nextLimit = Math.max(1, baseLimit + delta);
-      tuiState.pendingWipLimit = nextLimit === (tuiState.wipLimit ?? 1) ? undefined : nextLimit;
-      tuiState.onWipChange?.(delta);
+      tuiState.pendingSessionLimit = nextLimit === (tuiState.sessionLimit ?? 1) ? undefined : nextLimit;
+      tuiState.onSessionLimitChange?.(delta);
       return;
     }
 
@@ -977,18 +977,18 @@ export function setupKeyboardShortcuts(
       }
       case "+":
       case "=": { // + (or = without shift) -- increase WIP limit
-        const baseLimit = tuiState.pendingWipLimit ?? tuiState.wipLimit ?? 1;
+        const baseLimit = tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? 1;
         const nextLimit = Math.max(1, baseLimit + 1);
-        tuiState.pendingWipLimit = nextLimit === (tuiState.wipLimit ?? 1) ? undefined : nextLimit;
-        tuiState.onWipChange?.(1);
+        tuiState.pendingSessionLimit = nextLimit === (tuiState.sessionLimit ?? 1) ? undefined : nextLimit;
+        tuiState.onSessionLimitChange?.(1);
         break;
       }
       case "-":
       case "_": { // - (or _ with shift) -- decrease WIP limit
-        const baseLimit = tuiState.pendingWipLimit ?? tuiState.wipLimit ?? 1;
+        const baseLimit = tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? 1;
         const nextLimit = Math.max(1, baseLimit - 1);
-        tuiState.pendingWipLimit = nextLimit === (tuiState.wipLimit ?? 1) ? undefined : nextLimit;
-        tuiState.onWipChange?.(-1);
+        tuiState.pendingSessionLimit = nextLimit === (tuiState.sessionLimit ?? 1) ? undefined : nextLimit;
+        tuiState.onSessionLimitChange?.(-1);
         break;
       }
       default:

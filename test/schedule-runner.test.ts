@@ -338,7 +338,7 @@ describe("double-fire prevention", () => {
 describe("processScheduledTasks", () => {
   function makeMinimalOrch(activeCount = 0): Orchestrator {
     const orch = new Orchestrator([], {
-      wipLimit: 5,
+      sessionLimit: 5,
       maxRetries: 0,
       mergeStrategy: "sequential",
       reviewAutoFix: false,
@@ -423,7 +423,7 @@ describe("processScheduledTasks", () => {
 
     // All 5 WIP slots filled by active work items
     const orch = makeMinimalOrch(0);
-    // Simulate active items by setting effectiveWip to 0
+    // Simulate active items by setting effectiveSessionLimit to 0
     processScheduledTasks("/project", orch, fullDeps, (e) => logs.push(e), 0);
 
     // Task should be queued, not launched

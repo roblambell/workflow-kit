@@ -58,7 +58,7 @@ export function processScheduledTasks(
   orch: Orchestrator,
   deps: ScheduleLoopDeps,
   log: (entry: LogEntry) => void,
-  effectiveWip: number,
+  effectiveSessionLimit: number,
 ): void {
   const tasks = deps.listScheduledTasks();
   if (tasks.length === 0) return;
@@ -212,7 +212,7 @@ export function processScheduledTasks(
   const activeWorkItemCount = orch.getAllItems()
     .filter((i) => !["done", "stuck", "ready", "queued"].includes(i.state)).length;
   const activeScheduleCount = state.active.length;
-  const freeSlots = Math.max(0, effectiveWip - activeWorkItemCount - activeScheduleCount);
+  const freeSlots = Math.max(0, effectiveSessionLimit - activeWorkItemCount - activeScheduleCount);
 
   const { toLaunch, remainingQueue } = processScheduleQueue(state, freeSlots);
   state.queued = remainingQueue;
@@ -259,7 +259,7 @@ export function processScheduledTasks(
         level: "info",
         event: "schedule-skipped",
         taskId: queuedTaskId,
-        reason: "wip-full-queued",
+        reason: "session-limit-full-queued",
       });
     }
   }

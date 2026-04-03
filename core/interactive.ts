@@ -37,7 +37,7 @@ export interface InteractiveResult {
   itemIds: string[];
   backendMode?: PersistedBackendMode;
   mergeStrategy: MergeStrategy;
-  wipLimit: number;
+  sessionLimit: number;
   allSelected: boolean;
   /** True when starting with no current items and watching future work only. */
   futureOnly?: boolean;
@@ -291,7 +291,7 @@ export async function promptMergeStrategy(
 
 // ── WIP limit prompt ─────────────────────────────────────────────────
 
-export async function promptWipLimit(
+export async function promptSessionLimit(
   defaultLimit: number,
   prompt: PromptFn,
 ): Promise<number> {
@@ -299,7 +299,7 @@ export async function promptWipLimit(
 
   while (true) {
     const answer = await prompt(
-      `${BOLD}WIP limit${RESET} ${DIM}[1-10, default ${defaultLimit}]:${RESET} `,
+      `${BOLD}Session limit${RESET} ${DIM}[1-10, default ${defaultLimit}]:${RESET} `,
     );
 
     // Default on empty input
@@ -428,7 +428,7 @@ export async function confirmSummary(
   if (result.backendMode) {
     console.log(`  ${BOLD}Backend:${RESET}         ${result.backendMode}`);
   }
-  console.log(`  ${BOLD}WIP limit:${RESET}       ${result.wipLimit}`);
+  console.log(`  ${BOLD}Session limit:${RESET}   ${result.sessionLimit}`);
   console.log(`  ${BOLD}AI reviews:${RESET}      ${result.reviewMode}`);
   if (result.connectionAction) {
     const connectionLabel = result.connectionAction.type === "connect"
@@ -470,7 +470,7 @@ export function buildStartupPersistenceUpdates(
     ...(backendMode ? { backend_mode: backendMode } : {}),
     merge_strategy: result.mergeStrategy === "auto" ? "auto" : "manual",
     review_mode: result.reviewMode,
-    wip_limit: result.wipLimit,
+    session_limit: result.sessionLimit,
     collaboration_mode: result.connectionAction?.type === "connect"
       ? "share"
       : result.connectionAction?.type === "join"
@@ -489,7 +489,7 @@ export function buildStartupPersistenceUpdates(
  */
 export async function runTuiSelectionFlow(
   todos: WorkItem[],
-  defaultWipLimit: number,
+  defaultSessionLimit: number,
   deps: InteractiveDeps = {},
 ): Promise<InteractiveResult | null> {
   const io = deps.widgetIO ?? createProcessIO();
@@ -504,7 +504,7 @@ export async function runTuiSelectionFlow(
   }
 
   try {
-    const result = await runSelectionScreen(io, todos, defaultWipLimit, {
+    const result = await runSelectionScreen(io, todos, defaultSessionLimit, {
       defaultReviewMode: deps.defaultReviewMode,
       defaultSettings: deps.defaultSettings,
       showConnectionStep: deps.showConnectionStep,
@@ -518,7 +518,7 @@ export async function runTuiSelectionFlow(
         itemIds: result.itemIds,
         backendMode: result.backendMode,
         mergeStrategy: result.mergeStrategy,
-        wipLimit: result.wipLimit,
+        sessionLimit: result.sessionLimit,
       allSelected: result.allSelected,
       futureOnly: result.futureOnly,
       reviewMode: result.reviewMode,
@@ -545,18 +545,18 @@ export async function runTuiSelectionFlow(
  */
 export async function runInteractiveFlow(
   todos: WorkItem[],
-  defaultWipLimit: number,
+  defaultSessionLimit: number,
   deps: InteractiveDeps = {},
 ): Promise<InteractiveResult | null> {
   const isTTY = deps.isTTY ?? (process.stdin.isTTY === true);
 
   // Use TUI widgets unless explicitly disabled or not a TTY
   if (!deps.useLegacyPrompts && (isTTY || deps.widgetIO)) {
-    return runTuiSelectionFlow(todos, defaultWipLimit, deps);
+    return runTuiSelectionFlow(todos, defaultSessionLimit, deps);
   }
 
   // Legacy readline fallback
-  return runReadlineFlow(todos, defaultWipLimit, deps);
+  return runReadlineFlow(todos, defaultSessionLimit, deps);
 }
 
 /**
@@ -566,7 +566,7 @@ export async function runInteractiveFlow(
  */
 async function runReadlineFlow(
   todos: WorkItem[],
-  defaultWipLimit: number,
+  defaultSessionLimit: number,
   deps: InteractiveDeps = {},
 ): Promise<InteractiveResult | null> {
   const prompt = deps.prompt ?? defaultPrompt;
@@ -578,7 +578,7 @@ async function runReadlineFlow(
   // Local-first defaults -- no prompts for these
   const mergeStrategy: MergeStrategy = "manual";
   const backendMode: PersistedBackendMode = deps.defaultSettings?.backendMode ?? "auto";
-  const wipLimit = defaultWipLimit;
+  const sessionLimit = defaultSessionLimit;
   const reviewMode: ReviewMode = "off";
   let connectionAction: ConnectionAction | null = null;
 
@@ -651,7 +651,7 @@ async function runReadlineFlow(
     itemIds: itemResult.ids,
     backendMode,
     mergeStrategy,
-    wipLimit,
+    sessionLimit,
     allSelected: itemResult.allSelected,
     futureOnly: false,
     reviewMode,

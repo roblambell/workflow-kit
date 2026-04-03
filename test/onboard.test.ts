@@ -544,7 +544,7 @@ describe("cmdNoArgs", () => {
       itemIds: ["H-FOO-1", "H-FOO-2"],
       backendMode: "cmux",
       mergeStrategy: "auto" as MergeStrategy,
-      wipLimit: 3,
+      sessionLimit: 3,
       allSelected: false,
       reviewMode: "mine",
       connectionAction: null,
@@ -574,7 +574,7 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).toContain("auto");
     expect(watchArgs).toContain("--backend-mode");
     expect(watchArgs).toContain("cmux");
-    expect(watchArgs).toContain("--wip-limit");
+    expect(watchArgs).toContain("--session-limit");
     expect(watchArgs).toContain("3");
     // Should NOT have --watch when not all selected
     expect(watchArgs).not.toContain("--watch");
@@ -632,7 +632,7 @@ describe("cmdNoArgs", () => {
       isDaemonRunning: () => null,
       ensureMux: async () => {},
       loadConfig: () => ({ review_external: false, schedule_enabled: false }),
-      runInteractiveFlow: async (todos, _defaultWipLimit, deps) => {
+      runInteractiveFlow: async (todos, _defaultSessionLimit, deps) => {
         expect(todos.map((item) => item.id)).toEqual(["H-LOCAL-1", "H-LOCAL-2"]);
         expect(refreshCalled).toBe(false);
 
@@ -683,7 +683,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        wipLimit: 4,
+        sessionLimit: 4,
         allSelected: true,
         reviewMode: "mine",
         connectionAction: null,
@@ -708,7 +708,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: [],
         mergeStrategy: "auto" as MergeStrategy,
-        wipLimit: 4,
+        sessionLimit: 4,
         allSelected: false,
         futureOnly: true,
         reviewMode: "mine",
@@ -736,7 +736,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        wipLimit: 4,
+        sessionLimit: 4,
         allSelected: false,
         reviewMode: "all" as const,
         connectionAction: null,
@@ -747,7 +747,7 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).toContain("--review-external");
   });
 
-  it("passes --review-wip-limit 0 when reviewMode is 'off'", async () => {
+  it("passes --review-session-limit 0 when reviewMode is 'off'", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -761,7 +761,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        wipLimit: 4,
+        sessionLimit: 4,
         allSelected: false,
         reviewMode: "off" as const,
         connectionAction: null,
@@ -769,7 +769,7 @@ describe("cmdNoArgs", () => {
       runWatch: async (args) => { watchArgs = args; },
     });
 
-    expect(watchArgs).toContain("--review-wip-limit");
+    expect(watchArgs).toContain("--review-session-limit");
     expect(watchArgs).toContain("0");
   });
 
@@ -787,7 +787,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        wipLimit: 4,
+        sessionLimit: 4,
         allSelected: false,
         reviewMode: "mine" as const,
         connectionAction: null,
@@ -796,7 +796,7 @@ describe("cmdNoArgs", () => {
     });
 
     expect(watchArgs).not.toContain("--review-external");
-    expect(watchArgs).not.toContain("--review-wip-limit");
+    expect(watchArgs).not.toContain("--review-session-limit");
   });
 
   it("passes --crew <code> for crew join action", async () => {
@@ -813,7 +813,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        wipLimit: 4,
+        sessionLimit: 4,
         allSelected: false,
         reviewMode: "mine" as const,
         connectionAction: { type: "join" as const, code: "k2f9ab3x7yplqm4n" },
@@ -839,7 +839,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        wipLimit: 4,
+        sessionLimit: 4,
         allSelected: false,
         reviewMode: "mine" as const,
         connectionAction: { type: "connect" as const },
@@ -885,7 +885,7 @@ describe("cmdNoArgs", () => {
           itemIds: ["H-1"],
           backendMode: "auto",
           mergeStrategy: "auto" as MergeStrategy,
-          wipLimit: 4,
+          sessionLimit: 4,
           allSelected: false,
           reviewMode: "mine" as const,
           connectionAction: null,
@@ -919,7 +919,7 @@ describe("cmdNoArgs", () => {
           itemIds: ["H-1"],
           backendMode: "auto",
           mergeStrategy: "auto" as MergeStrategy,
-          wipLimit: 4,
+          sessionLimit: 4,
           allSelected: false,
           reviewMode: "all" as const,
           connectionAction: null,
@@ -975,7 +975,7 @@ describe("cmdNoArgs", () => {
         itemIds: ["H-1"],
         backendMode: "headless",
         mergeStrategy: "auto" as MergeStrategy,
-        wipLimit: 4,
+        sessionLimit: 4,
         allSelected: false,
         reviewMode: "all" as const,
         connectionAction: { type: "connect" as const },
@@ -990,7 +990,7 @@ describe("cmdNoArgs", () => {
       backend_mode: "headless",
       merge_strategy: "auto",
       review_mode: "all",
-      wip_limit: 4,
+      session_limit: 4,
       collaboration_mode: "share",
       ai_tools: ["opencode", "copilot"],
     });
@@ -1016,7 +1016,7 @@ describe("cmdNoArgs", () => {
         itemIds: ["H-1"],
         backendMode: "auto",
         mergeStrategy: "manual" as MergeStrategy,
-        wipLimit: 4,
+        sessionLimit: 4,
         allSelected: false,
         reviewMode: "mine" as const,
         connectionAction: { type: "join" as const, code: "k2f9ab3x7yplqm4n" },
@@ -1031,7 +1031,7 @@ describe("cmdNoArgs", () => {
       backend_mode: "auto",
       merge_strategy: "manual",
       review_mode: "mine",
-      wip_limit: 4,
+      session_limit: 4,
       collaboration_mode: "join",
     });
     expect(savedUpdates[0]).not.toHaveProperty("code");

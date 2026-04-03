@@ -7,8 +7,8 @@ import { parseWorkItems } from "../parser.ts";
 import { die, warn, info, GREEN, BOLD, DIM, RESET } from "../output.ts";
 import { splitIds } from "../work-item-files.ts";
 import { computeBatches, CircularDependencyError } from "./batch-order.ts";
-import { calculateMemoryWipLimit } from "../orchestrator.ts";
-import { computeDefaultWipLimit } from "./orchestrate.ts";
+import { calculateMemorySessionLimit } from "../orchestrator.ts";
+import { computeDefaultSessionLimit } from "./orchestrate.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { cleanupStalePartitions } from "../partitions.ts";
 import { getWorktreeInfo } from "../cross-repo.ts";
@@ -38,7 +38,7 @@ export async function cmdRunItems(
   worktreeDir: string,
   projectRoot: string,
   muxOverride?: Multiplexer,
-  wipLimitOverride?: number,
+  sessionLimitOverride?: number,
   toolOverride?: string,
 ): Promise<void> {
   // Pre-flight: fail fast if the mux backend is not usable (binary missing
@@ -110,15 +110,15 @@ export async function cmdRunItems(
     console.log(`  Batch ${b}: ${labels.join(", ")}`);
   }
   // Compute WIP limit: explicit override honored directly, otherwise RAM-calculated
-  let effectiveWipLimit: number;
-  if (wipLimitOverride !== undefined) {
-    effectiveWipLimit = wipLimitOverride;
-    info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (explicit override)`);
+  let effectiveSessionLimit: number;
+  if (sessionLimitOverride !== undefined) {
+    effectiveSessionLimit = sessionLimitOverride;
+    info(`Session limit: ${effectiveSessionLimit} concurrent session(s) (explicit override)`);
   } else {
-    const configuredLimit = computeDefaultWipLimit();
-    effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, getAvailableMemory());
+    const configuredLimit = computeDefaultSessionLimit();
+    effectiveSessionLimit = calculateMemorySessionLimit(configuredLimit, getAvailableMemory());
     const freeGB = Math.round(getAvailableMemory() / (1024 ** 3));
-    info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (${freeGB}GB free)`);
+    info(`Session limit: ${effectiveSessionLimit} concurrent session(s) (${freeGB}GB free)`);
   }
   console.log();
 
@@ -144,15 +144,15 @@ export async function cmdRunItems(
   const mux = muxEarly;
   const launched: string[] = [];
   const skipped: string[] = [];
-  let wipReached = false;
+  let sessionLimitReached = false;
 
   // Launch batch by batch, respecting WIP limit
-  for (let b = 1; b <= batchCount && !wipReached; b++) {
+  for (let b = 1; b <= batchCount && !sessionLimitReached; b++) {
     const batchItems = ids.filter((id) => batchAssignments.get(id) === b);
 
     for (const id of batchItems) {
-      if (launched.length >= effectiveWipLimit) {
-        wipReached = true;
+      if (launched.length >= effectiveSessionLimit) {
+        sessionLimitReached = true;
         // Collect all remaining items as skipped
         const remainingInBatch = batchItems.slice(batchItems.indexOf(id));
         skipped.push(...remainingInBatch);
@@ -192,7 +192,7 @@ export async function cmdRunItems(
   if (skipped.length > 0) {
     console.log();
     warn(
-      `WIP limit reached (${effectiveWipLimit}). ${skipped.length} item(s) skipped:`,
+      `Session limit reached (${effectiveSessionLimit}). ${skipped.length} item(s) skipped:`,
     );
     for (const id of skipped) {
       const item = itemMap.get(id)!;
@@ -299,17 +299,17 @@ export async function cmdStart(
   );
 
   // Compute WIP limit from RAM
-  const configuredLimit = computeDefaultWipLimit();
-  const effectiveWipLimit = calculateMemoryWipLimit(configuredLimit, getAvailableMemory());
+  const configuredLimit = computeDefaultSessionLimit();
+  const effectiveSessionLimit = calculateMemorySessionLimit(configuredLimit, getAvailableMemory());
   const freeGB = Math.round(getAvailableMemory() / (1024 ** 3));
-  info(`WIP limit: ${effectiveWipLimit} concurrent session(s) (${freeGB}GB free)`);
+  info(`Session limit: ${effectiveSessionLimit} concurrent session(s) (${freeGB}GB free)`);
 
   const mux = muxEarly;
   const launched: string[] = [];
   const skipped: string[] = [];
 
   for (const id of ids) {
-    if (launched.length >= effectiveWipLimit) {
+    if (launched.length >= effectiveSessionLimit) {
       skipped.push(...ids.slice(ids.indexOf(id)));
       break;
     }
@@ -345,7 +345,7 @@ export async function cmdStart(
   if (skipped.length > 0) {
     console.log();
     warn(
-      `WIP limit reached (${effectiveWipLimit}). ${skipped.length} item(s) skipped:`,
+      `Session limit reached (${effectiveSessionLimit}). ${skipped.length} item(s) skipped:`,
     );
     for (const id of skipped) {
       const item = itemMap.get(id)!;

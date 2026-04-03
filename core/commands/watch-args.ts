@@ -10,7 +10,7 @@ export interface ParsedWatchArgs {
   itemIds: string[];
   backendModeOverride?: PersistedBackendMode;
   mergeStrategy: MergeStrategy;
-  wipLimitOverride?: number;
+  sessionLimitOverride?: number;
   pollIntervalOverride?: number;
   frictionDir?: string;
   daemonMode: boolean;
@@ -20,7 +20,7 @@ export interface ParsedWatchArgs {
   remoteFlag: boolean;
   reviewAutoFix?: "off" | "direct" | "pr";
   reviewExternal: boolean;
-  reviewWipLimit?: number;
+  reviewSessionLimit?: number;
   fixForward: boolean;
   skipReview: boolean;
   watchMode: boolean;
@@ -42,7 +42,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   const itemIds: string[] = [];
   let backendModeOverride: PersistedBackendMode | undefined;
   let mergeStrategy: MergeStrategy = "manual";
-  let wipLimitOverride: number | undefined;
+  let sessionLimitOverride: number | undefined;
   let pollIntervalOverride: number | undefined;
   let frictionDir: string | undefined;
   let daemonMode = false;
@@ -52,7 +52,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   let remoteFlag = false;
   let reviewAutoFix: "off" | "direct" | "pr" | undefined;
   let reviewExternal = false;
-  let reviewWipLimit: number | undefined;
+  let reviewSessionLimit: number | undefined;
   let fixForward = true;
   let skipReview = false;
   let watchMode = false;
@@ -103,8 +103,8 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         i += 2;
         break;
       }
-      case "--wip-limit":
-        wipLimitOverride = parseInt(args[i + 1] ?? "4", 10);
+      case "--session-limit":
+        sessionLimitOverride = parseInt(args[i + 1] ?? "4", 10);
         i += 2;
         break;
       case "--poll-interval":
@@ -148,8 +148,8 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         reviewExternal = true;
         i += 1;
         break;
-      case "--review-wip-limit":
-        reviewWipLimit = parseInt(args[i + 1] ?? "0", 10);
+      case "--review-session-limit":
+        reviewSessionLimit = parseInt(args[i + 1] ?? "0", 10);
         i += 2;
         break;
       case "--no-fix-forward":
@@ -236,9 +236,9 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   }
 
   return {
-    itemIds, backendModeOverride, mergeStrategy, wipLimitOverride, pollIntervalOverride, frictionDir,
+    itemIds, backendModeOverride, mergeStrategy, sessionLimitOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, isInteractiveEngineChild, clickupListId, remoteFlag,
-    reviewAutoFix, reviewExternal, reviewWipLimit,
+    reviewAutoFix, reviewExternal, reviewSessionLimit,
     fixForward, skipReview, watchMode, futureOnlyStartup, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewCode, connectMode, crewPort, crewUrl, crewName,
     bypassEnabled, toolOverride,

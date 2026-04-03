@@ -132,7 +132,7 @@ export interface OrchestratorItem {
 
 export interface OrchestratorConfig {
   /** Max concurrent items in all WIP states (bootstrapping/launching/implementing/ci-pending/ci-passed/ci-failed/rebasing/reviewing/review-pending/merging). */
-  wipLimit: number;
+  sessionLimit: number;
   /** When to auto-merge: auto (CI pass, respects review gate + CHANGES_REQUESTED), manual (never auto-merge), bypass (admin override, skips branch protection human review). */
   mergeStrategy: MergeStrategy;
   /** Whether the bypass merge strategy is available. Must be enabled via --dangerously-bypass CLI flag. */
@@ -465,7 +465,7 @@ export interface ActionResult {
 // ── Default config ───────────────────────────────────────────────────
 
 export const DEFAULT_CONFIG: OrchestratorConfig = {
-  wipLimit: 4,
+  sessionLimit: 4,
   mergeStrategy: "auto",
   bypassEnabled: false,
   maxCiRetries: 2,
@@ -499,7 +499,7 @@ export const BYTES_PER_WORKER = 1 * 1024 * 1024 * 1024; // 1 GB
  * @param freeMemBytes - Available free memory in bytes (e.g., from os.freemem())
  * @param memPerWorkerBytes - Memory per worker in bytes (default: 2.5 GB)
  */
-export function calculateMemoryWipLimit(
+export function calculateMemorySessionLimit(
   configuredLimit: number,
   freeMemBytes: number,
   memPerWorkerBytes: number = BYTES_PER_WORKER,
@@ -520,7 +520,7 @@ export const LAUNCHING_TIMEOUT_MS = 5 * 60 * 1000;
 
 // ── WIP states: states that count toward the WIP limit ───────────────
 
-export const WIP_STATES: Set<OrchestratorItemState> = new Set([
+export const ACTIVE_SESSION_STATES: Set<OrchestratorItemState> = new Set([
   "bootstrapping",
   "launching",
   "implementing",

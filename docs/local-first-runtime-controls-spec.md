@@ -169,7 +169,7 @@ Changing WIP from the live status page should:
 
 There are three WIP sources, in this order:
 
-1. Explicit CLI `--wip-limit` for the current run
+1. Explicit CLI `--session-limit` for the current run
 2. User-level persisted WIP preference
 3. Computed default
 
@@ -300,7 +300,7 @@ Toward:
 9. Merge copy consistently explains `Manual`, `Auto`, and `Bypass` as CI-first modes
 10. Pressing `+` or `-` in the live status page changes WIP immediately
 11. WIP changes made from the live status page persist to user-level config
-12. An explicit `--wip-limit` flag overrides both persisted and computed WIP for that run
+12. An explicit `--session-limit` flag overrides both persisted and computed WIP for that run
 13. Collaboration, reviews, and merge policy are all controllable from the live status UI
 14. `ninthwave.sh` no longer appears as the primary reason to start `nw`
 

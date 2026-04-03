@@ -34,7 +34,7 @@ Each work item moves through a state machine defined in [`core/orchestrator.ts`]
 | `ci-failed` | CI red; worker being notified |
 | `repairing` | CI-fix worker active (direct repair mode) |
 | `review-pending` | Awaiting review worker launch |
-| `reviewing` | Review worker active (tracked via separate `reviewWipLimit`) |
+| `reviewing` | Review worker active (tracked via separate `reviewSessionLimit`) |
 | `merging` | Merge in progress |
 | `merged` | PR merged |
 | `forward-fix-pending` | Post-merge CI check pending |
@@ -73,7 +73,7 @@ stateDiagram-v2
 
 ### WIP Limit
 
-States that count toward the WIP limit (see `OrchestratorConfig.wipLimit`): `bootstrapping`, `launching`, `implementing`, `ci-pending`, `ci-passed`, `ci-failed`, `repairing`, `review-pending`, `merging`. Review workers (`reviewing`) have a separate limit (`reviewWipLimit`).
+States that count toward the WIP limit (see `OrchestratorConfig.sessionLimit`): `bootstrapping`, `launching`, `implementing`, `ci-pending`, `ci-passed`, `ci-failed`, `repairing`, `review-pending`, `merging`. Review workers (`reviewing`) have a separate limit (`reviewSessionLimit`).
 
 ### Stacked Launches
 

@@ -444,112 +444,112 @@ describe("loadUserConfig", () => {
     expect(config.tmux_layout).toBeUndefined();
   });
 
-  it("reads wip_limit from valid JSON", () => {
+  it("reads session_limit from valid JSON", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ wip_limit: 3 }),
+      JSON.stringify({ session_limit: 3 }),
     );
 
     const config = loadUserConfig(tmpHome);
-    expect(config.wip_limit).toBe(3);
+    expect(config.session_limit).toBe(3);
   });
 
-  it("ignores non-number wip_limit", () => {
+  it("ignores non-number session_limit", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ wip_limit: "five" }),
+      JSON.stringify({ session_limit: "five" }),
     );
 
     const config = loadUserConfig(tmpHome);
-    expect(config.wip_limit).toBeUndefined();
+    expect(config.session_limit).toBeUndefined();
   });
 
-  it("ignores wip_limit less than 1", () => {
+  it("ignores session_limit less than 1", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ wip_limit: 0 }),
+      JSON.stringify({ session_limit: 0 }),
     );
 
     const config = loadUserConfig(tmpHome);
-    expect(config.wip_limit).toBeUndefined();
+    expect(config.session_limit).toBeUndefined();
   });
 
-  it("ignores negative wip_limit", () => {
+  it("ignores negative session_limit", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ wip_limit: -2 }),
+      JSON.stringify({ session_limit: -2 }),
     );
 
     const config = loadUserConfig(tmpHome);
-    expect(config.wip_limit).toBeUndefined();
+    expect(config.session_limit).toBeUndefined();
   });
 
-  it("floors fractional wip_limit", () => {
+  it("floors fractional session_limit", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ wip_limit: 3.7 }),
+      JSON.stringify({ session_limit: 3.7 }),
     );
 
     const config = loadUserConfig(tmpHome);
-    expect(config.wip_limit).toBe(3);
+    expect(config.session_limit).toBe(3);
   });
 
-  it("ignores NaN wip_limit", () => {
+  it("ignores NaN session_limit", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ wip_limit: null }),
+      JSON.stringify({ session_limit: null }),
     );
 
     const config = loadUserConfig(tmpHome);
-    expect(config.wip_limit).toBeUndefined();
+    expect(config.session_limit).toBeUndefined();
   });
 
-  it("ignores Infinity wip_limit", () => {
+  it("ignores Infinity session_limit", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     // JSON.stringify turns Infinity into null, so write raw
     writeFileSync(
       join(configDir, "config.json"),
-      '{"wip_limit": 1e999}',
+      '{"session_limit": 1e999}',
     );
 
     // JSON.parse turns 1e999 into Infinity
     const config = loadUserConfig(tmpHome);
-    expect(config.wip_limit).toBeUndefined();
+    expect(config.session_limit).toBeUndefined();
   });
 });
 
 describe("saveUserConfig", () => {
   it("creates config file when missing", () => {
     const tmpHome = setupTempRepo();
-    saveUserConfig({ wip_limit: 5 }, tmpHome);
+    saveUserConfig({ session_limit: 5 }, tmpHome);
 
     const configPath = join(tmpHome, ".ninthwave", "config.json");
     expect(existsSync(configPath)).toBe(true);
     const content = JSON.parse(readFileSync(configPath, "utf-8"));
-    expect(content.wip_limit).toBe(5);
+    expect(content.session_limit).toBe(5);
   });
 
-  it("merges wip_limit into existing config without clobbering", () => {
+  it("merges session_limit into existing config without clobbering", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
@@ -558,11 +558,11 @@ describe("saveUserConfig", () => {
       JSON.stringify({ ai_tools: ["claude"] }),
     );
 
-    saveUserConfig({ wip_limit: 3 }, tmpHome);
+    saveUserConfig({ session_limit: 3 }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
     expect(content.ai_tools).toEqual(["claude"]);
-    expect(content.wip_limit).toBe(3);
+    expect(content.session_limit).toBe(3);
   });
 
   it("round-trips persisted TUI defaults without dropping unknown keys", () => {
@@ -580,7 +580,7 @@ describe("saveUserConfig", () => {
       merge_strategy: "auto",
       review_mode: "mine",
       collaboration_mode: "join",
-      wip_limit: 4,
+      session_limit: 4,
     }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
@@ -590,7 +590,7 @@ describe("saveUserConfig", () => {
     expect(content.merge_strategy).toBe("auto");
     expect(content.review_mode).toBe("mine");
     expect(content.collaboration_mode).toBe("join");
-    expect(content.wip_limit).toBe(4);
+    expect(content.session_limit).toBe(4);
 
     const config = loadUserConfig(tmpHome);
     expect(config).toMatchObject({
@@ -599,7 +599,7 @@ describe("saveUserConfig", () => {
       merge_strategy: "auto",
       review_mode: "mine",
       collaboration_mode: "join",
-      wip_limit: 4,
+      session_limit: 4,
     });
   });
 
@@ -612,11 +612,11 @@ describe("saveUserConfig", () => {
       JSON.stringify({ custom_key: "hello" }),
     );
 
-    saveUserConfig({ wip_limit: 4 }, tmpHome);
+    saveUserConfig({ session_limit: 4 }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
     expect(content.custom_key).toBe("hello");
-    expect(content.wip_limit).toBe(4);
+    expect(content.session_limit).toBe(4);
   });
 
   it("saves update_checks_enabled without clobbering unrelated keys", () => {
@@ -642,27 +642,27 @@ describe("saveUserConfig", () => {
     });
   });
 
-  it("overwrites existing wip_limit value", () => {
+  it("overwrites existing session_limit value", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ wip_limit: 2 }),
+      JSON.stringify({ session_limit: 2 }),
     );
 
-    saveUserConfig({ wip_limit: 6 }, tmpHome);
+    saveUserConfig({ session_limit: 6 }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
-    expect(content.wip_limit).toBe(6);
+    expect(content.session_limit).toBe(6);
   });
 
   it("round-trips with loadUserConfig", () => {
     const tmpHome = setupTempRepo();
-    saveUserConfig({ wip_limit: 7 }, tmpHome);
+    saveUserConfig({ session_limit: 7 }, tmpHome);
 
     const config = loadUserConfig(tmpHome);
-    expect(config.wip_limit).toBe(7);
+    expect(config.session_limit).toBe(7);
   });
 
   it("handles malformed existing file gracefully", () => {
@@ -671,9 +671,9 @@ describe("saveUserConfig", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(join(configDir, "config.json"), "not valid json {{{");
 
-    saveUserConfig({ wip_limit: 3 }, tmpHome);
+    saveUserConfig({ session_limit: 3 }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
-    expect(content.wip_limit).toBe(3);
+    expect(content.session_limit).toBe(3);
   });
 });

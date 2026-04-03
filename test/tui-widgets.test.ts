@@ -1044,7 +1044,7 @@ describe("runStartupSettingsScreen", () => {
 
     const resultPromise = runStartupSettingsScreen(io, {
       summaryLines: ["Items: A-1"],
-      defaultWipLimit: 4,
+      defaultSessionLimit: 4,
       defaultSettings: {
         backendMode: "auto",
         mergeStrategy: "manual",
@@ -1070,7 +1070,7 @@ describe("runStartupSettingsScreen", () => {
     expect(result.mergeStrategy).toBe("auto");
     expect(result.reviewMode).toBe("mine");
     expect(result.collaborationMode).toBe("share");
-    expect(result.wipLimit).toBe(5);
+    expect(result.sessionLimit).toBe(5);
   });
 
   it("renders all backend options and preselects the saved default", async () => {
@@ -1078,7 +1078,7 @@ describe("runStartupSettingsScreen", () => {
 
     const resultPromise = runStartupSettingsScreen(io, {
       summaryLines: ["Items: A-1"],
-      defaultWipLimit: 4,
+      defaultSessionLimit: 4,
       defaultSettings: {
         backendMode: "cmux",
         mergeStrategy: "manual",
@@ -1105,7 +1105,7 @@ describe("runStartupSettingsScreen", () => {
 
     const resultPromise = runStartupSettingsScreen(io, {
       summaryLines: ["Items: A-1"],
-      defaultWipLimit: 4,
+      defaultSessionLimit: 4,
     });
 
     sendKeys(["\r"]);
@@ -1116,14 +1116,14 @@ describe("runStartupSettingsScreen", () => {
     expect(result.mergeStrategy).toBe("manual");
     expect(result.reviewMode).toBe("off");
     expect(result.collaborationMode).toBe("local");
-    expect(result.wipLimit).toBe(4);
+    expect(result.sessionLimit).toBe(4);
   });
 
   it("cancels on Escape and Ctrl+C", async () => {
     const { io, sendKeys } = createMockIO();
     const escapePromise = runStartupSettingsScreen(io, {
       summaryLines: ["Items: A-1"],
-      defaultWipLimit: 4,
+      defaultSessionLimit: 4,
     });
     sendKeys(["\x1B"]);
     expect((await escapePromise).cancelled).toBe(true);
@@ -1131,7 +1131,7 @@ describe("runStartupSettingsScreen", () => {
     const second = createMockIO();
     const ctrlCPromise = runStartupSettingsScreen(second.io, {
       summaryLines: ["Items: A-1"],
-      defaultWipLimit: 4,
+      defaultSessionLimit: 4,
     });
     second.sendKeys(["\x03"]);
     expect((await ctrlCPromise).cancelled).toBe(true);
@@ -1142,7 +1142,7 @@ describe("runStartupSettingsScreen", () => {
 
     const resultPromise = runStartupSettingsScreen(io, {
       summaryLines: ["Items: A-1"],
-      defaultWipLimit: 4,
+      defaultSessionLimit: 4,
     });
 
     expect(getOutput()).toContain("[manual]");
@@ -1168,10 +1168,10 @@ describe("runStartupSettingsScreen", () => {
         "Items: A-1 A very long task title that should wrap across multiple viewport lines",
         "AI tool: Claude Code round-robin with a second tool label that also wraps",
       ],
-      defaultWipLimit: 4,
+      defaultSessionLimit: 4,
     });
 
-    const activeLabels = ["Merge", "Reviews", "Collaboration", "WIP limit", "Backend"];
+      const activeLabels = ["Merge", "Reviews", "Collaboration", "Session limit", "Backend"];
 
     for (let i = 0; i < activeLabels.length; i++) {
       const lines = getPlainFrameLines(getOutput());
@@ -1192,7 +1192,7 @@ describe("runStartupSettingsScreen", () => {
     expect(result.mergeStrategy).toBe("manual");
     expect(result.reviewMode).toBe("off");
     expect(result.collaborationMode).toBe("local");
-    expect(result.wipLimit).toBe(4);
+    expect(result.sessionLimit).toBe(4);
     expect(result.backendMode).toBe("auto");
   });
 
@@ -1203,7 +1203,7 @@ describe("runStartupSettingsScreen", () => {
       summaryLines: [
         "Items: A-1 A very long task title that should wrap neatly inside the viewport",
       ],
-      defaultWipLimit: 4,
+      defaultSessionLimit: 4,
     });
 
     const summaryLines = getPlainFrameLines(summary.getOutput());
@@ -1224,7 +1224,7 @@ describe("runStartupSettingsScreen", () => {
 
     const descriptionPromise = runStartupSettingsScreen(description.io, {
       summaryLines: [],
-      defaultWipLimit: 4,
+      defaultSessionLimit: 4,
       defaultSettings: {
         backendMode: "headless",
         mergeStrategy: "manual",
@@ -1324,7 +1324,7 @@ describe("runSelectionScreen", () => {
     expect(result!.allSelected).toBe(true);
     expect(result!.futureOnly).toBe(false);
     expect(result!.mergeStrategy).toBe("manual");
-    expect(result!.wipLimit).toBe(4);
+    expect(result!.sessionLimit).toBe(4);
     expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
     expect(result!.cancelled).toBe(false);
@@ -1482,7 +1482,7 @@ describe("runSelectionScreen", () => {
     const result = await resultPromise;
     expect(result).not.toBeNull();
     expect(result!.mergeStrategy).toBe("manual");
-    expect(result!.wipLimit).toBe(5);
+    expect(result!.sessionLimit).toBe(5);
     expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
   });
@@ -1741,7 +1741,7 @@ describe("runSelectionScreen -- startup defaults", () => {
     expect(result!.mergeStrategy).toBe("auto");
     expect(result!.reviewMode).toBe("mine");
     expect(result!.connectionAction).toEqual({ type: "connect" });
-    expect(result!.wipLimit).toBe(7);
+    expect(result!.sessionLimit).toBe(7);
   });
 
   it("returns selected settings values from the startup settings screen", async () => {
@@ -1758,7 +1758,7 @@ describe("runSelectionScreen -- startup defaults", () => {
         "\x1B[B",
         "\x1B[C", // collaboration -> share
         "\x1B[B",
-        "\x1B[C", // wip 4 -> 5
+        "\x1B[C", // session limit 4 -> 5
         "\r",
       ],
     );
@@ -1769,7 +1769,7 @@ describe("runSelectionScreen -- startup defaults", () => {
     expect(result!.mergeStrategy).toBe("auto");
     expect(result!.reviewMode).toBe("mine");
     expect(result!.connectionAction).toEqual({ type: "connect" });
-    expect(result!.wipLimit).toBe(5);
+    expect(result!.sessionLimit).toBe(5);
   });
 
   it("returns join connectionAction when join is selected", async () => {
@@ -1859,7 +1859,7 @@ describe("runSelectionScreen -- startup defaults", () => {
     expect(result!.reviewMode).toBe("all");
   });
 
-  it("passes through defaultWipLimit as the initial wipLimit", async () => {
+  it("passes through defaultSessionLimit as the initial sessionLimit", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
@@ -1868,7 +1868,7 @@ describe("runSelectionScreen -- startup defaults", () => {
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(result!.wipLimit).toBe(7);
+    expect(result!.sessionLimit).toBe(7);
   });
 
   it("uses confirmation-only re-entry flow when showConnectionStep is false", async () => {
@@ -2178,7 +2178,7 @@ describe("runTuiSelectionFlow (via interactive.ts)", () => {
     expect(result!.itemIds).not.toContain("__ALL__");
     expect(result!.allSelected).toBe(true);
     expect(result!.mergeStrategy).toBe("manual");
-    expect(result!.wipLimit).toBe(4);
+    expect(result!.sessionLimit).toBe(4);
     expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
   });
@@ -2204,7 +2204,7 @@ describe("runTuiSelectionFlow (via interactive.ts)", () => {
     expect(result).not.toBeNull();
     expect(result!.itemIds).toEqual(["A-1", "B-2"]);
     expect(result!.mergeStrategy).toBe("manual");
-    expect(result!.wipLimit).toBe(3);
+    expect(result!.sessionLimit).toBe(3);
     expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
   });

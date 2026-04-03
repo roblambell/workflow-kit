@@ -11,7 +11,7 @@ import {
   adaptivePollInterval,
   reconstructState,
   interruptibleSleep,
-  computeDefaultWipLimit,
+  computeDefaultSessionLimit,
   getTmuxStartupInfo,
   buildSnapshot,
   setupKeyboardShortcuts,
@@ -481,7 +481,7 @@ describe("bootstrapTuiUpdateNotice", () => {
 
 describe("orchestrateLoop", () => {
   it("logs classified GitHub API warnings", async () => {
-    const orch = new Orchestrator({ wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-ERR-1"));
     orch.getItem("T-ERR-1")!.reviewCompleted = true;
     orch.hydrateState("T-ERR-1", "implementing");
@@ -526,7 +526,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("processes items through full lifecycle (single item, auto strategy)", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -586,7 +586,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("holds flagged items for manual review in auto mode", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     const sensitiveItem = makeWorkItem("T-HOLD-1");
     sensitiveItem.requiresManualReview = true;
     orch.addItem(sensitiveItem);
@@ -624,7 +624,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("holds flagged items for manual review in bypass mode", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "bypass", bypassEnabled: true });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "bypass", bypassEnabled: true });
     const sensitiveItem = makeWorkItem("T-HOLD-2");
     sensitiveItem.requiresManualReview = true;
     orch.addItem(sensitiveItem);
@@ -662,7 +662,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("still holds flagged items when skipReview is enabled", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto", skipReview: true });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto", skipReview: true });
     const sensitiveItem = makeWorkItem("T-HOLD-3");
     sensitiveItem.requiresManualReview = true;
     orch.addItem(sensitiveItem);
@@ -700,7 +700,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("processes dependency chain across batches", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("A-1-1"));
     orch.getItem("A-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("A-1-2", ["A-1-1"]));
@@ -774,7 +774,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("respects WIP limit during batch processing", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("W-1-1"));
     orch.getItem("W-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("W-1-2"));
@@ -835,7 +835,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("includes items with prUrl in orchestrate_complete when repoUrl is configured", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("U-1-1"));
     orch.getItem("U-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("U-1-2"));
@@ -905,7 +905,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("handles stuck items and completes remaining", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("S-1-1"));
     orch.getItem("S-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("S-1-2"));
@@ -965,7 +965,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("runs worktree cleanup sweep for all managed items before orchestrate_complete", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("CL-1-1"));
     orch.getItem("CL-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("CL-1-2"));
@@ -1036,7 +1036,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("cleanup sweep is no-op when no stale worktrees exist", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("CN-1-1"));
     orch.getItem("CN-1-1")!.reviewCompleted = true;
 
@@ -1072,7 +1072,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("cleanup sweep handles errors gracefully without blocking exit", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("CE-1-1"));
     orch.getItem("CE-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("CE-1-2"));
@@ -1133,7 +1133,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("final cleanup sweep closes workspaces for terminal items before worktree cleanup", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("WC-1-1"));
     orch.getItem("WC-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("WC-1-2"));
@@ -1220,7 +1220,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("final cleanup sweep skips closeWorkspace for items without workspaceRef", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("WN-1-1"));
     orch.getItem("WN-1-1")!.reviewCompleted = true;
 
@@ -1268,7 +1268,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("final cleanup sweep skips worktree removal for stuck items (H-WR-2)", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto", maxRetries: 0 });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto", maxRetries: 0 });
     orch.addItem(makeWorkItem("SK-1-1"));
     orch.getItem("SK-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("SK-1-2"));
@@ -1336,7 +1336,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("shutdown closes workspaces only for terminal items, not in-flight", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("SD-1-1"));
     orch.getItem("SD-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("SD-1-2"));
@@ -1407,7 +1407,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("stops on SIGINT and emits shutdown log", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("I-1-1"));
     orch.getItem("I-1-1")!.reviewCompleted = true;
 
@@ -1435,7 +1435,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("transitions to done without mark-done action (workers remove their own work item)", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("D-1-1"));
     orch.getItem("D-1-1")!.reviewCompleted = true;
 
@@ -1494,7 +1494,7 @@ describe("orchestrateLoop", () => {
     );
 
     try {
-      const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+      const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
       orch.addItem({
         ...makeWorkItem("H-CLEAN-1"),
         title: "Cleanup work",
@@ -1556,7 +1556,7 @@ describe("orchestrateLoop", () => {
   });
 
   it("emits structured log with state_summary on each cycle", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("L-1-1"));
     orch.getItem("L-1-1")!.reviewCompleted = true;
 
@@ -2610,45 +2610,45 @@ describe("interruptibleSleep", () => {
   });
 });
 
-describe("computeDefaultWipLimit", () => {
+describe("computeDefaultSessionLimit", () => {
   const GB = 1024 ** 3;
 
   it("returns 5 for 16GB machine", () => {
-    expect(computeDefaultWipLimit(() => 16 * GB)).toBe(5);
+    expect(computeDefaultSessionLimit(() => 16 * GB)).toBe(5);
   });
 
   it("returns 2 for 8GB machine", () => {
-    expect(computeDefaultWipLimit(() => 8 * GB)).toBe(2);
+    expect(computeDefaultSessionLimit(() => 8 * GB)).toBe(2);
   });
 
   it("returns minimum of 2 for very low memory (4GB)", () => {
-    expect(computeDefaultWipLimit(() => 4 * GB)).toBe(2);
+    expect(computeDefaultSessionLimit(() => 4 * GB)).toBe(2);
   });
 
   it("returns minimum of 2 for extremely low memory (1GB)", () => {
-    expect(computeDefaultWipLimit(() => 1 * GB)).toBe(2);
+    expect(computeDefaultSessionLimit(() => 1 * GB)).toBe(2);
   });
 
   it("returns 8 for 24GB machine", () => {
-    expect(computeDefaultWipLimit(() => 24 * GB)).toBe(8);
+    expect(computeDefaultSessionLimit(() => 24 * GB)).toBe(8);
   });
 
   it("returns 10 for 32GB machine", () => {
-    expect(computeDefaultWipLimit(() => 32 * GB)).toBe(10);
+    expect(computeDefaultSessionLimit(() => 32 * GB)).toBe(10);
   });
 
   it("returns 21 for 64GB machine", () => {
-    expect(computeDefaultWipLimit(() => 64 * GB)).toBe(21);
+    expect(computeDefaultSessionLimit(() => 64 * GB)).toBe(21);
   });
 
   it("handles fractional GB correctly (e.g. 15.8GB)", () => {
     // 15.8 / 3 = 5.26 → floor → 5
-    expect(computeDefaultWipLimit(() => 15.8 * GB)).toBe(5);
+    expect(computeDefaultSessionLimit(() => 15.8 * GB)).toBe(5);
   });
 
   it("uses os.totalmem() by default (no argument)", () => {
     // Just verify it returns a reasonable number without throwing
-    const result = computeDefaultWipLimit();
+    const result = computeDefaultSessionLimit();
     expect(result).toBeGreaterThanOrEqual(2);
     expect(typeof result).toBe("number");
   });
@@ -2677,7 +2677,7 @@ describe("buildSnapshot lastCommitTime", () => {
   const noOpCheckPr = () => null;
 
   it("includes lastCommitTime for implementing items", () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("HC-1-1"));
     orch.getItem("HC-1-1")!.reviewCompleted = true;
     orch.hydrateState("HC-1-1", "implementing");
@@ -2704,7 +2704,7 @@ describe("buildSnapshot lastCommitTime", () => {
   });
 
   it("lastCommitTime is null when worktree has no commits beyond base", () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("HC-2-1"));
     orch.getItem("HC-2-1")!.reviewCompleted = true;
     orch.hydrateState("HC-2-1", "implementing");
@@ -2725,7 +2725,7 @@ describe("buildSnapshot lastCommitTime", () => {
   });
 
   it("includes lastCommitTime for launching items (branch may not exist yet)", () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("HC-3-1"));
     orch.getItem("HC-3-1")!.reviewCompleted = true;
     orch.hydrateState("HC-3-1", "launching");
@@ -2744,7 +2744,7 @@ describe("buildSnapshot lastCommitTime", () => {
   });
 
   it("does not query lastCommitTime for non-active states", () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("HC-4-1"));
     orch.getItem("HC-4-1")!.reviewCompleted = true;
     orch.hydrateState("HC-4-1", "ci-pending");
@@ -2778,7 +2778,7 @@ describe("buildSnapshot isMergeable", () => {
   }
 
   it("sets isMergeable=true when checkPr returns MERGEABLE in 4th field", () => {
-    const orch = new Orchestrator({ wipLimit: 2 });
+    const orch = new Orchestrator({ sessionLimit: 2 });
     orch.addItem(makeWorkItem("M-1-1"));
     orch.getItem("M-1-1")!.reviewCompleted = true;
     orch.hydrateState("M-1-1", "ci-pending");
@@ -2797,7 +2797,7 @@ describe("buildSnapshot isMergeable", () => {
   });
 
   it("sets isMergeable=false when checkPr returns CONFLICTING in 4th field", () => {
-    const orch = new Orchestrator({ wipLimit: 2 });
+    const orch = new Orchestrator({ sessionLimit: 2 });
     orch.addItem(makeWorkItem("M-2-1"));
     orch.getItem("M-2-1")!.reviewCompleted = true;
     orch.hydrateState("M-2-1", "ci-pending");
@@ -2815,7 +2815,7 @@ describe("buildSnapshot isMergeable", () => {
   });
 
   it("does not set isMergeable when 4th field is UNKNOWN", () => {
-    const orch = new Orchestrator({ wipLimit: 2 });
+    const orch = new Orchestrator({ sessionLimit: 2 });
     orch.addItem(makeWorkItem("M-3-1"));
     orch.getItem("M-3-1")!.reviewCompleted = true;
     orch.hydrateState("M-3-1", "ci-pending");
@@ -2832,7 +2832,7 @@ describe("buildSnapshot isMergeable", () => {
   });
 
   it("does not set isMergeable when checkPr returns 3-field format (backward compat)", () => {
-    const orch = new Orchestrator({ wipLimit: 2 });
+    const orch = new Orchestrator({ sessionLimit: 2 });
     orch.addItem(makeWorkItem("M-4-1"));
     orch.getItem("M-4-1")!.reviewCompleted = true;
     orch.hydrateState("M-4-1", "ci-pending");
@@ -2869,7 +2869,7 @@ describe("buildSnapshot ready status mapping", () => {
   }
 
   it("sets ciStatus pass, reviewDecision APPROVED, and isMergeable true when checkPr returns ready", () => {
-    const orch = new Orchestrator({ wipLimit: 2 });
+    const orch = new Orchestrator({ sessionLimit: 2 });
     orch.addItem(makeWorkItem("R-1-1"));
     orch.getItem("R-1-1")!.reviewCompleted = true;
     orch.hydrateState("R-1-1", "ci-pending");
@@ -2910,7 +2910,7 @@ describe("buildSnapshot merge detection", () => {
   }
 
   it("ignores stale merged PR when prNumber is unset and title differs from item", () => {
-    const orch = new Orchestrator({ wipLimit: 2 });
+    const orch = new Orchestrator({ sessionLimit: 2 });
     const item = makeWorkItem("MRG-1-1");
     item.title = "Fix the daemon polling loop";
     orch.addItem(item);
@@ -3168,7 +3168,7 @@ describe("setupKeyboardShortcuts", () => {
     applyRuntimeSnapshotToTuiState(tuiState, {
       paused: false,
       mergeStrategy: "manual",
-      wipLimit: 3,
+      sessionLimit: 3,
       reviewMode: "off",
       collaborationMode: "local",
     });
@@ -3201,7 +3201,7 @@ describe("setupKeyboardShortcuts", () => {
     applyRuntimeSnapshotToTuiState(tuiState, {
       paused: false,
       mergeStrategy: "auto",
-      wipLimit: 3,
+      sessionLimit: 3,
       reviewMode: "off",
       collaborationMode: "local",
     });
@@ -3232,7 +3232,7 @@ describe("setupKeyboardShortcuts", () => {
     applyRuntimeSnapshotToTuiState(tuiState, {
       paused: false,
       mergeStrategy: "manual",
-      wipLimit: 3,
+      sessionLimit: 3,
       reviewMode: "off",
       collaborationMode: "local",
     });
@@ -3245,7 +3245,7 @@ describe("setupKeyboardShortcuts", () => {
     applyRuntimeSnapshotToTuiState(tuiState, {
       paused: false,
       mergeStrategy: "bypass",
-      wipLimit: 3,
+      sessionLimit: 3,
       reviewMode: "off",
       collaborationMode: "local",
     });
@@ -3258,7 +3258,7 @@ describe("setupKeyboardShortcuts", () => {
     applyRuntimeSnapshotToTuiState(tuiState, {
       paused: false,
       mergeStrategy: "auto",
-      wipLimit: 3,
+      sessionLimit: 3,
       reviewMode: "off",
       collaborationMode: "local",
     });
@@ -3293,7 +3293,7 @@ describe("setupKeyboardShortcuts", () => {
       applyRuntimeSnapshotToTuiState(tuiState, {
         paused: false,
         mergeStrategy: tuiState.pendingStrategy ?? tuiState.mergeStrategy,
-        wipLimit: 3,
+        sessionLimit: 3,
         reviewMode: "off",
         collaborationMode: "local",
       });
@@ -3305,7 +3305,7 @@ describe("setupKeyboardShortcuts", () => {
 
   // ── +/- WIP limit adjustment ──────────────────────────────────────
 
-  it("'+' calls onWipChange with +1", () => {
+  it("'+' calls onSessionLimitChange with +1", () => {
     const ac = new AbortController();
     const stdin = mockStdin();
     const deltas: number[] = [];
@@ -3317,7 +3317,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      onWipChange: (d) => deltas.push(d),
+      onSessionLimitChange: (d) => deltas.push(d),
     };
 
     setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
@@ -3326,7 +3326,7 @@ describe("setupKeyboardShortcuts", () => {
     expect(deltas).toEqual([1]);
   });
 
-  it("'-' calls onWipChange with -1", () => {
+  it("'-' calls onSessionLimitChange with -1", () => {
     const ac = new AbortController();
     const stdin = mockStdin();
     const deltas: number[] = [];
@@ -3338,7 +3338,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      onWipChange: (d) => deltas.push(d),
+      onSessionLimitChange: (d) => deltas.push(d),
     };
 
     setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
@@ -3347,7 +3347,7 @@ describe("setupKeyboardShortcuts", () => {
     expect(deltas).toEqual([-1]);
   });
 
-  it("'=' (unshifted +) calls onWipChange with +1", () => {
+  it("'=' (unshifted +) calls onSessionLimitChange with +1", () => {
     const ac = new AbortController();
     const stdin = mockStdin();
     const deltas: number[] = [];
@@ -3359,7 +3359,7 @@ describe("setupKeyboardShortcuts", () => {
       ctrlCPending: false,
       ctrlCTimestamp: 0,
       showHelp: false,
-      onWipChange: (d) => deltas.push(d),
+      onSessionLimitChange: (d) => deltas.push(d),
     };
 
     setupKeyboardShortcuts(ac, () => {}, stdin, tuiState);
@@ -3368,7 +3368,7 @@ describe("setupKeyboardShortcuts", () => {
     expect(deltas).toEqual([1]);
   });
 
-  it("no-op when onWipChange not provided", () => {
+  it("no-op when onSessionLimitChange not provided", () => {
     const ac = new AbortController();
     const stdin = mockStdin();
     const tuiState: TuiState = {
@@ -3859,7 +3859,7 @@ describe("setupKeyboardShortcuts", () => {
 
 describe("onPollComplete callback", () => {
   it("is called each poll cycle with current items", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -3894,7 +3894,7 @@ describe("onPollComplete callback", () => {
   });
 
   it("loop works fine without onPollComplete (undefined)", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -4012,7 +4012,7 @@ describe("forkDaemon", () => {
 
 describe("orchestrateLoop post-merge conflict detection", () => {
   it("checks sibling PRs for conflicts after a merge and sends rebase to conflicting ones", async () => {
-    const orch = new Orchestrator({ wipLimit: 3, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 3, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("T-1-2"));
@@ -4083,7 +4083,7 @@ describe("orchestrateLoop post-merge conflict detection", () => {
   });
 
   it("does not check sibling PRs when checkPrMergeable is not provided", async () => {
-    const orch = new Orchestrator({ wipLimit: 3, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 3, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("T-1-2"));
@@ -4420,7 +4420,7 @@ describe("cleanOrphanedWorktrees", () => {
 
 describe("executeClean readScreen diagnostics", () => {
   it("does not call readScreen for merged items", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("MRG-1"));
     orch.getItem("MRG-1")!.reviewCompleted = true;
 
@@ -4465,7 +4465,7 @@ describe("executeClean readScreen diagnostics", () => {
 
   it("calls readScreen and warns for stuck items", async () => {
     // maxRetries: 0 so the first worker death goes straight to stuck
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto", maxRetries: 0 });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto", maxRetries: 0 });
     orch.addItem(makeWorkItem("STK-1"));
     orch.getItem("STK-1")!.reviewCompleted = true;
 
@@ -4519,7 +4519,7 @@ describe("executeClean readScreen diagnostics", () => {
     // sleep: () => Promise.resolve() (microtask), the loop monopolizes the
     // event loop and macrotask-based timers (setTimeout/setInterval) -- including
     // the SIGKILL safety guard -- never fire.
-    const orch = new Orchestrator({ wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("SPIN-1"));
     orch.getItem("SPIN-1")!.reviewCompleted = true;
 
@@ -4577,7 +4577,7 @@ describe("executeClean readScreen diagnostics", () => {
 
 describe("orchestrateLoop watch mode", () => {
   it("does not exit when all items are terminal with --watch", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("W-1-1"));
     orch.getItem("W-1-1")!.reviewCompleted = true;
 
@@ -4655,7 +4655,7 @@ describe("orchestrateLoop watch mode", () => {
   });
 
   it("without --watch, daemon exits normally when all items are terminal", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("N-1-1"));
     orch.getItem("N-1-1")!.reviewCompleted = true;
 
@@ -4701,7 +4701,7 @@ describe("orchestrateLoop watch mode", () => {
   });
 
   it("uses custom watch interval from --watch-interval", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("I-1-1"));
     orch.getItem("I-1-1")!.reviewCompleted = true;
 
@@ -4750,7 +4750,7 @@ describe("orchestrateLoop watch mode", () => {
   });
 
   it("SIGINT cleanly exits watch mode", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("S-1-1"));
     orch.getItem("S-1-1")!.reviewCompleted = true;
 
@@ -4812,7 +4812,7 @@ describe("orchestrateLoop watch mode", () => {
   });
 
   it("watch mode respects WIP limits for newly discovered items", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("L-1-1"));
     orch.getItem("L-1-1")!.reviewCompleted = true;
 
@@ -4887,7 +4887,7 @@ describe("orchestrateLoop watch mode", () => {
   });
 
   it("starts the first discovered item when watch begins empty", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     const logs: LogEntry[] = [];
     const launchCalls: string[] = [];
     let discovered = false;
@@ -4959,7 +4959,7 @@ describe("orchestrateLoop watch mode", () => {
   });
 
   it("watch scans still discover new items when main refresh fails", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     const logs: LogEntry[] = [];
     const launchCalls: string[] = [];
     const fetchOriginMock = vi.fn(() => {
@@ -5036,7 +5036,7 @@ describe("orchestrateLoop watch mode", () => {
   });
 
   it("continues to the next ready item when launch-time validation blocks the first", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("E-BLOCK-1"));
     orch.getItem("E-BLOCK-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("E-READY-2"));
@@ -5090,7 +5090,7 @@ describe("orchestrateLoop watch mode", () => {
   });
 
   it("watch mode default interval is 30 seconds", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("D-1-1"));
     orch.getItem("D-1-1")!.reviewCompleted = true;
 
@@ -5203,7 +5203,7 @@ describe("orchestrateLoop crew mode", () => {
   it("reports session_started with configured model from agent frontmatter", async () => {
     const ctx = createTelemetryCtx("implementer.md", "opus");
     try {
-      const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+      const orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("T-MODEL-1"));
       orch.getItem("T-MODEL-1")!.reviewCompleted = true;
 
@@ -5263,7 +5263,7 @@ describe("orchestrateLoop crew mode", () => {
   });
 
   it("filters launch actions through crew broker -- only claimed items launch", async () => {
-    const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1"));
     orch.getItem("T-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("T-2"));
@@ -5316,7 +5316,7 @@ describe("orchestrateLoop crew mode", () => {
   });
 
   it("excludes blocked items from crew sync", async () => {
-    const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1"));
     orch.getItem("T-1")!.reviewCompleted = true;
     orch.hydrateState("T-1", "blocked");
@@ -5342,7 +5342,7 @@ describe("orchestrateLoop crew mode", () => {
   });
 
   it("blocks ALL launches when broker is disconnected", async () => {
-    const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1"));
     orch.getItem("T-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("T-2"));
@@ -5379,7 +5379,7 @@ describe("orchestrateLoop crew mode", () => {
   });
 
   it("calls broker.complete when an item reaches true completion", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1"));
     orch.getItem("T-1")!.prNumber = 1;
     orch.hydrateState("T-1", "merged");
@@ -5404,7 +5404,7 @@ describe("orchestrateLoop crew mode", () => {
   });
 
   it("does not call broker.complete for blocked terminal items", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1"));
     orch.hydrateState("T-1", "blocked");
 
@@ -5429,7 +5429,7 @@ describe("orchestrateLoop crew mode", () => {
   it("reports complete with model and token usage before broker.complete", async () => {
     const ctx = createTelemetryCtx("implementer.md", "claude-sonnet-4-6");
     try {
-      const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+      const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("T-2"));
       orch.getItem("T-2")!.prNumber = 2;
       orch.getItem("T-2")!.startedAt = new Date(Date.now() - 5_000).toISOString();
@@ -5471,7 +5471,7 @@ describe("orchestrateLoop crew mode", () => {
   });
 
   it("withholds broker completion until repair verification finishes", async () => {
-    const orch = new Orchestrator({ fixForward: true, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: true, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-REPAIR-1"));
     orch.getItem("T-REPAIR-1")!.reviewCompleted = true;
 
@@ -5795,7 +5795,7 @@ describe("resolveInteractiveStartupConfig", () => {
     const result: InteractiveResult = {
       itemIds: ["H-1"],
       mergeStrategy: "auto",
-      wipLimit: 6,
+      sessionLimit: 6,
       allSelected: false,
       reviewMode: "all",
       connectionAction: { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
@@ -5814,7 +5814,7 @@ describe("resolveInteractiveStartupConfig", () => {
       backend_mode: "cmux",
       merge_strategy: "auto",
       review_mode: "all",
-      wip_limit: 6,
+      session_limit: 6,
       collaboration_mode: "join",
       ai_tools: ["opencode", "copilot"],
     });
@@ -5831,16 +5831,16 @@ describe("createRuntimeControlHandlers", () => {
   it("persists merge, review, and WIP changes while keeping pause and collaboration runtime-only", () => {
     const savedUpdates: Array<Record<string, unknown>> = [];
     const sentControls: Array<Record<string, unknown>> = [];
-    let currentWipLimit = 3;
+    let currentSessionLimit = 3;
 
     const handlers = createRuntimeControlHandlers({
       sendControl: (command) => {
         sentControls.push(command as Record<string, unknown>);
-        if (command.type === "set-wip-limit") {
-          currentWipLimit = command.limit;
+        if (command.type === "set-session-limit") {
+          currentSessionLimit = command.limit;
         }
       },
-      getWipLimit: () => currentWipLimit,
+      getSessionLimit: () => currentSessionLimit,
       saveUserConfigFn: (updates) => {
         savedUpdates.push(updates as Record<string, unknown>);
       },
@@ -5853,10 +5853,10 @@ describe("createRuntimeControlHandlers", () => {
     handlers.onPauseChange?.(true);
     handlers.onStrategyChange?.("auto");
     handlers.onReviewChange?.("all-prs");
-    handlers.onWipChange?.(1);
+    handlers.onSessionLimitChange?.(1);
     handlers.onShutdown?.();
 
-    expect(currentWipLimit).toBe(4);
+    expect(currentSessionLimit).toBe(4);
     expect(sentControls).toEqual([
       { type: "set-collaboration-mode", mode: "shared", source: "keyboard" },
       { type: "set-collaboration-mode", mode: "joined", code: "ABCD-1234", source: "keyboard" },
@@ -5865,13 +5865,13 @@ describe("createRuntimeControlHandlers", () => {
       { type: "set-paused", paused: true, source: "keyboard" },
       { type: "set-merge-strategy", strategy: "auto", source: "keyboard" },
       { type: "set-review-mode", mode: "all-prs", source: "keyboard" },
-      { type: "set-wip-limit", limit: 4, source: "keyboard" },
+      { type: "set-session-limit", limit: 4, source: "keyboard" },
       { type: "shutdown", source: "keyboard" },
     ]);
     expect(savedUpdates).toEqual([
       { merge_strategy: "auto" },
       { review_mode: "all" },
-      { wip_limit: 4 },
+      { session_limit: 4 },
     ]);
     expect(shareResult).toEqual({ mode: "shared" });
     expect(joinResult).toEqual({ mode: "joined" });
@@ -5883,7 +5883,7 @@ describe("createRuntimeControlHandlers", () => {
     const saveUserConfigFn = vi.fn();
     const handlers = createRuntimeControlHandlers({
       sendControl: () => {},
-      getWipLimit: () => 3,
+      getSessionLimit: () => 3,
       saveUserConfigFn,
     });
 
@@ -6110,7 +6110,7 @@ describe("applyRuntimeCollaborationAction", () => {
 
 describe("interactive watch instrumentation", () => {
   it("captures stage timings and warns on long blocking stages in tui mode", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-TUI-1"));
     orch.getItem("T-TUI-1")!.reviewCompleted = true;
 
@@ -6193,7 +6193,7 @@ describe("interactive watch instrumentation", () => {
   it("captures event-loop lag in tui mode without real blocking subprocesses", async () => {
     vi.useFakeTimers();
     try {
-      const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+      const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("T-LAG-1"));
       orch.getItem("T-LAG-1")!.reviewCompleted = true;
 
@@ -6242,7 +6242,7 @@ describe("interactive watch instrumentation", () => {
   });
 
   it("does not emit interactive timing logs outside tui mode", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-NON-TUI-1"));
     orch.getItem("T-NON-TUI-1")!.reviewCompleted = true;
 
@@ -6265,7 +6265,7 @@ describe("interactive watch instrumentation", () => {
   });
 
   it("records multi-second engine stalls without flagging operator repaint as blocked", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 1, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-SPLIT-TUI-1"));
     orch.getItem("T-SPLIT-TUI-1")!.reviewCompleted = true;
 
@@ -6346,8 +6346,8 @@ describe("watch engine runner", () => {
     ) => Promise<unknown>,
     logs: LogEntry[],
     snapshots: WatchEngineSnapshotEvent[],
-    getWipLimit: () => number,
-    setWipLimit: (limit: number) => void,
+    getSessionLimit: () => number,
+    setSessionLimit: (limit: number) => void,
   ) {
     return createWatchEngineRunner({
       orch,
@@ -6362,22 +6362,22 @@ describe("watch engine runner", () => {
       emitLog: (entry) => logs.push(entry),
       emitSnapshot: (event) => snapshots.push(event),
       buildState: (items, heartbeats) => serializeOrchestratorState(items, 99, "2026-04-01T00:00:00.000Z", {
-        wipLimit: getWipLimit(),
+        sessionLimit: getSessionLimit(),
         heartbeats,
       }),
       initialReviewMode: "ninthwave-prs",
       initialCollaborationMode: "local",
-      getWipLimit,
-      setWipLimit,
+      getSessionLimit,
+      setSessionLimit,
     });
   }
 
   it("starts the shared engine, emits snapshots, and forwards logs", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "manual" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("ENG-1"));
     const logs: LogEntry[] = [];
     const snapshots: WatchEngineSnapshotEvent[] = [];
-    let currentWipLimit = 2;
+    let currentSessionLimit = 2;
 
     const runLoop = vi.fn(async (innerOrch: Orchestrator, _ctx: ExecutionContext, deps: OrchestrateLoopDeps) => {
       deps.log({ ts: "2026-04-01T00:00:00.000Z", level: "info", event: "orchestrate_start" });
@@ -6405,9 +6405,9 @@ describe("watch engine runner", () => {
       runLoop,
       logs,
       snapshots,
-      () => currentWipLimit,
+      () => currentSessionLimit,
       (limit) => {
-        currentWipLimit = limit;
+        currentSessionLimit = limit;
       },
     );
 
@@ -6425,18 +6425,18 @@ describe("watch engine runner", () => {
     expect(snapshots[0]!.runtime).toEqual({
       paused: false,
       mergeStrategy: "manual",
-      wipLimit: 2,
+      sessionLimit: 2,
       reviewMode: "ninthwave-prs",
       collaborationMode: "local",
     });
   });
 
   it("applies control messages in order and reflects them in subsequent snapshots", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "manual" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("ENG-2"));
     const logs: LogEntry[] = [];
     const snapshots: WatchEngineSnapshotEvent[] = [];
-    let currentWipLimit = 2;
+    let currentSessionLimit = 2;
     let continueLoop!: () => void;
     const gate = new Promise<void>((resolve) => {
       continueLoop = resolve;
@@ -6454,9 +6454,9 @@ describe("watch engine runner", () => {
       runLoop,
       logs,
       snapshots,
-      () => currentWipLimit,
+      () => currentSessionLimit,
       (limit) => {
-        currentWipLimit = limit;
+        currentSessionLimit = limit;
       },
     );
 
@@ -6464,7 +6464,7 @@ describe("watch engine runner", () => {
     runner.sendControl({ type: "set-paused", paused: true, source: "test-0" });
     runner.sendControl({ type: "set-review-mode", mode: "off", source: "test-1" });
     runner.sendControl({ type: "set-collaboration-mode", mode: "shared", source: "test-2" });
-    runner.sendControl({ type: "set-wip-limit", limit: 4, source: "test-3" });
+    runner.sendControl({ type: "set-session-limit", limit: 4, source: "test-3" });
     runner.sendControl({ type: "set-merge-strategy", strategy: "auto", source: "test-4" });
     continueLoop();
     await runPromise;
@@ -6473,20 +6473,20 @@ describe("watch engine runner", () => {
       "pause_state_changed",
       "review_mode_changed",
       "collaboration_mode_changed",
-      "wip_limit_changed",
+      "session_limit_changed",
     ]);
     expect(snapshots).toHaveLength(2);
     expect(snapshots[0]!.runtime).toEqual({
       paused: false,
       mergeStrategy: "manual",
-      wipLimit: 2,
+      sessionLimit: 2,
       reviewMode: "ninthwave-prs",
       collaborationMode: "local",
     });
     expect(snapshots[1]!.runtime).toEqual({
       paused: true,
       mergeStrategy: "auto",
-      wipLimit: 4,
+      sessionLimit: 4,
       reviewMode: "off",
       collaborationMode: "shared",
     });
@@ -6495,7 +6495,7 @@ describe("watch engine runner", () => {
   });
 
   it("handles timeout extension and shutdown through protocol messages", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "manual" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "manual" });
     orch.addItem(makeWorkItem("ENG-3"));
     const item = orch.getItem("ENG-3")!;
     item.timeoutDeadline = "2026-04-01T00:10:00.000Z";
@@ -6503,7 +6503,7 @@ describe("watch engine runner", () => {
 
     const logs: LogEntry[] = [];
     const snapshots: WatchEngineSnapshotEvent[] = [];
-    let currentWipLimit = 2;
+    let currentSessionLimit = 2;
 
     const runLoop = async (_innerOrch: Orchestrator, _ctx: ExecutionContext, _deps: OrchestrateLoopDeps, _config: unknown, signal?: AbortSignal) => {
       await new Promise<void>((resolve) => {
@@ -6517,9 +6517,9 @@ describe("watch engine runner", () => {
       runLoop as any,
       logs,
       snapshots,
-      () => currentWipLimit,
+      () => currentSessionLimit,
       (limit) => {
-        currentWipLimit = limit;
+        currentSessionLimit = limit;
       },
     );
 
@@ -6545,7 +6545,7 @@ describe("shared engine wrappers", () => {
       createRuntimeControlHandlers: vi.fn(),
     };
     const createRunner = vi.fn(() => sharedRunner);
-    const orch = new Orchestrator({ wipLimit: 1, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 1, mergeStrategy: "auto" });
     const deps = {
       orch,
       ctx: defaultCtx,
@@ -6562,8 +6562,8 @@ describe("shared engine wrappers", () => {
         serializeOrchestratorState(items, 1, "2026-04-01T00:00:00.000Z", { heartbeats }),
       initialReviewMode: "ninthwave-prs" as const,
       initialCollaborationMode: "local" as const,
-      getWipLimit: () => 1,
-      setWipLimit: () => {},
+      getSessionLimit: () => 1,
+      setSessionLimit: () => {},
     };
 
     const detached = createDetachedDaemonEngineRunner(deps as any, createRunner as any);
@@ -6580,12 +6580,12 @@ describe("shared engine wrappers", () => {
     async function captureWrapperOutput(
       createWrapper: typeof createDetachedDaemonEngineRunner,
     ) {
-      const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "manual" });
+      const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "manual" });
       orch.addItem(makeWorkItem("ENG-PARITY-1"));
 
       const logs: LogEntry[] = [];
       const snapshots: WatchEngineSnapshotEvent[] = [];
-      let currentWipLimit = 2;
+      let currentSessionLimit = 2;
       let continueLoop!: () => void;
       const gate = new Promise<void>((resolve) => {
         continueLoop = resolve;
@@ -6635,9 +6635,9 @@ describe("shared engine wrappers", () => {
           serializeOrchestratorState(items, 2, "2026-04-01T00:00:00.000Z", { heartbeats }),
         initialReviewMode: "ninthwave-prs",
         initialCollaborationMode: "local",
-        getWipLimit: () => currentWipLimit,
-        setWipLimit: (limit) => {
-          currentWipLimit = limit;
+        getSessionLimit: () => currentSessionLimit,
+        setSessionLimit: (limit) => {
+          currentSessionLimit = limit;
         },
       } as any);
 
@@ -6645,7 +6645,7 @@ describe("shared engine wrappers", () => {
       runner.sendControl({ type: "set-paused", paused: true, source: "test-pause" });
       runner.sendControl({ type: "set-review-mode", mode: "all-prs", source: "test-review" });
       runner.sendControl({ type: "set-collaboration-mode", mode: "shared", source: "test-collab" });
-      runner.sendControl({ type: "set-wip-limit", limit: 4, source: "test-wip" });
+      runner.sendControl({ type: "set-session-limit", limit: 4, source: "test-session-limit" });
       runner.sendControl({ type: "set-merge-strategy", strategy: "auto", source: "test-merge" });
       continueLoop();
       await runPromise;
@@ -6657,7 +6657,7 @@ describe("shared engine wrappers", () => {
         snapshotPollIntervals: snapshots.map((event) => event.pollIntervalMs ?? null),
         mergeStrategy: orch.config.mergeStrategy,
         skipReview: orch.config.skipReview,
-        wipLimit: currentWipLimit,
+        sessionLimit: currentSessionLimit,
       };
     }
 
@@ -6670,20 +6670,20 @@ describe("shared engine wrappers", () => {
       "pause_state_changed",
       "review_mode_changed",
       "collaboration_mode_changed",
-      "wip_limit_changed",
+      "session_limit_changed",
     ]);
     expect(detached.snapshotRuntimes).toEqual([
       {
         paused: false,
         mergeStrategy: "manual",
-        wipLimit: 2,
+        sessionLimit: 2,
         reviewMode: "ninthwave-prs",
         collaborationMode: "local",
       },
       {
         paused: true,
         mergeStrategy: "auto",
-        wipLimit: 4,
+        sessionLimit: 4,
         reviewMode: "all-prs",
         collaborationMode: "shared",
       },
@@ -6858,8 +6858,8 @@ describe("interactive watch operator session", () => {
       viewOptions: { showBlockerDetail: true, mergeStrategy: "manual" },
       paused: false,
       pendingPaused: undefined,
-      wipLimit: 2,
-      pendingWipLimit: undefined,
+      sessionLimit: 2,
+      pendingSessionLimit: undefined,
       mergeStrategy: "manual",
       pendingStrategy: undefined,
       pendingStrategyDeadlineMs: undefined,
@@ -6912,7 +6912,7 @@ describe("interactive watch operator session", () => {
         pid: 1,
         startedAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-01T00:00:01.000Z",
-        wipLimit: 2,
+        sessionLimit: 2,
         items: items.map((item, index) => ({
           id: item.id,
           state: item.state ?? "implementing",
@@ -6930,7 +6930,7 @@ describe("interactive watch operator session", () => {
       runtime: {
         paused: false,
         mergeStrategy: "manual",
-        wipLimit: 2,
+        sessionLimit: 2,
         reviewMode: "ninthwave-prs",
         collaborationMode: "local",
         ...runtimeOverrides,
@@ -7669,7 +7669,7 @@ describe("interactive watch operator session", () => {
         runtime: {
           paused: false,
           mergeStrategy: "auto",
-          wipLimit: 4,
+          sessionLimit: 4,
           reviewMode: "all-prs",
           collaborationMode: "shared",
         },
@@ -7682,7 +7682,7 @@ describe("interactive watch operator session", () => {
     expect(result.lastSnapshot.runtime).toEqual({
       paused: false,
       mergeStrategy: "auto",
-      wipLimit: 4,
+      sessionLimit: 4,
       reviewMode: "all-prs",
       collaborationMode: "shared",
     });
@@ -7881,7 +7881,7 @@ describe("runTUI", () => {
         renderCount += 1;
         return {
           items: [makeStatusItem({ id: "H-TRS-3", title: `Read-only item ${renderCount}` })],
-          wipLimit: 2,
+          sessionLimit: 2,
           sessionStartedAt: "2026-04-01T00:00:00.000Z",
         };
       });
@@ -7975,22 +7975,22 @@ describe("waitForEngineRecoveryKey", () => {
 });
 
 describe("parseWatchArgs", () => {
-  it("parses --items --merge-strategy --wip-limit for passthrough", () => {
+  it("parses --items --merge-strategy --session-limit for passthrough", () => {
     const result = parseWatchArgs([
       "--items", "H-FOO-1", "H-FOO-2",
       "--merge-strategy", "auto",
-      "--wip-limit", "3",
+      "--session-limit", "3",
     ]);
     expect(result.itemIds).toEqual(["H-FOO-1", "H-FOO-2"]);
     expect(result.mergeStrategy).toBe("auto");
-    expect(result.wipLimitOverride).toBe(3);
+    expect(result.sessionLimitOverride).toBe(3);
   });
 
   it("skips interactive flow when items are pre-passed via CLI args", () => {
     const result = parseWatchArgs([
       "--items", "H-FOO-1",
       "--merge-strategy", "auto",
-      "--wip-limit", "3",
+      "--session-limit", "3",
     ]);
     // The passthrough assertion: having items means shouldEnterInteractive returns false
     expect(result.itemIds.length).toBeGreaterThan(0);
@@ -8008,9 +8008,9 @@ describe("parseWatchArgs", () => {
   });
 
   it("stops collecting items at next flag", () => {
-    const result = parseWatchArgs(["--items", "A-1", "B-2", "--wip-limit", "5"]);
+    const result = parseWatchArgs(["--items", "A-1", "B-2", "--session-limit", "5"]);
     expect(result.itemIds).toEqual(["A-1", "B-2"]);
-    expect(result.wipLimitOverride).toBe(5);
+    expect(result.sessionLimitOverride).toBe(5);
   });
 
   it("defaults merge strategy to manual when not specified", () => {
@@ -8023,33 +8023,33 @@ describe("parseWatchArgs", () => {
     expect(result.mergeStrategy).toBe("manual");
   });
 
-  it("leaves wipLimitOverride undefined when --wip-limit not passed", () => {
+  it("leaves sessionLimitOverride undefined when --session-limit not passed", () => {
     const result = parseWatchArgs(["--items", "A-1"]);
-    expect(result.wipLimitOverride).toBeUndefined();
+    expect(result.sessionLimitOverride).toBeUndefined();
   });
 
-  it("preserves CLI wip-limit value (not overridden by defaults)", () => {
+  it("preserves CLI session-limit value (not overridden by defaults)", () => {
     const result = parseWatchArgs([
       "--items", "A-1",
-      "--wip-limit", "7",
+      "--session-limit", "7",
     ]);
-    // wipLimitOverride is set to 7, which cmdOrchestrate uses to override the
-    // computed default: `wipLimit = wipLimitOverride ?? computedWipLimit`
-    expect(result.wipLimitOverride).toBe(7);
+    // sessionLimitOverride is set to 7, which cmdOrchestrate uses to override the
+    // computed default: `sessionLimit = sessionLimitOverride ?? computedSessionLimit`
+    expect(result.sessionLimitOverride).toBe(7);
   });
 
   it("parses all flags together", () => {
     const result = parseWatchArgs([
       "--items", "H-1", "H-2",
       "--merge-strategy", "manual",
-      "--wip-limit", "5",
+      "--session-limit", "5",
       "--poll-interval", "60",
       "--skip-preflight",
       "--json",
     ]);
     expect(result.itemIds).toEqual(["H-1", "H-2"]);
     expect(result.mergeStrategy).toBe("manual");
-    expect(result.wipLimitOverride).toBe(5);
+    expect(result.sessionLimitOverride).toBe(5);
     expect(result.pollIntervalOverride).toBe(60_000);
     expect(result.skipPreflight).toBe(true);
     expect(result.jsonFlag).toBe(true);
@@ -8154,13 +8154,13 @@ describe("validateItemIds", () => {
 describe("cmdOrchestrate passthrough path", () => {
   it("full passthrough: parsed args + validation + no interactive flow", () => {
     // Simulate the exact passthrough path used by cmdNoArgs:
-    // nw watch --items H-FOO-1 --merge-strategy auto --wip-limit 3
+    // nw watch --items H-FOO-1 --merge-strategy auto --session-limit 3
 
     // Step 1: Parse args
     const parsed = parseWatchArgs([
       "--items", "H-FOO-1", "H-FOO-2",
       "--merge-strategy", "auto",
-      "--wip-limit", "3",
+      "--session-limit", "3",
     ]);
 
     // Step 2: Verify interactive flow is skipped (the key passthrough behavior)
@@ -8177,23 +8177,23 @@ describe("cmdOrchestrate passthrough path", () => {
     // Step 4: Verify orchestrator would receive correct config
     expect(parsed.itemIds).toEqual(["H-FOO-1", "H-FOO-2"]);
     expect(parsed.mergeStrategy).toBe("auto");
-    expect(parsed.wipLimitOverride).toBe(3);
+    expect(parsed.sessionLimitOverride).toBe(3);
   });
 
-  it("CLI wip-limit overrides computed default (not the other way around)", () => {
-    const parsed = parseWatchArgs(["--items", "A-1", "--wip-limit", "3"]);
-    // In cmdOrchestrate: wipLimit = wipLimitOverride ?? computedWipLimit
-    // When wipLimitOverride is set, it takes precedence over computedWipLimit
-    const computedWipLimit = 5; // simulate any computed default
-    const effectiveWipLimit = parsed.wipLimitOverride ?? computedWipLimit;
-    expect(effectiveWipLimit).toBe(3);
+  it("CLI session-limit overrides computed default (not the other way around)", () => {
+    const parsed = parseWatchArgs(["--items", "A-1", "--session-limit", "3"]);
+    // In cmdOrchestrate: sessionLimit = sessionLimitOverride ?? computedSessionLimit
+    // When sessionLimitOverride is set, it takes precedence over computedSessionLimit
+    const computedSessionLimit = 5; // simulate any computed default
+    const effectiveSessionLimit = parsed.sessionLimitOverride ?? computedSessionLimit;
+    expect(effectiveSessionLimit).toBe(3);
   });
 
   it("unknown item ID would be caught by validation", () => {
     const parsed = parseWatchArgs([
       "--items", "H-FOO-1", "H-UNKNOWN-99",
       "--merge-strategy", "auto",
-      "--wip-limit", "3",
+      "--session-limit", "3",
     ]);
 
     const workItemMap = new Map<string, WorkItem>([
@@ -8699,7 +8699,7 @@ describe("waitForCompletionKey", () => {
 
 describe("post-completion prompt (orchestrateLoop)", () => {
   it("shows prompt when all items are terminal and tuiMode is true (not watch)", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("P-1-1"));
     orch.getItem("P-1-1")!.reviewCompleted = true;
 
@@ -8733,7 +8733,7 @@ describe("post-completion prompt (orchestrateLoop)", () => {
   });
 
   it("does NOT show prompt in watch mode even with tuiMode", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("P-2-1"));
     orch.getItem("P-2-1")!.reviewCompleted = true;
 
@@ -8772,7 +8772,7 @@ describe("post-completion prompt (orchestrateLoop)", () => {
   });
 
   it("withholds completion prompt while a canonical item is still repairing", async () => {
-    const orch = new Orchestrator({ fixForward: true, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: true, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("P-REPAIR-1"));
     orch.getItem("P-REPAIR-1")!.reviewCompleted = true;
 
@@ -8817,7 +8817,7 @@ describe("post-completion prompt (orchestrateLoop)", () => {
   });
 
   it("returns run-more when user picks r", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("P-3-1"));
     orch.getItem("P-3-1")!.reviewCompleted = true;
 
@@ -8843,7 +8843,7 @@ describe("post-completion prompt (orchestrateLoop)", () => {
   });
 
   it("cleans done items when user picks c", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("P-4-1"));
     orch.getItem("P-4-1")!.reviewCompleted = true;
 
@@ -8878,7 +8878,7 @@ describe("post-completion prompt (orchestrateLoop)", () => {
   });
 
   it("all stuck items trigger completion prompt (no done items)", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto", maxRetries: 0 });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto", maxRetries: 0 });
     orch.addItem(makeWorkItem("P-5-1"));
     // Directly set state to stuck to bypass the full lifecycle
     const item = orch.getItem("P-5-1")!;
@@ -8905,7 +8905,7 @@ describe("post-completion prompt (orchestrateLoop)", () => {
   });
 
   it("mix of done and stuck triggers completion prompt", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("P-6-1"));
     orch.addItem(makeWorkItem("P-6-2"));
     // Set one item to done and another to stuck directly
@@ -9149,7 +9149,7 @@ describe("resolveStartupCollaborationAction", () => {
 
 describe("orchestrateLoop claims gating", () => {
   it("suppresses launch actions during claimsGatedMs window", async () => {
-    const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-GATE-1"));
     orch.getItem("T-GATE-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("T-GATE-2"));
@@ -9194,7 +9194,7 @@ describe("orchestrateLoop claims gating", () => {
   });
 
   it("allows launches after claimsGatedMs expires", async () => {
-    const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-UNGATE-1"));
     orch.getItem("T-UNGATE-1")!.reviewCompleted = true;
 
@@ -9232,7 +9232,7 @@ describe("orchestrateLoop claims gating", () => {
   it("collaboration startup gates joined daemons on broker connection", async () => {
     // When a crew broker is provided, claims are gated by broker connectivity,
     // not by the local-only startup path.
-    const orch = new Orchestrator({ wipLimit: 5, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-JOIN-1"));
     orch.getItem("T-JOIN-1")!.reviewCompleted = true;
 

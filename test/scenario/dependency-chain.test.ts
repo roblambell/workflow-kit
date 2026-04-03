@@ -20,7 +20,7 @@ describe("scenario: dependency chain", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -68,7 +68,7 @@ describe("scenario: dependency chain", () => {
 
     // A has no deps, B and C both depend on A (fan-out)
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -114,7 +114,7 @@ describe("scenario: dependency chain", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,

@@ -107,7 +107,7 @@ export interface NoArgsDeps extends OnboardDeps {
   ) => Promise<StartupItemsRefreshResult>;
   isDaemonRunning?: (projectRoot: string) => number | null;
   ensureMux?: (args: string[]) => Promise<void>;
-  runInteractiveFlow?: (todos: WorkItem[], defaultWipLimit: number, deps?: InteractiveDeps) => Promise<InteractiveResult | null>;
+  runInteractiveFlow?: (todos: WorkItem[], defaultSessionLimit: number, deps?: InteractiveDeps) => Promise<InteractiveResult | null>;
   runWatch?: (args: string[], workDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
   runStatusWatch?: (worktreeDir: string, projectRoot: string) => Promise<void>;
   printHelp?: () => void;
@@ -437,7 +437,7 @@ export async function cmdNoArgs(
   const watchArgs = [
     "--merge-strategy", result.mergeStrategy,
     "--backend-mode", result.backendMode ?? defaultSettings.backendMode,
-    "--wip-limit", String(result.wipLimit),
+    "--session-limit", String(result.sessionLimit),
   ];
 
   if (result.itemIds.length > 0) {
@@ -458,7 +458,7 @@ export async function cmdNoArgs(
   if (result.reviewMode === "all") {
     watchArgs.push("--review-external");
   } else if (result.reviewMode === "off") {
-    watchArgs.push("--review-wip-limit", "0");
+    watchArgs.push("--review-session-limit", "0");
   }
   // "mine" → default behavior, no extra flag
 

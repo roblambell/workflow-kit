@@ -154,7 +154,7 @@ describe("scenario: crew coordination", () => {
     const broker = new StubCrewBroker();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -205,7 +205,7 @@ describe("scenario: crew coordination", () => {
     const broker = new StubCrewBroker({ disconnected: true });
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -269,7 +269,7 @@ describe("scenario: crew coordination", () => {
     const broker = new StubCrewBroker();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -327,7 +327,7 @@ describe("scenario: crew coordination", () => {
     const broker = new StubCrewBroker();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -362,7 +362,7 @@ describe("scenario: crew coordination", () => {
     const broker = new StubCrewBroker();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -391,7 +391,7 @@ describe("scenario: crew coordination", () => {
     const broker = new StubCrewBroker({ disconnected: true });
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -487,7 +487,7 @@ describe("scenario: crew coordination", () => {
     );
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -572,7 +572,7 @@ describe("scenario: crew coordination", () => {
     );
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -640,7 +640,7 @@ describe("scenario: crew coordination", () => {
     );
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,

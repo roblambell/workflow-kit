@@ -21,7 +21,7 @@ describe("scenario: full lifecycle", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 3,
@@ -71,7 +71,7 @@ describe("scenario: full lifecycle", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -96,7 +96,7 @@ describe("scenario: full lifecycle", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,

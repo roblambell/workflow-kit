@@ -18,7 +18,7 @@ import {
   type ActionResult,
   type ExecutionContext,
   type OrchestratorDeps,
-  WIP_STATES,
+  ACTIVE_SESSION_STATES,
   getNextTool,
 } from "./orchestrator-types.ts";
 
@@ -417,7 +417,7 @@ export function executeMerge(
   for (const other of orch.getAllItems()) {
     if (other.id === item.id) continue;
     if (!other.workItem.dependencies.includes(item.id)) continue;
-    if (!WIP_STATES.has(other.state)) continue;
+    if (!ACTIVE_SESSION_STATES.has(other.state)) continue;
     if (!other.baseBranch) continue; // not stacked -- handled below
 
     restackedIds.add(other.id);
@@ -466,7 +466,7 @@ export function executeMerge(
   for (const other of orch.getAllItems()) {
     if (other.id === item.id) continue;
     if (!other.workItem.dependencies.includes(item.id)) continue;
-    if (!WIP_STATES.has(other.state)) continue;
+    if (!ACTIVE_SESSION_STATES.has(other.state)) continue;
     if (restackedIds.has(other.id)) continue;
     const otherInboxRoot = inboxProjectRoot(other, ctx, cachedEntries);
     if (otherInboxRoot) {
@@ -481,7 +481,7 @@ export function executeMerge(
   // Skip items in different repos -- their default branch didn't change from this merge.
   for (const other of orch.getAllItems()) {
     if (other.id === item.id) continue;
-    if (!WIP_STATES.has(other.state)) continue;
+    if (!ACTIVE_SESSION_STATES.has(other.state)) continue;
     if (!other.prNumber) continue;
     if (restackedIds.has(other.id)) continue;
 

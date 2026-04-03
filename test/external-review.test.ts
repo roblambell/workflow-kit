@@ -357,7 +357,7 @@ describe("processExternalReviews", () => {
     ];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    // availableWipSlots=1 (1 slot left after internal reviewing item occupies one)
+    // availableSessionSlots=1 (1 slot left after internal reviewing item occupies one)
     // → only 1 slot available for external reviews
     const result = processExternalReviews("/tmp/repo", [], 1, deps);
 
@@ -381,7 +381,7 @@ describe("processExternalReviews", () => {
     ];
     const { deps, launched } = makeExternalReviewDeps(prs);
 
-    // availableWipSlots=2, but 1 external review already reviewing → 1 slot left
+    // availableSessionSlots=2, but 1 external review already reviewing → 1 slot left
     const result = processExternalReviews("/tmp/repo", existing, 2, deps);
 
     // PR 10 already reviewing, PR 11 is new and should launch

@@ -82,7 +82,7 @@ describe("system: watch runtime controls", () => {
       "--backend-mode", "headless",
       "--tool", "codex",
       "--merge-strategy", "manual",
-      "--wip-limit", "1",
+      "--session-limit", "1",
       "--review",
       "--skip-preflight",
       "--poll-interval", "0",
@@ -103,7 +103,7 @@ describe("system: watch runtime controls", () => {
       expect(existsSync(join(harness.worktreeDir, "ninthwave-H-WRC-2"))).toBe(false);
 
       harness.writeToProcess(processHandle, `${JSON.stringify({
-        type: "set-wip-limit",
+        type: "set-session-limit",
         limit: 2,
         source: "system-test",
       })}\n`);
@@ -118,7 +118,7 @@ describe("system: watch runtime controls", () => {
         source: "system-test",
       })}\n`);
 
-      await harness.waitForProcessOutput(processHandle, /"event":"wip_limit_changed"/, {
+      await harness.waitForProcessOutput(processHandle, /"event":"session_limit_changed"/, {
         timeoutMs: 10_000,
       });
       await harness.waitForProcessOutput(processHandle, /"event":"review_mode_changed"/, {
@@ -132,7 +132,7 @@ describe("system: watch runtime controls", () => {
         const secondActive = second && ["launching", "implementing"].includes(second.state);
         return firstActive && secondActive ? state : false;
       }, 15_000);
-      expect(concurrentState.wipLimit).toBe(2);
+      expect(concurrentState.sessionLimit).toBe(2);
       expect(existsSync(join(harness.worktreeDir, "ninthwave-H-WRC-2"))).toBe(true);
 
       const settledState = await harness.waitForOrchestratorState((state) => {

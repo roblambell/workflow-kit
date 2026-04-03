@@ -101,7 +101,7 @@ describe("collectRunMetrics", () => {
     ];
 
     const config: OrchestratorConfig = {
-      wipLimit: 4,
+      sessionLimit: 4,
       mergeStrategy: "auto",
       maxCiRetries: 2,
     };
@@ -139,7 +139,7 @@ describe("collectRunMetrics", () => {
     ];
 
     const config: OrchestratorConfig = {
-      wipLimit: 4,
+      sessionLimit: 4,
       mergeStrategy: "approved",
       maxCiRetries: 3,
     };
@@ -173,7 +173,7 @@ describe("collectRunMetrics", () => {
 
   it("handles zero-item run gracefully", () => {
     const config: OrchestratorConfig = {
-      wipLimit: 4,
+      sessionLimit: 4,
       mergeStrategy: "auto",
       maxCiRetries: 2,
     };
@@ -199,7 +199,7 @@ describe("collectRunMetrics", () => {
 
 describe("orchestrateLoop analytics integration", () => {
   it("emits run_metrics log event on orchestrate_complete", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -246,7 +246,7 @@ describe("orchestrateLoop analytics integration", () => {
   });
 
   it("includes CI retry count in run_metrics for items with failures", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -298,7 +298,7 @@ describe("orchestrateLoop analytics integration", () => {
   });
 
   it("always emits run_metrics (no analyticsDir needed)", async () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -336,7 +336,7 @@ describe("orchestrateLoop analytics integration", () => {
   });
 
   it("emits run_metrics even for zero-item runs", async () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto" });
 
     const logs: LogEntry[] = [];
 
@@ -800,7 +800,7 @@ describe("computeDetectionLatency", () => {
 
 describe("collectRunMetrics with detection latency", () => {
   const config: OrchestratorConfig = {
-    wipLimit: 4,
+    sessionLimit: 4,
     mergeStrategy: "auto",
     maxCiRetries: 2,
   };

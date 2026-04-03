@@ -29,7 +29,7 @@ export interface WatchEngineSnapshotEvent {
   runtime: {
     paused: boolean;
     mergeStrategy: MergeStrategy;
-    wipLimit: number;
+    sessionLimit: number;
     reviewMode: ReviewMode;
     collaborationMode: CollaborationMode;
   };
@@ -52,7 +52,7 @@ export interface RuntimeCollaborationActionResult {
 export type WatchEngineControlCommand =
   | { type: "set-paused"; paused: boolean; source?: string }
   | { type: "set-merge-strategy"; strategy: MergeStrategy; source?: string }
-  | { type: "set-wip-limit"; limit: number; source?: string }
+  | { type: "set-session-limit"; limit: number; source?: string }
   | { type: "set-review-mode"; mode: ReviewMode; source?: string }
   | { type: "set-collaboration-mode"; mode: CollaborationMode; code?: string; source?: string }
   | { type: "runtime-collaboration"; requestId: string; action: RuntimeCollaborationAction; code?: string; source?: string }
@@ -62,7 +62,7 @@ export type WatchEngineControlCommand =
 export interface RuntimeControlHandlers {
   onPauseChange?: (paused: boolean) => void;
   onStrategyChange?: (strategy: MergeStrategy) => void;
-  onWipChange?: (delta: number) => void;
+  onSessionLimitChange?: (delta: number) => void;
   onReviewChange?: (mode: ReviewMode) => void;
   onCollaborationChange?: (mode: CollaborationMode) => void;
   onCollaborationLocal?: () => void | RuntimeCollaborationActionResult | Promise<void | RuntimeCollaborationActionResult>;
@@ -74,7 +74,7 @@ export interface RuntimeControlHandlers {
 
 export interface RuntimeControlHandlerDeps {
   sendControl: (command: WatchEngineControlCommand) => void;
-  getWipLimit: () => number;
+  getSessionLimit: () => number;
   saveUserConfigFn?: typeof saveUserConfig;
   requestCollaborationAction?: (request: RuntimeCollaborationActionRequest) => void | RuntimeCollaborationActionResult | Promise<void | RuntimeCollaborationActionResult>;
 }
@@ -99,13 +99,13 @@ export function createRuntimeControlHandlers(
         }
       }
     },
-    onWipChange: (delta) => {
-      const currentLimit = deps.getWipLimit();
+    onSessionLimitChange: (delta) => {
+      const currentLimit = deps.getSessionLimit();
       const newLimit = Math.max(1, currentLimit + delta);
       if (newLimit === currentLimit) return;
-      deps.sendControl({ type: "set-wip-limit", limit: newLimit, source: "keyboard" });
+      deps.sendControl({ type: "set-session-limit", limit: newLimit, source: "keyboard" });
       try {
-        saveUserConfigFn({ wip_limit: newLimit });
+        saveUserConfigFn({ session_limit: newLimit });
       } catch {
         // Best-effort persistence only.
       }
@@ -179,8 +179,8 @@ export interface WatchEngineRunnerDeps {
   ) => DaemonState;
   initialReviewMode: ReviewMode;
   initialCollaborationMode: CollaborationMode;
-  getWipLimit: () => number;
-  setWipLimit: (limit: number) => void;
+  getSessionLimit: () => number;
+  setSessionLimit: (limit: number) => void;
 }
 
 function snapshotToHeartbeatMap(snapshot: PollSnapshot | undefined): Map<string, WorkerProgress> {
@@ -224,16 +224,16 @@ export function createWatchEngineRunner(
         deps.orch.setMergeStrategy(command.strategy);
         return;
       }
-      case "set-wip-limit": {
-        const currentLimit = deps.getWipLimit();
+      case "set-session-limit": {
+        const currentLimit = deps.getSessionLimit();
         const newLimit = Math.max(1, command.limit);
         if (newLimit === currentLimit) return;
-        deps.orch.setWipLimit(newLimit);
-        deps.setWipLimit(newLimit);
+        deps.orch.setSessionLimit(newLimit);
+        deps.setSessionLimit(newLimit);
         emitLog({
           ts: new Date().toISOString(),
           level: "info",
-          event: "wip_limit_changed",
+          event: "session_limit_changed",
           oldLimit: currentLimit,
           newLimit,
           source: command.source ?? "runtime-control",
@@ -316,7 +316,7 @@ export function createWatchEngineRunner(
                 runtime: {
                   paused,
                   mergeStrategy: deps.orch.config.mergeStrategy,
-                  wipLimit: deps.getWipLimit(),
+                  sessionLimit: deps.getSessionLimit(),
                   reviewMode,
                   collaborationMode,
                 },
@@ -336,7 +336,7 @@ export function createWatchEngineRunner(
     sendControl,
     createRuntimeControlHandlers: (saveUserConfigFn) => createRuntimeControlHandlers({
       sendControl,
-      getWipLimit: deps.getWipLimit,
+      getSessionLimit: deps.getSessionLimit,
       ...(saveUserConfigFn ? { saveUserConfigFn } : {}),
     }),
   };

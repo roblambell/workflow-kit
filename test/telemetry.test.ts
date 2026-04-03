@@ -58,7 +58,7 @@ function stripAnsi(s: string): string {
 
 describe("telemetry: startedAt / endedAt on transitions", () => {
   it("sets startedAt when item transitions to implementing", () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto", maxCiRetries: 2, maxRetries: 1 });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto", maxCiRetries: 2, maxRetries: 1 });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -84,7 +84,7 @@ describe("telemetry: startedAt / endedAt on transitions", () => {
   });
 
   it("sets endedAt when item transitions to done", () => {
-    const orch = new Orchestrator({ fixForward: false, wipLimit: 2, mergeStrategy: "auto", maxCiRetries: 2, maxRetries: 1 });
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto", maxCiRetries: 2, maxRetries: 1 });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -122,7 +122,7 @@ describe("telemetry: startedAt / endedAt on transitions", () => {
 
   it("sets endedAt when item transitions to stuck", () => {
     const orch = new Orchestrator({
-      wipLimit: 2,
+      sessionLimit: 2,
       mergeStrategy: "auto",
       maxCiRetries: 2,
       maxRetries: 0,
@@ -148,7 +148,7 @@ describe("telemetry: startedAt / endedAt on transitions", () => {
   });
 
   it("does not overwrite startedAt on re-entry to implementing", () => {
-    const orch = new Orchestrator({ wipLimit: 2, mergeStrategy: "auto", maxCiRetries: 2, maxRetries: 1 });
+    const orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto", maxCiRetries: 2, maxRetries: 1 });
     orch.addItem(makeWorkItem("T-1-1"));
     orch.getItem("T-1-1")!.reviewCompleted = true;
 
@@ -503,7 +503,7 @@ describe("collectRunMetrics includes telemetry fields", () => {
     ];
 
     const config: OrchestratorConfig = {
-      wipLimit: 4,
+      sessionLimit: 4,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 2,
@@ -550,7 +550,7 @@ describe("collectRunMetrics includes telemetry fields", () => {
     }];
 
     const config: OrchestratorConfig = {
-      wipLimit: 4,
+      sessionLimit: 4,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 2,

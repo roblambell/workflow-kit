@@ -1124,7 +1124,7 @@ export function formatConnectionPanel(status: CrewStatusInfo, termWidth: number 
 /**
  * Format the complete status table from a list of StatusItems.
  * Returns a multi-line string ready for console output.
- * When wipLimit is provided, shows WIP slot usage in the queue header.
+ * When sessionLimit is provided, shows WIP slot usage in the queue header.
  *
  * When items have dependencies, renders a flat list sorted by blocked-by count
  * (ascending) then ID alphanumeric, with inline blocker icons before titles
@@ -1137,7 +1137,7 @@ export function formatConnectionPanel(status: CrewStatusInfo, termWidth: number 
 export function formatStatusTable(
   items: StatusItem[],
   termWidth: number = 80,
-  wipLimit?: number,
+  sessionLimit?: number,
   flat: boolean = false,
   viewOptions?: ViewOptions,
 ): string {
@@ -1225,8 +1225,8 @@ export function formatStatusTable(
         (i) => i.state !== "queued" && i.state !== "done",
       ).length;
       let queueHeader = `Queue (${queuedItems.length} waiting`;
-      if (wipLimit !== undefined) {
-        queueHeader += `, ${activeCount}/${wipLimit} WIP slots active`;
+      if (sessionLimit !== undefined) {
+        queueHeader += `, ${activeCount}/${sessionLimit} active sessions`;
       }
       queueHeader += ")";
 
@@ -1259,8 +1259,8 @@ export function formatStatusTable(
     if (queuedItems.length > 0) {
       const activeCount = activeItems.length;
       let queueHeader = `Queue (${queuedItems.length} waiting`;
-      if (wipLimit !== undefined) {
-        queueHeader += `, ${activeCount}/${wipLimit} WIP slots active`;
+      if (sessionLimit !== undefined) {
+        queueHeader += `, ${activeCount}/${sessionLimit} active sessions`;
       }
       queueHeader += ")";
 
@@ -1821,7 +1821,7 @@ export function formatTitleMetrics(
 export function buildStatusLayout(
   items: StatusItem[],
   termWidth: number = 80,
-  wipLimit?: number,
+  sessionLimit?: number,
   flat: boolean = false,
   viewOptions?: ViewOptions,
   selectedItemId?: string,
@@ -1888,7 +1888,7 @@ export function buildStatusLayout(
         break;
       case "queue-header": {
         let queueHeader = `Queue (${row.queuedCount} waiting`;
-        if (wipLimit !== undefined) queueHeader += `, ${row.activeCount}/${wipLimit} WIP slots active`;
+        if (sessionLimit !== undefined) queueHeader += `, ${row.activeCount}/${sessionLimit} active sessions`;
         queueHeader += ")";
         itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
         break;
@@ -2228,7 +2228,7 @@ export function buildPanelLayout(
   termWidth: number,
   termRows: number,
   opts?: {
-    wipLimit?: number;
+    sessionLimit?: number;
     flat?: boolean;
     viewOptions?: ViewOptions;
     logScrollOffset?: number;
@@ -2245,7 +2245,7 @@ export function buildPanelLayout(
     const statusLayout = buildStatusLayout(
       items,
       termWidth,
-      opts?.wipLimit,
+      opts?.sessionLimit,
       opts?.flat,
       opts?.viewOptions,
       selectedItemId,
@@ -2262,7 +2262,7 @@ export function buildPanelLayout(
     const statusLayout = buildStatusLayout(
       items,
       termWidth,
-      opts?.wipLimit,
+      opts?.sessionLimit,
       opts?.flat,
       opts?.viewOptions,
       selectedItemId,
@@ -2662,7 +2662,7 @@ export function renderHelpOverlay(
     `  Tab         Toggle status/log pages`,
     `  c           Open runtime controls`,
     `  Shift+Tab   Cycle merge strategy`,
-    `  +/-         Adjust WIP limit`,
+    `  +/-         Adjust session limit`,
     `  ?           Toggle this help overlay`,
     `  Enter/i     Item detail panel`,
     `  Escape      Close overlay / pause or resume dashboard`,
@@ -2861,8 +2861,8 @@ export function renderControlsOverlay(
     mergeStrategy: MergeStrategy;
     pendingMergeStrategy?: MergeStrategy;
     bypassEnabled: boolean;
-    wipLimit?: number;
-    pendingWipLimit?: number;
+    sessionLimit?: number;
+    pendingSessionLimit?: number;
     activeRowIndex?: number;
   },
 ): string[] {
@@ -2880,8 +2880,8 @@ export function renderControlsOverlay(
     mergeStrategy,
     pendingMergeStrategy,
     bypassEnabled,
-    wipLimit,
-    pendingWipLimit,
+    sessionLimit,
+    pendingSessionLimit,
     activeRowIndex = 0,
   } = opts;
 
@@ -2985,10 +2985,10 @@ export function renderControlsOverlay(
       continue;
     }
 
-    const displayedWip = pendingWipLimit ?? wipLimit;
-    const wipDisplay = displayedWip !== undefined ? `${displayedWip}` : "auto";
-    const pendingSuffix = pendingWipLimit !== undefined && pendingWipLimit !== wipLimit ? " pending" : "";
-    const value = `${BOLD}[${wipDisplay}${pendingSuffix}]${RESET}`;
+    const displayedSessionLimit = pendingSessionLimit ?? sessionLimit;
+    const sessionDisplay = displayedSessionLimit !== undefined ? `${displayedSessionLimit}` : "auto";
+    const pendingSuffix = pendingSessionLimit !== undefined && pendingSessionLimit !== sessionLimit ? " pending" : "";
+    const value = `${BOLD}[${sessionDisplay}${pendingSuffix}]${RESET}`;
     settingsLines.push(`${rowPrefix} ${titleCell}  ${value}`);
   }
 

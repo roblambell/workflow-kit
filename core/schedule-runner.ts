@@ -70,18 +70,18 @@ export interface ProcessQueueResult {
  * Scheduled tasks consume from the shared memory-aware WIP pool.
  *
  * @param state       Current schedule state
- * @param wipSlots    Number of free WIP slots available for scheduled tasks
+ * @param availableSessionSlots    Number of free WIP slots available for scheduled tasks
  * @returns           Tasks to launch and remaining queue
  */
 export function processScheduleQueue(
   state: ScheduleState,
-  wipSlots: number,
+  availableSessionSlots: number,
 ): ProcessQueueResult {
-  if (state.queued.length === 0 || wipSlots <= 0) {
+  if (state.queued.length === 0 || availableSessionSlots <= 0) {
     return { toLaunch: [], remainingQueue: [...state.queued] };
   }
 
-  const slotsToUse = Math.min(wipSlots, state.queued.length);
+  const slotsToUse = Math.min(availableSessionSlots, state.queued.length);
   const toLaunch = state.queued.slice(0, slotsToUse);
   const remainingQueue = state.queued.slice(slotsToUse);
 

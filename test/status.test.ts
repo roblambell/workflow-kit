@@ -687,7 +687,7 @@ describe("renderStatus", () => {
       pid: 123,
       startedAt: now,
       updatedAt: now,
-      wipLimit: 4,
+      sessionLimit: 4,
       emptyState: "watch-armed",
       items: [],
     } satisfies DaemonState));
@@ -1102,14 +1102,14 @@ describe("formatStatusTable with queued items", () => {
     expect(output).toContain("A-1");
   });
 
-  it("shows WIP slot usage in queue header when wipLimit provided", () => {
+  it("shows active session usage in queue header when sessionLimit provided", () => {
     const items = [
       makeItem("A-1", "implementing", "Active 1"),
       makeItem("A-2", "ci-pending", "Active 2"),
       makeItem("Q-1", "queued", "Queued 1"),
     ];
     const output = stripAnsi(formatStatusTable(items, 80, 5));
-    expect(output).toContain("Queue (1 waiting, 2/5 WIP slots active)");
+    expect(output).toContain("Queue (1 waiting, 2/5 active sessions)");
   });
 
   it("shows queue section with only queued items (no active section)", () => {
@@ -1145,7 +1145,7 @@ describe("formatStatusTable with queued items", () => {
     expect(output).not.toContain("Queue");
   });
 
-  it("counts verifying as active and excludes only done/queued items for WIP slots", () => {
+  it("counts verifying as active and excludes only done/queued items for active sessions", () => {
     const items = [
       makeItem("A-1", "implementing", "Active"),
       makeItem("A-2", "verifying", "Verifying"),
@@ -1153,7 +1153,7 @@ describe("formatStatusTable with queued items", () => {
     ];
     // A-1 and A-2 are both active because verifying is still in-flight.
     const output = stripAnsi(formatStatusTable(items, 80, 3));
-    expect(output).toContain("2/3 WIP slots active");
+    expect(output).toContain("2/3 active sessions");
   });
 });
 
@@ -1773,7 +1773,7 @@ describe("renderStatus with ViewOptions", () => {
       pid: 123,
       startedAt: now,
       updatedAt: now,
-      wipLimit: 4,
+      sessionLimit: 4,
       crewStatus: {
         crewCode: "ABCD-EFGH-IJKL-MNOP",
         daemonCount: 2,

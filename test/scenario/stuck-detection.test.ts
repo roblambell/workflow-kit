@@ -24,7 +24,7 @@ describe("scenario: stuck detection", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxRetries: 1,
@@ -74,7 +74,7 @@ describe("scenario: stuck detection", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxRetries: 1,
@@ -114,7 +114,7 @@ describe("scenario: stuck detection", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxRetries: 1,
@@ -164,7 +164,7 @@ describe("scenario: stuck detection", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxRetries: 0, // no retries -- would go straight to stuck if threshold hit
@@ -215,7 +215,7 @@ describe("scenario: stuck detection", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxRetries: 0,

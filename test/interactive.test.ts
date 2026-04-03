@@ -6,7 +6,7 @@ import {
   parseSelection,
   promptItems,
   promptMergeStrategy,
-  promptWipLimit,
+  promptSessionLimit,
   promptReviewMode,
   promptConnectionMode,
   confirmSummary,
@@ -277,41 +277,41 @@ describe("promptMergeStrategy", () => {
   });
 });
 
-// ── promptWipLimit ───────────────────────────────────────────────────
+// ── promptSessionLimit ───────────────────────────────────────────────────
 
-describe("promptWipLimit", () => {
+describe("promptSessionLimit", () => {
   it("returns entered value within range", async () => {
-    const result = await promptWipLimit(3, makePrompt(["5"]));
+    const result = await promptSessionLimit(3, makePrompt(["5"]));
     expect(result).toBe(5);
   });
 
   it("returns default on empty input", async () => {
-    const result = await promptWipLimit(3, makePrompt([""]));
+    const result = await promptSessionLimit(3, makePrompt([""]));
     expect(result).toBe(3);
   });
 
   it("rejects 0 and re-prompts", async () => {
-    const result = await promptWipLimit(3, makePrompt(["0", "2"]));
+    const result = await promptSessionLimit(3, makePrompt(["0", "2"]));
     expect(result).toBe(2);
   });
 
   it("rejects negative and re-prompts", async () => {
-    const result = await promptWipLimit(3, makePrompt(["-1", "1"]));
+    const result = await promptSessionLimit(3, makePrompt(["-1", "1"]));
     expect(result).toBe(1);
   });
 
   it("rejects > 10 and re-prompts", async () => {
-    const result = await promptWipLimit(3, makePrompt(["11", "10"]));
+    const result = await promptSessionLimit(3, makePrompt(["11", "10"]));
     expect(result).toBe(10);
   });
 
   it("accepts boundary value 1", async () => {
-    const result = await promptWipLimit(3, makePrompt(["1"]));
+    const result = await promptSessionLimit(3, makePrompt(["1"]));
     expect(result).toBe(1);
   });
 
   it("accepts boundary value 10", async () => {
-    const result = await promptWipLimit(3, makePrompt(["10"]));
+    const result = await promptSessionLimit(3, makePrompt(["10"]));
     expect(result).toBe(10);
   });
 });
@@ -323,7 +323,7 @@ describe("confirmSummary", () => {
   const result: InteractiveResult = {
     itemIds: ["A-1"],
     mergeStrategy: "auto",
-    wipLimit: 3,
+    sessionLimit: 3,
     allSelected: false,
     reviewMode: "mine",
     connectionAction: null,
@@ -382,7 +382,7 @@ describe("buildStartupPersistenceUpdates", () => {
     itemIds: ["A-1"],
     backendMode: "auto",
     mergeStrategy: "manual",
-    wipLimit: 3,
+    sessionLimit: 3,
     allSelected: false,
     reviewMode: "mine",
     connectionAction: null,
@@ -393,7 +393,7 @@ describe("buildStartupPersistenceUpdates", () => {
       backend_mode: "auto",
       merge_strategy: "manual",
       review_mode: "mine",
-      wip_limit: 3,
+      session_limit: 3,
       collaboration_mode: "local",
     });
   });
@@ -466,7 +466,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.itemIds).toEqual(["A-1", "B-2"]);
     expect(result!.backendMode).toBe("auto");
     expect(result!.mergeStrategy).toBe("manual");
-    expect(result!.wipLimit).toBe(3);
+    expect(result!.sessionLimit).toBe(3);
     expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
     expect(result!.allSelected).toBe(true);
@@ -495,7 +495,7 @@ describe("runInteractiveFlow", () => {
     const result = await runInteractiveFlow(items, 7, { prompt, useLegacyPrompts: true });
 
     expect(result).not.toBeNull();
-    expect(result!.wipLimit).toBe(7);
+    expect(result!.sessionLimit).toBe(7);
   });
 
   it("always returns manual merge strategy", async () => {
@@ -563,7 +563,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.futureOnly).toBe(true);
     expect(result!.backendMode).toBe("auto");
     expect(result!.mergeStrategy).toBe("manual");
-    expect(result!.wipLimit).toBe(3);
+    expect(result!.sessionLimit).toBe(3);
   });
 
   it("uses persisted startup defaults in the TUI path", async () => {
@@ -586,7 +586,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.mergeStrategy).toBe("auto");
     expect(result!.reviewMode).toBe("mine");
     expect(result!.connectionAction).toEqual({ type: "connect" });
-    expect(result!.wipLimit).toBe(6);
+    expect(result!.sessionLimit).toBe(6);
   });
 
   it("returns the selected backend mode from the TUI startup settings", async () => {

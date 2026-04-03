@@ -190,15 +190,15 @@ nw
 nw H-AUTH-1 H-AUTH-2 H-API-1
 ```
 
-The `--wip-limit` flag controls how many workers run simultaneously (default is auto-computed from available memory):
+The session limit (`--session-limit`) controls how many sessions run simultaneously (default is auto-computed from available memory):
 
 ```bash
-nw --items H-AUTH-1,H-AUTH-2 --wip-limit 3
+nw --items H-AUTH-1,H-AUTH-2 --session-limit 3
 ```
 
 ### What happens when I run `nw`?
 
-After you pick work items (and choose an AI tool if more than one is configured), `nw` shows one startup settings screen before the live status UI. That screen lets you set merge strategy, review mode, collaboration mode, WIP limit, and backend selection in one place.
+After you pick work items (and choose an AI tool if more than one is configured), `nw` shows one startup settings screen before the live status UI. That screen lets you set merge strategy, review mode, collaboration mode, session limit, and backend selection in one place.
 
 There is no separate arming step after that screen. Once you confirm the startup settings, orchestration starts and the live status UI takes over.
 

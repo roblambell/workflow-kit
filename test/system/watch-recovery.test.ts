@@ -65,7 +65,7 @@ function startRecoveryChild(
     "--backend-mode", "headless",
     "--tool", "codex",
     "--merge-strategy", "auto",
-    "--wip-limit", "1",
+    "--session-limit", "1",
     "--no-review",
     "--skip-preflight",
     "--poll-interval", "0",

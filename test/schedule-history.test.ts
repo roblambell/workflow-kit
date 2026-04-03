@@ -283,7 +283,7 @@ describe("structured log events", () => {
 
   function makeMinimalOrch(activeCount = 0): Orchestrator {
     const orch = new Orchestrator([], {
-      wipLimit: 5,
+      sessionLimit: 5,
       maxRetries: 0,
       mergeStrategy: "sequential",
       reviewAutoFix: false,
@@ -475,7 +475,7 @@ describe("structured log events", () => {
     expect(historyEntries[0]!.result).toBe("timeout");
   });
 
-  it("emits schedule-skipped with reason=wip-full-queued when WIP full", () => {
+  it("emits schedule-skipped with reason=session-limit-full-queued when WIP full", () => {
     const task = makeTask();
     const logs: LogEntry[] = [];
 
@@ -490,11 +490,11 @@ describe("structured log events", () => {
       appendHistory: () => {},
     };
 
-    // Pass effectiveWip=0 so no slots available
+    // Pass effectiveSessionLimit=0 so no slots available
     const orch = makeMinimalOrch(0);
     processScheduledTasks("/project", orch, deps, (e) => logs.push(e), 0);
 
-    const skipped = logs.filter((l) => l.event === "schedule-skipped" && l.reason === "wip-full-queued");
+    const skipped = logs.filter((l) => l.event === "schedule-skipped" && l.reason === "session-limit-full-queued");
     expect(skipped.length).toBeGreaterThan(0);
     expect(skipped[0]!.taskId).toBe("test-task");
   });

@@ -36,7 +36,7 @@ flowchart TD
     I -->|Yes| J["Live status view<br/><code>cmdStatusWatch()</code>"]
     I -->|No| K[Display items summary]
     K --> L{Mode prompt}
-    L -->|Orchestrate| M["Item selection + merge strategy + WIP limit + backend<br/>→ <code>runInteractiveFlow()</code> → orchestration"]
+    L -->|Orchestrate| M["Item selection + merge strategy + session limit + backend<br/>→ <code>runInteractiveFlow()</code> → orchestration"]
     L -->|Launch subset| N["Item selection<br/>→ <code>cmdRunItems()</code>"]
     L -->|Quit| O[Exit]
 
@@ -91,7 +91,7 @@ sequenceDiagram
 
     Note over O,S: Step 4: Startup settings
     O->>S: runInteractiveFlow()
-    S->>U: Choose items, merge strategy, WIP limit, and backend
+    S->>U: Choose items, merge strategy, session limit, and backend
     U-->>S: Auto | tmux | cmux | headless
     Note over S: Selection is saved as backend_mode for next startup
     Note over S: NINTHWAVE_MUX can override a single launch

@@ -22,7 +22,7 @@ describe("scenario: CI failure recovery", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 3,
@@ -98,7 +98,7 @@ describe("scenario: CI failure recovery", () => {
 
     const maxCiRetries = 2;
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries,
@@ -165,7 +165,7 @@ describe("scenario: CI failure recovery", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 3,
@@ -224,7 +224,7 @@ describe("scenario: CI failure recovery", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 10, // High limit so we don't hit stuck
@@ -287,7 +287,7 @@ describe("scenario: CI failure recovery", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      wipLimit: 5,
+      sessionLimit: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 3,

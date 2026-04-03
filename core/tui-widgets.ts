@@ -259,7 +259,7 @@ interface StartupSettingsScreenResult {
   mergeStrategy: Extract<MergeStrategy, "auto" | "manual">;
   reviewMode: "all" | "mine" | "off";
   collaborationMode: "local" | "share" | "join";
-  wipLimit: number;
+  sessionLimit: number;
   cancelled: boolean;
 }
 
@@ -271,7 +271,7 @@ export interface SelectionScreenResult {
   futureOnly?: boolean;
   backendMode?: PersistedBackendMode;
   mergeStrategy: MergeStrategy;
-  wipLimit: number;
+  sessionLimit: number;
   reviewMode: "all" | "mine" | "off";
   connectionAction: ConnectionAction | null;
   cancelled: boolean;
@@ -918,7 +918,7 @@ export function runStartupSettingsScreen(
   opts: {
     title?: string;
     summaryLines?: string[];
-    defaultWipLimit: number;
+    defaultSessionLimit: number;
     defaultSettings?: TuiSettingsDefaults;
   },
 ): Promise<StartupSettingsScreenResult> {
@@ -939,7 +939,7 @@ export function runStartupSettingsScreen(
       0,
       COLLABORATION_MODE_OPTIONS.findIndex((option) => option.persistedValue === defaults.collaborationMode),
     );
-    let wipLimit = Math.max(1, Math.min(10, opts.defaultWipLimit));
+    let sessionLimit = Math.max(1, Math.min(10, opts.defaultSessionLimit));
     let backendIndex = Math.max(
       0,
       BACKEND_MODE_OPTIONS.findIndex((option) => option.persistedValue === defaults.backendMode),
@@ -974,8 +974,8 @@ export function runStartupSettingsScreen(
         ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
         : `${DIM}${option.startupLabel}${RESET}`,
     );
-    const wipValues = () => Array.from({ length: 10 }, (_, idx) => idx + 1).map((value) =>
-      value === wipLimit
+    const sessionValues = () => Array.from({ length: 10 }, (_, idx) => idx + 1).map((value) =>
+      value === sessionLimit
         ? `${GREEN}${BOLD}[${value}]${RESET}`
         : `${DIM}${value}${RESET}`,
     );
@@ -1024,7 +1024,7 @@ export function runStartupSettingsScreen(
         renderChoiceRow("Merge", mergeValues(), activeRow === 0),
         renderChoiceRow("Reviews", reviewValues(), activeRow === 1),
         renderChoiceRow("Collaboration", collaborationValues(), activeRow === 2),
-        renderChoiceRow("WIP limit", wipValues(), activeRow === 3),
+        renderChoiceRow("Session limit", sessionValues(), activeRow === 3),
         renderChoiceRow("Backend", backendValues(), activeRow === 4),
       ];
 
@@ -1085,7 +1085,7 @@ export function runStartupSettingsScreen(
           } else if (activeRow === 2) {
             collaborationIndex = (collaborationIndex - 1 + COLLABORATION_MODE_OPTIONS.length) % COLLABORATION_MODE_OPTIONS.length;
           } else if (activeRow === 3) {
-            wipLimit = Math.max(1, wipLimit - 1);
+            sessionLimit = Math.max(1, sessionLimit - 1);
           } else {
             backendIndex = (backendIndex - 1 + BACKEND_MODE_OPTIONS.length) % BACKEND_MODE_OPTIONS.length;
           }
@@ -1099,7 +1099,7 @@ export function runStartupSettingsScreen(
           } else if (activeRow === 2) {
             collaborationIndex = (collaborationIndex + 1) % COLLABORATION_MODE_OPTIONS.length;
           } else if (activeRow === 3) {
-            wipLimit = Math.min(10, wipLimit + 1);
+            sessionLimit = Math.min(10, sessionLimit + 1);
           } else {
             backendIndex = (backendIndex + 1) % BACKEND_MODE_OPTIONS.length;
           }
@@ -1111,7 +1111,7 @@ export function runStartupSettingsScreen(
             mergeStrategy: currentMergeOption().runtimeValue as Extract<MergeStrategy, "auto" | "manual">,
             reviewMode: currentReviewOption().persistedValue,
             collaborationMode: currentCollaborationOption().persistedValue,
-            wipLimit,
+            sessionLimit,
             cancelled: false,
           });
           return;
@@ -1123,7 +1123,7 @@ export function runStartupSettingsScreen(
             mergeStrategy: currentMergeOption().runtimeValue as Extract<MergeStrategy, "auto" | "manual">,
             reviewMode: currentReviewOption().persistedValue,
             collaborationMode: currentCollaborationOption().persistedValue,
-            wipLimit,
+            sessionLimit,
             cancelled: true,
           });
           return;
@@ -1265,7 +1265,7 @@ const FUTURE_TASKS_ID = "__FUTURE__";
 export async function runSelectionScreen(
   io: WidgetIO,
   items: WorkItem[],
-  defaultWipLimit: number,
+  defaultSessionLimit: number,
   opts: {
     defaultReviewMode?: "all" | "mine" | "off";
     defaultSettings?: TuiSettingsDefaults;
@@ -1338,7 +1338,7 @@ export async function runSelectionScreen(
   );
 
   const defaultMergeStrategy: Extract<MergeStrategy, "auto" | "manual"> = resolvedDefaults.mergeStrategy;
-  const defaultWip = Math.max(1, Math.min(10, defaultWipLimit));
+  const initialSessionLimit = Math.max(1, Math.min(10, defaultSessionLimit));
   const defaultReviewMode: "all" | "mine" | "off" = resolvedDefaults.reviewMode;
   const defaultConnectionAction: ConnectionAction | null = null;
 
@@ -1408,7 +1408,7 @@ export async function runSelectionScreen(
   ];
 
   let mergeStrategy: MergeStrategy = defaultMergeStrategy;
-  let wipLimit = defaultWip;
+  let sessionLimit = initialSessionLimit;
   let reviewMode: "all" | "mine" | "off" = defaultReviewMode;
   let connectionAction: ConnectionAction | null = defaultConnectionAction;
   let backendMode: PersistedBackendMode = resolvedDefaults.backendMode;
@@ -1430,7 +1430,7 @@ export async function runSelectionScreen(
     const settingsResult = await runStartupSettingsScreen(io, {
       title: "Ninthwave \u00b7 Start orchestration",
       summaryLines,
-      defaultWipLimit: defaultWip,
+      defaultSessionLimit: initialSessionLimit,
       defaultSettings: resolvedDefaults,
     });
 
@@ -1441,7 +1441,7 @@ export async function runSelectionScreen(
     }
 
     mergeStrategy = settingsResult.mergeStrategy;
-    wipLimit = settingsResult.wipLimit;
+    sessionLimit = settingsResult.sessionLimit;
     reviewMode = settingsResult.reviewMode;
     backendMode = settingsResult.backendMode;
     if (settingsResult.collaborationMode === "share") {
@@ -1474,7 +1474,7 @@ export async function runSelectionScreen(
     futureOnly,
     backendMode,
     mergeStrategy,
-    wipLimit,
+    sessionLimit,
     reviewMode,
     connectionAction,
     cancelled: false,

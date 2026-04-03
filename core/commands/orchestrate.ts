@@ -12,7 +12,7 @@ import { getAvailableMemory } from "../memory.ts";
 import {
   Orchestrator,
   DEFAULT_CONFIG,
-  calculateMemoryWipLimit,
+  calculateMemorySessionLimit,
   statusDisplayForState,
   TERMINAL_STATES,
   type Action,
@@ -458,7 +458,7 @@ export function detectTuiMode(isDaemonChild: boolean, jsonFlag: boolean, isTTY: 
 export interface InteractiveEngineTransportRuntime {
   paused: boolean;
   mergeStrategy: MergeStrategy;
-  wipLimit: number;
+  sessionLimit: number;
   reviewMode: "off" | "ninthwave-prs" | "all-prs";
   collaborationMode: "local" | "shared" | "joined";
 }
@@ -614,7 +614,7 @@ export function buildInteractiveEngineChildArgs(
   resolved: {
     itemIds: string[];
     mergeStrategy: MergeStrategy;
-    wipLimit: number;
+    sessionLimit: number;
     toolOverride?: string;
     skipReview: boolean;
     reviewMode: "off" | "ninthwave-prs" | "all-prs";
@@ -634,8 +634,8 @@ export function buildInteractiveEngineChildArgs(
     ...resolved.itemIds,
     "--merge-strategy",
     resolved.mergeStrategy,
-    "--wip-limit",
-    String(resolved.wipLimit),
+    "--session-limit",
+    String(resolved.sessionLimit),
   ];
 
   if (parsed.pollIntervalOverride !== undefined) {
@@ -644,7 +644,7 @@ export function buildInteractiveEngineChildArgs(
   if (parsed.clickupListId) childArgs.push("--clickup-list", parsed.clickupListId);
   if (parsed.reviewAutoFix) childArgs.push("--review-auto-fix", parsed.reviewAutoFix);
   if (parsed.reviewExternal || resolved.reviewMode === "all-prs") childArgs.push("--review-external");
-  if (parsed.reviewWipLimit !== undefined) childArgs.push("--review-wip-limit", String(parsed.reviewWipLimit));
+  if (parsed.reviewSessionLimit !== undefined) childArgs.push("--review-session-limit", String(parsed.reviewSessionLimit));
   childArgs.push(resolved.skipReview ? "--no-review" : "--review");
   childArgs.push(parsed.fixForward ? "--fix-forward" : "--no-fix-forward");
   if (resolved.watchMode) childArgs.push("--watch");
@@ -1167,7 +1167,7 @@ function resolveActiveTuiOverlay(tuiState: TuiState): ActiveTuiOverlay {
 
 export function renderTuiPanelFrameFromStatusItems(
   statusItems: StatusItem[],
-  wipLimit: number | undefined,
+  sessionLimit: number | undefined,
   tuiState: TuiState,
   write: (s: string) => void = (s) => process.stdout.write(s),
   detailSnapshots?: ReadonlyMap<string, TuiDetailSnapshot>,
@@ -1188,7 +1188,7 @@ export function renderTuiPanelFrameFromStatusItems(
       termWidth,
       termRows,
       {
-        wipLimit,
+        sessionLimit,
         viewOptions: fullScreenViewOptions,
         logScrollOffset: tuiState.logScrollOffset,
         statusScrollOffset: tuiState.scrollOffset,
@@ -1231,8 +1231,8 @@ export function renderTuiPanelFrameFromStatusItems(
         mergeStrategy: tuiState.mergeStrategy,
         pendingMergeStrategy: tuiState.pendingStrategy,
         bypassEnabled: tuiState.bypassEnabled,
-        wipLimit,
-        pendingWipLimit: tuiState.pendingWipLimit,
+        sessionLimit,
+        pendingSessionLimit: tuiState.pendingSessionLimit,
         activeRowIndex: tuiState.controlsRowIndex,
       });
       const content = controlsLines.join("\n");
@@ -1293,7 +1293,7 @@ export function renderTuiPanelFrameFromStatusItems(
  */
 export function renderTuiFrame(
   items: OrchestratorItem[],
-  wipLimit: number | undefined,
+  sessionLimit: number | undefined,
   write: (s: string) => void = (s) => process.stdout.write(s),
   viewOptions?: ViewOptions,
   scrollOffset: number = 0,
@@ -1317,13 +1317,13 @@ export function renderTuiFrame(
     const content = helpLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else if (termRows >= MIN_FULLSCREEN_ROWS) {
-    const layout = buildStatusLayout(statusItems, termWidth, wipLimit, false, fullScreenViewOptions);
+    const layout = buildStatusLayout(statusItems, termWidth, sessionLimit, false, fullScreenViewOptions);
     const clamped = clampScrollOffset(scrollOffset, layout.itemLines.length, Math.max(1, termRows - layout.headerLines.length - layout.footerLines.length));
     const frameLines = renderFullScreenFrame(layout, termRows, termWidth, clamped);
     const content = frameLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else {
-    const content = formatStatusTable(statusItems, termWidth, wipLimit, false, viewOptions);
+    const content = formatStatusTable(statusItems, termWidth, sessionLimit, false, viewOptions);
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   }
 
@@ -1337,7 +1337,7 @@ export function renderTuiFrame(
  */
 export function renderTuiPanelFrame(
   items: OrchestratorItem[],
-  wipLimit: number | undefined,
+  sessionLimit: number | undefined,
   tuiState: TuiState,
   write: (s: string) => void = (s) => process.stdout.write(s),
   remoteItems?: RemoteItemRenderState,
@@ -1354,7 +1354,7 @@ export function renderTuiPanelFrame(
       descriptionBody: item.workItem.rawText,
     }]),
   );
-  renderTuiPanelFrameFromStatusItems(statusItems, wipLimit, tuiState, write, detailSnapshots);
+  renderTuiPanelFrameFromStatusItems(statusItems, sessionLimit, tuiState, write, detailSnapshots);
 }
 
 function daemonStateToDetailSnapshots(state: DaemonState): Map<string, TuiDetailSnapshot> {
@@ -1453,7 +1453,7 @@ export async function runInteractiveWatchOperatorSession(
   const render = () => {
     renderFrame(
       daemonStateToStatusItems(lastSnapshot.daemonState),
-      lastSnapshot.runtime.wipLimit,
+      lastSnapshot.runtime.sessionLimit,
       opts.tuiState,
       write,
       daemonStateToDetailSnapshots(lastSnapshot.daemonState),
@@ -1689,8 +1689,8 @@ export async function runInteractiveWatchOperatorSession(
 
 /** Options for runTUI -- the reusable TUI lifecycle runner. */
 export interface RunTUIOptions {
-  /** Provide status items and optional wip limit for each render cycle. */
-  getItems: () => { items: StatusItem[]; wipLimit?: number; sessionStartedAt?: string; viewOptions?: ViewOptions };
+  /** Provide status items and optional session limit for each render cycle. */
+  getItems: () => { items: StatusItem[]; sessionLimit?: number; sessionStartedAt?: string; viewOptions?: ViewOptions };
   /** Provide log entries for the log panel. If omitted, logBuffer is empty. */
   getLogEntries?: () => PanelLogEntry[];
   /** Poll interval in ms (default: 2000). */
@@ -1724,8 +1724,8 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
   const tuiState: TuiState = {
     scrollOffset: 0,
     viewOptions: { showBlockerDetail: true },
-    wipLimit: 1,
-    pendingWipLimit: undefined,
+    sessionLimit: 1,
+    pendingSessionLimit: undefined,
     mergeStrategy: "auto",
     bypassEnabled: false,
     ctrlCPending: false,
@@ -1766,7 +1766,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     if (data.sessionStartedAt) {
       tuiState.viewOptions.sessionStartedAt = data.sessionStartedAt;
     }
-    tuiState.wipLimit = data.wipLimit ?? tuiState.wipLimit;
+    tuiState.sessionLimit = data.sessionLimit ?? tuiState.sessionLimit;
     tuiState.viewOptions.emptyState = data.viewOptions?.emptyState;
     // Refresh log entries from provider
     if (getLogEntries) {
@@ -1791,7 +1791,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
         termWidth,
         termRows,
         {
-          wipLimit: data.wipLimit,
+          sessionLimit: data.sessionLimit,
           viewOptions: tuiState.viewOptions,
           logScrollOffset: tuiState.logScrollOffset,
           statusScrollOffset: tuiState.scrollOffset,
@@ -1828,8 +1828,8 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
           mergeStrategy: tuiState.mergeStrategy,
           pendingMergeStrategy: tuiState.pendingStrategy,
           bypassEnabled: tuiState.bypassEnabled,
-          wipLimit: data.wipLimit,
-          pendingWipLimit: tuiState.pendingWipLimit,
+          sessionLimit: data.sessionLimit,
+          pendingSessionLimit: tuiState.pendingSessionLimit,
         });
         const content = controlsLines.join("\n");
         write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
@@ -1929,7 +1929,7 @@ interface InteractiveOperatorParentSessionOptions {
   workItemMap: Map<string, WorkItem>;
   itemIds: string[];
   mergeStrategy: MergeStrategy;
-  wipLimit: number;
+  sessionLimit: number;
   toolOverride?: string;
   watchMode: boolean;
   futureOnlyStartup: boolean;
@@ -1990,7 +1990,7 @@ async function runInteractiveOperatorParentSession(
     runtime: InteractiveEngineTransportRuntime,
   ): InteractiveEngineSnapshotRenderState => {
     const orch = new Orchestrator({
-      wipLimit: runtime.wipLimit,
+      sessionLimit: runtime.sessionLimit,
       mergeStrategy: runtime.mergeStrategy,
       bypassEnabled: opts.bypassEnabled,
       fixForward: opts.fixForward,
@@ -2004,7 +2004,7 @@ async function runInteractiveOperatorParentSession(
     }
     return {
       daemonState: serializeOrchestratorState(orch.getAllItems(), process.pid, daemonStartedAt, {
-        wipLimit: runtime.wipLimit,
+        sessionLimit: runtime.sessionLimit,
         ...(opts.futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
       }),
       runtime,
@@ -2014,7 +2014,7 @@ async function runInteractiveOperatorParentSession(
   let operatorLastSnapshot = buildQueuedState(currentItemIds, {
     paused: false,
     mergeStrategy: opts.mergeStrategy,
-    wipLimit: opts.wipLimit,
+    sessionLimit: opts.sessionLimit,
     reviewMode: opts.reviewMode,
     collaborationMode: opts.collaborationMode,
   });
@@ -2042,8 +2042,8 @@ async function runInteractiveOperatorParentSession(
     },
     paused: false,
     pendingPaused: undefined,
-    wipLimit: operatorLastSnapshot.runtime.wipLimit,
-    pendingWipLimit: undefined,
+    sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
+    pendingSessionLimit: undefined,
     mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
     pendingStrategy: undefined,
     pendingStrategyDeadlineMs: undefined,
@@ -2083,7 +2083,7 @@ async function runInteractiveOperatorParentSession(
     sendControl: (command) => {
       sendRuntimeControl(command);
     },
-    getWipLimit: () => tuiState.pendingWipLimit ?? tuiState.wipLimit ?? operatorLastSnapshot.runtime.wipLimit,
+    getSessionLimit: () => tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? operatorLastSnapshot.runtime.sessionLimit,
     requestCollaborationAction: async (request) => {
       const result = await requestCollaborationFromEngine(request);
       if (!result.error && result.code) {
@@ -2107,7 +2107,7 @@ async function runInteractiveOperatorParentSession(
       const childArgs = buildInteractiveEngineChildArgs(opts.parsed, {
         itemIds: currentItemIds,
         mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
-        wipLimit: operatorLastSnapshot.runtime.wipLimit,
+        sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
         toolOverride: currentToolOverride,
         skipReview: operatorLastSnapshot.runtime.reviewMode === "off",
         reviewMode: operatorLastSnapshot.runtime.reviewMode,
@@ -2137,7 +2137,7 @@ async function runInteractiveOperatorParentSession(
 
       if (operatorResult.completionAction === "run-more") {
         const freshItems = opts.loadRunnableWorkItems("run-more");
-        const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.wipLimit, {
+        const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.sessionLimit, {
           showConnectionStep: false,
           skipToolStep: true,
         });
@@ -3173,7 +3173,7 @@ export async function orchestrateLoop(
     level: "info",
     event: "orchestrate_start",
     items: orch.getAllItems().map((i) => i.id),
-    wipLimit: orch.config.wipLimit,
+    sessionLimit: orch.config.sessionLimit,
     mergeStrategy: orch.config.mergeStrategy,
   });
 
@@ -3348,16 +3348,16 @@ export async function orchestrateLoop(
 
     // Memory-aware WIP: adjust effective limit based on available free memory
       const freeMemBytes = (deps.getFreeMem ?? freemem)();
-      const memoryWip = calculateMemoryWipLimit(orch.config.wipLimit, freeMemBytes);
-      orch.setEffectiveWipLimit(memoryWip);
+      const memorySessionLimit = calculateMemorySessionLimit(orch.config.sessionLimit, freeMemBytes);
+      orch.setEffectiveSessionLimit(memorySessionLimit);
 
-      if (memoryWip < orch.config.wipLimit) {
+      if (memorySessionLimit < orch.config.sessionLimit) {
         log({
           ts: new Date().toISOString(),
           level: "info",
-          event: "wip_reduced_memory",
-          configuredWip: orch.config.wipLimit,
-          effectiveWip: memoryWip,
+          event: "session_limit_reduced_memory",
+          configuredSessionLimit: orch.config.sessionLimit,
+          effectiveSessionLimit: memorySessionLimit,
           freeMemMB: Math.round(freeMemBytes / (1024 * 1024)),
         });
       }
@@ -3399,7 +3399,7 @@ export async function orchestrateLoop(
             orch,
             deps.scheduleDeps,
             log,
-            memoryWip,
+            memorySessionLimit,
           );
         } catch (e: unknown) {
           // Non-fatal -- schedule processing failure shouldn't block the orchestrator
@@ -3507,7 +3507,7 @@ export async function orchestrateLoop(
             readyIds: snapshot.readyIds,
             queuedCount,
             readyCount,
-            wipSlots: orch.wipSlots,
+            availableSessionSlots: orch.availableSessionSlots,
             connected: deps.crewBroker.isConnected(),
           });
         }
@@ -3658,7 +3658,7 @@ export async function orchestrateLoop(
         externalReviews = processExternalReviews(
           ctx.projectRoot,
           externalReviews,
-          orch.wipSlots,
+          orch.availableSessionSlots,
           deps.externalReviewDeps,
         );
         // Persist external review state
@@ -3703,7 +3703,7 @@ export async function orchestrateLoop(
  *
  * @param getTotalMemory - Injectable for testing; defaults to os.totalmem()
  */
-export function computeDefaultWipLimit(getTotalMemory: () => number = totalmem): number {
+export function computeDefaultSessionLimit(getTotalMemory: () => number = totalmem): number {
   const totalBytes = getTotalMemory();
   const totalGB = totalBytes / (1024 ** 3);
   return Math.max(2, Math.floor(totalGB / 3));
@@ -3727,9 +3727,9 @@ export async function cmdOrchestrate(
   } = parsed;
   const {
     backendModeOverride,
-    wipLimitOverride, pollIntervalOverride, frictionDir,
+    sessionLimitOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, isInteractiveEngineChild, clickupListId, remoteFlag,
-    reviewAutoFix, reviewExternal: parsedReviewExternal, reviewWipLimit,
+    reviewAutoFix, reviewExternal: parsedReviewExternal, reviewSessionLimit,
     fixForward, skipReview: cliSkipReview, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, crewName,
     bypassEnabled, toolOverride: parsedToolOverride,
@@ -3857,12 +3857,12 @@ export async function cmdOrchestrate(
     die(`Another watch daemon is already running (PID ${existingPid}). Use 'ninthwave stop' first, or kill the stale process.`);
   }
 
-  // Compute memory-aware WIP default, allow --wip-limit to override
-  // Precedence: CLI --wip-limit > persisted user preference > computed default
-  const computedWipLimit = computeDefaultWipLimit();
+  // Compute memory-aware WIP default, allow --session-limit to override
+  // Precedence: CLI --session-limit > persisted user preference > computed default
+  const computedSessionLimit = computeDefaultSessionLimit();
   const persistedUserCfg = loadUserConfig();
-  const wipLimitFromCli = wipLimitOverride !== undefined;
-  let wipLimit = wipLimitOverride ?? persistedUserCfg.wip_limit ?? computedWipLimit;
+  const sessionLimitFromCli = sessionLimitOverride !== undefined;
+  let sessionLimit = sessionLimitOverride ?? persistedUserCfg.session_limit ?? computedSessionLimit;
   let startupBackendMode = backendModeOverride ?? persistedUserCfg.backend_mode ?? "auto";
 
   // Apply the GitHub token before recovery and later polling paths use it.
@@ -3887,7 +3887,7 @@ export async function cmdOrchestrate(
     // Pre-detect tools and config for TUI flow
     const installedTools = detectInstalledAITools();
 
-    const result = await runInteractiveFlow(workItems, wipLimit, {
+    const result = await runInteractiveFlow(workItems, sessionLimit, {
       defaultReviewMode: interactiveStartupConfig.defaults.reviewMode,
       defaultSettings: interactiveStartupConfig.defaults,
       installedTools,
@@ -3901,7 +3901,7 @@ export async function cmdOrchestrate(
     watchMode = watchMode || result.allSelected || result.futureOnly === true;
     futureOnlyStartup = futureOnlyStartup || result.futureOnly === true;
     mergeStrategy = result.mergeStrategy;
-    wipLimit = result.wipLimit;
+    sessionLimit = result.sessionLimit;
     startupBackendMode = result.backendMode ?? startupBackendMode;
     interactiveReviewMode = result.reviewMode;
     interactiveSkipReview = result.reviewMode === "off";
@@ -3928,17 +3928,17 @@ export async function cmdOrchestrate(
   log({
     ts: new Date().toISOString(),
     level: "info",
-    event: "wip_limit_resolved",
-    computedDefault: computedWipLimit,
-    persistedUserWip: persistedUserCfg.wip_limit,
-    effectiveLimit: wipLimit,
-    overridden: wipLimitFromCli,
+    event: "session_limit_resolved",
+    computedDefault: computedSessionLimit,
+    persistedUserSessionLimit: persistedUserCfg.session_limit,
+    effectiveLimit: sessionLimit,
+    overridden: sessionLimitFromCli,
     totalMemoryGB: Math.round(totalmem() / (1024 ** 3)),
   });
 
   if (itemIds.length === 0 && !watchMode && !daemonMode) {
     die(
-      "Usage: nw --items ID1 ID2 ... [--merge-strategy auto|manual] [--wip-limit N] [--poll-interval SECS] [--daemon] [--no-watch] [--watch-interval SECS]",
+      "Usage: nw --items ID1 ID2 ... [--merge-strategy auto|manual] [--session-limit N] [--poll-interval SECS] [--daemon] [--no-watch] [--watch-interval SECS]",
     );
   }
 
@@ -3972,7 +3972,7 @@ export async function cmdOrchestrate(
       workItemMap,
       itemIds,
       mergeStrategy,
-      wipLimit,
+      sessionLimit,
       toolOverride,
       watchMode,
       futureOnlyStartup,
@@ -3990,11 +3990,11 @@ export async function cmdOrchestrate(
   }
 
   // Create orchestrator
-  // skipReview: CLI --no-review, interactive "off" mode, or --review-wip-limit 0 disables AI review gate
-  const skipReview = cliSkipReview || interactiveSkipReview || reviewWipLimit === 0;
+  // skipReview: CLI --no-review, interactive "off" mode, or --review-session-limit 0 disables AI review gate
+  const skipReview = cliSkipReview || interactiveSkipReview || reviewSessionLimit === 0;
   const testOrchestratorConfigOverrides = loadTestOrchestratorConfigOverrides();
   let orch = new Orchestrator({
-    wipLimit,
+    sessionLimit,
     mergeStrategy,
     bypassEnabled,
     fixForward,
@@ -4376,8 +4376,8 @@ export async function cmdOrchestrate(
 
   // Resolve config-file flags
   const projectConfig = loadConfig(projectRoot);
-  // --review-wip-limit 0 explicitly disables reviews, overriding config
-  const reviewExternalEnabled = reviewWipLimit === 0
+  // --review-session-limit 0 explicitly disables reviews, overriding config
+  const reviewExternalEnabled = reviewSessionLimit === 0
     ? false
     : interactiveReviewMode === "all"
       ? true
@@ -4401,7 +4401,7 @@ export async function cmdOrchestrate(
   // with the current run -- even before the first poll cycle completes.
   const initialCrewStatus = crewBroker?.getCrewStatus();
   const initialState = serializeOrchestratorState(orch.getAllItems(), process.pid, daemonStartedAt, {
-    wipLimit,
+    sessionLimit,
     operatorId,
     remoteItemSnapshots: crewStatusToRemoteItemSnapshots(initialCrewStatus),
     crewStatus: crewStatusToDaemonCrewStatus(initialCrewStatus, crewCode, crewBroker?.isConnected() ?? false),
@@ -4423,7 +4423,7 @@ export async function cmdOrchestrate(
     runtime: {
       paused: false,
       mergeStrategy: orch.config.mergeStrategy,
-      wipLimit,
+      sessionLimit,
       reviewMode: initialReviewMode,
       collaborationMode: initialCollaborationMode,
     },
@@ -4490,7 +4490,7 @@ export async function cmdOrchestrate(
     sendControl: (command) => {
       sendRuntimeControl(command);
     },
-    getWipLimit: () => tuiState.pendingWipLimit ?? wipLimit,
+    getSessionLimit: () => tuiState.pendingSessionLimit ?? sessionLimit,
     requestCollaborationAction: (request) => requestRuntimeCollaborationAction(request),
   });
   const tuiState: TuiState = {
@@ -4510,8 +4510,8 @@ export async function cmdOrchestrate(
     },
     paused: false,
     pendingPaused: undefined,
-    wipLimit,
-    pendingWipLimit: undefined,
+    sessionLimit,
+    pendingSessionLimit: undefined,
     mergeStrategy: orch.config.mergeStrategy,
     pendingStrategy: undefined,
     pendingStrategyTimer: undefined,
@@ -4549,7 +4549,7 @@ export async function cmdOrchestrate(
     onUpdate: () => {
       if (tuiMode) {
         try {
-          renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
+          renderTuiPanelFrame(lastTuiItems, sessionLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
         } catch {
           // Non-fatal
         }
@@ -4564,7 +4564,7 @@ export async function cmdOrchestrate(
     void bootstrapTuiUpdateNotice(tuiState.viewOptions, {
       onUpdate: () => {
         try {
-          renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
+          renderTuiPanelFrame(lastTuiItems, sessionLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
         } catch {
           // Non-fatal.
         }
@@ -4629,7 +4629,7 @@ export async function cmdOrchestrate(
       }
       const renderStartMs = interactiveTiming ? Date.now() : 0;
       try {
-        renderTuiPanelFrame(lastTuiItems, wipLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
+        renderTuiPanelFrame(lastTuiItems, sessionLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
       } catch {
         // Non-fatal -- TUI render failure shouldn't block the orchestrator
       }
@@ -4737,7 +4737,7 @@ export async function cmdOrchestrate(
         const write = (s: string) => process.stdout.write(s);
         write("\x1B[H"); // cursor home
         // Re-render the current TUI frame first (to show final state)
-        renderTuiPanelFrame(allItems, wipLimit, tuiState, write, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
+        renderTuiPanelFrame(allItems, sessionLimit, tuiState, write, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
         // Overlay the banner at the bottom
         const termRows = getTerminalHeight();
         const startRow = Math.max(1, termRows - bannerLines.length);
@@ -4802,7 +4802,7 @@ export async function cmdOrchestrate(
     const crewStatus = crewBroker?.getCrewStatus();
     return serializeOrchestratorState(items, process.pid, daemonStartedAt, {
       statusPaneRef: null,
-      wipLimit,
+      sessionLimit,
       operatorId,
       remoteItemSnapshots: crewStatusToRemoteItemSnapshots(crewStatus),
       heartbeats,
@@ -4826,9 +4826,9 @@ export async function cmdOrchestrate(
     buildState: buildEngineState,
     initialReviewMode,
     initialCollaborationMode,
-    getWipLimit: () => wipLimit,
-    setWipLimit: (limit) => {
-      wipLimit = limit;
+    getSessionLimit: () => sessionLimit,
+    setSessionLimit: (limit) => {
+      sessionLimit = limit;
     },
   });
   emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.startingEngine);
@@ -4974,7 +4974,7 @@ export async function cmdOrchestrate(
         const childArgs = buildInteractiveEngineChildArgs(parsed, {
           itemIds: orch.getAllItems().map((item) => item.id),
           mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
-          wipLimit: operatorLastSnapshot.runtime.wipLimit,
+          sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
           toolOverride,
           skipReview: operatorLastSnapshot.runtime.reviewMode === "off",
           reviewMode: operatorLastSnapshot.runtime.reviewMode,
@@ -5008,7 +5008,7 @@ export async function cmdOrchestrate(
         if (operatorResult.completionAction === "run-more") {
           cleanupKeyboard();
           const freshItems = loadDiscoveryWorkItems("run-more");
-          const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.wipLimit, {
+          const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.sessionLimit, {
             showConnectionStep: false,
             skipToolStep: true,
           });
@@ -5035,7 +5035,7 @@ export async function cmdOrchestrate(
             break;
           }
           const nextOrch = new Orchestrator({
-            wipLimit: operatorLastSnapshot.runtime.wipLimit,
+            sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
             mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
             bypassEnabled,
             fixForward,
@@ -5044,7 +5044,7 @@ export async function cmdOrchestrate(
           });
           for (const item of nextItems) nextOrch.addItem(item);
           const nextState = serializeOrchestratorState(nextOrch.getAllItems(), process.pid, daemonStartedAt, {
-            wipLimit: operatorLastSnapshot.runtime.wipLimit,
+            sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
             operatorId,
             ...(futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
           });
@@ -5094,7 +5094,7 @@ export async function cmdOrchestrate(
         // Widgets render in the same alt-screen buffer -- no screen switch needed
         // showConnectionStep: false because session is already established
         const freshItems = loadDiscoveryWorkItems("run-more");
-        const interactiveResult = await runInteractiveFlow(freshItems, wipLimit, {
+        const interactiveResult = await runInteractiveFlow(freshItems, sessionLimit, {
           showConnectionStep: false,
           skipToolStep: true,
         });

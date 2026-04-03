@@ -116,7 +116,7 @@ export function isTmuxLayoutMode(value: unknown): value is TmuxLayoutMode {
 
 export interface UserConfig {
   ai_tools?: string[];
-  wip_limit?: number;
+  session_limit?: number;
   backend_mode?: PersistedBackendMode;
   tmux_layout?: TmuxLayoutMode;
   merge_strategy?: PersistedMergeStrategy;
@@ -148,8 +148,8 @@ export function loadUserConfig(homeOverride?: string): UserConfig {
     if (Array.isArray(parsed.ai_tools) && parsed.ai_tools.every((t: unknown) => typeof t === "string") && parsed.ai_tools.length > 0) {
       result.ai_tools = parsed.ai_tools as string[];
     }
-    if (typeof parsed.wip_limit === "number" && Number.isFinite(parsed.wip_limit) && parsed.wip_limit >= 1) {
-      result.wip_limit = Math.floor(parsed.wip_limit);
+    if (typeof parsed.session_limit === "number" && Number.isFinite(parsed.session_limit) && parsed.session_limit >= 1) {
+      result.session_limit = Math.floor(parsed.session_limit);
     }
     if (isPersistedBackendMode(parsed.backend_mode)) {
       result.backend_mode = parsed.backend_mode;
@@ -227,7 +227,7 @@ export function saveUserConfig(
       }
       continue;
     }
-    if (key === "wip_limit") {
+    if (key === "session_limit") {
       if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
         merged[key] = Math.floor(value);
       }

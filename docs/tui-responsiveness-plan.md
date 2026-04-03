@@ -152,7 +152,7 @@ operator -> engine
   set-merge-strategy
   set-review-mode
   set-collaboration-mode
-  set-wip-limit
+  set-session-limit
   extend-timeout
   shutdown
 

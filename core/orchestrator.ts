@@ -29,7 +29,7 @@ import {
   NOT_ALIVE_THRESHOLD,
   LAUNCHING_TIMEOUT_MS,
   TERMINAL_STATES,
-  WIP_STATES,
+  ACTIVE_SESSION_STATES,
   STACKABLE_STATES,
   getNextTool,
 } from "./orchestrator-types.ts";
@@ -62,8 +62,8 @@ import {
 export class Orchestrator {
   readonly config: OrchestratorConfig;
   private items: Map<string, OrchestratorItem> = new Map();
-  /** Memory-adjusted WIP limit. When set, takes precedence over config.wipLimit for slot calculation. */
-  private _effectiveWipLimit?: number;
+  /** Memory-adjusted WIP limit. When set, takes precedence over config.sessionLimit for slot calculation. */
+  private _effectiveSessionLimit?: number;
   /** One-shot flag: re-run evaluateMerge for review-pending items on the next poll. */
   private forceReviewPendingReevaluation = false;
 
@@ -73,28 +73,28 @@ export class Orchestrator {
 
   /**
    * Set the effective WIP limit after memory adjustment.
-   * Call this each poll cycle with the result of calculateMemoryWipLimit().
+   * Call this each poll cycle with the result of calculateMemorySessionLimit().
    */
-  setEffectiveWipLimit(limit: number): void {
-    this._effectiveWipLimit = limit;
+  setEffectiveSessionLimit(limit: number): void {
+    this._effectiveSessionLimit = limit;
   }
 
   /** Get the effective WIP limit (memory-adjusted when set, otherwise configured). */
-  get effectiveWipLimit(): number {
-    return this._effectiveWipLimit ?? this.config.wipLimit;
+  get effectiveSessionLimit(): number {
+    return this._effectiveSessionLimit ?? this.config.sessionLimit;
   }
 
   /**
    * Change the configured WIP limit at runtime.
-   * Updates config.wipLimit so that slot calculations (including memory-adjusted
+   * Updates config.sessionLimit so that slot calculations (including memory-adjusted
    * effective limit) use the new value immediately. Minimum 1.
    */
-  setWipLimit(limit: number): void {
+  setSessionLimit(limit: number): void {
     const clamped = Math.max(1, Math.floor(limit));
-    (this.config as { wipLimit: number }).wipLimit = clamped;
+    (this.config as { sessionLimit: number }).sessionLimit = clamped;
     // Clear memory-adjusted override so the new configured limit takes effect
     // immediately. The next poll cycle will re-evaluate memory pressure.
-    this._effectiveWipLimit = undefined;
+    this._effectiveSessionLimit = undefined;
   }
 
   /**
@@ -171,14 +171,14 @@ export class Orchestrator {
   }
 
   /** Count of items in WIP states (counts toward limit). */
-  get wipCount(): number {
-    return this.getAllItems().filter((item) => WIP_STATES.has(item.state))
+  get activeSessionCount(): number {
+    return this.getAllItems().filter((item) => ACTIVE_SESSION_STATES.has(item.state))
       .length;
   }
 
   /** How many more items can be launched without exceeding the effective WIP limit. */
-  get wipSlots(): number {
-    return Math.max(0, this.effectiveWipLimit - this.wipCount);
+  get availableSessionSlots(): number {
+    return Math.max(0, this.effectiveSessionLimit - this.activeSessionCount);
   }
 
   /**
@@ -1314,7 +1314,7 @@ export class Orchestrator {
           item.failureReason = `review-stuck: exceeded max review rounds (${this.config.maxReviewRounds})`;
           return actions;
         }
-        // reviewing is in WIP_STATES, so ci-passed→reviewing is an in-place transition
+        // reviewing is in ACTIVE_SESSION_STATES, so ci-passed→reviewing is an in-place transition
         // (same WIP slot, different state). Reviews for in-pipeline items are always
         // prioritized: transitionItem runs before launchReadyItems, so the review
         // occupies its WIP slot first, leaving fewer slots for new launches.
@@ -1580,7 +1580,7 @@ export class Orchestrator {
   private launchReadyItems(): Action[] {
     const actions: Action[] = [];
     const readyItems = this.getItemsByState("ready");
-    const slotsAvailable = this.wipSlots;
+    const slotsAvailable = this.availableSessionSlots;
 
     for (let i = 0; i < Math.min(readyItems.length, slotsAvailable); i++) {
       const item = readyItems[i]!;

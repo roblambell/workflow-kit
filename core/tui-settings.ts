@@ -210,8 +210,8 @@ export const TUI_SETTINGS_ROWS = [
     options: MERGE_STRATEGY_OPTIONS,
   },
   {
-    id: "wip_limit",
-    title: "WIP Limit",
+    id: "session_limit",
+    title: "Session Limit",
     kind: "number",
     min: 1,
   },

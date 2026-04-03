@@ -1103,13 +1103,13 @@ describe("formatStatusTable", () => {
     expect(table).toContain("C-1-2");
   });
 
-  it("includes WIP slot count in queue header when wipLimit provided", () => {
+  it("includes active session count in queue header when sessionLimit provided", () => {
     const items = [
       makeStatusItem({ state: "implementing" }),
       makeStatusItem({ id: "C-1-2", state: "queued" }),
     ];
     const table = stripAnsi(formatStatusTable(items, 80, 4));
-    expect(table).toContain("1/4 WIP slots active");
+    expect(table).toContain("1/4 active sessions");
   });
 
   it("renders unified footer progress line", () => {
@@ -1286,7 +1286,7 @@ describe("formatStatusTable", () => {
     const table = stripAnsi(formatStatusTable(items, 100, 4));
     const verifyingIndex = table.indexOf("A-1");
     const doneIndex = table.indexOf("A-3");
-    const queueIndex = table.indexOf("Queue (1 waiting, 1/4 WIP slots active)");
+    const queueIndex = table.indexOf("Queue (1 waiting, 1/4 active sessions)");
     expect(verifyingIndex).toBeGreaterThan(-1);
     expect(doneIndex).toBeGreaterThan(-1);
     expect(queueIndex).toBeGreaterThan(-1);
@@ -2181,7 +2181,7 @@ describe("renderTuiFrame", () => {
     expect(full).toContain("No active items");
   });
 
-  it("passes wipLimit to the table formatter", () => {
+  it("passes sessionLimit to the table formatter", () => {
     const written: string[] = [];
     const items = [
       makeOrchestratorItem("C-1-1", "implementing"),
@@ -2189,7 +2189,7 @@ describe("renderTuiFrame", () => {
     ];
     renderTuiFrame(items, 5, (s) => written.push(s));
     const full = stripAnsi(written.join(""));
-    expect(full).toContain("1/5 WIP slots active");
+    expect(full).toContain("1/5 active sessions");
   });
 
   it("does not crash when a large number of items is rendered (terminal resize simulation)", () => {
@@ -4496,7 +4496,7 @@ describe("renderControlsOverlay", () => {
     reviewMode: "off" as ReviewMode,
     mergeStrategy: "manual" as const,
     bypassEnabled: false,
-    wipLimit: 3,
+    sessionLimit: 3,
   };
 
   it("returns expected number of lines matching termRows", () => {
@@ -4613,10 +4613,10 @@ describe("renderControlsOverlay", () => {
     expect(text).toContain("Bypass");
   });
 
-  it("shows WIP limit section", () => {
+  it("shows Session limit section", () => {
     const lines = renderControlsOverlay(100, 40, baseOpts);
     const text = stripAnsi(lines.join("\n"));
-    expect(text).toContain("WIP Limit");
+    expect(text).toContain("Session Limit");
     expect(text).toContain("3");
     expect(text).toContain("←/→ change value");
   });
@@ -4627,7 +4627,7 @@ describe("renderControlsOverlay", () => {
       pendingCollaborationMode: "shared",
       pendingReviewMode: "all-prs",
       pendingMergeStrategy: "auto",
-      pendingWipLimit: 4,
+      pendingSessionLimit: 4,
     });
     const text = stripAnsi(lines.join("\n"));
     expect(text).toContain("[Share pending]");
@@ -4680,7 +4680,7 @@ describe("renderControlsOverlay", () => {
     expect(text).toContain("Collaboration");
     expect(text).toContain("Reviews");
     expect(text).toContain("Merge");
-    expect(text).toContain("WIP Limit");
+    expect(text).toContain("Session Limit");
     expect(text).toContain(sessionCode);
   });
 
@@ -4979,7 +4979,7 @@ describe("buildPanelLayout queueStartIndex passthrough", () => {
     ];
     const logs: LogEntry[] = [];
     const layout = buildPanelLayout("status-only", items, logs, 80, 50, {
-      wipLimit: 3,
+      sessionLimit: 3,
     });
     expect(layout.statusPanel).not.toBeNull();
     expect(layout.statusPanel!.queueStartIndex).toBeDefined();
