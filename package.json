@@ -6,6 +6,8 @@
   "scripts": {
     "test": "bun run test:ci",
     "test:ci": "bun test --smol --bail test/",
+    "test:unit": "bun test --smol --bail test/*.test.ts test/contract/ test/scenario/ test/smoke/",
+    "test:system": "bun test --smol --bail test/system/",
     "test:pre-commit": "bun test --smol --bail test/lint-tests.test.ts",
     "test:watch": "bun test --smol --watch test/",
     "smoke:compiled-orchestrate-startup": "bun test --smol --bail test/smoke/compiled-orchestrate-startup.test.ts",

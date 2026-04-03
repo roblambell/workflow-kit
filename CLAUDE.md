@@ -8,7 +8,9 @@ Parallel AI coding orchestration. TypeScript + Bun CLI.
 
 ```bash
 task setup            # install git hooks (run once after cloning)
-bun run test          # run the full CI-equivalent suite
+bun run test          # run the full CI-equivalent suite (unit + system)
+bun run test:unit     # run unit/contract/scenario/smoke tests only (fast, excludes test/system/)
+bun run test:system   # run system integration tests only (test/system/, slow)
 bun run test:pre-commit  # run the hook-equivalent safety gate
 bun run core/cli.ts   # run CLI directly
 ```
@@ -39,7 +41,8 @@ No build step -- Bun executes TypeScript directly. Changes take effect immediate
 
 ## Test Safety
 
-- Full-suite runs have three layers of timeout protection: 5s per-test (bun default), 180s global process timeout (`test/setup-global.ts` via preload), and 120s shell-level timeout (CI).
+- Full-suite runs have three layers of timeout protection: 5s per-test (bun default), 300s global process timeout (`test/setup-global.ts` via preload), and 120s shell-level timeout (CI).
+- Use `bun run test:unit` for fast feedback during development. Use `bun run test` for full verification before PRs.
 - `--smol` flag is used on all test runs for tighter GC. `--bail` fails fast on first failure.
 - Pre-commit runs `bun run test:pre-commit`, which executes `test/lint-tests.test.ts` with a 30s shell-level timeout.
 - `test/lint-tests.test.ts` scans all test files under `test/` for dangerous patterns. It runs as part of the regular test suite and is the pre-commit safety gate.
@@ -52,7 +55,7 @@ This repo uses ninthwave to develop ninthwave. When working here, log friction a
 
 ### Basics
 
-1. **Log friction.** Any issue, slowdown, or surprising behavior you encounter while using ninthwave tools (the CLI, /decompose, workers, orchestrator) is valuable signal. Append observations to the friction log at `~/.claude/projects/-Users-roblambell-code-ninthwave/memory/project_dogfood_friction.md`.
+1. **Log friction.** Any issue, slowdown, or surprising behavior you encounter while using ninthwave tools (the CLI, /decompose, workers, orchestrator) is valuable signal. Log friction entries to `.ninthwave/friction/` using the timestamped markdown format workers use.
 
 2. **WIP limit ≤ 5.** Each worker session (Claude Code + language server + worktree) consumes ~2-3GB RAM. On a 16GB Mac, WIP limit of 5 is the default; reduce if memory pressure is observed.
 

@@ -359,6 +359,8 @@ EOF
 
 Choose the right PR title prefix based on the change type (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`, `chore:`).
 
+If `gh pr create` fails with a rate limit or transient API error, retry up to 3 times with 30-second waits between attempts.
+
 After `gh pr create` returns the PR URL, extract the PR number and report it:
 
 ```bash
