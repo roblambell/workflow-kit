@@ -13,6 +13,7 @@ See also: [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and coding co
 3. [Key Abstractions](#key-abstractions)
 4. [Extension Points](#extension-points)
 5. [Worker Lifecycle](#worker-lifecycle)
+6. [Repo Reference Identity](#repo-reference-identity)
 
 ---
 
@@ -244,3 +245,14 @@ Timeout thresholds (configurable via `OrchestratorConfig`): 30 minutes for a wor
 ## Terminology
 
 `work item` is the canonical term across the current product, code, and docs.
+
+---
+
+## Repo Reference Identity
+
+`core/repo-ref.ts` defines the shared repo identity rules used by client and broker code.
+
+- `normalizeRepoUrl()` strips transport details (SSH vs HTTPS), auth, trailing slashes, and `.git`, then normalizes equivalent references to one host-and-path form such as `github.com/org/repo`.
+- `hashRepoUrl()` and `hashNormalizedRepoUrl()` derive the stable SHA-256 repo identity persisted as `repoHash`/`repoRef`.
+- `resolveRepoRef()` accepts any supported identity input (`repoUrl`, `repoHash`, or stored `repoRef`), validates consistency when more than one is present, and returns one canonical comparison value.
+- `compareRepoRefs()` gives later join and runtime checks a shared primitive for rejecting cross-repo mismatches without duplicating normalization logic.
