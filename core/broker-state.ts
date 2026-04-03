@@ -21,6 +21,13 @@ export interface CrewEvent {
   metadata: { affinity: "author" | "pool" } | Record<string, unknown>;
 }
 
+export interface RemoteItemSnapshot {
+  id: string;
+  state: string;
+  ownerDaemonId: string | null;
+  ownerName: string | null;
+}
+
 export interface CrewStatusUpdate {
   type: "crew_update";
   crewCode: string;
@@ -30,6 +37,7 @@ export interface CrewStatusUpdate {
   completedCount: number;
   daemonNames: string[];
   claimedItems: Array<{ id: string; daemonId: string }>;
+  remoteItems: RemoteItemSnapshot[];
 }
 
 export interface BrokerStateOptions {
@@ -369,12 +377,30 @@ export function checkCrewHeartbeats(
   return { events, changed };
 }
 
+function resolveItemState(workItem: WorkEntry, crew: CrewState): string {
+  if (workItem.completedBy !== null) return "done";
+  if (workItem.claimedBy !== null) return "in-progress";
+  if (isWorkItemAvailable(crew, workItem)) return "queued";
+  return "blocked";
+}
+
 export function buildCrewStatusUpdate(crew: CrewState): CrewStatusUpdate {
   const workItems = Array.from(crew.items.values());
   const availableCount = workItems.filter((workItem) => isWorkItemAvailable(crew, workItem)).length;
   const claimedCount = workItems.filter((workItem) => workItem.claimedBy !== null).length;
   const completedCount = workItems.filter((workItem) => workItem.completedBy !== null).length;
   const connectedDaemons = Array.from(crew.daemons.values()).filter((daemon) => daemon.ws !== null);
+
+  const remoteItems: RemoteItemSnapshot[] = workItems.map((workItem) => {
+    const ownerDaemonId = workItem.claimedBy;
+    const ownerDaemon = ownerDaemonId ? crew.daemons.get(ownerDaemonId) : undefined;
+    return {
+      id: workItem.path,
+      state: resolveItemState(workItem, crew),
+      ownerDaemonId,
+      ownerName: ownerDaemon?.name ?? null,
+    };
+  });
 
   return {
     type: "crew_update",
@@ -387,5 +413,6 @@ export function buildCrewStatusUpdate(crew: CrewState): CrewStatusUpdate {
     claimedItems: workItems
       .filter((workItem) => workItem.claimedBy !== null && workItem.completedBy === null)
       .map((workItem) => ({ id: workItem.path, daemonId: workItem.claimedBy! })),
+    remoteItems,
   };
 }
