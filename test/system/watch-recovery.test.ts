@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { spawnSync } from "child_process";
 import { existsSync, rmSync } from "fs";
 import { join } from "path";
 import type { DaemonState } from "../../core/daemon.ts";
 import {
+  RESTART_RECOVERY_HOLD_REASON,
   TEST_ORCH_ACTIVITY_TIMEOUT_MS_ENV,
   TEST_ORCH_GRACE_PERIOD_MS_ENV,
   TEST_ORCH_LAUNCH_TIMEOUT_MS_ENV,
 } from "../../core/commands/orchestrate.ts";
 import { TEST_LAUNCH_OVERRIDE_COMMAND_ENV } from "../../core/commands/launch.ts";
-import { cleanupTempRepos, waitFor } from "../helpers.ts";
+import { cleanupTempRepos } from "../helpers.ts";
 import { CliHarness } from "./helpers/cli-harness.ts";
 import {
   DEFAULT_FAKE_AI_SCRIPT,
@@ -18,9 +18,7 @@ import {
   createFakeAiRun,
   fakeAiHeartbeatPath,
   fakeAiHangScenario,
-  fakeAiSuccessScenario,
   readFakeAiLaunches,
-  writeFakeAiScenario,
 } from "./helpers/fake-ai-scenario.ts";
 
 const TEST_BIN_DIR = join(import.meta.dirname, "..", "bin");
@@ -78,30 +76,6 @@ function startRecoveryChild(
 
 function readRecoveryItemState(harness: CliHarness): DaemonState["items"][number] | undefined {
   return harness.readOrchestratorState()?.items.find((entry) => entry.id === "H-WRR-1");
-}
-
-function ensureFakePrRecord(harness: CliHarness, env: Record<string, string>): void {
-  const result = spawnSync("gh", [
-    "pr",
-    "list",
-    "--head",
-    "ninthwave/H-WRR-1",
-    "--state",
-    "open",
-    "--json",
-    "number,title",
-  ], {
-    cwd: harness.projectRoot,
-    encoding: "utf-8",
-    env: {
-      ...harness.env(env),
-      NINTHWAVE_FAKE_GH_AUTO_CREATE_PRS: "1",
-    },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  if (result.status !== 0) {
-    throw new Error(result.stderr || "failed to seed fake PR state");
-  }
 }
 
 describe("system: watch recovery", () => {
@@ -237,7 +211,7 @@ describe("system: watch recovery", () => {
     }
   }, 30_000);
 
-  it("retries a hung worker once after restart without duplicating launches", async () => {
+  it("holds an unresolved restarted worker instead of relaunching a duplicate", async () => {
     const harness = new CliHarness();
     harness.writeWorkItems(RECOVERY_ITEM);
     harness.commitAndPushWorkItems("Add watch recovery retry test item");
@@ -270,28 +244,20 @@ describe("system: watch recovery", () => {
       }, 15_000);
 
       await harness.stop(processHandle, "SIGKILL");
+      expect(harness.closeHeadlessWorkspace("headless:H-WRR-1")).toBe(true);
+      await harness.waitForHeadlessExit("headless:H-WRR-1", 10_000);
       expect(readFakeAiLaunches(harness.stateDir, run.runId)).toHaveLength(1);
       await Bun.sleep(250);
 
-      writeFakeAiScenario(run.scenarioPath, fakeAiSuccessScenario({
-        stdout: ["retry worker recovered"],
-        heartbeat: { progress: 1.0, label: "PR created", prNumber: 1 },
-      }));
-
       const restarted = startRecoveryChild(harness, env);
       try {
-        await waitFor(() => {
-          const launches = readFakeAiLaunches(harness.stateDir, run.runId);
-          return launches.length === 2 ? launches : false;
-        }, {
-          timeoutMs: 20_000,
-          description: "single retry relaunch",
-        });
-        ensureFakePrRecord(harness, env);
-        await harness.waitForHeadlessLog("headless:H-WRR-1", "retry worker recovered", 15_000);
-        expect(readRecoveryItemState(harness)?.retryCount).toBe(1);
-        await Bun.sleep(200);
-        expect(readFakeAiLaunches(harness.stateDir, run.runId)).toHaveLength(2);
+        await harness.waitForOrchestratorState((state) => {
+          const item = state.items.find((entry) => entry.id === "H-WRR-1");
+          return item?.state === "blocked" ? item : false;
+        }, 15_000);
+        expect(readRecoveryItemState(harness)?.failureReason).toBe(RESTART_RECOVERY_HOLD_REASON);
+        await Bun.sleep(500);
+        expect(readFakeAiLaunches(harness.stateDir, run.runId)).toHaveLength(1);
       } finally {
         await harness.stop(restarted, "SIGKILL");
       }

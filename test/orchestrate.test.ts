@@ -48,12 +48,14 @@ import {
   renderTuiPanelFrameFromStatusItems,
   runTuiStartupPreparation,
   resolveInteractiveStartupConfig,
+  resolveUnresolvedRestartedWorkers,
   loadDiscoveryStartupItems,
   loadLocalStartupItems,
   pruneMergedStartupReplayItems,
   refreshRunnableStartupItems,
   INTERACTIVE_WATCH_STAGE_WARN_MS,
   LOG_BUFFER_MAX,
+  RESTART_RECOVERY_HOLD_REASON,
   TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE,
   waitForEngineRecoveryKey,
   type LogEntry,
@@ -1886,6 +1888,94 @@ describe("reconstructState", () => {
     ]);
 
     require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("interactive restart recovery relaunches unresolved workers when the operator approves", async () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("H-RSM-3A"));
+    orch.hydrateState("H-RSM-3A", "implementing");
+    orch.getItem("H-RSM-3A")!.workspaceRef = "workspace:stale";
+
+    const logs: LogEntry[] = [];
+    await resolveUnresolvedRestartedWorkers(
+      orch,
+      [{ itemId: "H-RSM-3A", worktreePath: "/tmp/ninthwave-H-RSM-3A", savedWorkspaceRef: "workspace:stale" }],
+      {
+        interactive: true,
+        prompt: async () => "relaunch",
+        log: (entry) => logs.push(entry),
+        now: () => new Date("2026-04-03T12:00:00.000Z"),
+      },
+    );
+
+    const item = orch.getItem("H-RSM-3A")!;
+    expect(item.state).toBe("ready");
+    expect(item.workspaceRef).toBeUndefined();
+    expect(item.failureReason).toBeUndefined();
+    expect(logs).toContainEqual(expect.objectContaining({
+      event: "restart_recovery_unresolved_worker",
+      itemId: "H-RSM-3A",
+      worktreePath: "/tmp/ninthwave-H-RSM-3A",
+      savedWorkspaceRef: "workspace:stale",
+    }));
+  });
+
+  it("holds unresolved restarted workers when the operator declines relaunch", async () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("H-RSM-3B"));
+    orch.hydrateState("H-RSM-3B", "implementing");
+    orch.getItem("H-RSM-3B")!.workspaceRef = "workspace:stale";
+
+    const logs: LogEntry[] = [];
+    await resolveUnresolvedRestartedWorkers(
+      orch,
+      [{ itemId: "H-RSM-3B", worktreePath: "/tmp/ninthwave-H-RSM-3B" }],
+      {
+        interactive: true,
+        prompt: async () => "hold",
+        log: (entry) => logs.push(entry),
+        now: () => new Date("2026-04-03T12:05:00.000Z"),
+      },
+    );
+
+    const item = orch.getItem("H-RSM-3B")!;
+    expect(item.state).toBe("blocked");
+    expect(item.failureReason).toBe(RESTART_RECOVERY_HOLD_REASON);
+    expect(item.endedAt).toBe("2026-04-03T12:05:00.000Z");
+    expect(logs).toContainEqual(expect.objectContaining({
+      event: "restart_recovery_held_worker",
+      itemId: "H-RSM-3B",
+      interactive: true,
+    }));
+  });
+
+  it("non-interactive restart recovery holds unresolved workers instead of relaunching them", async () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("H-RSM-3C"));
+    orch.hydrateState("H-RSM-3C", "implementing");
+
+    const prompt = vi.fn(async () => "relaunch");
+    const logs: LogEntry[] = [];
+    await resolveUnresolvedRestartedWorkers(
+      orch,
+      [{ itemId: "H-RSM-3C", worktreePath: "/tmp/ninthwave-H-RSM-3C" }],
+      {
+        interactive: false,
+        prompt,
+        log: (entry) => logs.push(entry),
+        now: () => new Date("2026-04-03T12:10:00.000Z"),
+      },
+    );
+
+    const item = orch.getItem("H-RSM-3C")!;
+    expect(prompt).not.toHaveBeenCalled();
+    expect(item.state).toBe("blocked");
+    expect(item.failureReason).toBe(RESTART_RECOVERY_HOLD_REASON);
+    expect(logs).toContainEqual(expect.objectContaining({
+      event: "restart_recovery_held_worker",
+      itemId: "H-RSM-3C",
+      interactive: false,
+    }));
   });
 
   it("restores ciFailCount from daemon state file", () => {

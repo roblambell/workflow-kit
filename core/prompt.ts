@@ -28,6 +28,14 @@ export type ConfirmPromptFn = (
   defaultValue?: boolean,
 ) => Promise<boolean>;
 
+export type RestartRecoveryAction = "relaunch" | "hold";
+
+/** Prompt signature for unresolved restart-recovery items. */
+export type RestartRecoveryPromptFn = (
+  itemId: string,
+  worktreePath: string,
+) => Promise<RestartRecoveryAction>;
+
 // ── Checkbox prompt ──────────────────────────────────────────────────
 
 /**
@@ -148,4 +156,19 @@ export async function confirmPrompt(
       else resolve(trimmed === "y" || trimmed === "yes");
     });
   });
+}
+
+/**
+ * Ask whether an unresolved restarted worker should be relaunched or held.
+ */
+export async function promptRestartRecoveryAction(
+  itemId: string,
+  worktreePath: string,
+  prompt: ConfirmPromptFn = confirmPrompt,
+): Promise<RestartRecoveryAction> {
+  const shouldRelaunch = await prompt(
+    `No live workspace was found for restarted item ${itemId} (${worktreePath}). Relaunch it now?`,
+    true,
+  );
+  return shouldRelaunch ? "relaunch" : "hold";
 }

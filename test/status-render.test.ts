@@ -577,6 +577,17 @@ describe("formatItemRow", () => {
     expect(row).toContain("launch-blocked: missing repo");
   });
 
+  it("shows restart-hold reasons inline for blocked restart recovery items", () => {
+    const item = makeStatusItem({
+      state: "blocked",
+      failureReason: "restart-hold: restarted worker has no live workspace; waiting for operator relaunch",
+    });
+    const row = stripAnsi(formatItemRow(item, 80));
+    expect(row).toContain("Blocked");
+    expect(row).toContain("restart-hold:");
+    expect(row).toContain("waiting for ope...");
+  });
+
   it("truncates long failure reasons inline", () => {
     const item = makeStatusItem({
       state: "blocked",
@@ -4125,6 +4136,26 @@ describe("renderDetailOverlay", () => {
     expect(text).toContain("Blocked:");
     expect(text).toContain("missing-repo");
     expect(text).not.toContain("CI:        launch-blocked");
+  });
+
+  it("shows restart recovery hold reasons under the blocked heading", () => {
+    const item = makeStatusItem({
+      id: "H-RSM-3",
+      state: "blocked",
+      failureReason: "restart-hold: restarted worker has no live workspace; waiting for operator relaunch",
+      worktreePath: "/tmp/ninthwave-H-RSM-3",
+    });
+
+    const lines = renderDetailOverlay(item, 100, 40, {
+      priority: "high",
+    });
+
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Blocked:");
+    expect(text).toContain("restart-hold: restarted worker has no live workspace; waiting for");
+    expect(text).toContain("operator relaunch");
+    expect(text).toContain("Worktree:");
+    expect(text).not.toContain("CI:        restart-hold");
   });
 
   it("renders queued item metadata without PR details", () => {

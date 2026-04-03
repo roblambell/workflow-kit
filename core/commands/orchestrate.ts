@@ -41,7 +41,12 @@ import { resolveCmuxBinary } from "../cmux-resolve.ts";
 import { resolveSessionName } from "../tmux.ts";
 import { reconcile, completeMergedWorkItemCleanup } from "./reconcile.ts";
 import { die, warn, info, ALT_SCREEN_ON, ALT_SCREEN_OFF, BOLD, RED, RESET, YELLOW } from "../output.ts";
-import { confirmPrompt } from "../prompt.ts";
+import {
+  confirmPrompt,
+  promptRestartRecoveryAction,
+  type RestartRecoveryAction,
+  type RestartRecoveryPromptFn,
+} from "../prompt.ts";
 import {
   shouldEnterInteractive,
   runInteractiveFlow,
@@ -204,6 +209,74 @@ export {
   type WatchEngineControlCommand,
   type WatchEngineRunner,
 } from "../watch-engine-runner.ts";
+
+export const RESTART_RECOVERY_HOLD_REASON =
+  "restart-hold: restarted worker has no live workspace; waiting for operator relaunch";
+
+interface ResolveRestartRecoveryOptions {
+  interactive: boolean;
+  log: (entry: LogEntry) => void;
+  prompt?: RestartRecoveryPromptFn;
+  now?: () => Date;
+}
+
+export async function resolveUnresolvedRestartedWorkers(
+  orch: Orchestrator,
+  unresolvedImplementations: Array<{
+    itemId: string;
+    worktreePath: string;
+    savedWorkspaceRef?: string;
+  }>,
+  options: ResolveRestartRecoveryOptions,
+): Promise<void> {
+  const prompt = options.prompt ?? promptRestartRecoveryAction;
+  const now = options.now ?? (() => new Date());
+
+  for (const unresolved of unresolvedImplementations) {
+    const item = orch.getItem(unresolved.itemId);
+    if (!item) continue;
+
+    item.workspaceRef = undefined;
+    const timestamp = now().toISOString();
+
+    let action: RestartRecoveryAction = "hold";
+    if (options.interactive) {
+      action = await prompt(unresolved.itemId, unresolved.worktreePath);
+    }
+
+    if (action === "relaunch") {
+      item.failureReason = undefined;
+      item.endedAt = undefined;
+      orch.hydrateState(unresolved.itemId, "ready");
+      options.log({
+        ts: timestamp,
+        level: "warn",
+        event: "restart_recovery_unresolved_worker",
+        itemId: unresolved.itemId,
+        worktreePath: unresolved.worktreePath,
+        ...(unresolved.savedWorkspaceRef ? { savedWorkspaceRef: unresolved.savedWorkspaceRef } : {}),
+        message: `No live workspace found for ${unresolved.itemId}; relaunching from existing worktree`,
+      });
+      continue;
+    }
+
+    item.failureReason = RESTART_RECOVERY_HOLD_REASON;
+    item.endedAt = timestamp;
+    orch.hydrateState(unresolved.itemId, "blocked");
+    options.log({
+      ts: timestamp,
+      level: "warn",
+      event: "restart_recovery_held_worker",
+      itemId: unresolved.itemId,
+      worktreePath: unresolved.worktreePath,
+      interactive: options.interactive,
+      ...(unresolved.savedWorkspaceRef ? { savedWorkspaceRef: unresolved.savedWorkspaceRef } : {}),
+      message: options.interactive
+        ? `No live workspace found for ${unresolved.itemId}; operator chose to hold restart recovery`
+        : `No live workspace found for ${unresolved.itemId}; holding for operator relaunch`,
+    });
+  }
+}
 export type { LogEntry } from "../types.ts";
 
 // ── Structured logging ─────────────────────────────────────────────
@@ -4143,25 +4216,13 @@ export async function cmdOrchestrate(
   // Pass saved daemon state so counters (ciFailCount, retryCount) survive restarts
   const savedDaemonState = readStateFile(projectRoot);
   const reconstruction = reconstructState(orch, projectRoot, worktreeDir, mux, undefined, savedDaemonState);
-  for (const unresolved of reconstruction.unresolvedImplementations) {
-    const item = orch.getItem(unresolved.itemId);
-    if (!item) continue;
-
-    item.workspaceRef = undefined;
-    orch.hydrateState(unresolved.itemId, "ready");
-    log({
-      ts: new Date().toISOString(),
-      level: "warn",
-      event: "restart_recovery_unresolved_worker",
-      itemId: unresolved.itemId,
-      worktreePath: unresolved.worktreePath,
-      ...(unresolved.savedWorkspaceRef ? { savedWorkspaceRef: unresolved.savedWorkspaceRef } : {}),
-      message: `No live workspace found for ${unresolved.itemId}; relaunching from existing worktree`,
-    });
-  }
+  const isInteractive = !isDaemonChild && !daemonMode && process.stdin.isTTY === true;
+  await resolveUnresolvedRestartedWorkers(orch, reconstruction.unresolvedImplementations, {
+    interactive: isInteractive,
+    log,
+  });
 
   // Select AI tool(s) (interactive prompt when multiple tools installed)
-  const isInteractive = !isDaemonChild && !daemonMode && process.stdin.isTTY === true;
   const aiTools = await selectAiTools({ toolOverride, projectRoot, isInteractive });
   const aiTool = aiTools[0]!;
 
