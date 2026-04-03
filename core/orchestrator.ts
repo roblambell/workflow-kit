@@ -440,6 +440,12 @@ export class Orchestrator {
       case "merged":
         if (!this.config.fixForward) {
           this.transition(item, "done");
+        } else if (snap?.mergeCommitCIStatus === "pass") {
+          this.transition(item, "done");
+        } else if (snap?.mergeCommitCIStatus === "fail") {
+          item.fixForwardFailCount = (item.fixForwardFailCount ?? 0) + 1;
+          this.transition(item, "fix-forward-failed");
+          item.failureReason = `fix-forward-failed: CI failed on main for merge commit ${item.mergeCommitSha}`;
         } else if (item.mergeCommitSha) {
           this.transition(item, "forward-fix-pending");
         } else {

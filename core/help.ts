@@ -37,6 +37,7 @@ import { cmdHeartbeat } from "./commands/heartbeat.ts";
 import { cmdInbox } from "./commands/inbox.ts";
 import { cmdLogs } from "./commands/logs.ts";
 import { cmdLineageToken } from "./commands/lineage-token.ts";
+import { cmdReviewInbox } from "./commands/review-inbox.ts";
 import { cmdSchedule } from "./commands/schedule.ts";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -392,6 +393,17 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
     },
     flags: {},
     examples: ["nw retry H-FOO-1"],
+  },
+  {
+    name: "review-inbox",
+    usage: "review-inbox <friction|decisions>",
+    description: "Create or update the long-lived review PR for an inbox domain",
+    group: "advanced",
+    needsRoot: true,
+    needsWork: false,
+    handler: (ctx) => cmdReviewInbox(ctx.args, ctx.projectRoot),
+    flags: {},
+    examples: ["nw review-inbox friction", "nw review-inbox decisions"],
   },
   {
     name: "repos",

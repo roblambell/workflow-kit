@@ -201,9 +201,31 @@ export function createWatchEngineRunner(
   let reviewMode = deps.initialReviewMode;
   let collaborationMode = deps.initialCollaborationMode;
   let activeAbortController: AbortController | undefined;
+  let lastPollSnapshot: PollSnapshot | undefined;
+  let lastHeartbeats = new Map<string, WorkerProgress>();
 
   const emitLog = (entry: LogEntry) => {
     deps.emitLog(entry);
+  };
+
+  const emitSnapshot = (
+    pollIntervalMs?: number,
+    interactiveTiming?: InteractiveWatchTiming,
+  ) => {
+    if (!lastPollSnapshot) return;
+    deps.emitSnapshot({
+      state: deps.buildState(deps.orch.getAllItems(), lastHeartbeats, lastPollSnapshot),
+      pollSnapshot: lastPollSnapshot,
+      ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
+      ...(interactiveTiming ? { interactiveTiming } : {}),
+      runtime: {
+        paused,
+        mergeStrategy: deps.orch.config.mergeStrategy,
+        sessionLimit: deps.getSessionLimit(),
+        reviewMode,
+        collaborationMode,
+      },
+    });
   };
 
   const sendControl = (command: WatchEngineControlCommand) => {
@@ -278,6 +300,7 @@ export function createWatchEngineRunner(
           itemId: command.itemId,
           source: command.source ?? "runtime-control",
         });
+        emitSnapshot();
         return;
       }
       case "shutdown": {
@@ -307,20 +330,9 @@ export function createWatchEngineRunner(
             ...deps.loopDeps,
             log: emitLog,
             onPollComplete: (items, snapshot, pollIntervalMs, interactiveTiming) => {
-              const heartbeats = snapshotToHeartbeatMap(snapshot);
-              deps.emitSnapshot({
-                state: deps.buildState(items, heartbeats, snapshot),
-                pollSnapshot: snapshot,
-                ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
-                ...(interactiveTiming ? { interactiveTiming } : {}),
-                runtime: {
-                  paused,
-                  mergeStrategy: deps.orch.config.mergeStrategy,
-                  sessionLimit: deps.getSessionLimit(),
-                  reviewMode,
-                  collaborationMode,
-                },
-              });
+              lastPollSnapshot = snapshot;
+              lastHeartbeats = snapshotToHeartbeatMap(snapshot);
+              emitSnapshot(pollIntervalMs, interactiveTiming);
             },
           },
           deps.loopConfig,

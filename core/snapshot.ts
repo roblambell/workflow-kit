@@ -198,6 +198,23 @@ function enrichMergedMetadata(
   }
 }
 
+function enrichMergedCommitCiStatus(
+  snap: ItemSnapshot,
+  orchItem: OrchestratorItem,
+  repoRoot: string,
+  checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending",
+): void {
+  if (!checkCommitCI) return;
+  const shouldCheck = orchItem.state === "merged" || snap.prState === "merged";
+  if (!shouldCheck || !orchItem.mergeCommitSha) return;
+
+  try {
+    snap.mergeCommitCIStatus = checkCommitCI(repoRoot, orchItem.mergeCommitSha);
+  } catch {
+    // Non-fatal -- will retry on later polls.
+  }
+}
+
 async function enrichMergedMetadataAsync(
   snap: ItemSnapshot,
   orchItem: OrchestratorItem,
@@ -239,6 +256,23 @@ async function enrichMergedMetadataAsync(
     } catch {
       // Non-fatal -- merged metadata is best-effort and retried next cycle.
     }
+  }
+}
+
+async function enrichMergedCommitCiStatusAsync(
+  snap: ItemSnapshot,
+  orchItem: OrchestratorItem,
+  repoRoot: string,
+  checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending" | Promise<"pass" | "fail" | "pending">,
+): Promise<void> {
+  if (!checkCommitCI) return;
+  const shouldCheck = orchItem.state === "merged" || snap.prState === "merged";
+  if (!shouldCheck || !orchItem.mergeCommitSha) return;
+
+  try {
+    snap.mergeCommitCIStatus = await checkCommitCI(repoRoot, orchItem.mergeCommitSha);
+  } catch {
+    // Non-fatal -- will retry on later polls.
   }
 }
 
@@ -438,6 +472,7 @@ export function buildSnapshot(
     preservePrContext(snap, orchItem);
 
     enrichMergedMetadata(snap, orchItem, repoRoot, getMergeCommitSha, getDefaultBranch);
+    enrichMergedCommitCiStatus(snap, orchItem, repoRoot, checkCommitCI);
 
     // Check review worker health and verdict file for items in reviewing state
     if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {
@@ -661,6 +696,7 @@ export async function buildSnapshotAsync(
     preservePrContext(snap, orchItem);
 
     await enrichMergedMetadataAsync(snap, orchItem, repoRoot, getMergeCommitSha, getDefaultBranch);
+    await enrichMergedCommitCiStatusAsync(snap, orchItem, repoRoot, checkCommitCI);
 
     // Review worker health
     if (orchItem.state === "reviewing" && orchItem.reviewWorkspaceRef) {
