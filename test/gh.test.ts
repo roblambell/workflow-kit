@@ -3,7 +3,22 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import * as shell from "../core/shell.ts";
-import { prMerge, prComment, getRepoOwner, resolveGithubToken, applyGithubToken, setCommitStatus, prHeadSha, ensureDomainLabels, getPrBaseBranch, retargetPrBase } from "../core/gh.ts";
+import {
+  prMerge,
+  prComment,
+  getRepoOwner,
+  resolveGithubToken,
+  applyGithubToken,
+  setCommitStatus,
+  prHeadSha,
+  ensureDomainLabels,
+  getPrBaseBranch,
+  retargetPrBase,
+  findOpenPrByHeadBranch,
+  updatePrBody,
+  upsertDeletedFileReviewComment,
+  deletedFileReviewCommentMarker,
+} from "../core/gh.ts";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
 
 const runSpy = vi.spyOn(shell, "run");
@@ -180,6 +195,220 @@ describe("retargetPrBase", () => {
   it("returns false when gh pr edit fails", () => {
     runSpy.mockReturnValue({ stdout: "", stderr: "boom", exitCode: 1 });
     expect(retargetPrBase("/repo", 42, "main")).toBe(false);
+  });
+});
+
+describe("findOpenPrByHeadBranch", () => {
+  it("returns the oldest open PR for the head branch", () => {
+    runSpy.mockReturnValue({
+      stdout: JSON.stringify([
+        { number: 91, title: "newer", body: "new" },
+        { number: 74, title: "older", body: "old" },
+      ]),
+      stderr: "",
+      exitCode: 0,
+    });
+
+    const result = findOpenPrByHeadBranch("/repo", "review/core");
+
+    expect(result).toEqual({ number: 74, title: "older", body: "old" });
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      ["pr", "list", "--head", "review/core", "--state", "open", "--json", "number,title,body", "--limit", "100"],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("returns null when no open PR exists for the head branch", () => {
+    runSpy.mockReturnValue({
+      stdout: "[]",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    expect(findOpenPrByHeadBranch("/repo", "review/core")).toBeNull();
+  });
+});
+
+describe("updatePrBody", () => {
+  it("replaces the body of an existing PR", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "", exitCode: 0 });
+
+    const body = "## Summary\nUpdated review body";
+    const result = updatePrBody("/repo", 42, body);
+
+    expect(result).toBe(true);
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      ["pr", "edit", "42", "--body", body],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("returns false when gh pr edit fails", () => {
+    runSpy.mockReturnValue({ stdout: "", stderr: "boom", exitCode: 1 });
+    expect(updatePrBody("/repo", 42, "body")).toBe(false);
+  });
+});
+
+describe("upsertDeletedFileReviewComment", () => {
+  it("creates a deleted-file review comment when no managed comment exists", () => {
+    const marker = deletedFileReviewCommentMarker(".ninthwave/inbox/foo.md");
+    runSpy.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "repo") {
+        return { stdout: "owner/repo", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "api" && args[1] === "repos/owner/repo/pulls/42/comments") {
+        return { stdout: "[]", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    const body = "Deleted inbox file rationale";
+    const result = upsertDeletedFileReviewComment("/repo", 42, "abc123", ".ninthwave/inbox/foo.md", body);
+
+    expect(result).toBe(true);
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      [
+        "api",
+        "--method",
+        "POST",
+        "repos/owner/repo/pulls/42/comments",
+        "-f",
+        `body=${marker}\n${body}`,
+        "-f",
+        "commit_id=abc123",
+        "-f",
+        "path=.ninthwave/inbox/foo.md",
+        "-f",
+        "subject_type=file",
+      ],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("updates the existing deleted-file review comment when the marker exists", () => {
+    const path = ".ninthwave/inbox/foo.md";
+    const marker = deletedFileReviewCommentMarker(path);
+    runSpy.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "repo") {
+        return { stdout: "owner/repo", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "api" && args[1] === "repos/owner/repo/pulls/42/comments") {
+        return {
+          stdout: JSON.stringify([
+            { id: 200, body: `${marker}\nold`, path },
+          ]),
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    const body = "Updated rationale";
+    const result = upsertDeletedFileReviewComment("/repo", 42, "abc123", path, body);
+
+    expect(result).toBe(true);
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      [
+        "api",
+        "--method",
+        "PATCH",
+        "repos/owner/repo/pulls/comments/200",
+        "-f",
+        `body=${marker}\n${body}`,
+      ],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("creates a new deleted-file review comment when only unrelated comments exist", () => {
+    const path = ".ninthwave/inbox/foo.md";
+    const marker = deletedFileReviewCommentMarker(path);
+    runSpy.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "repo") {
+        return { stdout: "owner/repo", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "api" && args[1] === "repos/owner/repo/pulls/42/comments") {
+        return {
+          stdout: JSON.stringify([
+            { id: 200, body: "plain comment", path },
+            { id: 201, body: `${deletedFileReviewCommentMarker("other/file.md")}\nother`, path: "other/file.md" },
+          ]),
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    const body = "Deleted inbox file rationale";
+    const result = upsertDeletedFileReviewComment("/repo", 42, "abc123", path, body);
+
+    expect(result).toBe(true);
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      [
+        "api",
+        "--method",
+        "POST",
+        "repos/owner/repo/pulls/42/comments",
+        "-f",
+        `body=${marker}\n${body}`,
+        "-f",
+        "commit_id=abc123",
+        "-f",
+        "path=.ninthwave/inbox/foo.md",
+        "-f",
+        "subject_type=file",
+      ],
+      { cwd: "/repo" },
+    );
+  });
+
+  it("updates the oldest matching comment when duplicate markers already exist", () => {
+    const path = ".ninthwave/inbox/foo.md";
+    const marker = deletedFileReviewCommentMarker(path);
+    runSpy.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === "repo") {
+        return { stdout: "owner/repo", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "api" && args[1] === "repos/owner/repo/pulls/42/comments") {
+        return {
+          stdout: JSON.stringify([
+            { id: 301, body: `${marker}\nnewer duplicate`, path },
+            { id: 205, body: `${marker}\nolder duplicate`, path },
+          ]),
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    const result = upsertDeletedFileReviewComment("/repo", 42, "abc123", path, "Consolidated rationale");
+
+    expect(result).toBe(true);
+    expect(runSpy).toHaveBeenCalledWith(
+      "gh",
+      [
+        "api",
+        "--method",
+        "PATCH",
+        "repos/owner/repo/pulls/comments/205",
+        "-f",
+        `body=${marker}\nConsolidated rationale`,
+      ],
+      { cwd: "/repo" },
+    );
+    expect(runSpy).not.toHaveBeenCalledWith(
+      "gh",
+      expect.arrayContaining(["--method", "POST", "repos/owner/repo/pulls/42/comments"]),
+      { cwd: "/repo" },
+    );
   });
 });
 

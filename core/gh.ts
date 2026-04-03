@@ -423,6 +423,38 @@ export function retargetPrBase(repoRoot: string, prNumber: number, baseBranch: s
   return result.exitCode === 0;
 }
 
+/**
+ * Find the oldest open PR for an exact head branch.
+ * Review maintenance uses one long-lived PR per domain branch, so prefer the
+ * lowest-numbered open PR when duplicates exist.
+ */
+export function findOpenPrByHeadBranch(
+  repoRoot: string,
+  headBranch: string,
+): { number: number; title: string; body?: string } | null {
+  const result = prList(repoRoot, headBranch, "open");
+  if (!result.ok || result.data.length === 0) return null;
+  return result.data
+    .slice()
+    .sort((a, b) => a.number - b.number)[0] ?? null;
+}
+
+/** Replace the body of an existing PR. Returns true on success. */
+export function updatePrBody(
+  repoRoot: string,
+  prNumber: number,
+  body: string,
+): boolean {
+  const result = ghInRepo(repoRoot, [
+    "pr",
+    "edit",
+    String(prNumber),
+    "--body",
+    body,
+  ]);
+  return result.exitCode === 0;
+}
+
 /** Post a comment on a PR. Returns true on success, false on failure. */
 export function prComment(
   repoRoot: string,
@@ -840,6 +872,31 @@ export function listPrComments(
   }
 }
 
+/** List all review comments on a PR. Returns array of {id, body, path}. */
+export function listPrReviewComments(
+  repoRoot: string,
+  prNumber: number,
+): Array<{ id: number; body: string; path: string }> {
+  let ownerRepo: string;
+  try {
+    ownerRepo = getRepoOwner(repoRoot);
+  } catch {
+    return [];
+  }
+  const result = ghInRepo(repoRoot, [
+    "api",
+    `repos/${ownerRepo}/pulls/${prNumber}/comments`,
+    "--jq",
+    "[.[] | {id: .id, body: .body, path: .path}]",
+  ]);
+  if (result.exitCode !== 0 || !result.stdout) return [];
+  try {
+    return JSON.parse(result.stdout) as Array<{ id: number; body: string; path: string }>;
+  } catch {
+    return [];
+  }
+}
+
 /** Update an existing issue comment by ID. Returns true on success. */
 export function updatePrComment(
   repoRoot: string,
@@ -861,6 +918,97 @@ export function updatePrComment(
     `body=${body}`,
   ]);
   return result.exitCode === 0;
+}
+
+/** Update an existing review comment by ID. Returns true on success. */
+export function updatePrReviewComment(
+  repoRoot: string,
+  commentId: number,
+  body: string,
+): boolean {
+  let ownerRepo: string;
+  try {
+    ownerRepo = getRepoOwner(repoRoot);
+  } catch {
+    return false;
+  }
+  const result = ghInRepo(repoRoot, [
+    "api",
+    "--method",
+    "PATCH",
+    `repos/${ownerRepo}/pulls/comments/${commentId}`,
+    "-f",
+    `body=${body}`,
+  ]);
+  return result.exitCode === 0;
+}
+
+/** Hidden HTML comment prefix for deleted-file review comments. */
+export const DELETED_FILE_REVIEW_COMMENT_MARKER_PREFIX = "<!-- ninthwave-deleted-file-review:";
+
+/** Build the stable marker used to upsert deleted-file review comments. */
+export function deletedFileReviewCommentMarker(path: string): string {
+  return `${DELETED_FILE_REVIEW_COMMENT_MARKER_PREFIX}${path} -->`;
+}
+
+function withManagedMarker(marker: string, body: string): string {
+  return body.includes(marker) ? body : `${marker}\n${body}`;
+}
+
+/** Create a file-level review comment for a deleted file. Returns true on success. */
+export function createDeletedFileReviewComment(
+  repoRoot: string,
+  prNumber: number,
+  commitId: string,
+  path: string,
+  body: string,
+): boolean {
+  let ownerRepo: string;
+  try {
+    ownerRepo = getRepoOwner(repoRoot);
+  } catch {
+    return false;
+  }
+  const result = ghInRepo(repoRoot, [
+    "api",
+    "--method",
+    "POST",
+    `repos/${ownerRepo}/pulls/${prNumber}/comments`,
+    "-f",
+    `body=${body}`,
+    "-f",
+    `commit_id=${commitId}`,
+    "-f",
+    `path=${path}`,
+    "-f",
+    "subject_type=file",
+  ]);
+  return result.exitCode === 0;
+}
+
+/**
+ * Create or update a managed file-level review comment for a deleted file.
+ * Uses a stable path-derived marker and updates the oldest matching comment when
+ * duplicates exist, preventing reruns from spraying additional comments.
+ */
+export function upsertDeletedFileReviewComment(
+  repoRoot: string,
+  prNumber: number,
+  commitId: string,
+  path: string,
+  body: string,
+): boolean {
+  const marker = deletedFileReviewCommentMarker(path);
+  const managedBody = withManagedMarker(marker, body);
+  const existing = listPrReviewComments(repoRoot, prNumber)
+    .filter((comment) => comment.path === path && comment.body.includes(marker))
+    .sort((a, b) => a.id - b.id)[0];
+
+  if (existing) {
+    return updatePrReviewComment(repoRoot, existing.id, managedBody);
+  }
+
+  return createDeletedFileReviewComment(repoRoot, prNumber, commitId, path, managedBody);
 }
 
 // ── Living orchestrator comment (upsert pattern) ──────────────────
