@@ -60,6 +60,7 @@ function makeTuiState(overrides: Partial<TuiState> = {}): TuiState {
     showControls: false,
     controlsRowIndex: 0,
     collaborationMode: "local",
+    scheduleEnabled: false,
     collaborationIntent: "local",
     collaborationJoinInputActive: false,
     collaborationJoinInputValue: "",
@@ -1100,6 +1101,41 @@ describe("controls overlay row navigation", () => {
     stdin.emit("data", "\x1b[D");
     expect(onSessionLimitChange).toHaveBeenCalledWith(-1);
     expect(state.pendingSessionLimit).toBeUndefined();
+    cleanup();
+  });
+
+  it("Left/Right toggle scheduled tasks on the active row", () => {
+    const ac = new AbortController();
+    const stdin = makeFakeStdin();
+    const onScheduleEnabledChange = vi.fn();
+    const state = makeTuiState({
+      showControls: true,
+      controlsRowIndex: 4,
+      scheduleEnabled: false,
+      onScheduleEnabledChange,
+    });
+    state.viewOptions.scheduleEnabled = false;
+    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
+
+    stdin.emit("data", "\x1b[C");
+    expect(state.scheduleEnabled).toBe(false);
+    expect(state.pendingScheduleEnabled).toBe(true);
+    expect(onScheduleEnabledChange).toHaveBeenCalledWith(true);
+
+    applyRuntimeSnapshotToTuiState(state, {
+      paused: state.paused ?? false,
+      mergeStrategy: state.mergeStrategy,
+      sessionLimit: state.sessionLimit ?? 3,
+      reviewMode: state.reviewMode,
+      collaborationMode: state.collaborationMode,
+      scheduleEnabled: true,
+    });
+    expect(state.scheduleEnabled).toBe(true);
+    expect(state.pendingScheduleEnabled).toBeUndefined();
+
+    stdin.emit("data", "\x1b[D");
+    expect(state.pendingScheduleEnabled).toBe(false);
+    expect(onScheduleEnabledChange).toHaveBeenCalledWith(false);
     cleanup();
   });
 

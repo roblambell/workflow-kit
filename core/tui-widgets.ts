@@ -18,6 +18,7 @@ import {
   BACKEND_MODE_OPTIONS,
   COLLABORATION_MODE_OPTIONS,
   REVIEW_MODE_OPTIONS,
+  SCHEDULE_ENABLED_OPTIONS,
   STARTUP_MERGE_STRATEGY_OPTIONS,
   TUI_SETTINGS_DEFAULTS,
   type PersistedBackendMode,
@@ -260,6 +261,7 @@ interface StartupSettingsScreenResult {
   reviewMode: "all" | "mine" | "off";
   collaborationMode: "local" | "share" | "join";
   sessionLimit: number;
+  scheduleEnabled: boolean;
   cancelled: boolean;
 }
 
@@ -274,6 +276,7 @@ export interface SelectionScreenResult {
   sessionLimit: number;
   reviewMode: "all" | "mine" | "off";
   connectionAction: ConnectionAction | null;
+  scheduleEnabled: boolean;
   cancelled: boolean;
   /** Selected AI tool ID, undefined when the step was skipped. */
   aiTool?: string;
@@ -924,7 +927,7 @@ export function runStartupSettingsScreen(
 ): Promise<StartupSettingsScreenResult> {
   return new Promise((resolve) => {
     const defaults = opts.defaultSettings ?? TUI_SETTINGS_DEFAULTS;
-    const settingRowCount = 5;
+    const settingRowCount = 6;
     let activeRow = 0;
     let scrollOffset = 0;
     let mergeIndex = Math.max(
@@ -940,6 +943,10 @@ export function runStartupSettingsScreen(
       COLLABORATION_MODE_OPTIONS.findIndex((option) => option.persistedValue === defaults.collaborationMode),
     );
     let sessionLimit = Math.max(1, Math.min(10, opts.defaultSessionLimit));
+    let scheduleIndex = Math.max(
+      0,
+      SCHEDULE_ENABLED_OPTIONS.findIndex((option) => option.runtimeValue === (defaults.scheduleEnabled ? "on" : "off")),
+    );
     let backendIndex = Math.max(
       0,
       BACKEND_MODE_OPTIONS.findIndex((option) => option.persistedValue === defaults.backendMode),
@@ -949,6 +956,7 @@ export function runStartupSettingsScreen(
     const currentMergeOption = () => STARTUP_MERGE_STRATEGY_OPTIONS[mergeIndex]!;
     const currentReviewOption = () => REVIEW_MODE_OPTIONS[reviewIndex]!;
     const currentCollaborationOption = () => COLLABORATION_MODE_OPTIONS[collaborationIndex]!;
+    const currentScheduleOption = () => SCHEDULE_ENABLED_OPTIONS[scheduleIndex]!;
 
     const renderChoiceRow = (
       title: string,
@@ -979,6 +987,11 @@ export function runStartupSettingsScreen(
         ? `${GREEN}${BOLD}[${value}]${RESET}`
         : `${DIM}${value}${RESET}`,
     );
+    const scheduleValues = () => SCHEDULE_ENABLED_OPTIONS.map((option, index) =>
+      index === scheduleIndex
+        ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
+        : `${DIM}${option.startupLabel}${RESET}`,
+    );
     const backendValues = () => BACKEND_MODE_OPTIONS.map((option, index) =>
       index === backendIndex
         ? `${GREEN}${BOLD}[${option.startupLabel}]${RESET}`
@@ -995,6 +1008,8 @@ export function runStartupSettingsScreen(
           return currentCollaborationOption().startupDescription;
         case 3:
           return "Maximum work items allowed to run in parallel";
+        case 4:
+          return currentScheduleOption().startupDescription;
         default:
           return currentBackendOption().startupDescription;
       }
@@ -1025,7 +1040,8 @@ export function runStartupSettingsScreen(
         renderChoiceRow("Reviews", reviewValues(), activeRow === 1),
         renderChoiceRow("Collaboration", collaborationValues(), activeRow === 2),
         renderChoiceRow("Session limit", sessionValues(), activeRow === 3),
-        renderChoiceRow("Backend", backendValues(), activeRow === 4),
+        renderChoiceRow("Scheduled tasks", scheduleValues(), activeRow === 4),
+        renderChoiceRow("Backend", backendValues(), activeRow === 5),
       ];
 
       for (let i = 0; i < choiceRows.length; i++) {
@@ -1086,6 +1102,8 @@ export function runStartupSettingsScreen(
             collaborationIndex = (collaborationIndex - 1 + COLLABORATION_MODE_OPTIONS.length) % COLLABORATION_MODE_OPTIONS.length;
           } else if (activeRow === 3) {
             sessionLimit = Math.max(1, sessionLimit - 1);
+          } else if (activeRow === 4) {
+            scheduleIndex = (scheduleIndex - 1 + SCHEDULE_ENABLED_OPTIONS.length) % SCHEDULE_ENABLED_OPTIONS.length;
           } else {
             backendIndex = (backendIndex - 1 + BACKEND_MODE_OPTIONS.length) % BACKEND_MODE_OPTIONS.length;
           }
@@ -1100,6 +1118,8 @@ export function runStartupSettingsScreen(
             collaborationIndex = (collaborationIndex + 1) % COLLABORATION_MODE_OPTIONS.length;
           } else if (activeRow === 3) {
             sessionLimit = Math.min(10, sessionLimit + 1);
+          } else if (activeRow === 4) {
+            scheduleIndex = (scheduleIndex + 1) % SCHEDULE_ENABLED_OPTIONS.length;
           } else {
             backendIndex = (backendIndex + 1) % BACKEND_MODE_OPTIONS.length;
           }
@@ -1112,6 +1132,7 @@ export function runStartupSettingsScreen(
             reviewMode: currentReviewOption().persistedValue,
             collaborationMode: currentCollaborationOption().persistedValue,
             sessionLimit,
+            scheduleEnabled: currentScheduleOption().runtimeValue === "on",
             cancelled: false,
           });
           return;
@@ -1124,6 +1145,7 @@ export function runStartupSettingsScreen(
             reviewMode: currentReviewOption().persistedValue,
             collaborationMode: currentCollaborationOption().persistedValue,
             sessionLimit,
+            scheduleEnabled: currentScheduleOption().runtimeValue === "on",
             cancelled: true,
           });
           return;
@@ -1283,6 +1305,7 @@ export async function runSelectionScreen(
     mergeStrategy: opts.defaultSettings?.mergeStrategy ?? TUI_SETTINGS_DEFAULTS.mergeStrategy,
     reviewMode: opts.defaultSettings?.reviewMode ?? opts.defaultReviewMode ?? TUI_SETTINGS_DEFAULTS.reviewMode,
     collaborationMode: opts.defaultSettings?.collaborationMode ?? TUI_SETTINGS_DEFAULTS.collaborationMode,
+    scheduleEnabled: opts.defaultSettings?.scheduleEnabled ?? TUI_SETTINGS_DEFAULTS.scheduleEnabled,
   };
   let currentSortedItems = sortWorkItems(items);
   const hasCurrentItems = currentSortedItems.length > 0;
@@ -1412,6 +1435,7 @@ export async function runSelectionScreen(
   let reviewMode: "all" | "mine" | "off" = defaultReviewMode;
   let connectionAction: ConnectionAction | null = defaultConnectionAction;
   let backendMode: PersistedBackendMode = resolvedDefaults.backendMode;
+  let scheduleEnabled = resolvedDefaults.scheduleEnabled;
 
   if (opts.showConnectionStep === false) {
     io.write(CLEAR_SCREEN);
@@ -1444,6 +1468,7 @@ export async function runSelectionScreen(
     sessionLimit = settingsResult.sessionLimit;
     reviewMode = settingsResult.reviewMode;
     backendMode = settingsResult.backendMode;
+    scheduleEnabled = settingsResult.scheduleEnabled;
     if (settingsResult.collaborationMode === "share") {
       connectionAction = { type: "connect" };
     } else if (settingsResult.collaborationMode === "join") {
@@ -1477,6 +1502,7 @@ export async function runSelectionScreen(
     sessionLimit,
     reviewMode,
     connectionAction,
+    scheduleEnabled,
     cancelled: false,
     aiTool,
     aiTools,

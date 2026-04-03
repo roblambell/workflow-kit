@@ -327,6 +327,7 @@ describe("confirmSummary", () => {
     allSelected: false,
     reviewMode: "mine",
     connectionAction: null,
+    scheduleEnabled: false,
   };
 
   it("returns true on Y (default)", async () => {
@@ -386,6 +387,7 @@ describe("buildStartupPersistenceUpdates", () => {
     allSelected: false,
     reviewMode: "mine",
     connectionAction: null,
+    scheduleEnabled: false,
   };
 
   it("maps local collaboration mode from a null connection action", () => {
@@ -469,6 +471,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.sessionLimit).toBe(3);
     expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
+    expect(result!.scheduleEnabled).toBe(false);
     expect(result!.allSelected).toBe(true);
   });
 
@@ -564,6 +567,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.backendMode).toBe("auto");
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.sessionLimit).toBe(3);
+    expect(result!.scheduleEnabled).toBe(false);
   });
 
   it("uses persisted startup defaults in the TUI path", async () => {
@@ -576,6 +580,7 @@ describe("runInteractiveFlow", () => {
         mergeStrategy: "auto",
         reviewMode: "mine",
         collaborationMode: "share",
+        scheduleEnabled: true,
       },
     });
     sendKeyBatches(["\r"], ["\r"]);
@@ -586,6 +591,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.mergeStrategy).toBe("auto");
     expect(result!.reviewMode).toBe("mine");
     expect(result!.connectionAction).toEqual({ type: "connect" });
+    expect(result!.scheduleEnabled).toBe(true);
     expect(result!.sessionLimit).toBe(6);
   });
 
@@ -596,6 +602,7 @@ describe("runInteractiveFlow", () => {
     sendKeyBatches(
       ["\r"],
       [
+        "\x1B[B",
         "\x1B[B",
         "\x1B[B",
         "\x1B[B",

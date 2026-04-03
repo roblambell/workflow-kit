@@ -9,6 +9,7 @@ export type StartupCollaborationMode = "local" | "share" | "join";
 export type CollaborationIntent = StartupCollaborationMode;
 export type CollaborationMode = "local" | "shared" | "joined";
 export type PersistedBackendMode = "auto" | "tmux" | "cmux" | "headless";
+export type ScheduleEnabledMode = "off" | "on";
 
 export type PersistedMergeStrategy = Extract<MergeStrategy, "auto" | "manual">;
 export type PersistedReviewMode = StartupReviewMode;
@@ -26,6 +27,7 @@ export interface TuiSettingsDefaults {
   mergeStrategy: PersistedMergeStrategy;
   reviewMode: PersistedReviewMode;
   collaborationMode: PersistedCollaborationMode;
+  scheduleEnabled: boolean;
 }
 
 export interface ChoiceSettingOption<PersistedValue extends string, RuntimeValue extends string> {
@@ -46,6 +48,7 @@ export const TUI_SETTINGS_DEFAULTS: TuiSettingsDefaults = {
   mergeStrategy: "manual",
   reviewMode: "off",
   collaborationMode: "local",
+  scheduleEnabled: false,
 };
 
 export const BACKEND_MODE_OPTIONS: readonly ChoiceSettingOption<PersistedBackendMode, PersistedBackendMode>[] = [
@@ -149,6 +152,25 @@ export const REVIEW_MODE_OPTIONS: readonly ChoiceSettingOption<PersistedReviewMo
   },
 ] as const;
 
+export const SCHEDULE_ENABLED_OPTIONS: readonly ChoiceSettingOption<ScheduleEnabledMode, ScheduleEnabledMode>[] = [
+  {
+    persistedValue: "off",
+    runtimeValue: "off",
+    startupLabel: "off",
+    startupDescription: "Do not run scheduled tasks for this project",
+    runtimeLabel: "Off",
+    persistable: true,
+  },
+  {
+    persistedValue: "on",
+    runtimeValue: "on",
+    startupLabel: "on",
+    startupDescription: "Allow scheduled tasks for this project to execute",
+    runtimeLabel: "On",
+    persistable: true,
+  },
+] as const;
+
 export const STARTUP_REVIEW_MODE_OPTIONS = [
   REVIEW_MODE_OPTIONS[2]!,
   REVIEW_MODE_OPTIONS[1]!,
@@ -214,6 +236,12 @@ export const TUI_SETTINGS_ROWS = [
     title: "Session Limit",
     kind: "number",
     min: 1,
+  },
+  {
+    id: "schedule_enabled",
+    title: "Scheduled tasks",
+    kind: "choice",
+    options: SCHEDULE_ENABLED_OPTIONS,
   },
 ] as const;
 
@@ -323,12 +351,29 @@ export function collaborationLabel(mode: CollaborationMode): string {
   return getByRuntimeValue(COLLABORATION_MODE_OPTIONS, mode).runtimeLabel;
 }
 
+export function scheduleEnabledToMode(enabled: boolean): ScheduleEnabledMode {
+  return enabled ? "on" : "off";
+}
+
+export function scheduleModeToEnabled(mode: ScheduleEnabledMode): boolean {
+  return mode === "on";
+}
+
+export function scheduleEnabledLabel(enabled: boolean): string {
+  return getByRuntimeValue(
+    SCHEDULE_ENABLED_OPTIONS,
+    scheduleEnabledToMode(enabled),
+  ).runtimeLabel;
+}
+
 export function resolveTuiSettingsDefaults(userConfig: {
   backend_mode?: unknown;
   merge_strategy?: unknown;
   review_mode?: unknown;
   collaboration_mode?: unknown;
-}): TuiSettingsDefaults {
+}, options: {
+  scheduleEnabled?: boolean;
+} = {}): TuiSettingsDefaults {
   return {
     backendMode: isPersistedBackendMode(userConfig.backend_mode)
       ? userConfig.backend_mode
@@ -342,6 +387,7 @@ export function resolveTuiSettingsDefaults(userConfig: {
     collaborationMode: isPersistedCollaborationMode(userConfig.collaboration_mode)
       ? userConfig.collaboration_mode
       : TUI_SETTINGS_DEFAULTS.collaborationMode,
+    scheduleEnabled: options.scheduleEnabled ?? TUI_SETTINGS_DEFAULTS.scheduleEnabled,
   };
 }
 

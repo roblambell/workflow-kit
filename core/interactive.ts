@@ -43,6 +43,7 @@ export interface InteractiveResult {
   futureOnly?: boolean;
   reviewMode: "all" | "mine" | "off";
   connectionAction: ConnectionAction | null;
+  scheduleEnabled?: boolean;
   /** Selected AI tool ID, undefined when the step was skipped. */
   aiTool?: string;
   /** Selected AI tool IDs (multi-select), undefined when the step was skipped. */
@@ -430,6 +431,9 @@ export async function confirmSummary(
   }
   console.log(`  ${BOLD}Session limit:${RESET}   ${result.sessionLimit}`);
   console.log(`  ${BOLD}AI reviews:${RESET}      ${result.reviewMode}`);
+  if (result.scheduleEnabled !== undefined) {
+    console.log(`  ${BOLD}Scheduled tasks:${RESET} ${result.scheduleEnabled ? "On" : "Off"}`);
+  }
   if (result.connectionAction) {
     const connectionLabel = result.connectionAction.type === "connect"
       ? "Share session (new)"
@@ -523,6 +527,7 @@ export async function runTuiSelectionFlow(
       futureOnly: result.futureOnly,
       reviewMode: result.reviewMode,
       connectionAction: result.connectionAction,
+      scheduleEnabled: result.scheduleEnabled,
       aiTool: result.aiTool,
       aiTools: result.aiTools,
     };
@@ -580,6 +585,7 @@ async function runReadlineFlow(
   const backendMode: PersistedBackendMode = deps.defaultSettings?.backendMode ?? "auto";
   const sessionLimit = defaultSessionLimit;
   const reviewMode: ReviewMode = "off";
+  const scheduleEnabled = deps.defaultSettings?.scheduleEnabled ?? false;
   let connectionAction: ConnectionAction | null = null;
 
   // Step 2: AI tool (conditional, multi-select)
@@ -656,6 +662,7 @@ async function runReadlineFlow(
     futureOnly: false,
     reviewMode,
     connectionAction,
+    scheduleEnabled,
     aiTool,
     aiTools,
   };

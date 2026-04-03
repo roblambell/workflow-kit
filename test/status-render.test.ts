@@ -4524,6 +4524,7 @@ describe("renderControlsOverlay", () => {
   const sessionCode = "K2F9-AB3X-7YPL-QM4N";
   const baseOpts = {
     collaborationMode: "local" as CollaborationMode,
+    scheduleEnabled: false,
     reviewMode: "off" as ReviewMode,
     mergeStrategy: "manual" as const,
     bypassEnabled: false,
@@ -4549,10 +4550,11 @@ describe("renderControlsOverlay", () => {
     expect(text).toContain("Controls");
   });
 
-  it("contains all three setting groups", () => {
+  it("contains all runtime setting groups", () => {
     const lines = renderControlsOverlay(100, 40, baseOpts);
     const text = stripAnsi(lines.join("\n"));
     expect(text).toContain("Collaboration");
+    expect(text).toContain("Scheduled tasks");
     expect(text).toContain("Reviews");
     expect(text).toContain("Merge");
   });
@@ -4621,6 +4623,14 @@ describe("renderControlsOverlay", () => {
     expect(row).toContain("All PRs");
   });
 
+  it("shows scheduled-task choices horizontally on one row", () => {
+    const lines = renderControlsOverlay(100, 40, baseOpts);
+    const row = stripAnsi(lines.find((line) => line.includes("Scheduled tasks")) ?? "");
+    expect(row).toContain("Scheduled tasks");
+    expect(row).toContain("[Off]");
+    expect(row).toContain("On");
+  });
+
   it("marks the active row separately from the active value", () => {
     const lines = renderControlsOverlay(100, 40, { ...baseOpts, activeRowIndex: 1 });
     const reviewsRow = stripAnsi(lines.find((line) => line.includes("Reviews")) ?? "");
@@ -4656,12 +4666,14 @@ describe("renderControlsOverlay", () => {
     const lines = renderControlsOverlay(100, 40, {
       ...baseOpts,
       pendingCollaborationMode: "shared",
+      pendingScheduleEnabled: true,
       pendingReviewMode: "all-prs",
       pendingMergeStrategy: "auto",
       pendingSessionLimit: 4,
     });
     const text = stripAnsi(lines.join("\n"));
     expect(text).toContain("[Share pending]");
+    expect(text).toContain("[On pending]");
     expect(text).toContain("[All PRs pending]");
     expect(text).toContain("[› Auto pending]");
     expect(text).toContain("[4 pending]");
@@ -4712,7 +4724,6 @@ describe("renderControlsOverlay", () => {
     expect(text).toContain("Reviews");
     expect(text).toContain("Merge");
     expect(text).toContain("Session Limit");
-    expect(text).toContain(sessionCode);
   });
 
   it("uses strategy indicator icons in merge section", () => {

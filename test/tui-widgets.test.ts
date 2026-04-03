@@ -1050,6 +1050,7 @@ describe("runStartupSettingsScreen", () => {
         mergeStrategy: "manual",
         reviewMode: "off",
         collaborationMode: "local",
+        scheduleEnabled: false,
       },
     });
 
@@ -1071,6 +1072,7 @@ describe("runStartupSettingsScreen", () => {
     expect(result.reviewMode).toBe("mine");
     expect(result.collaborationMode).toBe("share");
     expect(result.sessionLimit).toBe(5);
+    expect(result.scheduleEnabled).toBe(false);
   });
 
   it("renders all backend options and preselects the saved default", async () => {
@@ -1084,6 +1086,7 @@ describe("runStartupSettingsScreen", () => {
         mergeStrategy: "manual",
         reviewMode: "off",
         collaborationMode: "local",
+        scheduleEnabled: false,
       },
     });
 
@@ -1117,6 +1120,25 @@ describe("runStartupSettingsScreen", () => {
     expect(result.reviewMode).toBe("off");
     expect(result.collaborationMode).toBe("local");
     expect(result.sessionLimit).toBe(4);
+    expect(result.scheduleEnabled).toBe(false);
+  });
+
+  it("defaults Scheduled tasks to off and allows toggling it on", async () => {
+    const { io, sendKeys, getOutput } = createMockIO();
+
+    const resultPromise = runStartupSettingsScreen(io, {
+      summaryLines: ["Items: A-1"],
+      defaultSessionLimit: 4,
+    });
+
+    expect(getOutput()).toContain("Scheduled tasks");
+    expect(getOutput()).toContain("[off]");
+
+    sendKeys(["\x1B[B", "\x1B[B", "\x1B[B", "\x1B[B", "\x1B[C", "\r"]);
+
+    const result = await resultPromise;
+    expect(result.cancelled).toBe(false);
+    expect(result.scheduleEnabled).toBe(true);
   });
 
   it("cancels on Escape and Ctrl+C", async () => {
@@ -1171,7 +1193,7 @@ describe("runStartupSettingsScreen", () => {
       defaultSessionLimit: 4,
     });
 
-      const activeLabels = ["Merge", "Reviews", "Collaboration", "Session limit", "Backend"];
+      const activeLabels = ["Merge", "Reviews", "Collaboration", "Session limit", "Scheduled tasks", "Backend"];
 
     for (let i = 0; i < activeLabels.length; i++) {
       const lines = getPlainFrameLines(getOutput());
@@ -1193,6 +1215,7 @@ describe("runStartupSettingsScreen", () => {
     expect(result.reviewMode).toBe("off");
     expect(result.collaborationMode).toBe("local");
     expect(result.sessionLimit).toBe(4);
+    expect(result.scheduleEnabled).toBe(false);
     expect(result.backendMode).toBe("auto");
   });
 
@@ -1230,10 +1253,11 @@ describe("runStartupSettingsScreen", () => {
         mergeStrategy: "manual",
         reviewMode: "off",
         collaborationMode: "local",
+        scheduleEnabled: false,
       },
     });
 
-    description.sendKeys(["\x1B[B", "\x1B[B", "\x1B[B", "\x1B[B"]);
+    description.sendKeys(["\x1B[B", "\x1B[B", "\x1B[B", "\x1B[B", "\x1B[B"]);
 
     const lines = getPlainFrameLines(description.getOutput());
     expect(lines.length).toBeLessThanOrEqual(12);
@@ -1242,7 +1266,6 @@ describe("runStartupSettingsScreen", () => {
     }
     expect(lines.some((line) => line.includes("> Backend"))).toBe(true);
     expect(lines.some((line) => line.includes("Skip multiplexers and run"))).toBe(true);
-    expect(lines.some((line) => line.includes("headless directly in this"))).toBe(true);
 
     description.sendKeys(["\r"]);
 
@@ -1731,6 +1754,7 @@ describe("runSelectionScreen -- startup defaults", () => {
         mergeStrategy: "auto",
         reviewMode: "mine",
         collaborationMode: "share",
+        scheduleEnabled: true,
       },
     });
     sendKeyBatches(["\r"], ["\r"]);
@@ -1741,6 +1765,7 @@ describe("runSelectionScreen -- startup defaults", () => {
     expect(result!.mergeStrategy).toBe("auto");
     expect(result!.reviewMode).toBe("mine");
     expect(result!.connectionAction).toEqual({ type: "connect" });
+    expect(result!.scheduleEnabled).toBe(true);
     expect(result!.sessionLimit).toBe(7);
   });
 

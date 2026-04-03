@@ -31,7 +31,13 @@ import {
   buildStartupPersistenceUpdates,
 } from "../interactive.ts";
 import type { InteractiveResult, InteractiveDeps } from "../interactive.ts";
-import { loadConfig, loadUserConfig, saveUserConfig } from "../config.ts";
+import {
+  isProjectScheduleEnabled,
+  loadConfig,
+  loadUserConfig,
+  projectUserConfigKey,
+  saveUserConfig,
+} from "../config.ts";
 import { printHelp } from "../help.ts";
 import { AI_TOOL_PROFILES } from "../ai-tools.ts";
 import type { AiToolProfile } from "../ai-tools.ts";
@@ -407,7 +413,9 @@ export async function cmdNoArgs(
   const projectConfig = doLoadConfig(projectRoot);
   const userConfig = doLoadUserConfig();
   const defaultReviewMode = projectConfig.review_external ? "all" as const : "mine" as const;
-  const defaultSettings = resolveTuiSettingsDefaults(userConfig);
+  const defaultSettings = resolveTuiSettingsDefaults(userConfig, {
+    scheduleEnabled: isProjectScheduleEnabled(userConfig, projectRoot),
+  });
   if (userConfig.review_mode === undefined) {
     defaultSettings.reviewMode = defaultReviewMode;
   }
@@ -425,10 +433,16 @@ export async function cmdNoArgs(
   if (!result) return; // User cancelled
 
   try {
-    doSaveUserConfig(buildStartupPersistenceUpdates(result, {
-      backendMode: defaultSettings.backendMode,
-      savedToolIds: userConfig.ai_tools,
-    }));
+    doSaveUserConfig({
+      ...buildStartupPersistenceUpdates(result, {
+        backendMode: defaultSettings.backendMode,
+        savedToolIds: userConfig.ai_tools,
+      }),
+      schedule_enabled_projects: {
+        ...(userConfig.schedule_enabled_projects ?? {}),
+        [projectUserConfigKey(projectRoot)]: result.scheduleEnabled ?? false,
+      },
+    });
   } catch {
     // best-effort persistence only
   }

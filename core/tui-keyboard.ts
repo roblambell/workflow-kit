@@ -20,6 +20,8 @@ import {
   collaborationIntentFromMode,
   collaborationIntentToMode,
   runtimeOptionsForSettingsRow,
+  scheduleEnabledToMode,
+  scheduleModeToEnabled,
   type CollaborationIntent,
   type CollaborationMode,
   type ReviewMode,
@@ -138,6 +140,10 @@ export interface TuiState {
   collaborationMode: CollaborationMode;
   /** Pending collaboration mode awaiting engine acknowledgement. */
   pendingCollaborationMode?: CollaborationMode;
+  /** Current scheduled-task preference for this project. */
+  scheduleEnabled?: boolean;
+  /** Pending scheduled-task preference awaiting engine acknowledgement. */
+  pendingScheduleEnabled?: boolean;
   /** Active collaboration intent shown in the controls overlay. */
   collaborationIntent?: CollaborationIntent;
   /** Whether the controls overlay is capturing join-session text input. */
@@ -186,6 +192,8 @@ export interface TuiState {
   onReviewChange?: (mode: ReviewMode) => void;
   /** Called when the collaboration mode changes from the controls overlay. */
   onCollaborationChange?: (mode: CollaborationMode) => void;
+  /** Called when schedule execution is toggled from the controls overlay. */
+  onScheduleEnabledChange?: (enabled: boolean) => void;
   /** Called when the user selects Local in the controls overlay. */
   onCollaborationLocal?: CollaborationActionHandler;
   /** Called when the user selects Share in the controls overlay. */
@@ -216,6 +224,7 @@ export interface TuiRuntimeSnapshot {
   sessionLimit: number;
   reviewMode: ReviewMode;
   collaborationMode: CollaborationMode;
+  scheduleEnabled?: boolean;
 }
 
 export function isTuiPaused(
@@ -236,6 +245,8 @@ export function applyRuntimeSnapshotToTuiState(
   tuiState.viewOptions.reviewMode = runtime.reviewMode;
   tuiState.collaborationMode = runtime.collaborationMode;
   tuiState.viewOptions.collaborationMode = runtime.collaborationMode;
+  tuiState.scheduleEnabled = runtime.scheduleEnabled;
+  tuiState.viewOptions.scheduleEnabled = runtime.scheduleEnabled;
 
   if (tuiState.pendingStrategy === runtime.mergeStrategy) {
     tuiState.pendingStrategy = undefined;
@@ -248,6 +259,9 @@ export function applyRuntimeSnapshotToTuiState(
   }
   if (tuiState.pendingCollaborationMode === runtime.collaborationMode) {
     tuiState.pendingCollaborationMode = undefined;
+  }
+  if (tuiState.pendingScheduleEnabled === runtime.scheduleEnabled) {
+    tuiState.pendingScheduleEnabled = undefined;
   }
   if (tuiState.pendingSessionLimit === runtime.sessionLimit) {
     tuiState.pendingSessionLimit = undefined;
@@ -588,6 +602,8 @@ export function setupKeyboardShortcuts(
     const currentValue = row.id === "collaboration_mode"
       ? (tuiState.pendingCollaborationMode
         ?? collaborationIntentToMode(tuiState.collaborationIntent ?? collaborationIntentFromMode(tuiState.collaborationMode)))
+      : row.id === "schedule_enabled"
+        ? scheduleEnabledToMode(tuiState.pendingScheduleEnabled ?? tuiState.scheduleEnabled ?? false)
       : row.id === "review_mode"
         ? (tuiState.pendingReviewMode ?? tuiState.reviewMode)
         : (tuiState.pendingStrategy ?? tuiState.mergeStrategy);
@@ -615,6 +631,21 @@ export function setupKeyboardShortcuts(
         newMode,
       });
       tuiState.onReviewChange?.(newMode);
+      return;
+    }
+
+    if (row.id === "schedule_enabled") {
+      const oldEnabled = tuiState.scheduleEnabled ?? false;
+      const newEnabled = scheduleModeToEnabled(nextOption.runtimeValue as "off" | "on");
+      tuiState.pendingScheduleEnabled = newEnabled === oldEnabled ? undefined : newEnabled;
+      log({
+        ts: new Date().toISOString(),
+        level: "info",
+        event: "schedule_enabled_change",
+        oldEnabled,
+        newEnabled,
+      });
+      tuiState.onScheduleEnabledChange?.(newEnabled);
       return;
     }
 

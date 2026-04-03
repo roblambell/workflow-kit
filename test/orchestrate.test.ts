@@ -5822,6 +5822,8 @@ describe("crew remote state: last broker update replaces stale snapshots", () =>
 // ── parseWatchArgs (passthrough path) ──────────────────────────────────
 
 describe("resolveInteractiveStartupConfig", () => {
+  const projectRoot = "/tmp/interactive-schedule";
+
   it("keeps persisted merge, review, and collaboration defaults", () => {
     const result = resolveInteractiveStartupConfig(
       { review_external: false, schedule_enabled: false, ai_tools: ["claude"] },
@@ -5832,6 +5834,7 @@ describe("resolveInteractiveStartupConfig", () => {
         review_mode: "all",
         collaboration_mode: "share",
       },
+      projectRoot,
     );
 
     expect(result.defaults).toEqual({
@@ -5839,6 +5842,7 @@ describe("resolveInteractiveStartupConfig", () => {
       mergeStrategy: "auto",
       reviewMode: "all",
       collaborationMode: "share",
+      scheduleEnabled: false,
     });
     expect(result.savedToolIds).toEqual(["opencode", "copilot"]);
     expect(result.skipToolStep).toBe(true);
@@ -5848,6 +5852,7 @@ describe("resolveInteractiveStartupConfig", () => {
     const result = resolveInteractiveStartupConfig(
       { review_external: true, schedule_enabled: false },
       {},
+      projectRoot,
     );
 
     expect(result.defaults).toEqual({
@@ -5855,6 +5860,7 @@ describe("resolveInteractiveStartupConfig", () => {
       mergeStrategy: "manual",
       reviewMode: "off",
       collaborationMode: "local",
+      scheduleEnabled: false,
     });
     expect(result.savedToolIds).toBeUndefined();
     expect(result.skipToolStep).toBe(false);
@@ -5864,12 +5870,27 @@ describe("resolveInteractiveStartupConfig", () => {
     const result = resolveInteractiveStartupConfig(
       { review_external: true, schedule_enabled: false },
       { review_mode: "mine" },
+      projectRoot,
       "claude",
     );
 
     expect(result.defaults.backendMode).toBe("auto");
     expect(result.defaults.reviewMode).toBe("mine");
     expect(result.skipToolStep).toBe(true);
+  });
+
+  it("restores the project-local scheduled-task preference on re-entry", () => {
+    const result = resolveInteractiveStartupConfig(
+      { review_external: false, schedule_enabled: true },
+      {
+        schedule_enabled_projects: {
+          [projectRoot.replace(/\//g, "-")]: true,
+        },
+      },
+      projectRoot,
+    );
+
+    expect(result.defaults.scheduleEnabled).toBe(true);
   });
 
   it("builds full durable startup updates while keeping join codes runtime-only", () => {
@@ -5882,6 +5903,7 @@ describe("resolveInteractiveStartupConfig", () => {
         review_mode: "all",
         collaboration_mode: "share",
       },
+      projectRoot,
     );
     const result: InteractiveResult = {
       itemIds: ["H-1"],
@@ -5890,6 +5912,7 @@ describe("resolveInteractiveStartupConfig", () => {
       allSelected: false,
       reviewMode: "all",
       connectionAction: { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
+      scheduleEnabled: false,
     };
 
     const persisted = buildStartupPersistenceUpdates(result, {
@@ -5954,10 +5977,12 @@ describe("resolveScheduleExecutionEnabled", () => {
 });
 
 describe("createRuntimeControlHandlers", () => {
-  it("persists merge, review, and WIP changes while keeping pause and collaboration runtime-only", () => {
+  it("persists merge, review, WIP, and schedule changes while keeping pause and collaboration runtime-only", () => {
     const savedUpdates: Array<Record<string, unknown>> = [];
+    const savedScheduleEnabled: boolean[] = [];
     const sentControls: Array<Record<string, unknown>> = [];
     let currentSessionLimit = 3;
+    let currentScheduleEnabled = false;
 
     const handlers = createRuntimeControlHandlers({
       sendControl: (command) => {
@@ -5965,10 +5990,18 @@ describe("createRuntimeControlHandlers", () => {
         if (command.type === "set-session-limit") {
           currentSessionLimit = command.limit;
         }
+        if (command.type === "set-schedule-enabled") {
+          currentScheduleEnabled = command.enabled;
+        }
       },
       getSessionLimit: () => currentSessionLimit,
+      getScheduleEnabled: () => currentScheduleEnabled,
+      projectRoot: "/tmp/runtime-controls",
       saveUserConfigFn: (updates) => {
         savedUpdates.push(updates as Record<string, unknown>);
+      },
+      saveProjectScheduleEnabledFn: (_projectRoot, enabled) => {
+        savedScheduleEnabled.push(enabled);
       },
     });
 
@@ -5980,9 +6013,11 @@ describe("createRuntimeControlHandlers", () => {
     handlers.onStrategyChange?.("auto");
     handlers.onReviewChange?.("all-prs");
     handlers.onSessionLimitChange?.(1);
+    handlers.onScheduleEnabledChange?.(true);
     handlers.onShutdown?.();
 
     expect(currentSessionLimit).toBe(4);
+    expect(currentScheduleEnabled).toBe(true);
     expect(sentControls).toEqual([
       { type: "set-collaboration-mode", mode: "shared", source: "keyboard" },
       { type: "set-collaboration-mode", mode: "joined", code: "ABCD-1234", source: "keyboard" },
@@ -5992,6 +6027,7 @@ describe("createRuntimeControlHandlers", () => {
       { type: "set-merge-strategy", strategy: "auto", source: "keyboard" },
       { type: "set-review-mode", mode: "all-prs", source: "keyboard" },
       { type: "set-session-limit", limit: 4, source: "keyboard" },
+      { type: "set-schedule-enabled", enabled: true, source: "keyboard" },
       { type: "shutdown", source: "keyboard" },
     ]);
     expect(savedUpdates).toEqual([
@@ -5999,6 +6035,7 @@ describe("createRuntimeControlHandlers", () => {
       { review_mode: "all" },
       { session_limit: 4 },
     ]);
+    expect(savedScheduleEnabled).toEqual([true]);
     expect(shareResult).toEqual({ mode: "shared" });
     expect(joinResult).toEqual({ mode: "joined" });
     expect(localResult).toEqual({ mode: "local" });
@@ -6010,6 +6047,8 @@ describe("createRuntimeControlHandlers", () => {
     const handlers = createRuntimeControlHandlers({
       sendControl: () => {},
       getSessionLimit: () => 3,
+      getScheduleEnabled: () => false,
+      projectRoot: "/tmp/runtime-controls",
       saveUserConfigFn,
     });
 
@@ -6493,6 +6532,7 @@ describe("watch engine runner", () => {
       }),
       initialReviewMode: "ninthwave-prs",
       initialCollaborationMode: "local",
+      initialScheduleEnabled: false,
       getSessionLimit,
       setSessionLimit,
     });
@@ -6554,6 +6594,7 @@ describe("watch engine runner", () => {
       sessionLimit: 2,
       reviewMode: "ninthwave-prs",
       collaborationMode: "local",
+      scheduleEnabled: false,
     });
   });
 
@@ -6591,6 +6632,7 @@ describe("watch engine runner", () => {
     runner.sendControl({ type: "set-review-mode", mode: "off", source: "test-1" });
     runner.sendControl({ type: "set-collaboration-mode", mode: "shared", source: "test-2" });
     runner.sendControl({ type: "set-session-limit", limit: 4, source: "test-3" });
+    runner.sendControl({ type: "set-schedule-enabled", enabled: true, source: "test-3b" });
     runner.sendControl({ type: "set-merge-strategy", strategy: "auto", source: "test-4" });
     continueLoop();
     await runPromise;
@@ -6600,21 +6642,32 @@ describe("watch engine runner", () => {
       "review_mode_changed",
       "collaboration_mode_changed",
       "session_limit_changed",
+      "schedule_enabled_changed",
     ]);
-    expect(snapshots).toHaveLength(2);
+    expect(snapshots).toHaveLength(3);
     expect(snapshots[0]!.runtime).toEqual({
       paused: false,
       mergeStrategy: "manual",
       sessionLimit: 2,
       reviewMode: "ninthwave-prs",
       collaborationMode: "local",
+      scheduleEnabled: false,
     });
     expect(snapshots[1]!.runtime).toEqual({
+      paused: true,
+      mergeStrategy: "manual",
+      sessionLimit: 4,
+      reviewMode: "off",
+      collaborationMode: "shared",
+      scheduleEnabled: true,
+    });
+    expect(snapshots[2]!.runtime).toEqual({
       paused: true,
       mergeStrategy: "auto",
       sessionLimit: 4,
       reviewMode: "off",
       collaborationMode: "shared",
+      scheduleEnabled: true,
     });
     expect(orch.config.mergeStrategy).toBe("auto");
     expect(orch.config.skipReview).toBe(true);
@@ -6659,7 +6712,11 @@ describe("watch engine runner", () => {
       "shutdown_requested",
     ]);
     expect(item.timeoutExtensionCount).toBe(1);
-    expect(snapshots).toHaveLength(0);
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]!.state.items[0]).toMatchObject({
+      id: "ENG-3",
+      timeoutExtensionCount: 1,
+    });
   });
 });
 
@@ -6688,6 +6745,7 @@ describe("shared engine wrappers", () => {
         serializeOrchestratorState(items, 1, "2026-04-01T00:00:00.000Z", { heartbeats }),
       initialReviewMode: "ninthwave-prs" as const,
       initialCollaborationMode: "local" as const,
+      initialScheduleEnabled: false,
       getSessionLimit: () => 1,
       setSessionLimit: () => {},
     };
@@ -6761,6 +6819,7 @@ describe("shared engine wrappers", () => {
           serializeOrchestratorState(items, 2, "2026-04-01T00:00:00.000Z", { heartbeats }),
         initialReviewMode: "ninthwave-prs",
         initialCollaborationMode: "local",
+        initialScheduleEnabled: false,
         getSessionLimit: () => currentSessionLimit,
         setSessionLimit: (limit) => {
           currentSessionLimit = limit;
@@ -6772,6 +6831,7 @@ describe("shared engine wrappers", () => {
       runner.sendControl({ type: "set-review-mode", mode: "all-prs", source: "test-review" });
       runner.sendControl({ type: "set-collaboration-mode", mode: "shared", source: "test-collab" });
       runner.sendControl({ type: "set-session-limit", limit: 4, source: "test-session-limit" });
+      runner.sendControl({ type: "set-schedule-enabled", enabled: true, source: "test-schedule" });
       runner.sendControl({ type: "set-merge-strategy", strategy: "auto", source: "test-merge" });
       continueLoop();
       await runPromise;
@@ -6797,6 +6857,7 @@ describe("shared engine wrappers", () => {
       "review_mode_changed",
       "collaboration_mode_changed",
       "session_limit_changed",
+      "schedule_enabled_changed",
     ]);
     expect(detached.snapshotRuntimes).toEqual([
       {
@@ -6805,6 +6866,15 @@ describe("shared engine wrappers", () => {
         sessionLimit: 2,
         reviewMode: "ninthwave-prs",
         collaborationMode: "local",
+        scheduleEnabled: false,
+      },
+      {
+        paused: true,
+        mergeStrategy: "manual",
+        sessionLimit: 4,
+        reviewMode: "all-prs",
+        collaborationMode: "shared",
+        scheduleEnabled: true,
       },
       {
         paused: true,
@@ -6812,6 +6882,7 @@ describe("shared engine wrappers", () => {
         sessionLimit: 4,
         reviewMode: "all-prs",
         collaborationMode: "shared",
+        scheduleEnabled: true,
       },
     ]);
     expect(detached.snapshotTimings[0]).toEqual({
@@ -6823,7 +6894,20 @@ describe("shared engine wrappers", () => {
       render: 0,
       totalBlocking: 2_500,
     });
-    expect(detached.snapshotPollIntervals).toEqual([1200, 800]);
+    expect(detached.snapshotTimings).toEqual([
+      {
+        eventLoopLag: 0,
+        poll: 2_500,
+        actionExecution: 0,
+        mainRefresh: 0,
+        displaySync: 0,
+        render: 0,
+        totalBlocking: 2_500,
+      },
+      null,
+      null,
+    ]);
+    expect(detached.snapshotPollIntervals).toEqual([1200, null, 800]);
   });
 });
 
@@ -7059,6 +7143,7 @@ describe("interactive watch operator session", () => {
         sessionLimit: 2,
         reviewMode: "ninthwave-prs",
         collaborationMode: "local",
+        scheduleEnabled: false,
         ...runtimeOverrides,
       },
       ...(interactiveTiming ? { interactiveTiming } : {}),

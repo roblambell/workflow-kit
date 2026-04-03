@@ -54,7 +54,14 @@ import {
 } from "../interactive.ts";
 import type { WorkItem, LogEntry } from "../types.ts";
 import { ID_IN_FILENAME, PRIORITY_NUM } from "../types.ts";
-import { loadConfig, saveConfig, loadUserConfig, saveUserConfig, isProjectScheduleEnabled } from "../config.ts";
+import {
+  isProjectScheduleEnabled,
+  loadConfig,
+  loadUserConfig,
+  projectUserConfigKey,
+  saveConfig,
+  saveUserConfig,
+} from "../config.ts";
 import type { ProjectConfig, UserConfig } from "../config.ts";
 import {
   collaborationIntentFromMode,
@@ -339,10 +346,13 @@ export interface InteractiveStartupConfig {
 export function resolveInteractiveStartupConfig(
   _projectConfig: ProjectConfig,
   userConfig: UserConfig,
+  projectRoot: string,
   toolOverride?: string,
 ): InteractiveStartupConfig {
   return {
-    defaults: resolveTuiSettingsDefaults(userConfig),
+    defaults: resolveTuiSettingsDefaults(userConfig, {
+      scheduleEnabled: isProjectScheduleEnabled(userConfig, projectRoot),
+    }),
     savedToolIds: userConfig.ai_tools,
     skipToolStep: !!toolOverride || (userConfig.ai_tools?.length ?? 0) > 0,
   };
@@ -542,6 +552,7 @@ export interface InteractiveEngineTransportRuntime {
   sessionLimit: number;
   reviewMode: "off" | "ninthwave-prs" | "all-prs";
   collaborationMode: "local" | "shared" | "joined";
+  scheduleEnabled?: boolean;
 }
 
 export const INTERACTIVE_STARTUP_OVERLAYS = {
@@ -1309,6 +1320,8 @@ export function renderTuiPanelFrameFromStatusItems(
         collaborationError: tuiState.collaborationError,
         reviewMode: tuiState.reviewMode,
         pendingReviewMode: tuiState.pendingReviewMode,
+        scheduleEnabled: tuiState.scheduleEnabled,
+        pendingScheduleEnabled: tuiState.pendingScheduleEnabled,
         mergeStrategy: tuiState.mergeStrategy,
         pendingMergeStrategy: tuiState.pendingStrategy,
         bypassEnabled: tuiState.bypassEnabled,
@@ -1906,6 +1919,8 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
           collaborationError: tuiState.collaborationError,
           reviewMode: tuiState.reviewMode,
           pendingReviewMode: tuiState.pendingReviewMode,
+          scheduleEnabled: tuiState.scheduleEnabled,
+          pendingScheduleEnabled: tuiState.pendingScheduleEnabled,
           mergeStrategy: tuiState.mergeStrategy,
           pendingMergeStrategy: tuiState.pendingStrategy,
           bypassEnabled: tuiState.bypassEnabled,
@@ -2016,6 +2031,7 @@ interface InteractiveOperatorParentSessionOptions {
   futureOnlyStartup: boolean;
   reviewMode: "off" | "ninthwave-prs" | "all-prs";
   collaborationMode: "local" | "shared" | "joined";
+  scheduleEnabled: boolean;
   bypassEnabled: boolean;
   fixForward: boolean;
   reviewAutoFix?: "off" | "direct" | "pr";
@@ -2098,6 +2114,7 @@ async function runInteractiveOperatorParentSession(
     sessionLimit: opts.sessionLimit,
     reviewMode: opts.reviewMode,
     collaborationMode: opts.collaborationMode,
+    scheduleEnabled: opts.scheduleEnabled,
   });
 
   let sendRuntimeControl = (_command: WatchEngineControlCommand) => {};
@@ -2119,6 +2136,7 @@ async function runInteractiveOperatorParentSession(
       collaborationJoinInputValue: "",
       collaborationBusy: false,
       reviewMode: operatorLastSnapshot.runtime.reviewMode,
+      scheduleEnabled: operatorLastSnapshot.runtime.scheduleEnabled ?? false,
       ...(opts.futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
     },
     paused: false,
@@ -2138,6 +2156,8 @@ async function runInteractiveOperatorParentSession(
     controlsRowIndex: 0,
     collaborationMode: operatorLastSnapshot.runtime.collaborationMode,
     pendingCollaborationMode: undefined,
+    scheduleEnabled: operatorLastSnapshot.runtime.scheduleEnabled ?? false,
+    pendingScheduleEnabled: undefined,
     collaborationIntent: collaborationIntentFromMode(operatorLastSnapshot.runtime.collaborationMode),
     collaborationJoinInputActive: false,
     collaborationJoinInputValue: "",
@@ -2162,9 +2182,14 @@ async function runInteractiveOperatorParentSession(
 
   const runtimeControlHandlers = createRuntimeControlHandlers({
     sendControl: (command) => {
+      if (command.type === "set-schedule-enabled") {
+        scheduleEnabled = command.enabled;
+      }
       sendRuntimeControl(command);
     },
     getSessionLimit: () => tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? operatorLastSnapshot.runtime.sessionLimit,
+    getScheduleEnabled: () => tuiState.pendingScheduleEnabled ?? tuiState.scheduleEnabled ?? operatorLastSnapshot.runtime.scheduleEnabled ?? false,
+    projectRoot: opts.projectRoot,
     requestCollaborationAction: async (request) => {
       const result = await requestCollaborationFromEngine(request);
       if (!result.error && result.code) {
@@ -3061,6 +3086,8 @@ export interface OrchestrateLoopDeps {
   readTokenUsage?: (item: OrchestratorItem, action: Action, ctx: ExecutionContext) => TokenUsage | undefined;
   /** Schedule dependencies. When present, scheduled task processing is active. */
   scheduleDeps?: ScheduleLoopDeps;
+  /** Dynamic gate for schedule execution while keeping schedule deps wired. */
+  isScheduleExecutionEnabled?: () => boolean;
   /** Injectable clock for interactive watch timing tests. Defaults to Date.now. */
   nowMs?: () => number;
   /** Injectable timer hooks for event-loop lag sampling tests. */
@@ -3469,7 +3496,7 @@ export async function orchestrateLoop(
 
     // ── Scheduled task processing ─────────────────────────────────
     // Gated by 30s interval check to avoid excessive filesystem reads.
-      if (deps.scheduleDeps) {
+      if (deps.scheduleDeps && deps.isScheduleExecutionEnabled?.() !== false) {
       const SCHEDULE_CHECK_INTERVAL_MS = 30_000;
       const nowMs = Date.now();
       if (nowMs - lastScheduleCheckMs >= SCHEDULE_CHECK_INTERVAL_MS) {
@@ -3941,7 +3968,7 @@ export async function cmdOrchestrate(
   // Compute memory-aware WIP default, allow --session-limit to override
   // Precedence: CLI --session-limit > persisted user preference > computed default
   const computedSessionLimit = computeDefaultSessionLimit();
-  const persistedUserCfg = loadUserConfig();
+  let persistedUserCfg = loadUserConfig();
   const sessionLimitFromCli = sessionLimitOverride !== undefined;
   let sessionLimit = sessionLimitOverride ?? persistedUserCfg.session_limit ?? computedSessionLimit;
   let startupBackendMode = backendModeOverride ?? persistedUserCfg.backend_mode ?? "auto";
@@ -3959,11 +3986,12 @@ export async function cmdOrchestrate(
   const workItems = loadDiscoveryWorkItems("startup");
   const preConfig = loadConfig(projectRoot);
   crewUrl = resolveConfiguredCrewUrl(crewUrl, preConfig.crew_url);
-  const interactiveStartupConfig = resolveInteractiveStartupConfig(preConfig, persistedUserCfg, toolOverride);
+  const interactiveStartupConfig = resolveInteractiveStartupConfig(preConfig, persistedUserCfg, projectRoot, toolOverride);
 
   // Interactive mode: no --items and stdin is a TTY
   let interactiveSkipReview = false;
   let interactiveReviewMode: "all" | "mine" | "off" | null = null;
+  let interactiveScheduleEnabled: boolean | null = null;
   if (shouldEnterInteractive(itemIds.length > 0)) {
     // Pre-detect tools and config for TUI flow
     const installedTools = detectInstalledAITools();
@@ -3986,11 +4014,19 @@ export async function cmdOrchestrate(
     startupBackendMode = result.backendMode ?? startupBackendMode;
     interactiveReviewMode = result.reviewMode;
     interactiveSkipReview = result.reviewMode === "off";
+    interactiveScheduleEnabled = result.scheduleEnabled ?? false;
     try {
-      saveUserConfig(buildStartupPersistenceUpdates(result, {
-        backendMode: startupBackendMode,
-        savedToolIds: interactiveStartupConfig.savedToolIds,
-      }));
+      saveUserConfig({
+        ...buildStartupPersistenceUpdates(result, {
+          backendMode: startupBackendMode,
+          savedToolIds: interactiveStartupConfig.savedToolIds,
+        }),
+        schedule_enabled_projects: {
+          ...(persistedUserCfg.schedule_enabled_projects ?? {}),
+          [projectUserConfigKey(projectRoot)]: result.scheduleEnabled ?? false,
+        },
+      });
+      persistedUserCfg = loadUserConfig();
     } catch {
       // best-effort persistence only
     }
@@ -4042,6 +4078,8 @@ export async function cmdOrchestrate(
   const startupCollaborationMode = crewCode
     ? (connectMode ? "shared" as const : "joined" as const)
     : persistedCollaborationModeToRuntime(interactiveStartupConfig.defaults.collaborationMode);
+  const startupScheduleEnabled = interactiveScheduleEnabled
+    ?? isProjectScheduleEnabled(persistedUserCfg, projectRoot);
 
   if (tuiMode && !isInteractiveEngineChild) {
     usedInteractiveOperatorParentSession = true;
@@ -4059,6 +4097,7 @@ export async function cmdOrchestrate(
       futureOnlyStartup,
       reviewMode: startupReviewMode,
       collaborationMode: startupCollaborationMode,
+      scheduleEnabled: startupScheduleEnabled,
       bypassEnabled,
       fixForward,
       ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
@@ -4453,7 +4492,7 @@ export async function cmdOrchestrate(
       : interactiveReviewMode === "mine" || interactiveReviewMode === "off"
         ? false
         : (parsedReviewExternal || projectConfig.review_external);
-  const scheduleEnabled = resolveScheduleExecutionEnabled(projectConfig, persistedUserCfg, projectRoot);
+  let scheduleEnabled = isProjectScheduleEnabled(persistedUserCfg, projectRoot);
 
   // State persistence: serialize state each poll cycle so the status pane can display all items.
   // Written in both daemon and interactive mode -- the status pane reads this file to show
@@ -4495,6 +4534,7 @@ export async function cmdOrchestrate(
       sessionLimit,
       reviewMode: initialReviewMode,
       collaborationMode: initialCollaborationMode,
+      scheduleEnabled,
     },
   };
 
@@ -4560,6 +4600,8 @@ export async function cmdOrchestrate(
       sendRuntimeControl(command);
     },
     getSessionLimit: () => tuiState.pendingSessionLimit ?? sessionLimit,
+    getScheduleEnabled: () => tuiState.pendingScheduleEnabled ?? scheduleEnabled,
+    projectRoot,
     requestCollaborationAction: (request) => requestRuntimeCollaborationAction(request),
   });
   const tuiState: TuiState = {
@@ -4575,6 +4617,7 @@ export async function cmdOrchestrate(
       collaborationBusy: false,
       shutdownInProgress: false,
       reviewMode: initialReviewMode,
+      scheduleEnabled,
       ...(futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
     },
     paused: false,
@@ -4593,6 +4636,8 @@ export async function cmdOrchestrate(
     controlsRowIndex: 0,
     collaborationMode: initialCollaborationMode,
     pendingCollaborationMode: undefined,
+    scheduleEnabled,
+    pendingScheduleEnabled: undefined,
     collaborationIntent: "local",
     collaborationJoinInputActive: false,
     collaborationJoinInputValue: "",
@@ -4751,7 +4796,7 @@ export async function cmdOrchestrate(
 
   // Build schedule deps when schedule_enabled and no crew broker (solo mode only)
   const schedulesDir = join(projectRoot, ".ninthwave", "schedules");
-  const scheduleLoopDeps: ScheduleLoopDeps | undefined = (scheduleEnabled && !crewBroker)
+  const scheduleLoopDeps: ScheduleLoopDeps | undefined = (projectConfig.schedule_enabled && !crewBroker)
     ? {
         listScheduledTasks: () => listScheduledTasksFromDir(schedulesDir),
         readState: readScheduleState,
@@ -4768,7 +4813,7 @@ export async function cmdOrchestrate(
       }
     : undefined;
 
-  if (scheduleLoopDeps) {
+  if (scheduleLoopDeps && scheduleEnabled) {
     log({
       ts: new Date().toISOString(),
       level: "info",
@@ -4795,7 +4840,10 @@ export async function cmdOrchestrate(
       return loadDiscoveryWorkItems("watch-scan");
     } } : {}),
     ...(crewBroker ? { crewBroker } : {}),
-    ...(scheduleLoopDeps ? { scheduleDeps: scheduleLoopDeps } : {}),
+    ...(scheduleLoopDeps ? {
+      scheduleDeps: scheduleLoopDeps,
+      isScheduleExecutionEnabled: () => projectConfig.schedule_enabled && scheduleEnabled,
+    } : {}),
     // Completion prompt for TUI mode: render banner + wait for keypress
     ...(tuiMode ? {
       completionPrompt: async (allItems, runStartTime) => {

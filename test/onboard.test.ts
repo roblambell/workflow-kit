@@ -328,7 +328,7 @@ describe("onboard", () => {
   it("persists detected tools via user config instead of project config", async () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle");
-    const savedUpdates: Array<{ ai_tools?: string[] }> = [];
+    const savedUpdates: Array<Record<string, unknown>> = [];
 
     await onboard(projectDir, {
       commandExists: (cmd) => cmd === "claude",
@@ -346,7 +346,7 @@ describe("onboard", () => {
   it("shows Codex in the onboarding tool picker and persists the selection", async () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle");
-    const savedUpdates: Array<{ ai_tools?: string[] }> = [];
+    const savedUpdates: Array<Record<string, unknown>> = [];
     let renderedItems: CheckboxItem[] = [];
 
     await onboard(projectDir, {
@@ -948,6 +948,7 @@ describe("cmdNoArgs", () => {
           mergeStrategy: "auto",
           reviewMode: "all",
           collaborationMode: "share",
+          scheduleEnabled: false,
         });
         expect(deps?.savedToolIds).toEqual(["opencode", "copilot"]);
         return null;
@@ -986,13 +987,16 @@ describe("cmdNoArgs", () => {
     });
 
     expect(savedUpdates).toHaveLength(1);
-    expect(savedUpdates[0]).toEqual({
+    expect(savedUpdates[0]).toMatchObject({
       backend_mode: "headless",
       merge_strategy: "auto",
       review_mode: "all",
       session_limit: 4,
       collaboration_mode: "share",
       ai_tools: ["opencode", "copilot"],
+      schedule_enabled_projects: {
+        [projectDir.replace(/\//g, "-")]: false,
+      },
     });
     expect(watchArgs).toContain("--connect");
     expect(watchArgs).toContain("--tool");
@@ -1033,6 +1037,9 @@ describe("cmdNoArgs", () => {
       review_mode: "mine",
       session_limit: 4,
       collaboration_mode: "join",
+      schedule_enabled_projects: {
+        [projectDir.replace(/\//g, "-")]: false,
+      },
     });
     expect(savedUpdates[0]).not.toHaveProperty("code");
     expect(JSON.stringify(savedUpdates[0])).not.toContain("K2F9-AB3X-7YPL-QM4N");

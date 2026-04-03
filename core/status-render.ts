@@ -20,6 +20,7 @@ import {
   collaborationIntentToMode,
   reviewModeLabel,
   runtimeOptionsForSettingsRow,
+  scheduleEnabledToMode,
   type CollaborationIntent,
   type CollaborationMode,
   type ReviewMode,
@@ -84,6 +85,10 @@ export interface ViewOptions {
   collaborationError?: string;
   /** Current AI review mode for display. */
   reviewMode?: ReviewMode;
+  /** Current schedule-execution preference for display. */
+  scheduleEnabled?: boolean;
+  /** Pending schedule-execution preference awaiting engine acknowledgement. */
+  pendingScheduleEnabled?: boolean;
   /** Active schedule workers to display in the TUI. */
   scheduleWorkers?: ScheduleWorkerInfo[];
   /** Number of items where GitHub API returned errors. When > 0, a warning is shown in the footer. */
@@ -2858,6 +2863,8 @@ export function renderControlsOverlay(
     collaborationError?: string;
     reviewMode: ReviewMode;
     pendingReviewMode?: ReviewMode;
+    scheduleEnabled?: boolean;
+    pendingScheduleEnabled?: boolean;
     mergeStrategy: MergeStrategy;
     pendingMergeStrategy?: MergeStrategy;
     bypassEnabled: boolean;
@@ -2877,6 +2884,8 @@ export function renderControlsOverlay(
     collaborationError: _collaborationError,
     reviewMode,
     pendingReviewMode,
+    scheduleEnabled = false,
+    pendingScheduleEnabled,
     mergeStrategy,
     pendingMergeStrategy,
     bypassEnabled,
@@ -2965,6 +2974,8 @@ export function renderControlsOverlay(
     if (row.kind === "choice") {
       const selectedValue = row.id === "collaboration_mode"
         ? selectedCollaborationMode
+        : row.id === "schedule_enabled"
+          ? scheduleEnabledToMode(pendingScheduleEnabled ?? scheduleEnabled)
         : row.id === "review_mode"
           ? (pendingReviewMode ?? reviewMode)
           : (pendingMergeStrategy ?? mergeStrategy);
@@ -2972,6 +2983,10 @@ export function renderControlsOverlay(
         .map((option) => {
           const pending = row.id === "collaboration_mode"
             ? option.runtimeValue === pendingCollaborationMode && pendingCollaborationMode !== collaborationMode
+            : row.id === "schedule_enabled"
+              ? option.runtimeValue === scheduleEnabledToMode(pendingScheduleEnabled ?? scheduleEnabled)
+                && pendingScheduleEnabled !== undefined
+                && pendingScheduleEnabled !== scheduleEnabled
             : row.id === "review_mode"
               ? option.runtimeValue === pendingReviewMode && pendingReviewMode !== reviewMode
               : option.runtimeValue === pendingMergeStrategy && pendingMergeStrategy !== mergeStrategy;
