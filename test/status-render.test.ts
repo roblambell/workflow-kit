@@ -3597,9 +3597,7 @@ describe("renderHelpOverlay", () => {
     expect(text).toContain("bypass");
     expect(text).toContain("Keyboard Shortcuts");
     expect(text).toContain("Shift+Tab");
-    expect(text).toContain("Ninthwave");
-    expect(text).toContain("Apache-2.0");
-    expect(text).toContain("ninthwave.sh");
+    expect(text).toContain("Ninthwave v");
   });
 
   it("strategy section uses strategyIndicator icons", () => {
@@ -3650,10 +3648,10 @@ describe("renderHelpOverlay", () => {
     expect(text).toContain("x           Extend worker timeout");
   });
 
-  it("advertises Enter, Escape, and ? as help dismiss keys", () => {
-    const lines = renderHelpOverlay(100, 40);
+  it("shows version in centered footer", () => {
+    const lines = renderHelpOverlay(100, 40, undefined, undefined, "1.2.3");
     const text = stripAnsi(lines.join("\n"));
-    expect(text).toContain("Press Enter, Escape, or ? to close");
+    expect(text).toContain("Ninthwave v1.2.3");
   });
 
   it("stays within tight terminal bounds", () => {

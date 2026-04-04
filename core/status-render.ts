@@ -2734,8 +2734,18 @@ export function renderHelpOverlay(
   termRows: number,
   sessionCode?: string,
   tmuxSessionName?: string,
+  version?: string,
 ): string[] {
   // ── Build content lines (plain text, no padding yet) ──────────────
+
+  // Pad key to a fixed visible width so all descriptions align at the same column.
+  // Widest key is "Throughput" (10 chars); pad to 12 for a 2-char minimum gap.
+  const KEY_WIDTH = 12;
+  const helpLine = (key: string, desc: string): string => {
+    const visible = stripAnsiForWidth(key).length;
+    const gap = " ".repeat(Math.max(2, KEY_WIDTH - visible));
+    return `  ${key}${gap}${desc}`;
+  };
 
   const sections: string[][] = [];
 
@@ -2760,43 +2770,39 @@ export function renderHelpOverlay(
   // Metrics section
   sections.push([
     `${BOLD}Metrics${RESET}`,
-    `  Lead time    Median start-to-merge duration`,
-    `  Throughput   Merged items per hour`,
-    `  Session      Time since orchestrator start`,
+    helpLine("Lead time", "Median start-to-merge duration"),
+    helpLine("Throughput", "Merged items per hour"),
+    helpLine("Session", "Time since orchestrator start"),
   ]);
 
   // Merge strategies section -- reuse strategyIndicator() for icons/colors
   sections.push([
     `${BOLD}Merge Strategies${RESET}`,
-    `  ${strategyIndicator("auto")}     CI must pass -> ninthwave auto-merges`,
-    `  ${strategyIndicator("manual")}  CI must pass -> human merges the PR`,
-    `  ${strategyIndicator("bypass")}  CI must pass -> admin merge skips human approval requirements`,
+    helpLine(strategyIndicator("auto"), "CI must pass -> ninthwave auto-merges"),
+    helpLine(strategyIndicator("manual"), "CI must pass -> human merges the PR"),
+    helpLine(strategyIndicator("bypass"), "CI must pass -> admin merge skips human approval requirements"),
   ]);
 
   // Keyboard shortcuts section
   sections.push([
     `${BOLD}Keyboard Shortcuts${RESET}`,
-    `  Tab         Toggle status/log pages`,
-    `  c           Open runtime controls`,
-    `  Shift+Tab   Cycle merge strategy`,
-    `  +/-         Adjust session limit`,
-    `  ?           Toggle this help overlay`,
-    `  Enter/i     Item detail panel`,
-    `  Escape      Close overlay / pause or resume dashboard`,
-    `  p           Pause or resume dashboard`,
-    `  q x2        Quit (double-tap) from any TUI state`,
-    `  Ctrl+C x2   Quit (double-tap)`,
-    `  d           Toggle blocker sub-lines`,
-    `  x           Extend worker timeout`,
-    `  Up/Down     Navigate items / scroll logs`,
-    `  j/k         Scroll logs (logs page)`,
+    helpLine("Tab", "Toggle status/log pages"),
+    helpLine("c", "Open runtime controls"),
+    helpLine("Shift+Tab", "Cycle merge strategy"),
+    helpLine("+/-", "Adjust session limit"),
+    helpLine("?", "Toggle this help overlay"),
+    helpLine("Enter/i", "Item detail panel"),
+    helpLine("Escape", "Close overlay / pause or resume dashboard"),
+    helpLine("p", "Pause or resume dashboard"),
+    helpLine("q x2", "Quit (double-tap) from any TUI state"),
+    helpLine("Ctrl+C x2", "Quit (double-tap)"),
+    helpLine("d", "Toggle blocker sub-lines"),
+    helpLine("x", "Extend worker timeout"),
+    helpLine("Up/Down", "Navigate items / scroll logs"),
+    helpLine("j/k", "Scroll logs (logs page)"),
   ]);
 
-  // Credits section
-  sections.push([
-    `${DIM}Ninthwave -- parallel AI coding orchestration${RESET}`,
-    `${DIM}Apache-2.0 -- ninthwave.sh${RESET}`,
-  ]);
+  // Version footer is rendered as a centered line below the content (like the old hint).
 
   // ── Flatten sections with blank separators ─────────────────────────
 
@@ -2806,7 +2812,8 @@ export function renderHelpOverlay(
     contentLines.push(...sections[s]!);
   }
 
-  const hint = "Press Enter, Escape, or ? to close";
+  const ver = version || "unknown";
+  const hint = `Ninthwave v${ver}`;
   const fixedBoxLines = 6;
   const maxContentLines = Math.max(0, termRows - fixedBoxLines);
   const visibleContentLines = contentLines.length <= maxContentLines

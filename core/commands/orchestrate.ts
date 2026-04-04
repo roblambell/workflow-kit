@@ -3,7 +3,7 @@
 // emits structured JSON logs, and handles graceful SIGINT/SIGTERM shutdown.
 // Supports daemon mode (--daemon) for background operation with state persistence.
 
-import { existsSync, mkdirSync, readdirSync, appendFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, appendFileSync, readFileSync } from "fs";
 import { join } from "path";
 import { totalmem, freemem, hostname } from "os";
 import { randomUUID } from "crypto";
@@ -539,6 +539,23 @@ export function createEventLoopLagSampler(
     },
   };
 }
+// ── Version helper ──────────────────────────────────────────────────
+
+let _cachedVersion: string | undefined;
+
+function readVersion(): string {
+  if (_cachedVersion !== undefined) return _cachedVersion;
+  try {
+    const versionFile = join(getBundleDir(), "VERSION");
+    if (existsSync(versionFile)) {
+      _cachedVersion = readFileSync(versionFile, "utf-8").trim();
+      return _cachedVersion;
+    }
+  } catch {}
+  _cachedVersion = "unknown";
+  return _cachedVersion;
+}
+
 // ── TUI mode helpers ────────────────────────────────────────────────
 
 /**
@@ -1334,7 +1351,7 @@ export function renderTuiPanelFrameFromStatusItems(
       break;
     }
     case "help": {
-      const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
+      const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName, readVersion());
       const content = helpLines.join("\n");
       write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
       break;
@@ -1443,7 +1460,7 @@ export function renderTuiFrame(
 
   if (viewOptions?.showHelp) {
     // Render help overlay instead of the normal frame
-    const helpLines = renderHelpOverlay(termWidth, termRows, sessionCode, undefined);
+    const helpLines = renderHelpOverlay(termWidth, termRows, sessionCode, undefined, readVersion());
     const content = helpLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else if (termRows >= MIN_FULLSCREEN_ROWS) {
@@ -1959,7 +1976,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
 
     switch (resolveActiveTuiOverlay(tuiState)) {
       case "help": {
-        const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName);
+        const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName, readVersion());
         const content = helpLines.join("\n");
         write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
         break;
