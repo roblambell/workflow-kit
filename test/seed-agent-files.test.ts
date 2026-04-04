@@ -1,13 +1,11 @@
-// Tests for seedAgentFiles and readAgentFileContent -- verifying
-// remote-first agent file seeding with local fallback.
+// Tests for seedAgentFiles (mirror-based worktree seeding) and readAgentFileContent.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { join } from "path";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import type { SeedAgentFilesDeps, SeededAgentFile } from "../core/agent-files.ts";
 import { readAgentFileContent, seedAgentFiles } from "../core/agent-files.ts";
-import { renderAgentArtifact } from "../core/ai-tools.ts";
 import type { RunResult } from "../core/types.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -16,27 +14,17 @@ function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "nw-seed-test-"));
 }
 
-function writeAgentFile(hubRoot: string, filename: string, content = "# Agent\n"): void {
-  mkdirSync(join(hubRoot, "agents"), { recursive: true });
-  writeFileSync(join(hubRoot, "agents", filename), content);
-}
-
-/** Create a mock run function that simulates git show results. */
-function mockRun(
-  results: Record<string, RunResult>,
-): (cmd: string, args: string[], opts?: { cwd?: string; timeout?: number }) => RunResult {
-  return (_cmd: string, args: string[], _opts?: { cwd?: string; timeout?: number }) => {
-    // Build a key from the git show ref arg (e.g., "origin/main:agents/implementer.md")
-    const showArg = args.find((a) => a.startsWith("origin/main:"));
-    const key = showArg ?? args.join(" ");
-    return results[key] ?? { stdout: "", stderr: "fatal: not found", exitCode: 128 };
-  };
+/** Write a file into a tool directory inside the given root. */
+function writeToolFile(root: string, toolDir: string, filename: string, content: string): void {
+  mkdirSync(join(root, toolDir), { recursive: true });
+  writeFileSync(join(root, toolDir, filename), content);
 }
 
 function createDeps(overrides: Partial<SeedAgentFilesDeps> = {}): SeedAgentFilesDeps {
   return {
     run: vi.fn(() => ({ stdout: "", stderr: "", exitCode: 128 })) as any,
     readFileSync: readFileSync as any,
+    readdirSync: readdirSync as any,
     existsSync: existsSync as any,
     mkdirSync: mkdirSync as any,
     writeFileSync: writeFileSync as any,
@@ -72,6 +60,8 @@ describe("readAgentFileContent", () => {
       ["show", "origin/main:agents/implementer.md"],
       { cwd: hubRoot, timeout: expect.any(Number) },
     );
+
+    rmSync(hubRoot, { recursive: true, force: true });
   });
 
   it("falls back to local filesystem when git show fails", () => {
@@ -166,298 +156,110 @@ describe("readAgentFileContent", () => {
 // ── seedAgentFiles ───────────────────────────────────────────────────
 
 describe("seedAgentFiles", () => {
-  it("seeds agent files from origin/main into worktree", () => {
-    const hubRoot = makeTmpDir();
+  it("copies missing agent files from main checkout to worktree", () => {
+    const projectRoot = makeTmpDir();
     const worktree = makeTmpDir();
-    const remoteContent = "# Implementer agent\nFrom remote";
+    const agentContent = "# Implementer agent\nCustom content";
 
-    writeAgentFile(hubRoot, "implementer.md");
+    // Simulate main checkout with agent files in tool directories
+    writeToolFile(projectRoot, ".claude/agents", "implementer.md", agentContent);
+    writeToolFile(projectRoot, ".github/agents", "ninthwave-implementer.agent.md", agentContent);
 
-    const deps = createDeps({
-      run: vi.fn((_cmd: string, args: string[]) => {
-        const showArg = args.find((a: string) => a.startsWith("origin/main:"));
-        if (showArg) {
-          return { stdout: remoteContent, stderr: "", exitCode: 0 };
-        }
-        return { stdout: "", stderr: "", exitCode: 128 };
-      }) as any,
-    });
+    const deps = createDeps();
+    const seeded = seedAgentFiles(worktree, projectRoot, deps);
 
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
-
-    // Should seed all target directories for each agent file
-    expect(seeded.length).toBeGreaterThan(0);
-    expect(seeded.every((entry) => entry.commitRecommended)).toBe(true);
-
-    // Verify content was written from remote
-    const claudeAgent = join(worktree, ".claude/agents/implementer.md");
-    expect(existsSync(claudeAgent)).toBe(true);
-    expect(readFileSync(claudeAgent, "utf-8")).toBe(remoteContent);
-    const codexAgent = join(worktree, ".codex/agents/ninthwave-implementer.toml");
-    expect(existsSync(codexAgent)).toBe(true);
-    expect(readFileSync(codexAgent, "utf-8")).toBe(
-      renderAgentArtifact("implementer.md", remoteContent, { suffix: ".toml" }).content,
-    );
-
-    rmSync(hubRoot, { recursive: true, force: true });
-    rmSync(worktree, { recursive: true, force: true });
-  });
-
-  it("falls back to local files when git show fails", () => {
-    const hubRoot = makeTmpDir();
-    const worktree = makeTmpDir();
-    const localContent = "# Implementer agent\nFrom local";
-
-    // Create all three agent files locally
-    writeAgentFile(hubRoot, "implementer.md", localContent);
-    writeAgentFile(hubRoot, "reviewer.md", localContent);
-    writeAgentFile(hubRoot, "forward-fixer.md", localContent);
-    writeAgentFile(hubRoot, "rebaser.md", localContent);
-
-    const deps = createDeps({
-      run: vi.fn(() => ({
-        stdout: "",
-        stderr: "fatal: not found",
-        exitCode: 128,
-      })) as any,
-    });
-
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
-
-    expect(seeded.length).toBeGreaterThan(0);
-    expect(seeded.every((entry) => entry.commitRecommended)).toBe(true);
-
-    // Verify content came from local
-    const claudeAgent = join(worktree, ".claude/agents/implementer.md");
-    expect(existsSync(claudeAgent)).toBe(true);
-    expect(readFileSync(claudeAgent, "utf-8")).toBe(localContent);
-    const codexAgent = join(worktree, ".codex/agents/ninthwave-implementer.toml");
-    expect(existsSync(codexAgent)).toBe(true);
-    expect(readFileSync(codexAgent, "utf-8")).toBe(
-      renderAgentArtifact("implementer.md", localContent, { suffix: ".toml" }).content,
-    );
-
-    rmSync(hubRoot, { recursive: true, force: true });
-    rmSync(worktree, { recursive: true, force: true });
-  });
-
-  it("preserves user-owned non-ninthwave Codex files while seeding managed ones", () => {
-    const hubRoot = makeTmpDir();
-    const worktree = makeTmpDir();
-    const localContent = "# Implementer agent\nFrom local";
-
-    writeAgentFile(hubRoot, "implementer.md", localContent);
-    mkdirSync(join(worktree, ".codex", "agents"), { recursive: true });
-    writeFileSync(join(worktree, ".codex", "agents", "custom.toml"), 'name = "custom"\n');
-
-    const deps = createDeps({
-      run: vi.fn(() => ({
-        stdout: "",
-        stderr: "fatal: not found",
-        exitCode: 128,
-      })) as any,
-    });
-
-    seedAgentFiles(worktree, hubRoot, deps);
-
-    expect(readFileSync(join(worktree, ".codex", "agents", "custom.toml"), "utf-8")).toBe(
-      'name = "custom"\n',
-    );
-    expect(existsSync(join(worktree, ".codex", "agents", "ninthwave-implementer.toml"))).toBe(true);
-
-    rmSync(hubRoot, { recursive: true, force: true });
-    rmSync(worktree, { recursive: true, force: true });
-  });
-
-  it("seeds explicit inbox, CI ownership, and rebase instructions in implementer artifacts", () => {
-    const hubRoot = makeTmpDir();
-    const worktree = makeTmpDir();
-    const localContent = readFileSync(join(import.meta.dirname, "..", "agents", "implementer.md"), "utf-8");
-
-    mkdirSync(join(hubRoot, "agents"), { recursive: true });
-    writeFileSync(join(hubRoot, "agents", "implementer.md"), localContent);
-
-    const deps = createDeps({
-      run: vi.fn(() => ({
-        stdout: "",
-        stderr: "fatal: not found",
-        exitCode: 128,
-      })) as any,
-    });
-
-    seedAgentFiles(worktree, hubRoot, deps);
-
-    const claudeAgent = join(worktree, ".claude/agents/implementer.md");
-    const codexAgent = join(worktree, ".codex/agents/ninthwave-implementer.toml");
-    const githubAgent = join(worktree, ".github/agents/ninthwave-implementer.agent.md");
-    const claudePrompt = readFileSync(claudeAgent, "utf-8");
-    const codexPrompt = readFileSync(codexAgent, "utf-8");
-    const githubPrompt = readFileSync(githubAgent, "utf-8");
-
-    expect(claudePrompt).toContain("nw inbox --check YOUR_WORK_ITEM_ID");
-    expect(claudePrompt).toContain("nw inbox --wait YOUR_WORK_ITEM_ID");
-    expect(claudePrompt).toContain("set the timeout to the longest practical value available");
-    expect(claudePrompt).toContain("immediately run the same wait command again");
-    expect(claudePrompt).toContain(".ninthwave/decisions/${TIMESTAMP}--YOUR_WORK_ITEM_ID.md");
-    expect(claudePrompt).toContain("review inbox");
-    expect(claudePrompt).toContain("do **not** move them into archival review subdirectories");
-    expect(claudePrompt).toContain("The daemon owns that lifecycle automation");
-    expect(claudePrompt).toContain("Opening the PR did **not** end your responsibility for this work item.");
-    expect(claudePrompt).toContain("A PR that is red in CI is still your job until you either push a candidate fix or post a concrete blocker comment");
-    expect(claudePrompt).toContain("Investigate the failure, implement the fix, and run the relevant tests locally");
-    expect(claudePrompt).toContain("nw heartbeat --progress 1.0 --label \"Fix pushed\"");
-    expect(claudePrompt).toContain("If CI fails again later, re-enter this same investigate → test → push loop on the next CI-failure message.");
-    expect(claudePrompt).toContain("do **not** return to idle just because you already attempted one fix");
-    expect(claudePrompt).toContain("Required outcome: after each CI-failure message, stay with the item until you have either pushed a new candidate fix or posted a real blocker comment on the PR.");
-    expect(claudePrompt).toContain("Do not assume the daemon will perform the rebase for you.");
-    expect(claudePrompt).toContain("Some daemon nudges may be plain-language inbox messages");
-    expect(claudePrompt).toContain("if you receive one in either structured or plain-language form, you are required to act on it.");
-    expect(claudePrompt).toContain("If `BASE_BRANCH` is set in your prompt: `git fetch origin $BASE_BRANCH --quiet && git rebase origin/$BASE_BRANCH`");
-    expect(claudePrompt).toContain("If `BASE_BRANCH` is not set: `git fetch origin main --quiet && git rebase origin/main`");
-    expect(claudePrompt).toContain("If the dependency has already merged, do **not** keep targeting the stale branch");
-    expect(claudePrompt).toContain("gh pr list --head \"$BASE_BRANCH\" --state merged --json number --limit 1");
-    expect(claudePrompt).toContain("Do **not** `git rebase --abort` just because conflicts appeared");
-    expect(claudePrompt).toContain("Required outcome: do not go back to idle until the branch is either successfully rebased and force-pushed, or you have posted the blocker comment for a genuinely non-trivial conflict");
-    expect(codexPrompt).toContain("Opening the PR did **not** end your responsibility for this work item.");
-    expect(codexPrompt).toContain(".ninthwave/decisions/${TIMESTAMP}--YOUR_WORK_ITEM_ID.md");
-    expect(codexPrompt).toContain("Fix pushed");
-    expect(githubPrompt).toContain("Do not assume the daemon will perform the rebase for you.");
-    expect(githubPrompt).toContain("Some daemon nudges may be plain-language inbox messages");
-    expect(githubPrompt).toContain("Opening the PR did **not** end your responsibility for this work item.");
-    expect(githubPrompt).toContain(".ninthwave/decisions/${TIMESTAMP}--YOUR_WORK_ITEM_ID.md");
-    expect(githubPrompt).toContain("If CI fails again later, re-enter this same investigate → test → push loop on the next CI-failure message.");
-
-    rmSync(hubRoot, { recursive: true, force: true });
-    rmSync(worktree, { recursive: true, force: true });
-  });
-
-  it("skips files that are already up to date in worktree", () => {
-    const hubRoot = makeTmpDir();
-    const worktree = makeTmpDir();
-    const existingContent = "# Remote agent file";
-    const remoteContent = "# Remote agent file";
-
-    writeAgentFile(hubRoot, "implementer.md");
-
-    // Pre-create the file in the worktree
-    mkdirSync(join(worktree, ".claude/agents"), { recursive: true });
-    writeFileSync(join(worktree, ".claude/agents/implementer.md"), existingContent);
-
-    const deps = createDeps({
-      run: vi.fn(() => ({
-        stdout: remoteContent,
-        stderr: "",
-        exitCode: 0,
-      })) as any,
-    });
-
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
-
-    // .claude/agents/implementer.md should NOT be in the seeded list
-    expect(seededPaths(seeded)).not.toContain(".claude/agents/implementer.md");
-
-    // Existing file should NOT be overwritten
-    expect(readFileSync(join(worktree, ".claude/agents/implementer.md"), "utf-8")).toBe(existingContent);
-
-    rmSync(hubRoot, { recursive: true, force: true });
-    rmSync(worktree, { recursive: true, force: true });
-  });
-
-  it("refreshes stale managed files that already exist in worktree", () => {
-    const hubRoot = makeTmpDir();
-    const worktree = makeTmpDir();
-    const remoteContent = "# Remote agent file";
-
-    writeAgentFile(hubRoot, "implementer.md");
-
-    mkdirSync(join(worktree, ".claude/agents"), { recursive: true });
-    writeFileSync(join(worktree, ".claude/agents/implementer.md"), "# Stale agent file");
-
-    const deps = createDeps({
-      run: vi.fn(() => ({
-        stdout: remoteContent,
-        stderr: "",
-        exitCode: 0,
-      })) as any,
-    });
-
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
-
-    expect(seededPaths(seeded)).toContain(".claude/agents/implementer.md");
-    expect(readFileSync(join(worktree, ".claude/agents/implementer.md"), "utf-8")).toBe(
-      remoteContent,
-    );
-
-    rmSync(hubRoot, { recursive: true, force: true });
-    rmSync(worktree, { recursive: true, force: true });
-  });
-
-  it("uses local version when file exists locally but not on remote", () => {
-    const hubRoot = makeTmpDir();
-    const worktree = makeTmpDir();
-    const localContent = "# Local-only agent";
-
-    writeAgentFile(hubRoot, "implementer.md", localContent);
-    // reviewer and forward-fixer don't exist anywhere
-
-    // Git show fails for everything
-    const deps = createDeps({
-      run: vi.fn(() => ({
-        stdout: "",
-        stderr: "fatal: not found",
-        exitCode: 128,
-      })) as any,
-    });
-
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
-
-    // implementer should be seeded from local
-    const claudeAgent = join(worktree, ".claude/agents/implementer.md");
-    expect(existsSync(claudeAgent)).toBe(true);
-    expect(readFileSync(claudeAgent, "utf-8")).toBe(localContent);
-
-    // reviewer and forward-fixer should not be seeded (not available from either source)
-    expect(seeded.some((s) => s.path.includes("reviewer"))).toBe(false);
-    expect(seeded.some((s) => s.path.includes("forward-fixer"))).toBe(false);
-
-    rmSync(hubRoot, { recursive: true, force: true });
-    rmSync(worktree, { recursive: true, force: true });
-  });
-
-  it("seeds .github/agents/ with ninthwave- prefix", () => {
-    const hubRoot = makeTmpDir();
-    const worktree = makeTmpDir();
-    const remoteContent = "# Implementer from remote";
-
-    writeAgentFile(hubRoot, "implementer.md");
-
-    const deps = createDeps({
-      run: vi.fn((_cmd: string, args: string[]) => {
-        const showArg = args.find((a: string) => a.startsWith("origin/main:"));
-        if (showArg) {
-          return { stdout: remoteContent, stderr: "", exitCode: 0 };
-        }
-        return { stdout: "", stderr: "", exitCode: 128 };
-      }) as any,
-    });
-
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
-
-    // .github/agents/ files should have ninthwave- prefix and .agent.md suffix
+    expect(seeded.length).toBe(2);
+    expect(seededPaths(seeded)).toContain(join(".claude/agents", "implementer.md"));
     expect(seededPaths(seeded)).toContain(join(".github/agents", "ninthwave-implementer.agent.md"));
-    const ghAgent = join(worktree, ".github/agents/ninthwave-implementer.agent.md");
-    expect(existsSync(ghAgent)).toBe(true);
-    expect(readFileSync(ghAgent, "utf-8")).toBe(remoteContent);
 
-    rmSync(hubRoot, { recursive: true, force: true });
+    // Verify content was copied exactly
+    expect(readFileSync(join(worktree, ".claude/agents/implementer.md"), "utf-8")).toBe(agentContent);
+    expect(readFileSync(join(worktree, ".github/agents/ninthwave-implementer.agent.md"), "utf-8")).toBe(agentContent);
+
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  it("skips files that already exist in worktree", () => {
+    const projectRoot = makeTmpDir();
+    const worktree = makeTmpDir();
+
+    writeToolFile(projectRoot, ".claude/agents", "implementer.md", "# From main checkout");
+
+    // Pre-create the file in the worktree (as if committed via git)
+    writeToolFile(worktree, ".claude/agents", "implementer.md", "# Already in worktree");
+
+    const deps = createDeps();
+    const seeded = seedAgentFiles(worktree, projectRoot, deps);
+
+    // Should not be in the seeded list
+    expect(seededPaths(seeded)).not.toContain(join(".claude/agents", "implementer.md"));
+
+    // Original worktree content should be preserved
+    expect(readFileSync(join(worktree, ".claude/agents/implementer.md"), "utf-8")).toBe("# Already in worktree");
+
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  it("returns empty array when project root has no tool directories", () => {
+    const projectRoot = makeTmpDir();
+    const worktree = makeTmpDir();
+
+    const deps = createDeps();
+    const seeded = seedAgentFiles(worktree, projectRoot, deps);
+
+    expect(seeded).toEqual([]);
+
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  it("preserves user-owned non-agent files in existing directories", () => {
+    const projectRoot = makeTmpDir();
+    const worktree = makeTmpDir();
+
+    writeToolFile(projectRoot, ".codex/agents", "ninthwave-implementer.toml", "# Agent");
+
+    // Pre-create a user file in the worktree
+    writeToolFile(worktree, ".codex/agents", "custom.toml", 'name = "custom"\n');
+
+    const deps = createDeps();
+    seedAgentFiles(worktree, projectRoot, deps);
+
+    // User file preserved
+    expect(readFileSync(join(worktree, ".codex/agents/custom.toml"), "utf-8")).toBe('name = "custom"\n');
+    // Agent file seeded
+    expect(existsSync(join(worktree, ".codex/agents/ninthwave-implementer.toml"))).toBe(true);
+
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  it("only seeds files with .md or .toml extensions", () => {
+    const projectRoot = makeTmpDir();
+    const worktree = makeTmpDir();
+
+    writeToolFile(projectRoot, ".claude/agents", "implementer.md", "# Agent");
+    writeToolFile(projectRoot, ".claude/agents", "notes.txt", "not an agent");
+    writeToolFile(projectRoot, ".claude/agents", "config.json", '{}');
+
+    const deps = createDeps();
+    const seeded = seedAgentFiles(worktree, projectRoot, deps);
+
+    expect(seededPaths(seeded)).toEqual([join(".claude/agents", "implementer.md")]);
+
+    rmSync(projectRoot, { recursive: true, force: true });
     rmSync(worktree, { recursive: true, force: true });
   });
 
   it("does not create or overwrite user instruction files while seeding agents", () => {
-    const hubRoot = makeTmpDir();
+    const projectRoot = makeTmpDir();
     const worktree = makeTmpDir();
 
-    writeAgentFile(hubRoot, "implementer.md");
+    writeToolFile(projectRoot, ".github/agents", "ninthwave-implementer.agent.md", "# Agent");
+
+    // Pre-create user-managed files in worktree
     writeFileSync(join(worktree, "CLAUDE.md"), "# Worktree instructions\n");
     writeFileSync(join(worktree, "AGENTS.md"), "# Agent instructions\n");
     mkdirSync(join(worktree, ".github"), { recursive: true });
@@ -466,66 +268,52 @@ describe("seedAgentFiles", () => {
       "# Copilot instructions\nKeep this user-managed file.\n",
     );
 
-    const deps = createDeps({
-      run: mockRun({
-        "origin/main:agents/implementer.md": { stdout: "# Remote implementer\n", stderr: "", exitCode: 0 },
-      }) as any,
-    });
+    const deps = createDeps();
+    seedAgentFiles(worktree, projectRoot, deps);
 
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
-
-    expect(seededPaths(seeded)).not.toContain(join(".github", "copilot-instructions.md"));
-    expect(seededPaths(seeded)).not.toContain("CLAUDE.md");
-    expect(seededPaths(seeded)).not.toContain("AGENTS.md");
+    // User files should be untouched
     expect(readFileSync(join(worktree, "CLAUDE.md"), "utf-8")).toBe("# Worktree instructions\n");
     expect(readFileSync(join(worktree, "AGENTS.md"), "utf-8")).toBe("# Agent instructions\n");
     expect(readFileSync(join(worktree, ".github", "copilot-instructions.md"), "utf-8")).toBe(
       "# Copilot instructions\nKeep this user-managed file.\n",
     );
 
-    rmSync(hubRoot, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
     rmSync(worktree, { recursive: true, force: true });
   });
 
-  it("seeds newly discovered agent files from the hub bundle", () => {
-    const hubRoot = makeTmpDir();
+  it("seeds files across multiple tool directories", () => {
+    const projectRoot = makeTmpDir();
     const worktree = makeTmpDir();
-    const customContent = "# Custom agent\nFrom local";
 
-    writeAgentFile(hubRoot, "custom-agent.md", customContent);
+    writeToolFile(projectRoot, ".claude/agents", "implementer.md", "# Claude agent");
+    writeToolFile(projectRoot, ".opencode/agents", "implementer.md", "# OpenCode agent");
+    writeToolFile(projectRoot, ".codex/agents", "ninthwave-implementer.toml", "# Codex agent");
+    writeToolFile(projectRoot, ".github/agents", "ninthwave-implementer.agent.md", "# GitHub agent");
 
-    const deps = createDeps({
-      run: vi.fn(() => ({
-        stdout: "",
-        stderr: "fatal: not found",
-        exitCode: 128,
-      })) as any,
-    });
+    const deps = createDeps();
+    const seeded = seedAgentFiles(worktree, projectRoot, deps);
 
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
+    expect(seeded.length).toBe(4);
+    expect(existsSync(join(worktree, ".claude/agents/implementer.md"))).toBe(true);
+    expect(existsSync(join(worktree, ".opencode/agents/implementer.md"))).toBe(true);
+    expect(existsSync(join(worktree, ".codex/agents/ninthwave-implementer.toml"))).toBe(true);
+    expect(existsSync(join(worktree, ".github/agents/ninthwave-implementer.agent.md"))).toBe(true);
 
-    expect(seededPaths(seeded)).toContain(join(".claude/agents", "custom-agent.md"));
-    expect(seededPaths(seeded)).toContain(join(".github/agents", "ninthwave-custom-agent.agent.md"));
-    expect(readFileSync(join(worktree, ".claude/agents/custom-agent.md"), "utf-8")).toBe(customContent);
-
-    rmSync(hubRoot, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
     rmSync(worktree, { recursive: true, force: true });
   });
 
   it("marks gitignored seeded files as not commit recommended", () => {
-    const hubRoot = makeTmpDir();
+    const projectRoot = makeTmpDir();
     const worktree = makeTmpDir();
-    const remoteContent = "# Implementer agent\nFrom remote";
 
-    writeAgentFile(hubRoot, "implementer.md");
+    writeToolFile(projectRoot, ".claude/agents", "implementer.md", "# Agent");
+    writeToolFile(projectRoot, ".github/agents", "ninthwave-implementer.agent.md", "# Agent");
     writeFileSync(join(worktree, ".gitignore"), "/.claude/agents/\n");
 
     const deps = createDeps({
       run: vi.fn((_cmd: string, args: string[]) => {
-        const showArg = args.find((a: string) => a.startsWith("origin/main:"));
-        if (showArg) {
-          return { stdout: remoteContent, stderr: "", exitCode: 0 };
-        }
         if (args[0] === "check-ignore" && args[2] === ".claude/agents/implementer.md") {
           return { stdout: ".claude/agents/implementer.md", stderr: "", exitCode: 0 };
         }
@@ -533,56 +321,67 @@ describe("seedAgentFiles", () => {
       }) as any,
     });
 
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
-    const claudeEntry = seeded.find((entry) => entry.path === ".claude/agents/implementer.md");
-    const githubEntry = seeded.find((entry) => entry.path === ".github/agents/ninthwave-implementer.agent.md");
+    const seeded = seedAgentFiles(worktree, projectRoot, deps);
+    const claudeEntry = seeded.find((entry) => entry.path === join(".claude/agents", "implementer.md"));
+    const githubEntry = seeded.find((entry) => entry.path === join(".github/agents", "ninthwave-implementer.agent.md"));
 
     expect(claudeEntry).toEqual({
-      path: ".claude/agents/implementer.md",
+      path: join(".claude/agents", "implementer.md"),
       commitRecommended: false,
     });
     expect(githubEntry).toEqual({
-      path: ".github/agents/ninthwave-implementer.agent.md",
+      path: join(".github/agents", "ninthwave-implementer.agent.md"),
       commitRecommended: true,
     });
 
-    rmSync(hubRoot, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
     rmSync(worktree, { recursive: true, force: true });
   });
 
-  it("marks only non-ignored seeded files as commit recommended", () => {
-    const hubRoot = makeTmpDir();
+  it("copies customized agent content exactly as-is", () => {
+    const projectRoot = makeTmpDir();
     const worktree = makeTmpDir();
-    const remoteContent = "# Implementer agent\nFrom remote";
+    const customContent = "---\nname: custom-implementer\nmodel: sonnet\n---\n# My customized agent\nSpecial instructions here";
 
-    writeAgentFile(hubRoot, "implementer.md");
-    writeFileSync(join(worktree, ".gitignore"), "/.opencode/agents/\n");
+    writeToolFile(projectRoot, ".claude/agents", "implementer.md", customContent);
 
-    const deps = createDeps({
-      run: vi.fn((_cmd: string, args: string[]) => {
-        const showArg = args.find((a: string) => a.startsWith("origin/main:"));
-        if (showArg) {
-          return { stdout: remoteContent, stderr: "", exitCode: 0 };
-        }
-        if (args[0] === "check-ignore" && args[2] === ".opencode/agents/implementer.md") {
-          return { stdout: ".opencode/agents/implementer.md", stderr: "", exitCode: 0 };
-        }
-        return { stdout: "", stderr: "", exitCode: 1 };
-      }) as any,
-    });
+    const deps = createDeps();
+    seedAgentFiles(worktree, projectRoot, deps);
 
-    const seeded = seedAgentFiles(worktree, hubRoot, deps);
+    // Content should be an exact copy, not re-rendered from a canonical source
+    expect(readFileSync(join(worktree, ".claude/agents/implementer.md"), "utf-8")).toBe(customContent);
 
-    expect(seeded.find((entry) => entry.path === ".opencode/agents/implementer.md")).toEqual({
-      path: ".opencode/agents/implementer.md",
-      commitRecommended: false,
-    });
-    expect(seeded.find((entry) => entry.path === ".codex/agents/ninthwave-implementer.toml")).toEqual({
-      path: ".codex/agents/ninthwave-implementer.toml",
-      commitRecommended: true,
-    });
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+  });
 
-    rmSync(hubRoot, { recursive: true, force: true });
+  it("logs seeded files when any are created", () => {
+    const projectRoot = makeTmpDir();
+    const worktree = makeTmpDir();
+
+    writeToolFile(projectRoot, ".claude/agents", "implementer.md", "# Agent");
+
+    const deps = createDeps();
+    seedAgentFiles(worktree, projectRoot, deps);
+
+    expect(deps.info).toHaveBeenCalledWith(
+      expect.stringContaining("Seeded agent files into worktree:"),
+    );
+
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  it("does not log when no files are seeded", () => {
+    const projectRoot = makeTmpDir();
+    const worktree = makeTmpDir();
+
+    const deps = createDeps();
+    seedAgentFiles(worktree, projectRoot, deps);
+
+    expect(deps.info).not.toHaveBeenCalled();
+
+    rmSync(projectRoot, { recursive: true, force: true });
     rmSync(worktree, { recursive: true, force: true });
   });
 });

@@ -5534,6 +5534,7 @@ describe("orchestrateLoop crew mode", () => {
       orch.addItem(makeWorkItem("T-2"));
       orch.getItem("T-2")!.prNumber = 2;
       orch.getItem("T-2")!.startedAt = new Date(Date.now() - 5_000).toISOString();
+      orch.getItem("T-2")!.implementerModel = "claude-sonnet-4-6";
       orch.hydrateState("T-2", "merged");
 
       const { broker } = mockCrewBroker({

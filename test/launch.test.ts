@@ -6,7 +6,7 @@ import { writeFileSync, mkdirSync, readFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { setupTempRepo, cleanupTempRepos, captureOutputAsync } from "./helpers.ts";
 import type { Multiplexer } from "../core/mux.ts";
-import { runtimeAgentNameForTool } from "../core/ai-tools.ts";
+import { runtimeAgentNameForTool, agentTargetDirs, renderAgentArtifact } from "../core/ai-tools.ts";
 import { type LaunchGitDeps, launchSingleItem, launchAiSession, launchReviewWorker, launchRebaserWorker, launchForwardFixerWorker, sanitizeTitle, extractItemText, validatePickupCandidate } from "../core/commands/launch.ts";
 import { cmdStart, cmdRunItems, WORK_ITEM_ID_CLI_PATTERN } from "../core/commands/run-items.ts";
 import { cleanStaleBranchForReuse } from "../core/branch-cleanup.ts";
@@ -85,18 +85,24 @@ function extractPromptDataFile(cmd: string): string {
 function seedCanonicalAgent(repo: string, filename: string, instructions: string): void {
   const agentsDir = join(repo, "agents");
   mkdirSync(agentsDir, { recursive: true });
-  writeFileSync(
-    join(agentsDir, filename),
-    [
-      "---",
-      `name: ninthwave-${filename.replace(/\.md$/, "")}`,
-      'description: "test agent"',
-      "---",
-      "",
-      instructions,
-      "",
-    ].join("\n"),
-  );
+  const content = [
+    "---",
+    `name: ninthwave-${filename.replace(/\.md$/, "")}`,
+    'description: "test agent"',
+    "---",
+    "",
+    instructions,
+    "",
+  ].join("\n");
+  writeFileSync(join(agentsDir, filename), content);
+
+  // Also write rendered copies to tool directories (simulating `nw init`)
+  for (const target of agentTargetDirs()) {
+    const rendered = renderAgentArtifact(filename, content, target);
+    const dir = join(repo, target.dir);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, rendered.filename), rendered.content);
+  }
 }
 
 /**

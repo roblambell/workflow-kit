@@ -1,11 +1,10 @@
 // Agent file seeding into worktrees.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { run, GIT_TIMEOUT } from "./shell.ts";
 import { info as defaultInfo } from "./output.ts";
-import { agentFileTargets, renderAgentArtifact } from "./ai-tools.ts";
-import { discoverAgentSources, detectManagedCopyStatus, writeManagedCopy } from "./commands/setup.ts";
+import { agentTargetDirs } from "./ai-tools.ts";
 
 /** Parse the configured LLM model from YAML frontmatter. */
 export function parseAgentModel(content: string): string | null {
@@ -32,6 +31,7 @@ export function parseAgentModel(content: string): string | null {
 export interface SeedAgentFilesDeps {
   run: typeof run;
   readFileSync: typeof readFileSync;
+  readdirSync: typeof readdirSync;
   existsSync: typeof existsSync;
   mkdirSync: typeof mkdirSync;
   writeFileSync: typeof writeFileSync;
@@ -46,6 +46,7 @@ export interface SeededAgentFile {
 const defaultSeedDeps: SeedAgentFilesDeps = {
   run,
   readFileSync,
+  readdirSync: readdirSync as (path: string) => string[],
   existsSync,
   mkdirSync,
   writeFileSync,
@@ -84,11 +85,13 @@ export function readAgentFileContent(
 }
 
 /**
- * Seed agent files into a worktree as managed copies.
- * Reads agent content from origin/main for consistency with remote state,
- * falling back to the hub repo's local agents/ directory. Returns the list
- * of relative paths that were created or refreshed, plus whether each path
- * should be suggested for commit in the worker prompt.
+ * Mirror agent files from the main checkout into a worktree.
+ *
+ * For committed agent files, git already includes them in the worktree.
+ * For gitignored agent files (created by `nw init`), they exist in the main
+ * checkout but not in worktrees. This function copies any missing files from
+ * the main checkout's tool directories (.github/agents/, .claude/agents/, etc.)
+ * into the worktree, preserving user customizations and avoiding surprise additions.
  */
 function isIgnoredByGit(
   worktreePath: string,
@@ -114,26 +117,36 @@ function isIgnoredByGit(
 
 export function seedAgentFiles(
   worktreePath: string,
-  hubRoot: string,
+  projectRoot: string,
   deps: SeedAgentFilesDeps = defaultSeedDeps,
 ): SeededAgentFile[] {
   const seeded: SeededAgentFile[] = [];
-  const agentFiles = agentFileTargets(discoverAgentSources(hubRoot));
+  const toolDirs = agentTargetDirs();
 
-  for (const agent of agentFiles) {
-    const sourceContent = readAgentFileContent(hubRoot, agent.source, deps);
-    if (!sourceContent) continue;
+  for (const target of toolDirs) {
+    const sourceDir = join(projectRoot, target.dir);
+    if (!deps.existsSync(sourceDir)) continue;
 
-    for (const target of agent.targets) {
-      const rendered = renderAgentArtifact(agent.source, sourceContent, target);
-      const filename = rendered.filename;
+    let files: string[];
+    try {
+      files = deps.readdirSync(sourceDir).filter((f: string) =>
+        f.endsWith(".md") || f.endsWith(".toml"),
+      );
+    } catch { continue; }
+
+    for (const filename of files) {
       const relativePath = join(target.dir, filename);
       const destPath = join(worktreePath, target.dir, filename);
 
-      const status = detectManagedCopyStatus(destPath, rendered.content);
-      if (status === "up-to-date") continue;
+      // Already in worktree (committed via git or previously seeded)
+      if (deps.existsSync(destPath)) continue;
 
-      writeManagedCopy(destPath, rendered.content);
+      // Copy from main checkout
+      const content = deps.readFileSync(join(sourceDir, filename), "utf-8");
+      const destDir = join(worktreePath, target.dir);
+      if (!deps.existsSync(destDir)) deps.mkdirSync(destDir, { recursive: true });
+      deps.writeFileSync(destPath, content);
+
       seeded.push({
         path: relativePath,
         commitRecommended: !isIgnoredByGit(worktreePath, relativePath, deps),

@@ -4,7 +4,7 @@
 // Supports daemon mode (--daemon) for background operation with state persistence.
 
 import { existsSync, mkdirSync, readdirSync, appendFileSync } from "fs";
-import { join, dirname } from "path";
+import { join } from "path";
 import { totalmem, freemem, hostname } from "os";
 import { randomUUID } from "crypto";
 import { execSync, spawn } from "node:child_process";
@@ -76,6 +76,7 @@ import {
   parseWorkerTelemetry,
 } from "../analytics.ts";
 import { parseAgentModel, readAgentFileContent } from "../agent-files.ts";
+import { getBundleDir } from "../paths.ts";
 import { readLatestTokenUsage } from "../token-usage.ts";
 import {
   writePidFile,
@@ -3091,12 +3092,8 @@ function getSessionEndTelemetry(actionType: Action["type"]): SessionEndTelemetry
   return SESSION_END_TELEMETRY_BY_ACTION[actionType];
 }
 
-function getHubRootFromWorkDir(workDir: string): string {
-  return dirname(dirname(workDir));
-}
-
-function readLaunchModel(ctx: ExecutionContext, filename: string): string | null {
-  const content = readAgentFileContent(getHubRootFromWorkDir(ctx.workDir), filename);
+function readLaunchModel(_ctx: ExecutionContext, filename: string): string | null {
+  const content = readAgentFileContent(getBundleDir(), filename);
   return content ? parseAgentModel(content) : null;
 }
 
