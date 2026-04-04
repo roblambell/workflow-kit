@@ -25,6 +25,8 @@ import { resolveRepoRef, type RepoRefInput } from "./repo-ref.ts";
 // ── Types ───────────────────────────────────────────────────────────
 
 export interface BrokerServerOptions {
+  /** Hostname/IP to bind to (default: "0.0.0.0"). */
+  hostname?: string;
   /** Port to listen on (0 = random). */
   port?: number;
   /** Directory for crew state persistence files. */
@@ -64,6 +66,7 @@ export class BrokerServer {
     const broker = this;
 
     this.server = Bun.serve({
+      hostname: this.opts.hostname ?? "0.0.0.0",
       port: this.opts.port ?? 0,
 
       routes: {
@@ -217,6 +220,11 @@ export class BrokerServer {
   /** Get the port the server is listening on. */
   get port(): number {
     return this.server?.port ?? 0;
+  }
+
+  /** Get the hostname the server is bound to. */
+  get hostname(): string {
+    return this.server?.hostname ?? this.opts.hostname ?? "0.0.0.0";
   }
 
   /** Get a crew by code (for testing). */

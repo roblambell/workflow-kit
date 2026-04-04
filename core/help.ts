@@ -26,6 +26,7 @@ import {
 import { cmdCiFailures } from "./commands/ci.ts";
 import { cmdInit } from "./commands/init.ts";
 import { cmdCrew } from "./commands/crew.ts";
+import { cmdBroker } from "./commands/broker.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
 import { cmdAnalytics } from "./commands/analytics.ts";
 import { cmdHistory } from "./commands/history.ts";
@@ -127,6 +128,28 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
       "nw crew K2F9-AB3X-7YPL-QM4N",
       "nw crew create",
       "nw crew join K2F9-AB3X-7YPL-QM4N",
+    ],
+  },
+  {
+    name: "broker",
+    usage: "broker [--host H] [--port N] [--data-dir D] [--event-log F] [--save-crew-url]",
+    description: "Start the self-hosted broker runtime in the foreground",
+    group: "workflow",
+    needsRoot: true,
+    needsWork: false,
+    handler: async (ctx) => { await cmdBroker(ctx.args, ctx.projectRoot); },
+    flags: {
+      "--host": "Hostname/IP to bind to (default: 0.0.0.0)",
+      "--port": "Port to listen on (default: 4444)",
+      "--data-dir": "Directory for crew state persistence",
+      "--event-log": "Path to JSONL event log file",
+      "--save-crew-url": "Save the broker WebSocket URL to .ninthwave/config.json as crew_url",
+    },
+    examples: [
+      "nw broker",
+      "nw broker --port 8080",
+      "nw broker --host 127.0.0.1 --port 9000",
+      "nw broker --save-crew-url",
     ],
   },
   {
