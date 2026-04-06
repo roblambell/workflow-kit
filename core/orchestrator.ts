@@ -35,6 +35,7 @@ import {
   STACKABLE_STATES,
   STATE_TRANSITIONS,
   getNextTool,
+  getStateData,
 } from "./orchestrator-types.ts";
 
 import {
@@ -699,6 +700,9 @@ export class Orchestrator {
       actions.push(...this.handleCiPending(item, snap, now));
       return actions;
     }
+
+    const sd = getStateData(item, "implementing");
+
     // If worker died without a PR, retry or mark stuck.
     if (!snap?.prNumber) {
       const liveness = this.checkWorkerLiveness(item, snap);
@@ -729,9 +733,9 @@ export class Orchestrator {
     // ── Process liveness as activity signal ──
     // If the worker process is alive (workerAlive=true), it suppresses the launch timeout.
     // The timeout hierarchy becomes:
-    // - Fresh heartbeat (< 5 min) → healthy (handled above)
-    // - Process alive → suppress launch timeout, use activityTimeoutMs as hard cap
-    // - Process dead → use launchTimeoutMs or crash detection
+    // - Fresh heartbeat (< 5 min) -> healthy (handled above)
+    // - Process alive -> suppress launch timeout, use activityTimeoutMs as hard cap
+    // - Process dead -> use launchTimeoutMs or crash detection
     const workerAlive = snap?.workerAlive === true;
 
     // Commit-based timeout: final backstop for workers with no/stale heartbeat
@@ -740,7 +744,7 @@ export class Orchestrator {
     // or lastTransition). This prevents a single workerAlive blip from killing a
     // worker that was confirmed alive seconds earlier.
     const commitTime = snap?.lastCommitTime ?? item.lastCommitTime;
-    const lastPositiveSignalTime = item.lastAliveAt ?? item.lastTransition;
+    const lastPositiveSignalTime = (sd?.lastAliveAt ?? item.lastAliveAt) ?? item.lastTransition;
 
     if (!commitTime) {
       // No commits yet -- check launch timeout or activity timeout based on liveness
@@ -901,12 +905,15 @@ export class Orchestrator {
       );
     }
 
+    const sd = getStateData(item, "ci-failed");
+
     // Reset notification flag if the worker pushed a new commit (fix attempt)
-    if (item.ciFailureNotified && shouldRenotifyCiFailure(item.lastCommitTime, item.ciFailureNotifiedAt)) {
+    if (sd?.ciFailureNotified && shouldRenotifyCiFailure(item.lastCommitTime, sd.ciFailureNotifiedAt)) {
       item.ciFailureNotified = false;
     }
 
     // Notify once per failure cycle to avoid comment spam
+    // (read live flag -- sd snapshot may be stale after the reset above)
     const actions: Action[] = [];
     if (!item.ciFailureNotified) {
       actions.push(this.emitCiFailureNotification(
@@ -922,8 +929,8 @@ export class Orchestrator {
     }
 
     // Layer 2: no ack after notification (process alive but AI exited)
-    if (item.ciFailureNotified && item.ciNotifyWallAt) {
-      if (isCiFixAckTimedOut(item.ciNotifyWallAt, snap?.lastHeartbeat?.ts, now, TIMEOUTS.ciFixAck)) {
+    if (sd?.ciFailureNotified && sd.ciNotifyWallAt) {
+      if (isCiFixAckTimedOut(sd.ciNotifyWallAt, snap?.lastHeartbeat?.ts, now, TIMEOUTS.ciFixAck)) {
         return this.respawnCiFixWorker(item);
       }
     }
@@ -938,12 +945,13 @@ export class Orchestrator {
     now: Date,
   ): Action[] {
     const ciStatus = snap?.ciStatus;
+    const sd = getStateData(item, "ci-pending");
 
     // Grace period: ignore "fail" shortly after entering ci-pending from
     // implementing/launching. CI may not have processed the latest commit yet
     // (stale status from a previous run). "pass" and "pending" are honored immediately.
-    if (ciStatus === "fail" && item.ciPendingSince) {
-      if (!isCiFailTrustworthy(item.ciPendingSince, now, this.config.ciPendingFailGraceMs)) {
+    if (ciStatus === "fail" && sd?.ciPendingSince) {
+      if (!isCiFailTrustworthy(sd.ciPendingSince, now, this.config.ciPendingFailGraceMs)) {
         return [];
       }
     }
@@ -1235,6 +1243,7 @@ export class Orchestrator {
     snap: ItemSnapshot | undefined,
   ): Action[] {
     const actions: Action[] = [];
+    const sd = getStateData(item, "rebasing");
 
     // Don't react to CI status while the rebaser is actively working.
     // The pre-rebase PR still has its old CI status; transitioning on it
@@ -1253,7 +1262,7 @@ export class Orchestrator {
       }
 
       // Rebaser worker died without pushing
-      if (item.rebaserWorkspaceRef && this.checkWorkerLiveness(item, snap) === "dead") {
+      if (sd?.rebaserWorkspaceRef && this.checkWorkerLiveness(item, snap) === "dead") {
         this.transition(item, "stuck");
         item.failureReason = "rebase-failed: rebaser worker could not resolve rebase conflicts";
         actions.push({ type: "clean-rebaser", itemId: item.id });

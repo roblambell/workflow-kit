@@ -131,6 +131,92 @@ export interface OrchestratorItem {
   ciPendingSince?: string;
 }
 
+// ── State-specific data interfaces ───────────────────────────────────
+// Typed lenses over the flat OrchestratorItem for the highest-bug-density
+// states. Handlers opt-in via getStateData(item, "ci-failed") to get
+// compile-time guarantees on field types.
+
+export interface ImplementingStateData {
+  workspaceRef: string;
+  worktreePath: string;
+  startedAt: string;
+  lastAliveAt?: string;
+  notAliveCount: number;
+}
+
+export interface CiPendingStateData {
+  ciPendingSince?: string;
+  workspaceRef?: string;
+  worktreePath?: string;
+}
+
+export interface CiFailedStateData {
+  ciFailureNotified: boolean;
+  ciFailureNotifiedAt: string | null;
+  ciNotifyWallAt?: string;
+  failureReason: string;
+  needsCiFix?: boolean;
+}
+
+export interface RebasingStateData {
+  rebaserWorkspaceRef?: string;
+  rebaseAttemptCount: number;
+  rebaseRequested: boolean;
+}
+
+export interface StateDataMap {
+  "implementing": ImplementingStateData;
+  "ci-pending": CiPendingStateData;
+  "ci-failed": CiFailedStateData;
+  "rebasing": RebasingStateData;
+}
+
+/**
+ * Typed accessor that projects state-specific fields from a flat OrchestratorItem.
+ * Returns undefined when `item.state !== state` (runtime guard).
+ * Non-optional fields are coerced to safe defaults (0, false, "") when the
+ * underlying OrchestratorItem field is undefined.
+ */
+export function getStateData<S extends keyof StateDataMap>(
+  item: OrchestratorItem,
+  state: S,
+): StateDataMap[S] | undefined {
+  if (item.state !== state) return undefined;
+  const s = state as keyof StateDataMap;
+  switch (s) {
+    case "implementing":
+      return {
+        workspaceRef: item.workspaceRef!,
+        worktreePath: item.worktreePath!,
+        startedAt: item.startedAt!,
+        lastAliveAt: item.lastAliveAt,
+        notAliveCount: item.notAliveCount ?? 0,
+      } as StateDataMap[S];
+    case "ci-pending":
+      return {
+        ciPendingSince: item.ciPendingSince,
+        workspaceRef: item.workspaceRef,
+        worktreePath: item.worktreePath,
+      } as StateDataMap[S];
+    case "ci-failed":
+      return {
+        ciFailureNotified: item.ciFailureNotified ?? false,
+        ciFailureNotifiedAt: item.ciFailureNotifiedAt ?? null,
+        ciNotifyWallAt: item.ciNotifyWallAt,
+        failureReason: item.failureReason ?? "",
+        needsCiFix: item.needsCiFix,
+      } as StateDataMap[S];
+    case "rebasing":
+      return {
+        rebaserWorkspaceRef: item.rebaserWorkspaceRef,
+        rebaseAttemptCount: item.rebaseAttemptCount ?? 0,
+        rebaseRequested: item.rebaseRequested ?? false,
+      } as StateDataMap[S];
+    default:
+      return undefined;
+  }
+}
+
 export interface OrchestratorConfig {
   /** Max concurrent items in all WIP states (launching/implementing/ci-pending/ci-passed/ci-failed/rebasing/reviewing/review-pending/merging). */
   sessionLimit: number;
