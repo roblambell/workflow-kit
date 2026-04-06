@@ -1,13 +1,13 @@
 ---
 name: ninthwave-reviewer
-description: "ninthwave orchestration agent -- reviews PRs during `nw watch` sessions"
+description: "ninthwave orchestration agent -- reviews PRs during `nw` sessions"
 model: sonnet
 ---
 
 If no ninthwave work item context is available to you (no item ID,
 no item specification, no work item details), you were not launched
 by the ninthwave orchestrator. Inform the user this agent is
-designed for ninthwave orchestration (`nw watch`) and stop.
+designed for ninthwave orchestration (`nw`) and stop.
 
 # Review Worker Agent
 

@@ -4856,7 +4856,7 @@ describe("renderControlsOverlay", () => {
     });
     const text = stripAnsi(lines.join("\n"));
     expect(text).toContain(`Code:    ${sessionCode}`);
-    expect(text).toContain(`nw watch --crew ${sessionCode}`);
+    expect(text).toContain(`nw --crew ${sessionCode}`);
   });
 
   it("shows a join input field in join mode", () => {
@@ -4978,7 +4978,7 @@ describe("renderControlsOverlay", () => {
     const text = stripAnsi(lines.join("\n"));
     expect(text).toContain(sessionCode);
     expect(text).toContain("Command:");
-    expect(text).toContain("nw watch --crew");
+    expect(text).toContain("nw --crew");
     for (const line of lines) {
       expect(stripAnsiForWidth(line).length).toBeLessThanOrEqual(termWidth);
     }

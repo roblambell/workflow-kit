@@ -8501,7 +8501,7 @@ describe("validateItemIds", () => {
 describe("cmdOrchestrate passthrough path", () => {
   it("full passthrough: parsed args + validation + no interactive flow", () => {
     // Simulate the exact passthrough path used by cmdNoArgs:
-    // nw watch --items H-FOO-1 --merge-strategy auto --session-limit 3
+    // nw --items H-FOO-1 --merge-strategy auto --session-limit 3
 
     // Step 1: Parse args
     const parsed = parseWatchArgs([

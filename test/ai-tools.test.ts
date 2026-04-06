@@ -18,14 +18,14 @@ import {
 
 const IMPLEMENTER_AGENT_SOURCE = `---
 name: ninthwave-implementer
-description: "ninthwave orchestration agent -- implements work items during \`nw watch\` sessions"
+description: "ninthwave orchestration agent -- implements work items during \`nw\` sessions"
 model: opus
 ---
 
 If no ninthwave work item context is available to you (no item ID,
 no item specification, no work item details), you were not launched
 by the ninthwave orchestrator. Inform the user this agent is
-designed for ninthwave orchestration (\`nw watch\`) and stop.
+designed for ninthwave orchestration (\`nw\`) and stop.
 `;
 
 // ── Stub helpers ──────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ describe("tool-owned agent artifact helpers", () => {
     expect(artifact.filename).toBe("ninthwave-implementer.toml");
     expect(artifact.content).toContain('name = "ninthwave-implementer"');
     expect(artifact.content).toContain(
-      'description = "ninthwave orchestration agent -- implements work items during `nw watch` sessions"',
+      'description = "ninthwave orchestration agent -- implements work items during `nw` sessions"',
     );
     expect(artifact.content).toContain('developer_instructions = ');
     expect(artifact.content).toContain("If no ninthwave work item context is available to you");

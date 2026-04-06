@@ -1517,7 +1517,7 @@ describe("forward-fixer agent file", () => {
     const agentPath = join(import.meta.dir, "..", "agents", "forward-fixer.md");
     const content = readFileSync(agentPath, "utf-8");
     expect(content).toContain("no ninthwave fix-forward context");
-    expect(content).toContain("nw watch");
+    expect(content).toContain("(`nw`) post-merge CI fix-forward");
   });
 
   it("documents fix-forward, disable-feature-flag, and revert repair outcomes without child work items", async () => {

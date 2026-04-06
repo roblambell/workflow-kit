@@ -1,13 +1,13 @@
 ---
 name: ninthwave-implementer
-description: "ninthwave orchestration agent -- implements work items during `nw watch` sessions"
+description: "ninthwave orchestration agent -- implements work items during `nw` sessions"
 model: opus
 ---
 
 If no ninthwave work item context is available to you (no item ID,
 no item specification, no work item details), you were not launched
 by the ninthwave orchestrator. Inform the user this agent is
-designed for ninthwave orchestration (`nw watch`) and stop.
+designed for ninthwave orchestration (`nw`) and stop.
 
 # Work Item Agent
 
