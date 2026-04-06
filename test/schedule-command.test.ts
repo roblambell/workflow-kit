@@ -354,7 +354,7 @@ describe("schedule run", () => {
 
     expect(code).toBe(1);
     expect(stderr).toContain("No daemon running");
-    expect(stderr).toContain("nw watch");
+    expect(stderr).toContain("Start one with `nw`");
   });
 
   it("errors on invalid schedule ID", () => {
