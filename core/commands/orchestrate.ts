@@ -215,7 +215,7 @@ import {
 } from "../orchestrate-tui-render.ts";
 // ── Re-exports for backward compatibility ────────────────────────────
 // These keep existing importers (tests, other modules) working without changes.
-export { buildSnapshotAsync, isWorkerAlive, isWorkerAliveWithCache, getWorktreeLastCommitTime, getWorktreeLastCommitTimeAsync } from "../snapshot.ts";
+export { buildSnapshotAsync, isWorkerAlive, isWorkerAliveWithCache, getWorktreeLastCommitTime, getWorktreeLastCommitTimeAsync, stateToPollingPriority } from "../snapshot.ts";
 export { buildSnapshot } from "../snapshot.ts";
 export { reconstructState } from "../reconstruct.ts";
 export {

@@ -8,8 +8,10 @@ import {
   type PollSnapshot,
   type ItemSnapshot,
   type OrchestratorItem,
+  type OrchestratorItemState,
   TERMINAL_STATES,
 } from "./orchestrator.ts";
+import { type RequestQueue, type RequestPriority } from "./request-queue.ts";
 import { readHeartbeat, readVerdictFile } from "./daemon.ts";
 import { snapshotInboxState } from "./commands/inbox.ts";
 import {
@@ -331,6 +333,35 @@ export async function getWorktreeLastCommitTimeAsync(
   }
 }
 
+// ── Polling priority ──────────────────────────────────────────────
+
+/**
+ * Map orchestrator item state to a request queue priority for polling.
+ * Items closer to merge get higher priority to minimize cycle time.
+ */
+export function stateToPollingPriority(state: OrchestratorItemState): RequestPriority {
+  switch (state) {
+    case "merging":
+      return "critical";
+    case "ci-failed":
+      return "high";
+    case "ci-pending":
+    case "ci-passed":
+    case "review-pending":
+    case "reviewing":
+    case "rebasing":
+    case "forward-fix-pending":
+    case "fix-forward-failed":
+    case "fixing-forward":
+      return "normal";
+    case "implementing":
+    case "launching":
+      return "low";
+    default:
+      return "normal";
+  }
+}
+
 // ── Snapshot building ──────────────────────────────────────────────
 
 /**
@@ -586,6 +617,11 @@ export function buildSnapshot(
  * PR comments, commit time) use async variants that yield to the event loop,
  * keeping TUI keyboard input responsive during poll cycles.
  *
+ * When a RequestQueue is provided, item polls are dispatched in parallel
+ * through the queue with priority ordering (merging > ci-failed > normal > low).
+ * Concurrency is capped by the queue's semaphore. Without a queue, items are
+ * polled sequentially for backward compatibility.
+ *
  * Same snapshot assembly logic as the sync version. Non-subprocess operations
  * (heartbeat reads, worker-alive checks) remain synchronous since they
  * are local filesystem/process operations that complete instantly.
@@ -601,6 +637,7 @@ export async function buildSnapshotAsync(
   checkCommitCI?: (repoRoot: string, sha: string) => "pass" | "fail" | "pending" | Promise<"pass" | "fail" | "pending">,
   getMergeCommitSha: (repoRoot: string, prNumber: number) => string | null | Promise<string | null> = defaultGetMergeCommitSha,
   getDefaultBranch: (repoRoot: string) => string | null | Promise<string | null> = defaultGetDefaultBranchAsync,
+  queue?: RequestQueue,
 ): Promise<PollSnapshot> {
   const items: ItemSnapshot[] = [];
   const readyIds: string[] = [];
@@ -613,8 +650,9 @@ export async function buildSnapshotAsync(
   // Cache workspace listing once for all isWorkerAlive checks in this snapshot
   const cachedWorkspaces = mux.listWorkspaces();
 
+  // First pass: compute readyIds for queued items, collect active items for polling
+  const activeItems: OrchestratorItem[] = [];
   for (const orchItem of orch.getAllItems()) {
-    // Compute readyIds for queued items
     if (orchItem.state === "queued") {
       const allDepsMet = orchItem.workItem.dependencies.every((depId) => {
         const depItem = orch.getItem(depId);
@@ -625,10 +663,17 @@ export async function buildSnapshotAsync(
       }
       continue;
     }
-
-    // Skip terminal states
     if (TERMINAL_STATES.has(orchItem.state)) continue;
+    activeItems.push(orchItem);
+  }
 
+  // Per-item async processing closure
+  const processItem = async (orchItem: OrchestratorItem): Promise<{
+    snap: ItemSnapshot;
+    apiErrorIncrement: number;
+    errorKind?: string;
+    errorMessage?: string;
+  }> => {
     // Post-merge verification
     if ((orchItem.state === "forward-fix-pending" || orchItem.state === "fix-forward-failed") && orchItem.mergeCommitSha) {
       const snap: ItemSnapshot = createBaseSnapshot(orchItem);
@@ -640,12 +685,14 @@ export async function buildSnapshotAsync(
         }
       }
       preservePrContext(snap, orchItem);
-      items.push(snap);
-      continue;
+      return { snap, apiErrorIncrement: 0 };
     }
 
     const snap: ItemSnapshot = createBaseSnapshot(orchItem);
     const repoRoot = projectRoot;
+    let apiErrorIncrement = 0;
+    let errorKind: string | undefined;
+    let errorMessage: string | undefined;
 
     // Check PR status via async gh -- yields to event loop per call
     const prResult = await pollTrackedPrStatusAsync(orchItem, projectRoot, checkPr);
@@ -655,11 +702,9 @@ export async function buildSnapshotAsync(
     // checks with grace period), so they shouldn't engage the global backoff
     // and block actions for other healthy items.
     if (prResult.failure && prResult.failure.stage !== "prChecks" && prPollStates.has(orchItem.state)) {
-      apiErrorCount++;
-      apiErrorByKind[prResult.failure.kind] = (apiErrorByKind[prResult.failure.kind] ?? 0) + 1;
-      if (!firstErrorByKind[prResult.failure.kind]) {
-        firstErrorByKind[prResult.failure.kind] = prResult.failure.error;
-      }
+      apiErrorIncrement = 1;
+      errorKind = prResult.failure.kind;
+      errorMessage = prResult.failure.error;
     }
     if (statusLine) {
       const parts = statusLine.split("\t");
@@ -813,7 +858,42 @@ export async function buildSnapshotAsync(
       }
     }
 
-    items.push(snap);
+    return { snap, apiErrorIncrement, errorKind, errorMessage };
+  };
+
+  // Dispatch: parallel via queue or sequential fallback
+  type ItemPollResult = Awaited<ReturnType<typeof processItem>>;
+  let results: ItemPollResult[];
+  if (queue) {
+    results = await Promise.all(
+      activeItems.map((orchItem) =>
+        queue.enqueue({
+          category: "snapshot-poll",
+          priority: stateToPollingPriority(orchItem.state),
+          itemId: orchItem.id,
+          execute: () => processItem(orchItem),
+        }),
+      ),
+    );
+  } else {
+    results = [];
+    for (const orchItem of activeItems) {
+      results.push(await processItem(orchItem));
+    }
+  }
+
+  // Accumulate results
+  for (const result of results) {
+    items.push(result.snap);
+    if (result.apiErrorIncrement) {
+      apiErrorCount += result.apiErrorIncrement;
+      if (result.errorKind) {
+        apiErrorByKind[result.errorKind] = (apiErrorByKind[result.errorKind] ?? 0) + 1;
+        if (!firstErrorByKind[result.errorKind]) {
+          firstErrorByKind[result.errorKind] = result.errorMessage!;
+        }
+      }
+    }
   }
 
   return {
