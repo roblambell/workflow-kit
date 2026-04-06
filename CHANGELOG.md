@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.1] - 2026-04-06
+
+### Added
+- centralized request queue with token bucket and priority semaphore (H-ARC-3) (#614)
+
+### Changed
+- group OrchestratorDeps into functional sub-interfaces (M-ARC-8) (#619)
+- queue-routed action execution and retire RateLimitBackoff (H-ARC-6) (#618)
+- add StateDataMap and getStateData() typed accessor (M-ARC-7) (#617)
+- parallel snapshot building via request queue (H-ARC-4) (#616)
+- consolidate timeout constants into TIMEOUTS object (M-ARC-5) (#615)
+- enforce STATE_TRANSITIONS at runtime in transition() (H-ARC-1) (#613)
+- extract guard registry for temporal safety predicates (H-ARC-2) (#612)
+
+### Fixed
+- remove stale cross-repo refs from agent and skill prompts (H-CLN-1) (#622)
+- replace "nw watch" with "nw" in CLI messages and internal docs (H-CLN-2) (#620)
+- clear stale mergeCommitSha on fix-forward PR adoption and distinguish CD failures in TUI
+- five orchestrator bugs from doughsense dogfooding session #2
+- six orchestrator bugs found during doughsense dogfooding session
+
 ## [0.4.0] - 2026-04-04
 
 ### Added
