@@ -11,15 +11,19 @@ See also: [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and coding co
 1. [Orchestrator State Machine](#orchestrator-state-machine)
 2. [Data Flow](#data-flow)
 3. [Key Abstractions](#key-abstractions)
-4. [Extension Points](#extension-points)
-5. [Worker Lifecycle](#worker-lifecycle)
-6. [Repo Reference Identity](#repo-reference-identity)
+4. [Guard Registry](#guard-registry)
+5. [Request Queue](#request-queue)
+6. [Bundled OrchestratorDeps](#bundled-orchestratordeps)
+7. [Extension Points](#extension-points)
+8. [Worker Lifecycle](#worker-lifecycle)
+9. [Module Inventory](#module-inventory)
+10. [Repo Reference Identity](#repo-reference-identity)
 
 ---
 
 ## Orchestrator State Machine
 
-Each work item moves through a state machine defined in [`core/orchestrator.ts`](core/orchestrator.ts). The `processTransitions` function is pure -- it takes a poll snapshot and returns actions to execute; no side effects.
+Each work item moves through a state machine defined in [`core/orchestrator.ts`](core/orchestrator.ts). The `processTransitions` function is pure -- it takes a poll snapshot and returns actions to execute; no side effects. Actions are executed by standalone functions in [`core/orchestrator-actions.ts`](core/orchestrator-actions.ts). Temporal safety checks use pure predicates from [`core/orchestrator-guards.ts`](core/orchestrator-guards.ts).
 
 ### States
 
@@ -83,6 +87,14 @@ stateDiagram-v2
 
 States that count toward the WIP limit (see `OrchestratorConfig.sessionLimit`): `launching`, `implementing`, `ci-pending`, `ci-passed`, `ci-failed`, `rebasing`, `review-pending`, `merging`. Review workers (`reviewing`) have a separate limit (`reviewSessionLimit`).
 
+### Runtime Transition Enforcement
+
+Every state change goes through `Orchestrator.transition()`, which validates the move against the `STATE_TRANSITIONS` table in [`core/orchestrator-types.ts`](core/orchestrator-types.ts). If the target state is not in the allowed list for the current state, `transition()` throws immediately -- surfacing programming errors instead of silently producing impossible state sequences.
+
+`transition()` also manages per-transition bookkeeping: clearing `rebaseRequested` and timeout state, recording `ciPendingSince` for the stale-CI grace period, and running declarative side-effect hooks from `TRANSITION_SIDE_EFFECTS`.
+
+`hydrateState()` is the counterpart for crash recovery and state reconstruction. It sets `item.state` directly, bypassing validation, flag management, and callbacks. This is correct because hydrated state comes from persisted data or inferred external state (merged PRs, CI status), not from handler logic.
+
 ### Stacked Launches
 
 When `enableStacking=true`, an item whose only in-flight dependency is in a "stackable" state (`ci-passed`, `reviewing`, `review-pending`, `merging`) can launch early against the dep's branch rather than waiting for the dep to fully merge. See `STACKABLE_STATES` in `core/orchestrator-types.ts`.
@@ -109,10 +121,14 @@ Worker session (per work item)
   └─ idles, waiting for orchestrator messages
 
 nw (orchestrator event loop, ~10s poll)
-  ├─ poll GitHub for PR/CI/review status (core/commands/orchestrate.ts)
+  ├─ build snapshot: poll GitHub for PR/CI/review status
+  │   ├─ buildSnapshotAsync dispatches item polls in parallel through the RequestQueue
+  │   ├─ priority ordering: merging (critical) > ci-failed (high) > ci-pending/reviewing (normal) > implementing (low)
+  │   ├─ concurrency capped by queue semaphore (default 6)
+  │   └─ per-item error isolation (one failed poll does not block others)
   ├─ poll multiplexer for worker liveness (core/mux.ts readScreen)
   ├─ run processTransitions (pure state machine → list of Actions)
-  ├─ executeAction for each action:
+  ├─ executeAction for each action (core/orchestrator-actions.ts):
   │   ├─ launch   → launch.ts launchSingleItem
   │   ├─ merge    → gh.ts prMerge
   │   ├─ notify-ci-failure  → mux.sendMessage to worker
@@ -130,7 +146,7 @@ Post-merge
   └─ version bump deferred until all items done
 ```
 
-Key files: [`core/parser.ts`](core/parser.ts) (read work items), [`core/commands/launch.ts`](core/commands/launch.ts) (launch), [`core/commands/orchestrate.ts`](core/commands/orchestrate.ts) (event loop), [`core/commands/clean.ts`](core/commands/clean.ts) (cleanup).
+Key files: [`core/parser.ts`](core/parser.ts) (read work items), [`core/commands/launch.ts`](core/commands/launch.ts) (launch), [`core/commands/orchestrate.ts`](core/commands/orchestrate.ts) (event loop), [`core/orchestrator-actions.ts`](core/orchestrator-actions.ts) (action execution), [`core/snapshot.ts`](core/snapshot.ts) (snapshot building), [`core/request-queue.ts`](core/request-queue.ts) (rate limiting and concurrency), [`core/commands/clean.ts`](core/commands/clean.ts) (cleanup).
 
 ---
 
@@ -179,6 +195,76 @@ tmux works especially well with iTerm2's control mode (`tmux -CC`). In that mode
 
 ---
 
+## Guard Registry
+
+[`core/orchestrator-guards.ts`](core/orchestrator-guards.ts) exports pure temporal safety predicates used by the state machine handlers. Each guard is a pure function of timestamps, config thresholds, and the current time -- no side effects, no state mutation, trivially testable.
+
+### Signal Freshness Contract
+
+Every handler that reads a snapshot field with temporal significance (`ciStatus`, `reviewDecision`, `isMergeable`) must consider staleness. The guards encode this contract:
+
+| Guard | Purpose |
+|-------|---------|
+| `isCiFailTrustworthy` | CI "fail" grace period -- returns true only after enough time has elapsed since entering `ci-pending` that a failure can be trusted (not stale from a previous commit) |
+| `isHeartbeatActive` | Heartbeat freshness -- returns true when a heartbeat timestamp exists and is within the timeout window |
+| `isEventFresherThan` | Event freshness -- checks if a snapshot event time is newer than a baseline (e.g., post-rebase push) |
+| `shouldRenotifyCiFailure` | Re-notification guard -- true when a new commit has arrived since the last CI failure notification |
+| `isActivityTimedOut` | Activity timeout -- worker idle (no new commits) beyond threshold |
+| `isLaunchTimedOut` | Launch timeout -- worker failed to show signs of life within launch window |
+| `isCiFixAckTimedOut` | CI fix acknowledgment timeout -- worker did not heartbeat after CI failure notification |
+| `isMergeCiGracePeriodExpired` | Merge CI grace period -- enough time for CI to report on the merge commit |
+| `isRebaseStale` | Rebase nudge staleness -- should we re-nudge a rebase? |
+
+Guards relate to grace periods and timeouts by encoding the "is it safe to act?" question. Handlers call the relevant guard before making transition decisions, ensuring the orchestrator does not act on stale or premature signals.
+
+---
+
+## Request Queue
+
+[`core/request-queue.ts`](core/request-queue.ts) provides centralized GitHub API request management with two layers of flow control: token bucket rate limiting and priority-based concurrency control. It replaced the earlier reactive `RateLimitBackoff` approach with proactive rate management.
+
+### Token Bucket Rate Limiting
+
+The `TokenBucket` targets 85% of GitHub's 5000 requests/hour limit (~4250/hr, ~1.18 tokens/sec) to stay well under the ceiling and avoid reactive throttling. It syncs with actual GitHub rate limit headers via `updateBudget()`, adjusting its internal token count to reflect the real remaining budget.
+
+Exempt categories (e.g., `rate-limit-query`) bypass token consumption so the queue can check its own rate limit status without consuming budget.
+
+### Priority-Based Concurrency
+
+The `PrioritySemaphore` limits concurrent in-flight requests (default: 6). When all slots are occupied, waiters are queued and served in priority order:
+
+| Priority | Used For |
+|----------|----------|
+| `critical` | Merging items (need fastest CI feedback) |
+| `high` | CI-failed items (worker waiting to be notified) |
+| `normal` | CI-pending, reviewing, rebasing, and other active states |
+| `low` | Implementing, launching (PR not yet created) |
+
+The mapping from orchestrator state to request priority is defined in `stateToPollingPriority()` in [`core/snapshot.ts`](core/snapshot.ts).
+
+### Audit Logging and Metrics
+
+Every completed request is logged via the injected `log()` callback with category, item ID, latency, and success/failure. `getStats()` returns per-category metrics (count, average latency, failure count) and overall budget utilization, enabling the TUI to surface queue health.
+
+---
+
+## Bundled OrchestratorDeps
+
+[`core/orchestrator-types.ts`](core/orchestrator-types.ts) defines `OrchestratorDeps` as a bundle of six sub-interfaces, grouped by concern:
+
+| Sub-interface | Concern | Key Operations |
+|---------------|---------|----------------|
+| `GitDeps` | Git operations | `fetchOrigin`, `ffMerge`, `daemonRebase`, `rebaseOnto`, `forcePush` |
+| `GhDeps` | GitHub API | `prMerge`, `prComment`, `setCommitStatus`, `checkCommitCI`, `retargetPrBase` |
+| `MuxDeps` | Multiplexer | `sendMessage`, `closeWorkspace`, `readScreen` |
+| `WorkerDeps` | Worker lifecycle | `launchSingleItem`, `launchReview`, `launchRebaser`, `launchForwardFixer` |
+| `CleanupDeps` | Cleanup | `cleanSingleWorktree`, `cleanReview`, `cleanRebaser`, `completeMergedWorkItem` |
+| `IoDeps` | I/O | `writeInbox`, `warn`, `syncStackComments` |
+
+Action functions in [`core/orchestrator-actions.ts`](core/orchestrator-actions.ts) access deps through typed sub-interface paths (e.g., `deps.gh.prMerge`, `deps.io.writeInbox`). This makes it immediately visible which capabilities each action depends on and enables focused test doubles -- a test for a merge action only needs to stub `deps.gh` and `deps.cleanup`, not all six sub-interfaces.
+
+---
+
 ## Extension Points
 
 ### Adding a New Multiplexer Adapter
@@ -217,8 +303,6 @@ tmux works especially well with iTerm2's control mode (`tmux -CC`). In that mode
    },
    ```
 4. Add tests in `test/mycommand.test.ts`.
-
----
 
 ---
 
@@ -261,6 +345,35 @@ Timeout thresholds (configurable via `OrchestratorConfig`): 30 minutes for a wor
 ## Terminology
 
 `work item` is the canonical term across the current product, code, and docs.
+
+---
+
+## Module Inventory
+
+Core orchestrator modules and their roles:
+
+| Module | LOC | Role |
+|--------|-----|------|
+| [`core/orchestrator.ts`](core/orchestrator.ts) | | Orchestrator class: state machine, `processTransitions()`, `transition()`, `hydrateState()` |
+| [`core/orchestrator-types.ts`](core/orchestrator-types.ts) | | Type definitions: `OrchestratorItem`, `OrchestratorDeps`, `STATE_TRANSITIONS`, sub-interfaces |
+| [`core/orchestrator-actions.ts`](core/orchestrator-actions.ts) | ~1,278 | Action execution functions extracted from the Orchestrator class. Imports only from `orchestrator-types.ts` (no circular deps). |
+| [`core/orchestrator-guards.ts`](core/orchestrator-guards.ts) | ~127 | Pure temporal safety predicates (CI trust, heartbeat freshness, timeouts) |
+| [`core/request-queue.ts`](core/request-queue.ts) | ~372 | Token bucket rate limiting, priority semaphore, audit logging |
+| [`core/snapshot.ts`](core/snapshot.ts) | | Snapshot building: `buildSnapshot` (sync), `buildSnapshotAsync` (parallel via `RequestQueue`) |
+| [`core/orchestrate-event-loop.ts`](core/orchestrate-event-loop.ts) | | Event loop: poll cycle, action dispatch, TUI/JSON mode |
+| [`core/commands/orchestrate.ts`](core/commands/orchestrate.ts) | | CLI command handler for `nw`, wires deps and launches the event loop |
+| [`core/mux.ts`](core/mux.ts) | | Multiplexer abstraction and adapter implementations |
+| [`core/parser.ts`](core/parser.ts) | | Reads `.ninthwave/work/` directory and domain normalization |
+| [`core/commands/launch.ts`](core/commands/launch.ts) | | Worker launch: worktree creation, partition allocation, agent seeding |
+| [`core/commands/clean.ts`](core/commands/clean.ts) | | Cleanup: worktree removal, partition release, workspace close |
+| [`core/reconstruct.ts`](core/reconstruct.ts) | | Crash recovery: reconstructs orchestrator state from git/GitHub signals |
+| [`core/daemon.ts`](core/daemon.ts) | | Heartbeat file I/O and daemon utilities |
+| [`core/repo-ref.ts`](core/repo-ref.ts) | | Shared repo identity: URL normalization, hashing, comparison |
+| [`core/broker-state.ts`](core/broker-state.ts) | | Pure broker state machine (claim, sync, complete, scheduling) |
+| [`core/broker-store.ts`](core/broker-store.ts) | | Broker storage interfaces (`InMemoryBrokerStore`, `FileBrokerStore`) |
+| [`core/broker-server.ts`](core/broker-server.ts) | | Self-hosted broker runtime (HTTP+WebSocket server) |
+
+Notable removals: `core/rate-limit-backoff.ts` -- reactive rate limit backoff, replaced by the proactive `RequestQueue`.
 
 ---
 
