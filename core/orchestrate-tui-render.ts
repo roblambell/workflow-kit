@@ -6,7 +6,7 @@ import { join } from "path";
 import {
   Orchestrator,
   DEFAULT_CONFIG,
-  CI_FIX_ACK_TIMEOUT_MS,
+  TIMEOUTS,
   type Action,
   type OrchestratorItem,
 } from "./orchestrator.ts";
@@ -221,7 +221,7 @@ export function orchestratorItemsToStatusItems(
       workspaceRef: item.workspaceRef,
       worktreePath: item.worktreePath,
       respawnDeadlineMs: item.ciNotifyWallAt
-        ? new Date(item.ciNotifyWallAt).getTime() + CI_FIX_ACK_TIMEOUT_MS
+        ? new Date(item.ciNotifyWallAt).getTime() + TIMEOUTS.ciFixAck
         : undefined,
       progress: heartbeat?.progress,
       progressLabel: heartbeat?.label,

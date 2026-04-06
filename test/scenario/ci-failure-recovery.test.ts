@@ -7,7 +7,7 @@
 // 5. CI fails with unresponsive worker (ack timeout) → orchestrator detects and respawns
 
 import { describe, it, expect } from "vitest";
-import { Orchestrator, NOT_ALIVE_THRESHOLD, CI_FIX_ACK_TIMEOUT_MS } from "../../core/orchestrator.ts";
+import { Orchestrator, NOT_ALIVE_THRESHOLD, TIMEOUTS } from "../../core/orchestrator.ts";
 import { orchestrateLoop, buildSnapshot } from "../../core/commands/orchestrate.ts";
 import { FakeGitHub } from "../fakes/fake-github.ts";
 import { FakeMux } from "../fakes/fake-mux.ts";
@@ -445,7 +445,7 @@ describe("scenario: CI failure recovery", () => {
     item.ciFailureNotified = true;
     item.ciFailureNotifiedAt = commitTime;
     item.lastCommitTime = commitTime;
-    item.ciNotifyWallAt = new Date(Date.now() - CI_FIX_ACK_TIMEOUT_MS - 60_000).toISOString();
+    item.ciNotifyWallAt = new Date(Date.now() - TIMEOUTS.ciFixAck - 60_000).toISOString();
     item.workspaceRef = "workspace:1";
 
     const snapshot = {
@@ -487,7 +487,7 @@ describe("scenario: CI failure recovery", () => {
     // Set up ci-failed state with notification sent and ack timeout passed,
     // BUT the worker heartbeated AFTER the notification (worker is responsive).
     const commitTime = "2026-01-01T00:00:00Z";
-    const notifyTime = new Date(Date.now() - CI_FIX_ACK_TIMEOUT_MS - 60_000);
+    const notifyTime = new Date(Date.now() - TIMEOUTS.ciFixAck - 60_000);
     const heartbeatTime = new Date(notifyTime.getTime() + 30_000); // 30s after notification
 
     item.state = "ci-failed" as typeof item.state;

@@ -28,10 +28,8 @@ import {
   type OrchestratorDeps,
   type OrchestratorHandle,
   DEFAULT_CONFIG,
-  HEARTBEAT_TIMEOUT_MS,
+  TIMEOUTS,
   NOT_ALIVE_THRESHOLD,
-  CI_FIX_ACK_TIMEOUT_MS,
-  LAUNCHING_TIMEOUT_MS,
   TERMINAL_STATES,
   ACTIVE_SESSION_STATES,
   STACKABLE_STATES,
@@ -77,11 +75,7 @@ import {
 // After merge, we poll CI on the merge commit. If no check runs appear
 // within the grace period, treat as "no CI configured" and mark done.
 
-/** Grace period when push workflows exist (check runs appear quickly, even if queued). */
-const MERGE_CI_GRACE_MS = 60_000; // 60 seconds
-
-/** Grace period when no push workflows detected (only third-party status checks). */
-const NO_CI_MERGE_GRACE_MS = 15_000; // 15 seconds
+// Merge CI grace periods are defined in TIMEOUTS (orchestrator-types.ts).
 
 // ── Declarative transition side-effects ─────────────────────────────
 // State-specific flag resets applied on entry to a state. Lookup table
@@ -562,7 +556,7 @@ export class Orchestrator {
         } else if (liveness === "unknown") {
           // workerAlive is undefined -- session may not have registered yet.
           // Check for launching timeout to prevent indefinite stall.
-          if (isLaunchTimedOut(item.lastTransition, now, LAUNCHING_TIMEOUT_MS)) {
+          if (isLaunchTimedOut(item.lastTransition, now, TIMEOUTS.launching)) {
             if (this.shouldDeferTimeout(item, now)) {
               actions = [];
             } else {
@@ -725,7 +719,7 @@ export class Orchestrator {
     const nowMs = now.getTime();
     const heartbeat = snap?.lastHeartbeat;
     if (heartbeat?.ts) {
-      if (isHeartbeatActive(heartbeat.ts, now, HEARTBEAT_TIMEOUT_MS)) {
+      if (isHeartbeatActive(heartbeat.ts, now, TIMEOUTS.heartbeat)) {
         // Worker is actively heartbeating -- healthy, skip timeout checks
         return [];
       }
@@ -929,7 +923,7 @@ export class Orchestrator {
 
     // Layer 2: no ack after notification (process alive but AI exited)
     if (item.ciFailureNotified && item.ciNotifyWallAt) {
-      if (isCiFixAckTimedOut(item.ciNotifyWallAt, snap?.lastHeartbeat?.ts, now, CI_FIX_ACK_TIMEOUT_MS)) {
+      if (isCiFixAckTimedOut(item.ciNotifyWallAt, snap?.lastHeartbeat?.ts, now, TIMEOUTS.ciFixAck)) {
         return this.respawnCiFixWorker(item);
       }
     }
@@ -1245,7 +1239,7 @@ export class Orchestrator {
     // Don't react to CI status while the rebaser is actively working.
     // The pre-rebase PR still has its old CI status; transitioning on it
     // immediately kills the rebaser before it can push.
-    const hasActiveHeartbeat = isHeartbeatActive(snap?.lastHeartbeat?.ts, new Date(), HEARTBEAT_TIMEOUT_MS);
+    const hasActiveHeartbeat = isHeartbeatActive(snap?.lastHeartbeat?.ts, new Date(), TIMEOUTS.heartbeat);
 
     if (!hasActiveHeartbeat) {
       // Rebaser is no longer sending heartbeats. Check if CI is from a post-rebase push.
@@ -1317,7 +1311,7 @@ export class Orchestrator {
       case "pending": {
         // If no checks have appeared after grace period, treat as no CI configured.
         const hasPushWorkflows = snap.hasPushWorkflows ?? true; // assume yes if unknown
-        const gracePeriod = hasPushWorkflows ? MERGE_CI_GRACE_MS : NO_CI_MERGE_GRACE_MS;
+        const gracePeriod = hasPushWorkflows ? TIMEOUTS.mergeCi : TIMEOUTS.mergeCiNoPush;
         if (isMergeCiGracePeriodExpired(item.lastTransition, now, gracePeriod)) {
           this.transition(item, "done");
         }

@@ -154,7 +154,7 @@ export interface OrchestratorConfig {
   maxMergeRetries: number;
   /** Max consecutive rebaser worker launches before marking stuck. Default: 3. */
   maxRebaseAttempts: number;
-  /** How long merge conflicts can stay unchanged before the orchestrator retries or escalates rebase handling. Default: 15 minutes. */
+  /** How long merge conflicts can stay unchanged before the orchestrator retries or escalates rebase handling. See `TIMEOUTS` for related constants. Default: 15 minutes. */
   rebaseRetryStaleMs: number;
   /** Max review rounds before marking stuck. Default: 3. */
   maxReviewRounds: number;
@@ -163,11 +163,11 @@ export interface OrchestratorConfig {
   /** Max CI fix-forward failures on main before marking stuck. Default: 2. */
   maxFixForwardRetries: number;
   /** Grace period (ms) after entering ci-pending from implementing/launching before trusting a CI "fail".
-   *  Prevents stale CI from a previous commit from killing workers. Default: 60000 (60s). */
+   *  Prevents stale CI from a previous commit from killing workers. See `TIMEOUTS.ciFixAck` for the related ack timeout. Default: 60000 (60s). */
   ciPendingFailGraceMs: number;
   /** When true, the AI review gate is bypassed -- ci-passed chains straight to merge evaluation. Default: false. */
   skipReview: boolean;
-  /** Grace period (ms) before timeout kills proceed. On first timeout detection, a deadline is set this far in the future. 0 = immediate kill (no grace period). Default: 5 minutes. */
+  /** Grace period (ms) before timeout kills proceed. On first timeout detection, a deadline is set this far in the future. 0 = immediate kill (no grace period). See `TIMEOUTS.heartbeat` and `TIMEOUTS.launching` for the detection thresholds. Default: 5 minutes. */
   gracePeriodMs: number;
   /** Max number of times extendTimeout() can push the deadline forward. Default: 3. */
   maxTimeoutExtensions: number;
@@ -520,21 +520,79 @@ export function calculateMemorySessionLimit(
   return Math.max(1, Math.min(memorySlots, configuredLimit));
 }
 
-/** Heartbeat recency threshold: a heartbeat within this window means the worker is healthy. */
-export const HEARTBEAT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+// ── Orchestrator timeouts ────────────────────────────────────────────
+// All timeout and grace period constants grouped by concern.
+// Each value has JSDoc explaining its rationale and which guards consume it.
+
+/**
+ * Consolidated timeout and grace period constants for the orchestrator state machine.
+ * Grouped by concern so the values are easy to find, audit, and tune together.
+ *
+ * **Worker liveness** -- detecting healthy vs. stuck/crashed workers.
+ * **CI verification** -- waiting for CI results to become trustworthy.
+ * **Merge pipeline** -- grace windows after merge for CI on the merge commit.
+ * **Rebase** -- cooldowns for rebase retry nudges.
+ */
+export const TIMEOUTS = {
+  // ── Worker liveness ──────────────────────────────────────────────
+  /**
+   * Heartbeat recency threshold (ms). A heartbeat younger than this means the
+   * worker is healthy; a stale one triggers commit-based timeout checks.
+   * Consumed by `isHeartbeatActive` in orchestrator-guards.ts.
+   * 5 minutes -- generous enough for long builds, tight enough to detect crashes.
+   */
+  heartbeat: 5 * 60 * 1000, // 5 min
+
+  /**
+   * Launch window (ms). If an item sits in `launching` state longer than this
+   * with no workerAlive signal, it is timed out (stuck-or-retry).
+   * Consumed by `isLaunchTimedOut` in orchestrator-guards.ts.
+   * 5 minutes -- covers slow tool startup and worktree creation.
+   */
+  launching: 5 * 60 * 1000, // 5 min
+
+  // ── CI verification ──────────────────────────────────────────────
+  /**
+   * CI fix acknowledgement timeout (ms). After the orchestrator notifies a
+   * worker about a CI failure, the worker must heartbeat within this window
+   * to prove it received and is acting on the failure.
+   * Consumed by `isCiFixAckTimedOut` in orchestrator-guards.ts.
+   * 2 minutes -- long enough for the message to be read, short enough to
+   * detect an unresponsive worker promptly.
+   */
+  ciFixAck: 2 * 60 * 1000, // 2 min
+
+  // ── Merge pipeline ───────────────────────────────────────────────
+  /**
+   * Post-merge CI grace period (ms) when the repo has push workflows.
+   * After merge, the orchestrator waits this long for check runs to appear
+   * on the merge commit before treating "no checks" as "no CI configured".
+   * Consumed by `isMergeCiGracePeriodExpired` in orchestrator-guards.ts.
+   * 60 seconds -- push-triggered workflows typically queue within seconds.
+   */
+  mergeCi: 60_000, // 60 s
+
+  /**
+   * Post-merge CI grace period (ms) when no push workflows are detected.
+   * Shorter than `mergeCi` because only third-party status checks
+   * (which usually fire almost instantly) are expected.
+   * Consumed by `isMergeCiGracePeriodExpired` in orchestrator-guards.ts.
+   * 15 seconds -- if nothing appears by now, CI is not configured.
+   */
+  mergeCiNoPush: 15_000, // 15 s
+} as const;
+
+// Backward-compatible aliases so existing imports continue to work.
+// TODO: migrate consumers to TIMEOUTS.* and remove these aliases.
+/** @deprecated Use `TIMEOUTS.heartbeat` */
+export const HEARTBEAT_TIMEOUT_MS = TIMEOUTS.heartbeat;
+/** @deprecated Use `TIMEOUTS.ciFixAck` */
+export const CI_FIX_ACK_TIMEOUT_MS = TIMEOUTS.ciFixAck;
+/** @deprecated Use `TIMEOUTS.launching` */
+export const LAUNCHING_TIMEOUT_MS = TIMEOUTS.launching;
 
 /** Number of consecutive workerAlive=false polls required before declaring a worker dead. */
 export const NOT_ALIVE_THRESHOLD = 5;
-
-/** Timeout (ms) for worker to heartbeat after CI failure notification delivery. If no heartbeat arrives within this window, the worker is considered unresponsive. */
-export const CI_FIX_ACK_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
-
-/** Grace period (ms) after entering ci-pending before trusting a "fail" CI status.
- *  Prevents stale CI results from a previous commit from causing premature ci-failed transitions. */
-export const CI_PENDING_FAIL_GRACE_MS = 60_000; // 60 seconds
-
-/** Timeout (ms) for items in launching state with no workerAlive signal. Default: 5 minutes. */
-export const LAUNCHING_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Failure reason set when a restarted worker has no live workspace and is held for operator relaunch. */
 export const RESTART_RECOVERY_HOLD_REASON =

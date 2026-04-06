@@ -12,7 +12,6 @@ import { getAvailableMemory } from "../memory.ts";
 import {
   Orchestrator,
   DEFAULT_CONFIG,
-  CI_FIX_ACK_TIMEOUT_MS,
   RESTART_RECOVERY_HOLD_REASON,
   calculateMemorySessionLimit,
   statusDisplayForState,

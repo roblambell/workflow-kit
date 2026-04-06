@@ -12,7 +12,7 @@ import {
   RESET,
 } from "./output.ts";
 import type { DaemonState } from "./daemon.ts";
-import { CI_FIX_ACK_TIMEOUT_MS } from "./orchestrator-types.ts";
+import { TIMEOUTS } from "./orchestrator-types.ts";
 import type { MergeStrategy, PollSnapshot } from "./orchestrator.ts";
 import { ghFailureKindLabel } from "./gh.ts";
 import {
@@ -1512,7 +1512,7 @@ export function daemonStateToStatusItems(state: DaemonState): StatusItem[] {
       worktreePath: item.worktreePath,
       workspaceRef: item.workspaceRef,
       respawnDeadlineMs: item.ciNotifyWallAt
-        ? new Date(item.ciNotifyWallAt).getTime() + CI_FIX_ACK_TIMEOUT_MS
+        ? new Date(item.ciNotifyWallAt).getTime() + TIMEOUTS.ciFixAck
         : undefined,
       progress: item.progress,
       progressLabel: item.progressLabel,
