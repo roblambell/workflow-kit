@@ -5424,3 +5424,193 @@ describe("timeout grace period", () => {
     expect(extendEvent.data?.extensionCount).toBe(1);
   });
 });
+
+// -- Session parking (H-SP-2) --------------------------------------------------
+
+describe("session parking (H-SP-2)", () => {
+  it("manual strategy: parks session on review-pending with reviewCompleted=true", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-passed");
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+    expect(orch.getItem("H-1-1")!.sessionParked).toBe(true);
+    expect(actions.some((a) => a.type === "workspace-close" && a.itemId === "H-1-1")).toBe(true);
+  });
+
+  it("requiresManualReview: parks session on review-pending with reviewCompleted=true", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    const wi = makeWorkItem("H-1-1");
+    wi.requiresManualReview = true;
+    orch.addItem(wi);
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-passed");
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+    expect(orch.getItem("H-1-1")!.sessionParked).toBe(true);
+    expect(actions.some((a) => a.type === "workspace-close")).toBe(true);
+  });
+
+  it("activeSessionCount excludes parked items", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual", sessionLimit: 3 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.addItem(makeWorkItem("H-1-2"));
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.hydrateState("H-1-2", "implementing");
+    orch.getItem("H-1-1")!.sessionParked = true;
+
+    expect(orch.activeSessionCount).toBe(1);
+    expect(orch.availableSessionSlots).toBe(2);
+  });
+
+  it("queued item can launch after another item is parked (WIP slot freed)", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual", sessionLimit: 1 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.addItem(makeWorkItem("H-1-2"));
+
+    // H-1-1 is parked in review-pending
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.sessionParked = true;
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+
+    // H-1-2 is ready
+    orch.hydrateState("H-1-2", "ready");
+
+    const actions = orch.processTransitions(emptySnapshot());
+
+    // Parked item frees the slot, allowing H-1-2 to launch
+    expect(actions.some((a) => a.type === "launch" && a.itemId === "H-1-2")).toBe(true);
+    expect(orch.getItem("H-1-2")!.state).toBe("launching");
+  });
+
+  it("does NOT park when reviewCompleted=false (AI request-changes)", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = false;
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).not.toBe("review-pending");
+    expect(orch.getItem("H-1-1")!.sessionParked).not.toBe(true);
+    expect(actions.some((a) => a.type === "workspace-close")).toBe(false);
+  });
+
+  it("does NOT park when CHANGES_REQUESTED triggers review-pending", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-passed");
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.getItem("H-1-1")!.prNumber = 42;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{
+        id: "H-1-1", ciStatus: "pass", prState: "open",
+        reviewDecision: "CHANGES_REQUESTED",
+      }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("review-pending");
+    expect(orch.getItem("H-1-1")!.sessionParked).not.toBe(true);
+    expect(actions.some((a) => a.type === "workspace-close")).toBe(false);
+  });
+
+  it("parked item resumes on CHANGES_REQUESTED: respawnCiFixWorker called", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.getItem("H-1-1")!.sessionParked = true;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{
+        id: "H-1-1", ciStatus: "pass", prState: "open",
+        reviewDecision: "CHANGES_REQUESTED",
+      }]),
+    );
+
+    // respawnCiFixWorker transitions to ready, then launchReadyItems picks it up
+    expect(orch.getItem("H-1-1")!.state).toBe("launching");
+    expect(orch.getItem("H-1-1")!.reviewCompleted).toBe(false);
+    expect(orch.getItem("H-1-1")!.sessionParked).toBe(false);
+    expect(actions.some((a) => a.type === "retry")).toBe(true);
+    expect(actions.some((a) => a.type === "launch" && a.itemId === "H-1-1")).toBe(true);
+  });
+
+  it("strategy change to auto while parked: evaluateMerge transitions to merging", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.getItem("H-1-1")!.sessionParked = true;
+
+    // Switch strategy to auto -- triggers forceReviewPendingReevaluation
+    orch.setMergeStrategy("auto");
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "pass", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("merging");
+    expect(actions.some((a) => a.type === "merge")).toBe(true);
+    // Parking cleared by the transition
+    expect(orch.getItem("H-1-1")!.sessionParked).toBe(false);
+  });
+
+  it("external merge on parked item: clean action works (no workspace to close)", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.getItem("H-1-1")!.sessionParked = true;
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", prState: "merged" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("merged");
+    expect(actions.some((a) => a.type === "clean")).toBe(true);
+    // No workspace-close needed -- session was already parked/closed
+    expect(actions.some((a) => a.type === "workspace-close")).toBe(false);
+    // Parking flag cleared by transition
+    expect(orch.getItem("H-1-1")!.sessionParked).toBe(false);
+  });
+
+  it("sessionParked cleared on transition out of review-pending", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.hydrateState("H-1-1", "review-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.reviewCompleted = false;
+    orch.getItem("H-1-1")!.sessionParked = true;
+
+    // CI failure triggers transition out of review-pending
+    orch.processTransitions(
+      snapshotWith([{ id: "H-1-1", ciStatus: "fail", prState: "open" }]),
+    );
+
+    expect(orch.getItem("H-1-1")!.state).toBe("ci-failed");
+    expect(orch.getItem("H-1-1")!.sessionParked).toBe(false);
+  });
+});

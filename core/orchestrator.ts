@@ -224,10 +224,11 @@ export class Orchestrator {
     item.lastTransition = new Date().toISOString();
   }
 
-  /** Count of items in WIP states (counts toward limit). */
+  /** Count of items in WIP states (counts toward limit). Parked items are excluded. */
   get activeSessionCount(): number {
-    return this.getAllItems().filter((item) => ACTIVE_SESSION_STATES.has(item.state))
-      .length;
+    return this.getAllItems().filter((item) =>
+      ACTIVE_SESSION_STATES.has(item.state) && !item.sessionParked,
+    ).length;
   }
 
   /** How many more items can be launched without exceeding the effective WIP limit. */
@@ -324,6 +325,7 @@ export class Orchestrator {
 
     // Always-clear on any transition
     item.rebaseRequested = false;
+    item.sessionParked = false;
     item.timeoutDeadline = undefined;
     item.timeoutExtensionCount = undefined;
 
@@ -1060,6 +1062,13 @@ export class Orchestrator {
       return actions;
     }
 
+    // Resume parked session: human requested changes on a parked item.
+    // Reset reviewCompleted so the worker can address the feedback, and respawn.
+    if (item.sessionParked && snap?.reviewDecision === "CHANGES_REQUESTED") {
+      item.reviewCompleted = false;
+      return this.respawnCiFixWorker(item);
+    }
+
     // CI status changes -- worker pushed fixes after review feedback.
     // CI fail is always actionable regardless of reviewCompleted.
     // CI pending/pass transitions only apply when reviewCompleted is false
@@ -1560,6 +1569,18 @@ export class Orchestrator {
     ) {
       if (item.state !== "review-pending") {
         this.transition(item, "review-pending", eventTime);
+      }
+      // Park session when review is complete but merge is blocked by manual strategy
+      // or requiresManualReview -- the worker has nothing left to do until a human acts.
+      // Do NOT park when CHANGES_REQUESTED triggered entry (worker needs to address feedback)
+      // or when reviewCompleted is false (worker still addressing AI review feedback).
+      if (
+        item.reviewCompleted
+        && snap?.reviewDecision !== "CHANGES_REQUESTED"
+        && !item.sessionParked
+      ) {
+        item.sessionParked = true;
+        actions.push({ type: "workspace-close", itemId: item.id });
       }
       return actions;
     }

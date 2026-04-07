@@ -768,7 +768,7 @@ export const STATE_TRANSITIONS: Record<OrchestratorItemState, readonly Orchestra
   "ci-failed":            ["ci-pending", "ci-passed", "stuck", "ready", "merged", "rebasing"],
   "rebasing":             ["ci-pending", "stuck"],
   "reviewing":            ["ci-passed", "ci-failed", "ci-pending", "review-pending", "merged"],
-  "review-pending":       ["ci-pending", "ci-passed", "ci-failed", "merging", "merged", "stuck", "reviewing", "rebasing"],
+  "review-pending":       ["ci-pending", "ci-passed", "ci-failed", "merging", "merged", "stuck", "reviewing", "rebasing", "ready"],
   "merging":              ["merged", "ci-passed", "ci-pending", "stuck"],
   "merged":               ["forward-fix-pending", "fix-forward-failed", "done"],
   "forward-fix-pending":  ["done", "fix-forward-failed"],
