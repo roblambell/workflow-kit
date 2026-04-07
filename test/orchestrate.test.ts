@@ -2454,6 +2454,77 @@ describe("reconstructState rebase persistence", () => {
   });
 });
 
+describe("reconstructState sessionParked persistence", () => {
+  it("restores sessionParked: true from daemon state", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("SP-R1"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-sp-${Date.now()}`);
+    const wtDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const wtPath = join(wtDir, "ninthwave-SP-R1");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-04-07T00:00:00Z",
+      updatedAt: "2026-04-07T01:00:00Z",
+      items: [
+        {
+          id: "SP-R1",
+          state: "implementing",
+          prNumber: null,
+          title: "Test item",
+          lastTransition: "2026-04-07T00:30:00Z",
+          ciFailCount: 0,
+          retryCount: 0,
+          sessionParked: true,
+        },
+      ],
+    };
+
+    reconstructState(orch, tmpDir, wtDir, undefined, () => null, daemonState);
+
+    const item = orch.getItem("SP-R1")!;
+    expect(item.sessionParked).toBe(true);
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("does not restore sessionParked when absent from daemon state", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("SP-R2"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-sp2-${Date.now()}`);
+    const wtDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const wtPath = join(wtDir, "ninthwave-SP-R2");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-04-07T00:00:00Z",
+      updatedAt: "2026-04-07T01:00:00Z",
+      items: [
+        {
+          id: "SP-R2",
+          state: "implementing",
+          prNumber: null,
+          title: "Test item",
+          lastTransition: "2026-04-07T00:30:00Z",
+          ciFailCount: 0,
+          retryCount: 0,
+        },
+      ],
+    };
+
+    reconstructState(orch, tmpDir, wtDir, undefined, () => null, daemonState);
+
+    const item = orch.getItem("SP-R2")!;
+    expect(item.sessionParked).toBeUndefined();
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
 describe("serializeOrchestratorState includes ciFailCount", () => {
   it("serializes ciFailCount in daemon state items", () => {
     const { serializeOrchestratorState } = require("../core/daemon.ts");

@@ -1100,6 +1100,42 @@ describe("inbox metadata serialization", () => {
   });
 });
 
+// ── sessionParked serialization ─────────────────────────────────────
+
+describe("sessionParked serialization", () => {
+  it("roundtrips sessionParked through serialize/write/read", () => {
+    const io = createMockIO();
+    const item = makeOrchestratorItem("SP-1", "implementing", 10);
+    (item as any).sessionParked = true;
+
+    const state = serializeOrchestratorState(
+      [item],
+      99,
+      "2026-04-07T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.sessionParked).toBe(true);
+
+    writeStateFile("/project", state, io);
+    const restored = readStateFile("/project", io);
+
+    expect(restored).not.toBeNull();
+    expect(restored!.items[0]!.sessionParked).toBe(true);
+  });
+
+  it("omits sessionParked when falsy", () => {
+    const item = makeOrchestratorItem("SP-2", "implementing");
+
+    const state = serializeOrchestratorState(
+      [item],
+      42,
+      "2026-04-07T00:00:00.000Z",
+    );
+
+    expect(state.items[0]!.sessionParked).toBeUndefined();
+  });
+});
+
 // ── PID file locking ────────────────────────────────────────────────
 
 describe("PID file exclusive locking", () => {

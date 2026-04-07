@@ -7261,6 +7261,23 @@ describe("Orchestrator", () => {
       expect(deps.cleanup.cleanSingleWorktree).not.toHaveBeenCalled();
     });
 
+    it("executeWorkspaceClose clears workspaceRef after successful close", () => {
+      const deps = mockDeps({ mux: { readScreen: vi.fn(() => null) }, io: { warn: vi.fn() } });
+      orch = new Orchestrator({  });
+      orch.addItem(makeWorkItem("WP-1-CLR"));
+      orch.hydrateState("WP-1-CLR", "stuck");
+      orch.getItem("WP-1-CLR")!.workspaceRef = "workspace:99";
+
+      const result = orch.executeAction(
+        { type: "workspace-close", itemId: "WP-1-CLR" },
+        defaultCtx,
+        deps,
+      );
+
+      expect(result.success).toBe(true);
+      expect(orch.getItem("WP-1-CLR")!.workspaceRef).toBeUndefined();
+    });
+
     it("done items still get full cleanup (clean action removes worktree)", () => {
       const deps = mockDeps();
       orch = new Orchestrator({  });
