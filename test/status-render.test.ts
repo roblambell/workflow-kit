@@ -24,6 +24,8 @@ import {
   formatConnectionPanel,
   formatConnectionInline,
   computeBlockedBy,
+  computeBlockedByInfo,
+  blockedReasonText,
   sortByBlockedThenId,
   computeSessionMetrics,
   mapDaemonItemState,
@@ -4750,6 +4752,203 @@ describe("renderDetailOverlay", () => {
     expect(text).toContain("Press Escape to close");
     expect(text).not.toContain("▼ scroll down");
     expect(text).not.toContain("▲ scroll up");
+  });
+
+  // ── Blocked by: fan-in explanation for queued items ──────────────
+  it("shows Blocked by section and fan-in Why line for queued item with multiple parked review deps", () => {
+    const item = makeStatusItem({
+      id: "H-MSC-3c",
+      title: "Wire tap-to-expand ChartModal",
+      state: "queued",
+      prNumber: null,
+      dependencies: ["H-MSC-2", "H-MSC-3a", "H-MSC-3b"],
+    });
+    const { lines } = renderDetailOverlay(item, 100, 40, {
+      blockedBy: [
+        { id: "H-MSC-2", state: "review", sessionParked: true, prNumber: 392 },
+        { id: "H-MSC-3a", state: "review", sessionParked: true, prNumber: 389 },
+        { id: "H-MSC-3b", state: "review", sessionParked: true, prNumber: 391 },
+      ],
+      blockedReason: "fan-in",
+    });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Blocked by:");
+    expect(text).toContain("H-MSC-2");
+    expect(text).toContain("H-MSC-3a");
+    expect(text).toContain("H-MSC-3b");
+    expect(text).toContain("In Review");
+    expect(text).toContain("(parked)");
+    expect(text).toContain("#392");
+    expect(text).toContain("#389");
+    expect(text).toContain("#391");
+    expect(text).toContain("Why:");
+    expect(text).toContain("fan-in");
+  });
+
+  it("omits Blocked by section for non-queued items", () => {
+    const item = makeStatusItem({
+      id: "H-NQ-1",
+      state: "implementing",
+      dependencies: ["H-DEP-1"],
+    });
+    const { lines } = renderDetailOverlay(item, 100, 40, {
+      blockedBy: [
+        { id: "H-DEP-1", state: "implementing", prNumber: 10 },
+      ],
+      blockedReason: "dep-in-flight",
+    });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).not.toContain("Blocked by:");
+  });
+
+  it("omits Blocked by section when blockedBy array is empty", () => {
+    const item = makeStatusItem({
+      id: "H-EMPTY-1",
+      state: "queued",
+      prNumber: null,
+      dependencies: ["H-DONE-1"],
+    });
+    const { lines } = renderDetailOverlay(item, 100, 40, {
+      blockedBy: [],
+    });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).not.toContain("Blocked by:");
+  });
+
+  it("renders dep-blocked Why line when a dep is in a failure state", () => {
+    const item = makeStatusItem({
+      id: "H-DB-1",
+      state: "queued",
+      prNumber: null,
+      dependencies: ["H-STUCK-1"],
+    });
+    const { lines } = renderDetailOverlay(item, 100, 40, {
+      blockedBy: [
+        { id: "H-STUCK-1", state: "ci-failed", prNumber: 100 },
+      ],
+      blockedReason: "dep-blocked",
+    });
+    const text = lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Blocked by:");
+    expect(text).toContain("H-STUCK-1");
+    expect(text).toContain("CI Failed");
+    expect(text).toContain("#100");
+    expect(text).toContain("Why:");
+    expect(text).toContain("stuck or blocked");
+  });
+});
+
+// ── computeBlockedByInfo + blockedReasonText ────────────────────────
+
+describe("computeBlockedByInfo", () => {
+  it("returns undefined for non-queued items", () => {
+    const items = [
+      makeStatusItem({ id: "H-A", state: "implementing", dependencies: ["H-B"] }),
+      makeStatusItem({ id: "H-B", state: "ci-passed" }),
+    ];
+    expect(computeBlockedByInfo("H-A", items)).toBeUndefined();
+  });
+
+  it("returns undefined for queued items with no deps", () => {
+    const items = [makeStatusItem({ id: "H-A", state: "queued", dependencies: [] })];
+    expect(computeBlockedByInfo("H-A", items)).toBeUndefined();
+  });
+
+  it("returns undefined when all deps are done/merged/verifying", () => {
+    const items = [
+      makeStatusItem({ id: "H-A", state: "queued", dependencies: ["H-B", "H-C", "H-D"] }),
+      makeStatusItem({ id: "H-B", state: "done" }),
+      makeStatusItem({ id: "H-C", state: "merged" }),
+      makeStatusItem({ id: "H-D", state: "verifying" }),
+    ];
+    expect(computeBlockedByInfo("H-A", items)).toBeUndefined();
+  });
+
+  it("classifies as fan-in when 2+ deps are in stackable states (review)", () => {
+    const items = [
+      makeStatusItem({ id: "H-A", state: "queued", dependencies: ["H-B", "H-C", "H-D"] }),
+      makeStatusItem({ id: "H-B", state: "review", sessionParked: true, prNumber: 10 }),
+      makeStatusItem({ id: "H-C", state: "review", sessionParked: true, prNumber: 11 }),
+      makeStatusItem({ id: "H-D", state: "review", sessionParked: true, prNumber: 12 }),
+    ];
+    const result = computeBlockedByInfo("H-A", items);
+    expect(result).toBeDefined();
+    expect(result!.blockedReason).toBe("fan-in");
+    expect(result!.blockedBy).toHaveLength(3);
+    expect(result!.blockedBy[0]!.id).toBe("H-B");
+    expect(result!.blockedBy[0]!.sessionParked).toBe(true);
+    expect(result!.blockedBy[0]!.prNumber).toBe(10);
+  });
+
+  it("classifies as fan-in when mixing ci-passed and review", () => {
+    const items = [
+      makeStatusItem({ id: "H-A", state: "queued", dependencies: ["H-B", "H-C"] }),
+      makeStatusItem({ id: "H-B", state: "ci-passed", prNumber: 20 }),
+      makeStatusItem({ id: "H-C", state: "review", prNumber: 21 }),
+    ];
+    expect(computeBlockedByInfo("H-A", items)!.blockedReason).toBe("fan-in");
+  });
+
+  it("classifies as dep-not-started when any dep is queued", () => {
+    const items = [
+      makeStatusItem({ id: "H-A", state: "queued", dependencies: ["H-B", "H-C"] }),
+      makeStatusItem({ id: "H-B", state: "implementing", prNumber: 1 }),
+      makeStatusItem({ id: "H-C", state: "queued", prNumber: null }),
+    ];
+    expect(computeBlockedByInfo("H-A", items)!.blockedReason).toBe("dep-not-started");
+  });
+
+  it("classifies as dep-in-flight when a single dep is implementing", () => {
+    const items = [
+      makeStatusItem({ id: "H-A", state: "queued", dependencies: ["H-B"] }),
+      makeStatusItem({ id: "H-B", state: "implementing", prNumber: 1 }),
+    ];
+    expect(computeBlockedByInfo("H-A", items)!.blockedReason).toBe("dep-in-flight");
+  });
+
+  it("classifies as dep-in-flight for a single stackable dep (not fan-in)", () => {
+    const items = [
+      makeStatusItem({ id: "H-A", state: "queued", dependencies: ["H-B"] }),
+      makeStatusItem({ id: "H-B", state: "review", prNumber: 1 }),
+    ];
+    // Only one stackable dep -- would have launched via stacking in theory,
+    // so reason is dep-in-flight, not fan-in.
+    expect(computeBlockedByInfo("H-A", items)!.blockedReason).toBe("dep-in-flight");
+  });
+
+  it("classifies as dep-blocked when any dep is failed (precedence over fan-in)", () => {
+    const items = [
+      makeStatusItem({ id: "H-A", state: "queued", dependencies: ["H-B", "H-C", "H-D"] }),
+      makeStatusItem({ id: "H-B", state: "review", prNumber: 1 }),
+      makeStatusItem({ id: "H-C", state: "review", prNumber: 2 }),
+      makeStatusItem({ id: "H-D", state: "ci-failed", prNumber: 3 }),
+    ];
+    expect(computeBlockedByInfo("H-A", items)!.blockedReason).toBe("dep-blocked");
+  });
+
+  it("skips unknown deps (treated as satisfied)", () => {
+    const items = [
+      makeStatusItem({ id: "H-A", state: "queued", dependencies: ["H-GONE"] }),
+    ];
+    // The only dep is unknown -- treated as satisfied -- so nothing blocks.
+    expect(computeBlockedByInfo("H-A", items)).toBeUndefined();
+  });
+});
+
+describe("blockedReasonText", () => {
+  it("returns a distinct human-readable string for each reason", () => {
+    const reasons = ["fan-in", "dep-not-started", "dep-in-flight", "dep-blocked"] as const;
+    const texts = reasons.map(blockedReasonText);
+    // All non-empty and unique
+    expect(new Set(texts).size).toBe(reasons.length);
+    for (const t of texts) {
+      expect(t.length).toBeGreaterThan(10);
+    }
+  });
+
+  it("fan-in text mentions stacking and merges", () => {
+    const text = blockedReasonText("fan-in");
+    expect(text).toContain("fan-in");
   });
 });
 

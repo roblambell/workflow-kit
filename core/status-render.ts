@@ -3295,6 +3295,112 @@ export function renderControlsOverlay(
  * Render a full-screen detail overlay for a single work item.
  * Styled identically to renderHelpOverlay() -- box-drawing border, centered.
  */
+/**
+ * Describes a dependency that is blocking a queued item from starting.
+ * Computed at the TUI call site from orchestrator state and passed to
+ * renderDetailOverlay for display in the "Blocked by" section.
+ */
+export interface DependencyBlockerInfo {
+  /** Dep work item ID (e.g., "H-MSC-2"). */
+  id: string;
+  /** Mapped display state (from mapDaemonItemState). */
+  state: ItemState;
+  /** True when the dep's worker session has been parked (released while awaiting review). */
+  sessionParked?: boolean;
+  /** PR number for the dep, if one exists. */
+  prNumber: number | null;
+}
+
+/**
+ * Why a queued item is blocked. Drives the "Why:" explanation line.
+ * - "fan-in": 2+ in-flight deps in stackable states (cannot stack on multiple branches)
+ * - "dep-not-started": at least one dep is still queued/ready (no PR yet)
+ * - "dep-in-flight": a single in-flight dep that isn't stackable yet (e.g., implementing/ci-pending)
+ * - "dep-blocked": at least one dep is in a terminal failure state (stuck/blocked/ci-failed)
+ */
+export type BlockedReason = "fan-in" | "dep-not-started" | "dep-in-flight" | "dep-blocked";
+
+/**
+ * Compute blocker info for a queued item from a StatusItem list.
+ *
+ * Walks the item's dependencies and classifies each unsatisfied dep. Returns
+ * undefined when the item is not queued, has no deps, or all deps are already
+ * satisfied (`done`/`merged`/`verifying` -- code is or will be on main).
+ *
+ * Display-only: classification drives the TUI "Blocked by" explanation and
+ * does not affect orchestrator behavior.
+ *
+ * Classification rules:
+ * - `dep-blocked`   if any blocking dep is in a failure state (ci-failed/cd-failed/blocked)
+ * - `fan-in`        if 2+ blocking deps are in stackable states (ci-passed/review)
+ * - `dep-not-started` if any blocking dep is still queued
+ * - `dep-in-flight` otherwise (implementing/ci-pending/rebasing/in-progress/single stackable)
+ */
+export function computeBlockedByInfo(
+  itemId: string,
+  items: readonly StatusItem[],
+): { blockedBy: DependencyBlockerInfo[]; blockedReason: BlockedReason } | undefined {
+  const item = items.find((i) => i.id === itemId);
+  if (!item) return undefined;
+  if (item.state !== "queued") return undefined;
+  const depIds = item.dependencies ?? [];
+  if (depIds.length === 0) return undefined;
+
+  const blockedBy: DependencyBlockerInfo[] = [];
+  for (const depId of depIds) {
+    const dep = items.find((i) => i.id === depId);
+    if (!dep) continue; // unknown dep -- treat as satisfied (likely cleaned up)
+    if (dep.state === "done" || dep.state === "merged" || dep.state === "verifying") continue;
+    blockedBy.push({
+      id: dep.id,
+      state: dep.state,
+      ...(dep.sessionParked ? { sessionParked: true } : {}),
+      prNumber: dep.prNumber,
+    });
+  }
+
+  if (blockedBy.length === 0) return undefined;
+
+  // Stackable display states = { ci-passed, review } -- these are the display
+  // projections of orchestrator STACKABLE_STATES (ci-passed, reviewing,
+  // review-pending, merging). `merging` maps to display `ci-pending`, which is
+  // ambiguous, so we accept some imprecision on that edge case.
+  const stackableCount = blockedBy.filter(
+    (b) => b.state === "ci-passed" || b.state === "review",
+  ).length;
+  const hasFailed = blockedBy.some(
+    (b) => b.state === "ci-failed" || b.state === "cd-failed" || b.state === "blocked",
+  );
+  const hasNotStarted = blockedBy.some((b) => b.state === "queued");
+
+  let blockedReason: BlockedReason;
+  if (hasFailed) {
+    blockedReason = "dep-blocked";
+  } else if (stackableCount >= 2) {
+    blockedReason = "fan-in";
+  } else if (hasNotStarted) {
+    blockedReason = "dep-not-started";
+  } else {
+    blockedReason = "dep-in-flight";
+  }
+
+  return { blockedBy, blockedReason };
+}
+
+/** One-line explanation for each BlockedReason, rendered on the "Why:" line. */
+export function blockedReasonText(reason: BlockedReason): string {
+  switch (reason) {
+    case "fan-in":
+      return "Multiple in-flight deps (fan-in). Stacking supports only a single in-flight dep, so this item waits for all deps to merge. In manual-merge mode, review and merge the PRs above.";
+    case "dep-not-started":
+      return "At least one dependency has not started yet. This item will unblock as deps advance.";
+    case "dep-in-flight":
+      return "A dependency is in flight but not yet stackable. This item will unblock once the dep reaches ci-passed/review-pending/merging (stackable) or merges.";
+    case "dep-blocked":
+      return "At least one dependency is stuck or blocked. Resolve the failing dep (or mark it done) before this item can proceed.";
+  }
+}
+
 export function renderDetailOverlay(
   item: StatusItem,
   termWidth: number,
@@ -3312,6 +3418,14 @@ export function renderDetailOverlay(
     scrollOffset?: number;
     /** Full description body to render in a scrollable region (overrides descriptionSnippet). */
     descriptionBody?: string;
+    /**
+     * Deps that are blocking this item from launching. Only rendered when the
+     * item is in "queued" state and this array is non-empty. Computed at the
+     * call site from orchestrator state.
+     */
+    blockedBy?: DependencyBlockerInfo[];
+    /** Classification of why the item is blocked, drives the "Why:" line. */
+    blockedReason?: BlockedReason;
   },
 ): { lines: string[]; totalContentLines: number } {
   // ── Build content lines from formatItemDetail + extras ────────────
@@ -3334,6 +3448,38 @@ export function renderDetailOverlay(
 
   if (opts?.dependencies && opts.dependencies.length > 0) {
     contentLines.push(`  ${DIM}Depends:${RESET}   ${opts.dependencies.join(", ")}`);
+  }
+
+  // Blocked by: rendered only for queued items with known blockers.
+  // Display-only -- does not affect orchestrator behavior.
+  if (item.state === "queued" && opts?.blockedBy && opts.blockedBy.length > 0) {
+    contentLines.push("");
+    contentLines.push(`  ${YELLOW}Blocked by:${RESET}`);
+    // Compute ID column width so state/PR columns align.
+    const idWidth = Math.max(...opts.blockedBy.map((b) => b.id.length));
+    for (const blocker of opts.blockedBy) {
+      const color = stateColor(blocker.state);
+      const icon = stateIcon(blocker.state);
+      const label = stateLabel(blocker.state);
+      const parkedTag = blocker.sessionParked && blocker.state === "review"
+        ? ` ${DIM}(parked)${RESET}`
+        : "";
+      const idPadded = blocker.id.padEnd(idWidth);
+      const pr = blocker.prNumber != null ? `#${blocker.prNumber}` : `${DIM}--${RESET}`;
+      contentLines.push(`    • ${idPadded}  ${color}${icon} ${label}${RESET}${parkedTag}  ${pr}`);
+    }
+    if (opts?.blockedReason) {
+      contentLines.push("");
+      // Wrap the "Why:" line so it fits inside the overlay. The overlay trims
+      // long lines with ellipsis, so pre-wrap to avoid losing content.
+      const wrapWidth = Math.max(40, Math.min(72, termWidth - 16));
+      const reasonText = blockedReasonText(opts.blockedReason);
+      const wrapped = wrapDetailText(reasonText, wrapWidth);
+      contentLines.push(`  ${DIM}Why:${RESET}       ${DIM}${wrapped[0] ?? ""}${RESET}`);
+      for (let i = 1; i < wrapped.length; i++) {
+        contentLines.push(`             ${DIM}${wrapped[i]}${RESET}`);
+      }
+    }
   }
 
   if (opts?.ciFailCount != null && opts.ciFailCount > 0) {

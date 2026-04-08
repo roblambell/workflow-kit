@@ -18,6 +18,7 @@ import { ALT_SCREEN_ON, ALT_SCREEN_OFF, RED } from "./output.ts";
 import {
   buildDisplayPrContext,
   buildVisibleStatusLayoutMetadata,
+  computeBlockedByInfo,
   daemonStateToStatusItems,
   formatStatusTable,
   mapDaemonItemState,
@@ -226,6 +227,7 @@ export function orchestratorItemsToStatusItems(
       progress: heartbeat?.progress,
       progressLabel: heartbeat?.label,
       progressTs: heartbeat?.ts,
+      ...(item.sessionParked ? { sessionParked: true } : {}),
     };
   });
 }
@@ -432,6 +434,7 @@ export function renderTuiPanelFrameFromStatusItems(
       const detailStatusItem = statusItems.find((item) => item.id === tuiState.detailItemId);
       if (detailStatusItem) {
         const detailSnapshot = detailSnapshots?.get(tuiState.detailItemId!);
+        const blockerInfo = computeBlockedByInfo(detailStatusItem.id, statusItems);
         const { lines: overlayLines, totalContentLines } = renderDetailOverlay(detailStatusItem, termWidth, termRows, {
           repoUrl: tuiState.viewOptions.repoUrl,
           priority: detailSnapshot?.priority,
@@ -440,6 +443,7 @@ export function renderTuiPanelFrameFromStatusItems(
           retryCount: detailSnapshot?.retryCount,
           scrollOffset: tuiState.detailScrollOffset ?? 0,
           descriptionBody: detailSnapshot?.descriptionBody,
+          ...(blockerInfo ? { blockedBy: blockerInfo.blockedBy, blockedReason: blockerInfo.blockedReason } : {}),
         });
         tuiState.detailContentLines = totalContentLines;
         const content = overlayLines.join("\n");
@@ -697,9 +701,11 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
       case "detail": {
         const detailItem = data.items.find((i) => i.id === tuiState.detailItemId);
         if (detailItem) {
+          const blockerInfo = computeBlockedByInfo(detailItem.id, data.items);
           const { lines: overlayLines, totalContentLines } = renderDetailOverlay(detailItem, termWidth, termRows, {
             repoUrl: tuiState.viewOptions.repoUrl,
             scrollOffset: tuiState.detailScrollOffset ?? 0,
+            ...(blockerInfo ? { blockedBy: blockerInfo.blockedBy, blockedReason: blockerInfo.blockedReason } : {}),
           });
           tuiState.detailContentLines = totalContentLines;
           const content = overlayLines.join("\n");

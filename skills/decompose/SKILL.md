@@ -156,7 +156,19 @@ Keep test plans concise -- 2-4 bullet points per item.
 
 #### Dependency mapping
 
-Group work items into **batches**. Items within a batch can run in parallel. Batches run sequentially. **Stacking:** items with a single in-flight dependency can launch early -- the orchestrator creates their worktree from the dependency's branch and rebases automatically after merge. This means dependency chains execute faster than strict batch ordering suggests, so prefer clear dependency declarations over artificially flattening items into a single batch.
+Group work items into **batches**. Items within a batch can run in parallel. Batches run sequentially. **Stacking:** items with **exactly one** in-flight dependency can launch early -- the orchestrator creates their worktree from the dependency's branch and rebases automatically after merge. Items with multiple in-flight deps (fan-in) cannot stack and must wait for all deps to merge. This means dependency chains execute faster than strict batch ordering suggests, so prefer clear dependency declarations over artificially flattening items into a single batch.
+
+#### Dependency shape trade-offs
+
+The orchestrator stacks launches when a queued item has **exactly one** in-flight dependency. It cannot stack on multiple in-flight deps. This shapes how you should decompose:
+
+- **Linear chain** (A -> B -> C, each depending on the previous): best for autonomous delivery. Each item stacks on the previous one's branch and launches immediately, even before review. A batch decomposed as a chain runs hands-off end-to-end in manual-merge mode.
+- **Batch-parallel** (A, B, C all depending on nothing, or on the same merged prerequisite): also fine. All items launch simultaneously; no stacking needed.
+- **Diamond / fan-in** (C depends on A *and* B, both in-flight): **avoid in manual-merge mode.** C will not launch until both A and B merge, which requires human review. The tail of the batch stalls in the queue.
+
+**Decomposition preference (manual-merge mode):** when you have a choice between "three items in parallel, then one fan-in" vs "four items in a linear chain," prefer the chain. You trade a bit of wall-clock parallelism for full autonomous execution. Only introduce a fan-in when the work truly cannot be linearized (e.g., the fan-in item inspects behavior that only emerges when all branches are combined).
+
+**If a diamond is unavoidable:** call it out explicitly in the decomposition output, e.g. `H-X-3: depends on [H-X-1, H-X-2] (fan-in -- will wait for manual merge)`, so the operator knows the tail will need their attention.
 
 #### ID assignment
 
