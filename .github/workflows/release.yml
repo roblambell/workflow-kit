@@ -66,9 +66,20 @@ jobs:
           cp VERSION "staging/${ARTIFACT_NAME}/"
           cp -r skills "staging/${ARTIFACT_NAME}/"
           cp -r agents "staging/${ARTIFACT_NAME}/"
+          # Canonical docs consumed by `nw init` when scaffolding consumer repos
+          mkdir -p "staging/${ARTIFACT_NAME}/core"
+          cp -r core/docs "staging/${ARTIFACT_NAME}/core/docs"
           # Validate BUNDLE_MARKER exists
           test -f "staging/${ARTIFACT_NAME}/skills/decompose/SKILL.md" || {
             echo "ERROR: BUNDLE_MARKER (skills/decompose/SKILL.md) missing from staging"
+            exit 1
+          }
+          test -f "staging/${ARTIFACT_NAME}/core/docs/work-item-format.md" || {
+            echo "ERROR: core/docs/work-item-format.md missing from staging"
+            exit 1
+          }
+          test -f "staging/${ARTIFACT_NAME}/core/docs/schedule-format.md" || {
+            echo "ERROR: core/docs/schedule-format.md missing from staging"
             exit 1
           }
 

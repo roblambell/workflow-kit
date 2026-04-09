@@ -100,6 +100,17 @@ function createFakeBundle(dir: string): string {
 
   writeFileSync(join(bundleDir, "CLAUDE.md"), "# Bundle instructions\n");
 
+  // Create canonical docs consumed by scaffold()
+  mkdirSync(join(bundleDir, "core", "docs"), { recursive: true });
+  writeFileSync(
+    join(bundleDir, "core", "docs", "work-item-format.md"),
+    "# Work Item File Format Guide\n\n(fake bundle content)\n",
+  );
+  writeFileSync(
+    join(bundleDir, "core", "docs", "schedule-format.md"),
+    "# Schedule File Format Guide\n\n(fake bundle content)\n",
+  );
+
   // Create VERSION file
   writeFileSync(join(bundleDir, "VERSION"), "0.1.0\n");
 
@@ -2265,6 +2276,90 @@ describe("initProject -- preserves existing files", () => {
     expect(content).toContain("!schedules/");
     expect(content).toContain("!friction/");
     expect(content).toContain("!decisions/");
+    expect(content).toContain("!work-item-format.md");
+    expect(content).toContain("!schedule-format.md");
+  });
+
+  it("copies core/docs/work-item-format.md from bundle into .ninthwave/work-item-format.md", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+
+    const formatDoc = join(projectDir, ".ninthwave", "work-item-format.md");
+    expect(existsSync(formatDoc)).toBe(true);
+    const content = readFileSync(formatDoc, "utf-8");
+    expect(content).toContain("Work Item File Format Guide");
+  });
+
+  it("overwrites .ninthwave/work-item-format.md on re-init to stay in sync with bundle", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    // First init seeds the file
+    initProject(projectDir, bundleDir, deps);
+
+    // Mutate the project copy as if it drifted from the bundle
+    const formatDoc = join(projectDir, ".ninthwave", "work-item-format.md");
+    writeFileSync(formatDoc, "# stale content\n");
+
+    // Re-init should restore the bundle content
+    initProject(projectDir, bundleDir, deps);
+
+    const content = readFileSync(formatDoc, "utf-8");
+    expect(content).toContain("Work Item File Format Guide");
+    expect(content).not.toContain("stale content");
+  });
+
+  it("copies core/docs/schedule-format.md from bundle into .ninthwave/schedule-format.md", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+
+    const formatDoc = join(projectDir, ".ninthwave", "schedule-format.md");
+    expect(existsSync(formatDoc)).toBe(true);
+    const content = readFileSync(formatDoc, "utf-8");
+    expect(content).toContain("Schedule File Format Guide");
+  });
+
+  it("overwrites .ninthwave/schedule-format.md on re-init to stay in sync with bundle", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    // First init seeds the file
+    initProject(projectDir, bundleDir, deps);
+
+    // Mutate the project copy as if it drifted from the bundle
+    const formatDoc = join(projectDir, ".ninthwave", "schedule-format.md");
+    writeFileSync(formatDoc, "# stale content\n");
+
+    // Re-init should restore the bundle content
+    initProject(projectDir, bundleDir, deps);
+
+    const content = readFileSync(formatDoc, "utf-8");
+    expect(content).toContain("Schedule File Format Guide");
+    expect(content).not.toContain("stale content");
   });
 
   it("does not modify root .gitignore", () => {

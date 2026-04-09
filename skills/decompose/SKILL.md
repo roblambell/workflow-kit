@@ -198,7 +198,7 @@ Show totals and ask for approval. Options: looks good, adjust, re-decompose.
 **Goal:** Write each work item as an individual file in `.ninthwave/work/`.
 
 1. Ensure the directory exists: `mkdir -p .ninthwave/work`
-2. Read the format guide: `cat "$(cat .ninthwave/dir)/core/docs/work-item-format.md"`
+2. Read the canonical format guide: `cat .ninthwave/work-item-format.md`. If the file is missing, tell the user to run `nw init` before continuing -- that command copies the guide into the repo.
 3. For each new work item, run `nw lineage-token` exactly once and store the result in that item's `**Lineage:**` field. Never invent, derive, or freeform-generate the token.
 4. Write each work item as a separate file. The filename convention is:
 
@@ -211,7 +211,7 @@ Show totals and ask for approval. Options: looks good, adjust, re-decompose.
 
    Example: `2-worker-reliability--H-WRK-3.md`
 
-4. Each file uses this template:
+5. Each file uses this template:
 
 ```markdown
 # <Type>: <Title> (<ID>)
@@ -237,9 +237,9 @@ Key files: `path/to/file.ts`, `path/to/other.ex`
 
    Note: The heading uses `# ` (not `### `). The `**Domain:**` field is required and must be explicit in each file.
 
-5. Verify every item has both a `**Lineage:**` field and a `**Test plan:**` section
-6. Verify parseable: `ls .ninthwave/work/` to confirm files were written, then `ninthwave list | grep <feature_code>`
-7. Commit and push the new work files so they are available to workers (which clone from remote):
+6. Verify every item has both a `**Lineage:**` field and a `**Test plan:**` section
+7. Verify parseable: `ls .ninthwave/work/` to confirm files were written, then `ninthwave list | grep <feature_code>`
+8. Commit and push the new work files so they are available to workers (which clone from remote):
 
    ```bash
    git add .ninthwave/work/

@@ -111,6 +111,12 @@ download_and_extract() {
       cp -r "$extracted_dir/$resource" "$INSTALL_DIR/$resource"
     fi
   done
+
+  # Copy canonical docs (read by `nw init` when scaffolding consumer repos)
+  if [ -e "$extracted_dir/core" ]; then
+    rm -rf "${INSTALL_DIR:?}/core"
+    cp -r "$extracted_dir/core" "$INSTALL_DIR/core"
+  fi
 }
 
 # --- Configure PATH ---

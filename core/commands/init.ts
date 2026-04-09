@@ -705,6 +705,29 @@ function scaffold(
   mkdirSync(decisionsDir, { recursive: true });
   writeFileSync(join(decisionsDir, ".gitkeep"), "");
 
+  // --- .ninthwave/work-item-format.md (managed copy of the canonical format guide) ---
+  //
+  // The /decompose skill reads this file during Phase 6 to ground its output against
+  // the canonical schema. Always overwrite so the copy stays in sync with the
+  // running ninthwave version.
+  const workItemFormatSource = join(bundleDir, "core", "docs", "work-item-format.md");
+  const workItemFormatDest = join(projectDir, ".ninthwave", "work-item-format.md");
+  if (existsSync(workItemFormatSource)) {
+    writeFileSync(workItemFormatDest, readFileSync(workItemFormatSource));
+  }
+
+  // --- .ninthwave/schedule-format.md (managed copy of the canonical schedule format guide) ---
+  //
+  // Canonical reference for .ninthwave/schedules/ file authoring. Stamped into
+  // the project so anyone writing or editing schedules can cat it from the repo
+  // root without resolving NINTHWAVE_HOME. Always overwrite to track the
+  // running ninthwave version.
+  const scheduleFormatSource = join(bundleDir, "core", "docs", "schedule-format.md");
+  const scheduleFormatDest = join(projectDir, ".ninthwave", "schedule-format.md");
+  if (existsSync(scheduleFormatSource)) {
+    writeFileSync(scheduleFormatDest, readFileSync(scheduleFormatSource));
+  }
+
   // --- Skill files ---
   const skillsDir = join(projectDir, ".claude/skills");
 
@@ -733,6 +756,8 @@ function scaffold(
 # Committed project files
 !.gitignore
 !config.json
+!work-item-format.md
+!schedule-format.md
 !work/
 !work/**
 !schedules/
