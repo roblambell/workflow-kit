@@ -40,7 +40,7 @@ describe("upsertOrchestratorComment", () => {
     expect(body).toContain("| Time | Event |");
     expect(body).toContain("|------|-------|");
     expect(body).toContain("CI failure detected. Worker notified.");
-    expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
+    expect(body).toContain("<sub>[Ninthwave](https://ninthwave.sh)</sub>");
   });
 
   it("finds existing marker comment and inserts row before footer", () => {
@@ -53,7 +53,7 @@ describe("upsertOrchestratorComment", () => {
       "| 14:02 | CI failure detected. Worker notified. |",
       "",
       "---",
-      "*Powered by [Ninthwave](https://ninthwave.sh)*",
+      "<sub>[Ninthwave](https://ninthwave.sh)</sub>",
     ].join("\n");
 
     (client.listComments as ReturnType<typeof vi.fn>).mockReturnValue([
@@ -80,10 +80,10 @@ describe("upsertOrchestratorComment", () => {
     // Should have the new row inserted before footer
     expect(updatedBody).toContain("Rebase succeeded. CI re-running.");
     // Footer should still be at the end
-    expect(updatedBody).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
+    expect(updatedBody).toContain("<sub>[Ninthwave](https://ninthwave.sh)</sub>");
     // New row should appear before the footer
     const newRowIdx = updatedBody.indexOf("Rebase succeeded");
-    const footerIdx = updatedBody.indexOf("*Powered by");
+    const footerIdx = updatedBody.indexOf("<sub>[Ninthwave]");
     expect(newRowIdx).toBeLessThan(footerIdx);
 
     // Table rows must be contiguous (no blank line between them which breaks markdown tables)
@@ -163,10 +163,10 @@ describe("upsertOrchestratorComment", () => {
     expect(client.createComment).toHaveBeenCalledTimes(1);
 
     // Footer should still be present at the end
-    expect(currentBody).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
+    expect(currentBody).toContain("<sub>[Ninthwave](https://ninthwave.sh)</sub>");
     // All event rows should appear before the footer
     const lastEventIdx = currentBody.indexOf("CI passed. Auto-merged.");
-    const footerIdx = currentBody.indexOf("*Powered by");
+    const footerIdx = currentBody.indexOf("<sub>[Ninthwave]");
     expect(lastEventIdx).toBeLessThan(footerIdx);
   });
 

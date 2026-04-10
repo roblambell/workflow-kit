@@ -7155,7 +7155,7 @@ describe("Orchestrator", () => {
       expect(result.success).toBe(true);
       const body = (prComment.mock.calls[0] as any)?.[2] ?? "";
       expect(body).toContain("**[Reviewer](https://github.com/test-owner/test-repo/blob/main/agents/reviewer.md)**");
-      expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
+      expect(body).toContain("<sub>[Ninthwave](https://ninthwave.sh)</sub>");
       expect(body).toContain("Verdict: Approved");
       expect(body).not.toContain("Reviewed PR #");
       expect(body).toContain("Architecture | 8/10");
@@ -7190,7 +7190,7 @@ describe("Orchestrator", () => {
       expect(result.success).toBe(true);
       const body = (prComment.mock.calls[0] as any)?.[2] ?? "";
       expect(body).toContain("**[Reviewer](https://github.com/test-owner/test-repo/blob/main/agents/reviewer.md)**");
-      expect(body).toContain("*Powered by [Ninthwave](https://ninthwave.sh)*");
+      expect(body).toContain("<sub>[Ninthwave](https://ninthwave.sh)</sub>");
       expect(body).toContain("Verdict: Changes Requested");
       expect(body).not.toContain("Reviewed PR #");
       expect(body).toContain("Blocking | 3");

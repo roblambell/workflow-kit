@@ -101,7 +101,7 @@ export function ghFailureKindLabel(kind: GhFailureKind): string {
 
 // ── Branding constants ──────────────────────────────────────────────
 /** Markdown footer appended to PR comments. */
-export const NINTHWAVE_FOOTER = "*Powered by [Ninthwave](https://ninthwave.sh)*";
+export const NINTHWAVE_FOOTER = "<sub>[Ninthwave](https://ninthwave.sh)</sub>";
 
 /** Link to the orchestrator state-machine docs. */
 export const ORCHESTRATOR_LINK =
@@ -1151,7 +1151,7 @@ export function upsertOrchestratorComment(
 
   if (existing) {
     // Insert new row before the branding footer (if present), otherwise append.
-    // The footer in the created body is: "\n\n---\n*Powered by...*"
+    // The footer in the created body is: "\n\n---\n<sub>Ninthwave</sub>"
     // (blank line before --- to avoid setext heading interpretation).
     const footerMarker = `\n\n---\n${NINTHWAVE_FOOTER}`;
     let updatedBody: string;

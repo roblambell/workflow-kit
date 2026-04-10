@@ -17,7 +17,7 @@ function expectedComment(lines: string[]): string {
     "",
     ...lines,
     "",
-    "<sub>Change orchestrated by [Ninthwave](https://ninthwave.sh).</sub>",
+    "<sub>[Ninthwave](https://ninthwave.sh)</sub>",
   ].join("\n");
 }
 

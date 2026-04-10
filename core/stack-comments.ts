@@ -19,7 +19,7 @@ export interface GhCommentClient {
 export const STACK_COMMENT_MARKER = "<!-- ninthwave-stack-comment -->";
 const STACK_COMMENT_HEADING = "This change is part of the following stack:";
 const STACK_COMMENT_FOOTER =
-  "<sub>Change orchestrated by [Ninthwave](https://ninthwave.sh).</sub>";
+  "<sub>[Ninthwave](https://ninthwave.sh)</sub>";
 
 /**
  * Build a git-spice-style markdown comment showing the dependency stack.
