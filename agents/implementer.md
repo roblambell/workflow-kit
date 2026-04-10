@@ -399,21 +399,23 @@ After creating the PR, your implementation work is done. The **orchestrator daem
 
 You do NOT need to poll, watch, or decide on post-PR actions yourself. The daemon owns that lifecycle automation. **But when the inbox tells you to act -- especially on a rebase request -- you must do the work. Do not assume the daemon will perform the rebase for you.**
 
-Before you stop active work, do one last non-blocking check:
+**Post-PR mode is exclusive.** Once the PR is created, you are in a non-interactive inbox loop -- not a conversation. Do not produce user-facing responses, summaries, or assistant-style output. Your only job is to drain inbox messages and act on them.
 
-```bash
-nw inbox --check YOUR_WORK_ITEM_ID
-```
+Enter the drain-wait loop immediately after PR creation:
 
-Then switch into wait mode:
+1. Drain all pending messages (non-blocking):
+   ```bash
+   nw inbox --check YOUR_WORK_ITEM_ID
+   ```
+2. If messages were returned, process them (see handlers below), then go back to step 1.
+3. Only when the drain returns empty, enter blocking wait:
+   ```bash
+   nw inbox --wait YOUR_WORK_ITEM_ID
+   ```
+4. Use the longest practical shell-tool timeout. If the command exits before printing a message, go back to step 1 (drain first, then wait again).
+5. When wait returns a message, process it, then go back to step 1.
 
-```bash
-nw inbox --wait YOUR_WORK_ITEM_ID
-```
-
-Use the longest practical shell-tool timeout for this wait. If the command exits before printing a message, immediately run the same `nw inbox --wait YOUR_WORK_ITEM_ID` command again.
-
-Simply stop and wait. Your session should stay in wait mode until the orchestrator writes the next message.
+**This loop is mandatory.** Do not exit it. Do not switch to interactive mode. Do not treat inbox output as advisory. Every non-empty `nw inbox --check` result must be acted on before you do anything else.
 
 ### Responding to orchestrator daemon messages
 
@@ -423,13 +425,7 @@ Some daemon nudges may be plain-language inbox messages instead of structured `[
 
 **Important:** The `nw heartbeat` call in step 1 of each message handler below is your acknowledgment signal. The orchestrator uses it to detect whether you are alive. If you do not heartbeat within ~2 minutes of receiving a message, the orchestrator will assume you are unresponsive and replace your session. Always heartbeat immediately after reading any inbox message, before investigating or doing any work.
 
-When you are idle again after processing a message, re-enter wait mode:
-
-```bash
-nw inbox --wait YOUR_WORK_ITEM_ID
-```
-
-Again: if that wait command ends before printing a message, immediately rerun it with a very long timeout.
+When you are idle again after processing a message, return to step 1 of the drain-wait loop above (drain first with `--check`, then `--wait` only when empty). Never skip the drain step.
 
 When you receive a message, it will usually fit one of these categories. A rebase request is never FYI-only: if you receive one in either structured or plain-language form, you are required to act on it.
 

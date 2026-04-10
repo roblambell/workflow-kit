@@ -632,7 +632,7 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   maxMergeRetries: 3,
   maxRebaseAttempts: 3,
   rebaseRetryStaleMs: 15 * 60 * 1000,
-  maxReviewRounds: 3,
+  maxReviewRounds: 5,
   fixForward: true,
   maxFixForwardRetries: 2,
   skipReview: false,
