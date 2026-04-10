@@ -232,10 +232,11 @@ export class Orchestrator {
     item.lastTransition = new Date().toISOString();
   }
 
-  /** Count of items in WIP states (counts toward limit). Parked items are excluded. */
+  /** Count of items in WIP states (counts toward limit). Parked review items are excluded, but live parked stuck workers still count. */
   get activeSessionCount(): number {
     return this.getAllItems().filter((item) =>
-      ACTIVE_SESSION_STATES.has(item.state) && !item.sessionParked,
+      (ACTIVE_SESSION_STATES.has(item.state) && !item.sessionParked)
+      || (item.state === "stuck" && item.sessionParked && !!item.workspaceRef),
     ).length;
   }
 

@@ -62,13 +62,18 @@ function makeItem(
 function createDeps(
   io: DaemonIO & { files: Map<string, string> },
   daemonAlive: boolean = false,
-): RetryDeps & { cleanedIds: string[]; logs: string[]; errors: string[] } {
+): RetryDeps & { cleanedIds: string[]; closedWorkspaceRefs: string[]; logs: string[]; errors: string[] } {
   const cleanedIds: string[] = [];
+  const closedWorkspaceRefs: string[] = [];
   const logs: string[] = [];
   const errors: string[] = [];
   return {
     io,
     check: () => daemonAlive,
+    closeWorkspace: (workspaceRef: string) => {
+      closedWorkspaceRefs.push(workspaceRef);
+      return true;
+    },
     cleanWorktree: (id: string) => {
       cleanedIds.push(id);
       return true;
@@ -76,6 +81,7 @@ function createDeps(
     log: (msg) => logs.push(msg),
     logError: (msg) => errors.push(msg),
     cleanedIds,
+    closedWorkspaceRefs,
     logs,
     errors,
   };
@@ -141,6 +147,59 @@ describe("cmdRetry", () => {
     expect(item.retryCount).toBe(0);
     expect(item.ciFailCount).toBe(0);
     expect(item.prNumber).toBeNull();
+  });
+
+  it("closes a live parked workspace before retrying a stuck item", () => {
+    const state = makeState([
+      makeItem("H-PRX-4", "stuck", {
+        sessionParked: true,
+        workspaceRef: "workspace:9",
+      }),
+    ]);
+    seedState(io, state);
+    const deps = createDeps(io);
+
+    const result = cmdRetry(["H-PRX-4"], "/worktrees", "/project", deps);
+
+    expect(result).toContain("H-PRX-4: reset to queued");
+    expect(deps.closedWorkspaceRefs).toEqual(["workspace:9"]);
+    expect(deps.cleanedIds).toEqual(["H-PRX-4"]);
+
+    const updated = JSON.parse(
+      io.files.get(stateFilePath("/project"))!,
+    ) as DaemonState;
+    const item = updated.items.find((i) => i.id === "H-PRX-4")!;
+    expect(item.workspaceRef).toBeUndefined();
+    expect(item.sessionParked).toBeUndefined();
+  });
+
+  it("refuses to retry a stuck item when its live parked workspace cannot be closed", () => {
+    const state = makeState([
+      makeItem("H-PRX-4", "stuck", {
+        sessionParked: true,
+        workspaceRef: "workspace:9",
+      }),
+    ]);
+    seedState(io, state);
+    const deps = createDeps(io);
+    deps.closeWorkspace = (workspaceRef: string) => {
+      deps.closedWorkspaceRefs.push(workspaceRef);
+      return false;
+    };
+
+    const result = cmdRetry(["H-PRX-4"], "/worktrees", "/project", deps);
+
+    expect(result).toContain("H-PRX-4: skipped (failed to close live workspace)");
+    expect(deps.closedWorkspaceRefs).toEqual(["workspace:9"]);
+    expect(deps.cleanedIds).toEqual([]);
+    expect(deps.errors[0]).toContain("failed to close live parked workspace");
+
+    const updated = JSON.parse(
+      io.files.get(stateFilePath("/project"))!,
+    ) as DaemonState;
+    expect(updated.items[0]!.state).toBe("stuck");
+    expect(updated.items[0]!.workspaceRef).toBe("workspace:9");
+    expect(updated.items[0]!.sessionParked).toBe(true);
   });
 
   it("resets a done item to queued", () => {

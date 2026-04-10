@@ -5771,7 +5771,7 @@ describe("session parking (H-SP-2)", () => {
     expect(actions.some((a) => a.type === "workspace-close")).toBe(true);
   });
 
-  it("activeSessionCount excludes parked items", () => {
+  it("activeSessionCount excludes parked items whose workspaces are being closed", () => {
     const orch = new Orchestrator({ mergeStrategy: "manual", sessionLimit: 3 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.addItem(makeWorkItem("H-1-2"));
@@ -5781,6 +5781,36 @@ describe("session parking (H-SP-2)", () => {
 
     expect(orch.activeSessionCount).toBe(1);
     expect(orch.availableSessionSlots).toBe(2);
+  });
+
+  it("activeSessionCount includes stuck parked items with a live workspace", () => {
+    const orch = new Orchestrator({ sessionLimit: 2 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.addItem(makeWorkItem("H-1-2"));
+    orch.hydrateState("H-1-1", "stuck");
+    orch.hydrateState("H-1-2", "implementing");
+    orch.getItem("H-1-1")!.sessionParked = true;
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+    expect(orch.activeSessionCount).toBe(2);
+    expect(orch.availableSessionSlots).toBe(0);
+  });
+
+  it("live parked stuck worker does not free a launch slot", () => {
+    const orch = new Orchestrator({ sessionLimit: 1 });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.addItem(makeWorkItem("H-1-2"));
+
+    orch.hydrateState("H-1-1", "stuck");
+    orch.getItem("H-1-1")!.sessionParked = true;
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+    orch.hydrateState("H-1-2", "ready");
+
+    const actions = orch.processTransitions(emptySnapshot());
+
+    expect(actions.some((a) => a.type === "launch" && a.itemId === "H-1-2")).toBe(false);
+    expect(orch.getItem("H-1-2")!.state).toBe("ready");
   });
 
   it("queued item can launch after another item is parked (WIP slot freed)", () => {

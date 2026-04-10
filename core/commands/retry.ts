@@ -19,12 +19,14 @@ import {
   processExists,
 } from "../daemon.ts";
 import { cleanSingleWorktree } from "./clean.ts";
+import { createMux, muxTypeForWorkspaceRef } from "../mux.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
 export interface RetryDeps {
   io: DaemonIO;
   check: ProcessExistsCheck;
+  closeWorkspace: (workspaceRef: string, projectRoot: string) => boolean;
   cleanWorktree: (id: string, worktreeDir: string, projectRoot: string) => boolean;
   log: (msg: string) => void;
   logError: (msg: string) => void;
@@ -33,6 +35,8 @@ export interface RetryDeps {
 const defaultDeps: RetryDeps = {
   io: { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync },
   check: processExists,
+  closeWorkspace: (workspaceRef: string, projectRoot: string) =>
+    createMux(muxTypeForWorkspaceRef(workspaceRef), projectRoot).closeWorkspace(workspaceRef),
   cleanWorktree: cleanSingleWorktree,
   log: (msg) => console.log(msg),
   logError: (msg) => console.error(msg),
@@ -109,6 +113,21 @@ export function cmdRetry(
       continue;
     }
 
+    // Live parked sessions must be closed before resetting state, otherwise a
+    // retried item could relaunch while the original worker is still running.
+    if (item.sessionParked && item.workspaceRef) {
+      const closed = deps.closeWorkspace(item.workspaceRef, projectRoot);
+      if (!closed) {
+        deps.logError(
+          `${id}: cannot retry -- failed to close live parked workspace ${item.workspaceRef}`,
+        );
+        results.push(`${id}: skipped (failed to close live workspace)`);
+        continue;
+      }
+      info(`Closed live parked workspace for ${id}`);
+      item.workspaceRef = undefined;
+    }
+
     // Clean up existing worktree and branch
     const cleaned = deps.cleanWorktree(id, worktreeDir, projectRoot);
     if (cleaned) {
@@ -125,6 +144,7 @@ export function cmdRetry(
     item.stderrTail = undefined;
     item.endedAt = undefined;
     item.startedAt = undefined;
+    item.sessionParked = undefined;
     item.worktreePath = undefined;
     item.workspaceRef = undefined;
     item.lastTransition = new Date().toISOString();
