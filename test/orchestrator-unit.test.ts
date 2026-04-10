@@ -3163,6 +3163,54 @@ describe("processComments (via processTransitions)", () => {
     ]);
   });
 
+  it("does not react to stack comments marked with ninthwave HTML comment markers", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+    const actions = orch.processTransitions(
+      snapshotWith([{
+        id: "H-1-1",
+        ciStatus: "pending",
+        prState: "open",
+        newComments: [
+          { id: 203, body: "Stack updated\n<!-- ninthwave-stack-comment -->", author: "bot", createdAt: "2026-01-15T12:03:00Z", commentType: "issue" },
+        ],
+      }]),
+    );
+
+    expect(actions.filter((a) => a.type === "send-message")).toHaveLength(0);
+    expect(actions.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
+    expect(actions.filter((a) => a.type === "react-to-comment")).toHaveLength(0);
+  });
+
+  it("does not react to deleted-file review comments marked with ninthwave HTML comment markers", () => {
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    orch.getItem("H-1-1")!.workspaceRef = "workspace:1";
+
+    const actions = orch.processTransitions(
+      snapshotWith([{
+        id: "H-1-1",
+        ciStatus: "pending",
+        prState: "open",
+        newComments: [
+          { id: 204, body: "Please restore the context\n<!-- ninthwave-deleted-file-review:abc -->", author: "bot", createdAt: "2026-01-15T12:04:00Z", commentType: "review" },
+        ],
+      }]),
+    );
+
+    expect(actions.filter((a) => a.type === "send-message")).toHaveLength(0);
+    expect(actions.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
+    expect(actions.filter((a) => a.type === "react-to-comment")).toHaveLength(0);
+  });
+
   it("does not generate action for untrusted comments (not in snapshot)", () => {
     // Untrusted comments are filtered out during buildSnapshot (not included in newComments).
     // Verify that empty newComments generates no relay actions.

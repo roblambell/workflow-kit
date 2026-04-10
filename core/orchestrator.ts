@@ -113,7 +113,11 @@ const FAILURE_REASON_STATES: Set<OrchestratorItemState> = new Set([
 ]);
 
 const AGENT_PR_COMMENT_RE = /\*\*\[(Orchestrator|Implementer|Reviewer|Forward-Fixer|Rebaser)\]/;
-const ORCHESTRATOR_STATUS_MARKER = "<!-- ninthwave-orchestrator-status -->";
+const NINTHWAVE_HTML_COMMENT_MARKER_PREFIX = "<!-- ninthwave-";
+
+function hasNinthwaveHtmlCommentMarker(body: string): boolean {
+  return body.includes(NINTHWAVE_HTML_COMMENT_MARKER_PREFIX);
+}
 
 // ── Orchestrator class ───────────────────────────────────────────────
 
@@ -892,7 +896,7 @@ export class Orchestrator {
 
     const humanComments = snap.newComments.filter((comment) => {
       if (AGENT_PR_COMMENT_RE.test(comment.body)) return false;
-      if (comment.body.includes(ORCHESTRATOR_STATUS_MARKER)) return false;
+      if (hasNinthwaveHtmlCommentMarker(comment.body)) return false;
       return true;
     });
 
@@ -1543,8 +1547,8 @@ export class Orchestrator {
     for (const comment of snap.newComments) {
       // Skip comments from any ninthwave agent (Orchestrator, Implementer, Reviewer, Forward-Fixer, Rebaser)
       if (AGENT_PR_COMMENT_RE.test(comment.body)) continue;
-      // Skip orchestrator HTML status markers
-      if (comment.body.includes(ORCHESTRATOR_STATUS_MARKER)) continue;
+      // Skip ninthwave HTML comment markers on auto-generated comments.
+      if (hasNinthwaveHtmlCommentMarker(comment.body)) continue;
 
       actions.push({
         type: "react-to-comment",
