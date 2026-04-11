@@ -451,6 +451,12 @@ export interface GitDeps {
    * Returns true on success, false on failure (caller should fall back to worker rebase).
    */
   daemonRebase?: (worktreePath: string, branch: string) => boolean;
+  /**
+   * Auto-save uncommitted changes in a worktree before session respawn.
+   * Returns true if changes were saved (or worktree was clean), false on git error.
+   * Best-effort -- callers should catch exceptions and not block on failure.
+   */
+  autoSaveWorktree?: (worktreePath: string) => boolean;
 }
 
 /** GitHub API operations (PRs, CI, commit statuses). */

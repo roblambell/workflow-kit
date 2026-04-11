@@ -1092,6 +1092,18 @@ export function executeRetry(
     } catch { /* best-effort */ }
   }
 
+  // Auto-save uncommitted changes before closing -- the new session inherits
+  // only committed state, so any in-flight edits would be lost otherwise.
+  const worktreePath = item.worktreePath ?? join(ctx.worktreeDir, `ninthwave-${item.id}`);
+  if (existsSync(worktreePath) && deps.git.autoSaveWorktree) {
+    try {
+      const saved = deps.git.autoSaveWorktree(worktreePath);
+      if (saved) {
+        deps.io.warn?.(`[${item.id}] Auto-saved uncommitted changes before respawn`);
+      }
+    } catch { /* best-effort -- git failure must not block retry */ }
+  }
+
   // Close the old workspace if it exists -- must complete before relaunch to
   // guarantee no two workers operate on the same branch simultaneously.
   if (wsRef) {
@@ -1104,8 +1116,8 @@ export function executeRetry(
   }
 
   // Preserve the worktree and branch -- the retried worker will launch
-  // into the existing worktree and pick up uncommitted edits + pushed
-  // commits from the previous attempt.
+  // into the existing worktree and pick up committed state from the
+  // previous attempt (including any auto-saved WIP).
   return { success: true };
 }
 

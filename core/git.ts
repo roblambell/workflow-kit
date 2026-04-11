@@ -410,3 +410,39 @@ export function getCleanRemoteWorkItemFiles(
 
   return remoteFiles;
 }
+
+/**
+ * Auto-save uncommitted changes in a worktree before session respawn.
+ *
+ * Checks `git status --porcelain` -- if the working tree is dirty, stages all
+ * changes, commits with a WIP message, and pushes. Clean worktrees are skipped
+ * (no empty commits). All git failures return false so the caller can treat
+ * this as best-effort.
+ *
+ * @param worktreePath - Absolute path to the worktree directory
+ * @param shellRun - Injectable shell runner for testing (defaults to run)
+ * @returns true if changes were saved (or worktree was clean), false on git error
+ */
+export function autoSaveWorktree(
+  worktreePath: string,
+  shellRun: ShellRunner = run,
+): boolean {
+  // Check for uncommitted changes (staged, unstaged, untracked)
+  const status = shellRun("git", ["-C", worktreePath, "status", "--porcelain"]);
+  if (status.exitCode !== 0) return false;
+  if (!status.stdout) return true; // Clean worktree -- nothing to save
+
+  // Stage all changes
+  const add = shellRun("git", ["-C", worktreePath, "add", "-A"]);
+  if (add.exitCode !== 0) return false;
+
+  // Commit with descriptive message
+  const commit = shellRun("git", ["-C", worktreePath, "commit", "-m", "wip: ninthwave auto-save before respawn"]);
+  if (commit.exitCode !== 0) return false;
+
+  // Push to remote
+  const push = shellRun("git", ["-C", worktreePath, "push", "--quiet"]);
+  if (push.exitCode !== 0) return false;
+
+  return true;
+}

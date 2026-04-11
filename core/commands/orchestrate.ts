@@ -33,7 +33,7 @@ import { selectAiTools, detectInstalledAITools, validateAgentFiles } from "../to
 import { cleanSingleWorktree } from "./clean.ts";
 import { writeInbox, type InboxSnapshot } from "./inbox.ts";
 import { prMerge, prComment, addCommentReaction, checkPrMergeable, isPrBlocked, getRepoOwner, applyGithubToken, fetchTrustedPrCommentsAsync, upsertOrchestratorComment, setCommitStatus as ghSetCommitStatus, prHeadSha, getMergeCommitSha as ghGetMergeCommitSha, checkCommitCI as ghCheckCommitCI, checkCommitCIAsync as ghCheckCommitCIAsync, getDefaultBranch as ghGetDefaultBranch, ensureDomainLabels, listPrComments, updatePrComment, ghFailureKindLabel, getPrBaseBranch as ghGetPrBaseBranch, getPrBaseAndState as ghGetPrBaseAndState, retargetPrBase as ghRetargetPrBase, queryRateLimitAsync as ghQueryRateLimitAsync } from "../gh.ts";
-import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush, daemonRebase, rebaseOnto, forcePush, resolveRef } from "../git.ts";
+import { fetchOrigin, ffMerge, gitAdd, gitCommit, gitPush, daemonRebase, rebaseOnto, forcePush, resolveRef, autoSaveWorktree } from "../git.ts";
 import { run } from "../shell.ts";
 import { type Multiplexer, createMux, muxTypeForWorkspaceRef, resolveBackend } from "../mux.ts";
 import { resolveSessionName } from "../tmux.ts";
@@ -1822,6 +1822,7 @@ export async function cmdOrchestrate(
       rebaseOnto,
       forcePush,
       daemonRebase,
+      autoSaveWorktree,
     },
     gh: {
       prMerge: (repoRoot, prNumber, options) => prMerge(repoRoot, prNumber, options),
