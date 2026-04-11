@@ -289,7 +289,7 @@ export async function promptMergeStrategy(
   }
 }
 
-// ── WIP limit prompt ─────────────────────────────────────────────────
+// ── Session limit prompt ─────────────────────────────────────────────
 
 export async function promptSessionLimit(
   defaultLimit: number,
@@ -576,7 +576,7 @@ export async function runInteractiveFlow(
 
 /**
  * Legacy readline-based interactive flow (local-first).
- * Merge strategy, WIP, and review mode stay on local-first defaults.
+ * Merge strategy, session limit, and review mode stay on local-first defaults.
  * Collaboration only changes when the user explicitly chooses share/join.
  */
 async function runReadlineFlow(

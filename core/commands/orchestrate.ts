@@ -1543,7 +1543,7 @@ export async function cmdOrchestrate(
     die(`Another watch daemon is already running (PID ${existingPid}). Use 'ninthwave stop' first, or kill the stale process.`);
   }
 
-  // Compute memory-aware WIP default, allow --session-limit to override
+  // Compute memory-aware session default, allow --session-limit to override
   // Precedence: CLI --session-limit > persisted user preference > computed default
   const computedSessionLimit = computeDefaultSessionLimit();
   let persistedUserCfg = loadUserConfig();
@@ -1771,7 +1771,7 @@ export async function cmdOrchestrate(
   } catch { /* best-effort */ }
 
   // Clean orphaned worktrees before state reconstruction so stale worktrees
-  // from previous runs don't confuse reconstructState or count toward WIP.
+  // from previous runs don't confuse reconstructState or count toward the session limit.
   cleanOrphanedWorktrees(workDir, worktreeDir, projectRoot, {
     getWorktreeIds: listWorktreeIds,
     getOpenItemIds: listOpenItemIds,
@@ -2781,7 +2781,7 @@ export async function cmdOrchestrate(
           }
         }
         if (newDomains.size > 0) ensureDomainLabels(projectRoot, [...newDomains]);
-        // Local-first: keep current session's merge/review/WIP policy.
+        // Local-first: keep current session's merge/review/session-limit policy.
         // The interactive flow only selects items and AI tools.
 
         // Restore keyboard shortcuts for the main TUI

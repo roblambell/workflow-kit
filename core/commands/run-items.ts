@@ -109,7 +109,7 @@ export async function cmdRunItems(
     });
     console.log(`  Batch ${b}: ${labels.join(", ")}`);
   }
-  // Compute WIP limit: explicit override honored directly, otherwise RAM-calculated
+  // Compute session limit: explicit override honored directly, otherwise RAM-calculated
   // Precedence: CLI --session-limit > persisted user preference > computed default
   let effectiveSessionLimit: number;
   if (sessionLimitOverride !== undefined) {
@@ -144,7 +144,7 @@ export async function cmdRunItems(
   const skipped: string[] = [];
   let sessionLimitReached = false;
 
-  // Launch batch by batch, respecting WIP limit
+  // Launch batch by batch, respecting session limit
   for (let b = 1; b <= batchCount && !sessionLimitReached; b++) {
     const batchItems = ids.filter((id) => batchAssignments.get(id) === b);
 
@@ -287,7 +287,7 @@ export async function cmdStart(
   const partitionDir = join(worktreeDir, ".partitions");
   cleanupStalePartitions(partitionDir, worktreeDir);
 
-  // Compute WIP limit: persisted user preference > computed default, then RAM-capped
+  // Compute session limit: persisted user preference > computed default, then RAM-capped
   const configuredLimit = loadUserConfig().session_limit ?? computeDefaultSessionLimit();
   const effectiveSessionLimit = calculateMemorySessionLimit(configuredLimit, getAvailableMemory());
   const freeGB = Math.round(getAvailableMemory() / (1024 ** 3));

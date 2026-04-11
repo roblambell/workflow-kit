@@ -46,7 +46,7 @@ export interface OrchestratorItem {
   partition?: number;
   /** Multiplexer workspace reference (e.g., "workspace:1" or "session:nw:H-1-1"). */
   workspaceRef?: string;
-  /** Stashed workspace ref from stuckOrRetry -- executeRetry uses this to close the old workspace after workspaceRef is cleared for WIP slot freeing. */
+  /** Stashed workspace ref from stuckOrRetry -- executeRetry uses this to close the old workspace after workspaceRef is cleared for session slot freeing. */
   pendingRetryWorkspaceRef?: string;
   /** SHA of the last reviewed commit. Used by the SHA gate to prevent re-review on unchanged code after review feedback. */
   lastReviewedCommitSha?: string | null;
@@ -235,7 +235,7 @@ export function getStateData<S extends keyof StateDataMap>(
 }
 
 export interface OrchestratorConfig {
-  /** Max concurrent items in all WIP states (launching/implementing/ci-pending/ci-passed/ci-failed/rebasing/reviewing/review-pending/merging). */
+  /** Max concurrent items in all session states (launching/implementing/ci-pending/ci-passed/ci-failed/rebasing/reviewing/review-pending/merging). */
   sessionLimit: number;
   /** When to auto-merge: auto (CI pass, respects review gate + CHANGES_REQUESTED), manual (never auto-merge), bypass (admin override, skips branch protection human review). */
   mergeStrategy: MergeStrategy;
@@ -649,17 +649,17 @@ export const DEFAULT_CONFIG: OrchestratorConfig = {
   maxTimeoutExtensions: 3,
 };
 
-// ── Memory-aware WIP limit ──────────────────────────────────────────
+// ── Memory-aware session limit ──────────────────────────────────────
 
 /** Estimated memory consumption per worker (Claude Code + language server + worktree). */
 export const BYTES_PER_WORKER = 1 * 1024 * 1024 * 1024; // 1 GB
 
 /**
- * Calculate the memory-aware WIP limit based on available free memory.
+ * Calculate the memory-aware session limit based on available free memory.
  * Returns floor(freeMemBytes / memPerWorkerBytes), clamped to [1, configuredLimit].
  * Returns 0 only when configuredLimit is 0 (used in tests to prevent auto-launch).
  *
- * @param configuredLimit - The user-configured or default WIP limit (upper bound)
+ * @param configuredLimit - The user-configured or default session limit (upper bound)
  * @param freeMemBytes - Available free memory in bytes (e.g., from os.freemem())
  * @param memPerWorkerBytes - Memory per worker in bytes (default: 2.5 GB)
  */
@@ -752,7 +752,7 @@ export const NOT_ALIVE_THRESHOLD = 5;
 export const RESTART_RECOVERY_HOLD_REASON =
   "restart-hold: restarted worker has no live workspace; waiting for operator relaunch";
 
-// ── WIP states: states that count toward the WIP limit ───────────────
+// ── Session states: states that count toward the session limit ───────
 
 export const ACTIVE_SESSION_STATES: Set<OrchestratorItemState> = new Set([
   "launching",

@@ -124,7 +124,7 @@ function hasNinthwaveHtmlCommentMarker(body: string): boolean {
 export class Orchestrator {
   readonly config: OrchestratorConfig;
   private items: Map<string, OrchestratorItem> = new Map();
-  /** Memory-adjusted WIP limit. When set, takes precedence over config.sessionLimit for slot calculation. */
+  /** Memory-adjusted session limit. When set, takes precedence over config.sessionLimit for slot calculation. */
   private _effectiveSessionLimit?: number;
   /** One-shot flag: re-run evaluateMerge for review-pending items on the next poll. */
   private forceReviewPendingReevaluation = false;
@@ -134,20 +134,20 @@ export class Orchestrator {
   }
 
   /**
-   * Set the effective WIP limit after memory adjustment.
+   * Set the effective session limit after memory adjustment.
    * Call this each poll cycle with the result of calculateMemorySessionLimit().
    */
   setEffectiveSessionLimit(limit: number): void {
     this._effectiveSessionLimit = limit;
   }
 
-  /** Get the effective WIP limit (memory-adjusted when set, otherwise configured). */
+  /** Get the effective session limit (memory-adjusted when set, otherwise configured). */
   get effectiveSessionLimit(): number {
     return this._effectiveSessionLimit ?? this.config.sessionLimit;
   }
 
   /**
-   * Change the configured WIP limit at runtime.
+   * Change the configured session limit at runtime.
    * Updates config.sessionLimit so that slot calculations (including memory-adjusted
    * effective limit) use the new value immediately. Minimum 1.
    */
@@ -233,14 +233,14 @@ export class Orchestrator {
     item.lastTransition = new Date().toISOString();
   }
 
-  /** Count of items with active worker sessions (counts toward limit). Items waiting for external CI with no local worker don't consume a WIP slot. When an item is parked, its workspace is closed (clearing workspaceRef), which naturally frees the slot. */
+  /** Count of items with active worker sessions (counts toward limit). Items waiting for external CI with no local worker don't consume a session slot. When an item is parked, its workspace is closed (clearing workspaceRef), which naturally frees the slot. */
   get activeSessionCount(): number {
     return this.getAllItems().filter((item) =>
       !!(item.workspaceRef || item.reviewWorkspaceRef || item.rebaserWorkspaceRef || item.fixForwardWorkspaceRef),
     ).length;
   }
 
-  /** How many more items can be launched without exceeding the effective WIP limit. */
+  /** How many more items can be launched without exceeding the effective session limit. */
   get availableSessionSlots(): number {
     return Math.max(0, this.effectiveSessionLimit - this.activeSessionCount);
   }
@@ -295,7 +295,7 @@ export class Orchestrator {
       }
     }
 
-    // Launch ready items up to WIP limit
+    // Launch ready items up to session limit
     const launchActions = this.launchReadyItems();
     actions.push(...launchActions);
 
@@ -523,7 +523,7 @@ export class Orchestrator {
     }
 
     this.transition(item, "merged", snap?.eventTime);
-    // Clear workspace ref so the WIP slot is freed immediately (activeSessionCount
+    // Clear workspace ref so the session slot is freed immediately (activeSessionCount
     // is workspace-based). The clean action still runs to close the actual workspace.
     item.workspaceRef = undefined;
     const actions: Action[] = [{ type: "clean", itemId: item.id }];
@@ -684,15 +684,15 @@ export class Orchestrator {
 
     // Stuck dep handling: roll back or pause stacked dependents when this item goes stuck
     if (this.config.enableStacking && item.state === "stuck" && prevState !== "stuck") {
-      const PRE_WIP_STATES = new Set(["ready", "launching"]);
+      const PRE_SESSION_STATES = new Set(["ready", "launching"]);
       for (const other of this.getAllItems()) {
         if (other.baseBranch !== `ninthwave/${item.id}`) continue;
-        if (PRE_WIP_STATES.has(other.state)) {
-          // Pre-WIP: roll back to queued and clear baseBranch to prevent launch on stale base
+        if (PRE_SESSION_STATES.has(other.state)) {
+          // Pre-session: roll back to queued and clear baseBranch to prevent launch on stale base
           this.transition(other, "queued");
           other.baseBranch = undefined;
         } else if (other.workspaceRef) {
-          // WIP with active worker: send pause message
+          // Active session with worker: send pause message
           actions.push({
             type: "rebase",
             itemId: other.id,
@@ -892,7 +892,7 @@ export class Orchestrator {
       item.notAliveCount = 0;
       item.lastCommitTime = undefined;
       // Stash the workspace ref for executeRetry to close, then clear it so
-      // the WIP slot is freed immediately (activeSessionCount is workspace-based).
+      // the session slot is freed immediately (activeSessionCount is workspace-based).
       item.pendingRetryWorkspaceRef = item.workspaceRef;
       item.workspaceRef = undefined;
       this.transition(item, "ready");
@@ -925,7 +925,7 @@ export class Orchestrator {
     // re-sending a notification on this same cycle. The launch action writes
     // the CI fix message to the inbox AFTER cleanInbox runs.
     item.ciNotifyWallAt = undefined;
-    // Stash workspace ref for executeRetry, clear for WIP slot freeing
+    // Stash workspace ref for executeRetry, clear for session slot freeing
     item.pendingRetryWorkspaceRef = item.workspaceRef;
     item.workspaceRef = undefined;
     this.transition(item, "ready");
@@ -939,7 +939,7 @@ export class Orchestrator {
     item.pendingFeedbackMessage = message;
     item.notAliveCount = 0;
     item.lastAliveAt = undefined;
-    // Stash workspace ref for executeRetry, clear for WIP slot freeing
+    // Stash workspace ref for executeRetry, clear for session slot freeing
     item.pendingRetryWorkspaceRef = item.workspaceRef;
     item.workspaceRef = undefined;
     this.transition(item, "ready");
@@ -1705,9 +1705,9 @@ export class Orchestrator {
           item.failureReason = `review-stuck: exceeded max review rounds (${this.config.maxReviewRounds})`;
           return actions;
         }
-        // The review worker gets a reviewWorkspaceRef, which counts toward WIP.
+        // The review worker gets a reviewWorkspaceRef, which counts toward the session limit.
         // Reviews for in-pipeline items are always prioritized: transitionItem runs
-        // before launchReadyItems, so the review occupies its WIP slot first,
+        // before launchReadyItems, so the review occupies its session slot first,
         // leaving fewer slots for new launches.
         item.reviewRound = currentRound;
         this.config.onEvent?.(item.id, "review-round", { reviewRound: currentRound });
@@ -1991,7 +1991,7 @@ export class Orchestrator {
       .map((i) => ({ id: i.id, prNumber: i.prNumber!, title: i.workItem.title }));
   }
 
-  /** Launch ready items up to WIP limit. Returns launch actions. */
+  /** Launch ready items up to session limit. Returns launch actions. */
   private launchReadyItems(): Action[] {
     const actions: Action[] = [];
     const readyItems = this.getItemsByState("ready");

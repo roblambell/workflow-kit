@@ -9,7 +9,7 @@
 // is human steering: the person who authored work items can intervene, steer, and
 // review more easily when those items run on their own machine. Affinity matches
 // each item's author field against the requesting daemon's operatorId (the git
-// email of the human running the daemon). This is a preference within WIP limits,
+// email of the human running the daemon). This is a preference within session limits,
 // not a hard rule. When no author-matched items are available, items overflow to
 // any daemon (pool scheduling). Items with unresolved dependencies are filtered
 // out before claim scheduling. Review jobs are local-only and do not participate

@@ -1256,7 +1256,7 @@ export function formatConnectionPanel(status: CrewStatusInfo, termWidth: number 
 /**
  * Format the complete status table from a list of StatusItems.
  * Returns a multi-line string ready for console output.
- * When sessionLimit is provided, shows WIP slot usage in the queue header.
+ * When sessionLimit is provided, shows session slot usage in the queue header.
  *
  * When items have dependencies, renders a flat list sorted by blocked-by count
  * (ascending) then ID alphanumeric, with inline blocker icons before titles

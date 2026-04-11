@@ -1249,7 +1249,7 @@ function summarizeStartupRefreshNotice(
  * 3. Startup settings screen (startup) or summary confirmation (re-entry)
  *
  * Initial startup keeps the item summary visible while arrow keys adjust merge,
- * reviews, collaboration, and WIP. Re-entry flows (`showConnectionStep: false`)
+ * reviews, collaboration, and session limit. Re-entry flows (`showConnectionStep: false`)
  * keep the simpler confirmation-only step so they do not change live session policy.
  *
  * Renders entirely in the alt-screen buffer using raw keypresses.

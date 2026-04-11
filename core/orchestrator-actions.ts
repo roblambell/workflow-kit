@@ -589,7 +589,7 @@ export function executeMerge(
   // This ensures the item reflects reality even if subsequent steps
   // (getMergeCommitSha, audit trail) throw.
   orch.transition(item, "merged");
-  // Close the workspace and free the WIP slot immediately after merge.
+  // Close the workspace and free the session slot immediately after merge.
   // activeSessionCount is workspace-based, so clearing workspaceRef is
   // required to let queued items launch in the same cycle.
   if (item.workspaceRef) {
@@ -683,7 +683,7 @@ export function executeMerge(
     }
   }
 
-  // Send rebase requests to non-stacked dependent items in WIP states.
+  // Send rebase requests to non-stacked dependent items in session states.
   // Stacked items were handled above via rebaseOnto -- skip them.
   for (const other of orch.getAllItems()) {
     if (other.id === item.id) continue;
@@ -833,7 +833,7 @@ export function executeClean(
   const workspaceClosed = item.workspaceRef
     ? deps.mux.closeWorkspace(item.workspaceRef)
     : null; // null = not attempted (no workspace to close)
-  // Clear workspace ref after closing so the WIP slot is freed
+  // Clear workspace ref after closing so the session slot is freed
   // (activeSessionCount is workspace-based). Also clears the ref for
   // items that bypassed executeMerge (e.g., interceptExternalMerge path).
   if (item.workspaceRef) item.workspaceRef = undefined;
@@ -1077,7 +1077,7 @@ export function executeRetry(
   deps: OrchestratorDeps,
 ): ActionResult {
   // stuckOrRetry stashes the workspace ref in pendingRetryWorkspaceRef and
-  // clears workspaceRef to free the WIP slot immediately. Use the stashed
+  // clears workspaceRef to free the session slot immediately. Use the stashed
   // ref (falling back to workspaceRef for callers that set it directly).
   const wsRef = item.pendingRetryWorkspaceRef ?? item.workspaceRef;
 

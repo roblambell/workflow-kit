@@ -25,7 +25,7 @@ export interface ScheduleWorkerEntry {
 export interface ScheduleState {
   /** Per-task run history keyed by task ID. */
   tasks: Record<string, ScheduleTaskRecord>;
-  /** Task IDs waiting for a WIP slot to open. */
+  /** Task IDs waiting for a session slot to open. */
   queued: string[];
   /** Currently running scheduled task workers. */
   active: ScheduleWorkerEntry[];

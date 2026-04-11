@@ -31,7 +31,7 @@ export interface ExternalReviewDeps {
  * 1. Scans for open external PRs
  * 2. Filters: skip drafts, skip labeled PRs, only trusted contributors
  * 3. Detects new PRs and re-reviews (HEAD commit changed)
- * 4. Launches review workers within WIP limit
+ * 4. Launches review workers within session limit
  * 5. Cleans up reviews for closed/merged PRs
  *
  * Returns the updated external review items list.
@@ -105,7 +105,7 @@ export function processExternalReviews(
     });
   }
 
-  // 4. Launch review workers for detected PRs, respecting the unified WIP limit.
+  // 4. Launch review workers for detected PRs, respecting the unified session limit.
   // availableSessionSlots already accounts for internal reviewing items. Subtract
   // external reviews that are already running to get net available slots.
   const reviewingCount = updatedReviews.filter((r) => r.state === "reviewing").length;

@@ -418,7 +418,7 @@ export function ensureWorktreeAndBranch(
 
 /**
  * Launch a single work item: create worktree, allocate partition, start AI session.
- * Used by the orchestrator to launch items one at a time as WIP slots open.
+ * Used by the orchestrator to launch items one at a time as session slots open.
  */
 export function launchSingleItem(
   item: WorkItem,

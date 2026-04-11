@@ -1021,7 +1021,7 @@ export async function orchestrateLoop(
       prevStates.set(item.id, item.state);
     }
 
-    // Memory-aware WIP: adjust effective limit based on available free memory
+    // Memory-aware session limit: adjust effective limit based on available free memory
       const freeMemBytes = (deps.getFreeMem ?? freemem)();
       const memorySessionLimit = calculateMemorySessionLimit(orch.config.sessionLimit, freeMemBytes);
       orch.setEffectiveSessionLimit(memorySessionLimit);

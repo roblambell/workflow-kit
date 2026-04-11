@@ -1,4 +1,4 @@
-// Schedule runner: check schedules, launch workers, monitor liveness, manage WIP queueing.
+// Schedule runner: check schedules, launch workers, monitor liveness, manage session queueing.
 // Pure functions with injected dependencies for testability.
 
 import { existsSync, readdirSync, unlinkSync } from "fs";
@@ -60,17 +60,17 @@ export function checkSchedules(
 export interface ProcessQueueResult {
   /** Task IDs that should be launched now. */
   toLaunch: string[];
-  /** Updated queue (tasks still waiting for WIP slots). */
+  /** Updated queue (tasks still waiting for session slots). */
   remainingQueue: string[];
 }
 
 /**
- * Dequeue tasks from the schedule queue when WIP slots are available.
+ * Dequeue tasks from the schedule queue when session slots are available.
  *
- * Scheduled tasks consume from the shared memory-aware WIP pool.
+ * Scheduled tasks consume from the shared memory-aware session pool.
  *
  * @param state       Current schedule state
- * @param availableSessionSlots    Number of free WIP slots available for scheduled tasks
+ * @param availableSessionSlots    Number of free session slots available for scheduled tasks
  * @returns           Tasks to launch and remaining queue
  */
 export function processScheduleQueue(

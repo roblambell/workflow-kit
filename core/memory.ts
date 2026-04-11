@@ -1,4 +1,4 @@
-// Shared memory utilities for consistent WIP limit calculation across CLI and daemon.
+// Shared memory utilities for consistent session limit calculation across CLI and daemon.
 
 import { freemem, platform } from "os";
 import { execSync } from "node:child_process";
@@ -8,7 +8,7 @@ import { execSync } from "node:child_process";
  *
  * On macOS, os.freemem() only reports truly "free" pages -- not inactive
  * pages that the OS can reclaim on demand. This causes the memory-aware
- * WIP limiter to throttle to 1 worker even when the system has plenty of
+ * session limiter to throttle to 1 worker even when the system has plenty of
  * headroom. We parse vm_stat to sum free + inactive pages instead.
  *
  * On other platforms, falls back to os.freemem().

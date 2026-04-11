@@ -54,7 +54,7 @@ export interface ScheduleLoopDeps {
  * 2. Monitors active workers (detect completion/timeout/crash)
  * 3. Checks for trigger files from `nw schedule run`
  * 4. Checks which tasks are due based on cron schedule
- * 5. Queues or launches tasks based on WIP availability
+ * 5. Queues or launches tasks based on session availability
  * 6. Writes updated state back to disk
  */
 export async function processScheduledTasks(
@@ -211,8 +211,8 @@ export async function processScheduledTasks(
     }
   }
 
-  // 4. Process queue: launch tasks when WIP slots are available
-  // Scheduled tasks consume from the shared WIP pool
+  // 4. Process queue: launch tasks when session slots are available
+  // Scheduled tasks consume from the shared session pool
   const activeWorkItemCount = orch.getAllItems()
     .filter((i) => !["done", "stuck", "ready", "queued"].includes(i.state)).length;
   const activeScheduleCount = state.active.length;
@@ -273,7 +273,7 @@ export async function processScheduledTasks(
     }
   }
 
-  // Log WIP-full queueing
+  // Log session-limit-full queueing
   if (state.queued.length > 0 && freeSlots === 0) {
     for (const queuedTaskId of state.queued) {
       log({

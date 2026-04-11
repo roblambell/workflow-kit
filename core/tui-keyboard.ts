@@ -121,9 +121,9 @@ export interface TuiState {
   paused?: boolean;
   /** Pending paused state awaiting engine acknowledgement. */
   pendingPaused?: boolean;
-  /** Engine-confirmed WIP limit from the latest snapshot. */
+  /** Engine-confirmed session limit from the latest snapshot. */
   sessionLimit?: number;
-  /** Pending WIP limit request awaiting engine acknowledgement. */
+  /** Pending session limit request awaiting engine acknowledgement. */
   pendingSessionLimit?: number;
   /** Current merge strategy (per-daemon, cycled via Shift+Tab). */
   mergeStrategy: MergeStrategy;
@@ -203,7 +203,7 @@ export interface TuiState {
   onPauseChange?: (paused: boolean) => void;
   /** Called when the user cycles panel mode via Tab (for preference persistence). */
   onPanelModeChange?: (mode: PanelMode) => void;
-  /** Called when the user presses +/- to adjust WIP limit. Receives the delta (+1 or -1). */
+  /** Called when the user presses +/- to adjust session limit. Receives the delta (+1 or -1). */
   onSessionLimitChange?: (delta: number) => void;
   /** Called when the review mode changes from the controls overlay. */
   onReviewChange?: (mode: ReviewMode) => void;
@@ -1049,7 +1049,7 @@ export function setupKeyboardShortcuts(
         break;
       }
       case "+":
-      case "=": { // + (or = without shift) -- increase WIP limit
+      case "=": { // + (or = without shift) -- increase session limit
         const baseLimit = tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? 1;
         const nextLimit = Math.max(1, baseLimit + 1);
         tuiState.pendingSessionLimit = nextLimit === (tuiState.sessionLimit ?? 1) ? undefined : nextLimit;
@@ -1057,7 +1057,7 @@ export function setupKeyboardShortcuts(
         break;
       }
       case "-":
-      case "_": { // - (or _ with shift) -- decrease WIP limit
+      case "_": { // - (or _ with shift) -- decrease session limit
         const baseLimit = tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? 1;
         const nextLimit = Math.max(1, baseLimit - 1);
         tuiState.pendingSessionLimit = nextLimit === (tuiState.sessionLimit ?? 1) ? undefined : nextLimit;
