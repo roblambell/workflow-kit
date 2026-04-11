@@ -12,7 +12,7 @@ Example:
 - A TUI worker shows a provider error like `server_is_overloaded`
 - The cmux/tmux workspace is still alive
 - The orchestrator still treats the item as healthy because it sees a live workspace or a recent-looking heartbeat
-- The item stops making progress and burns a WIP slot until a timeout or manual intervention
+- The item stops making progress and burns a session slot until a timeout or manual intervention
 
 Headless has the mirrored problem in reverse:
 - The process may exit because the tool failed

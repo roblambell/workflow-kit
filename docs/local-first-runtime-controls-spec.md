@@ -2,7 +2,7 @@
 
 ## Summary
 
-`nw` should start with one clear setup step and then land in the live status UI. Work-item selection and startup settings are the only pre-status decisions. Merge strategy, AI reviews, collaboration mode, WIP limit, and backend selection should all be visible in that one startup surface and remain adjustable from the running UI.
+`nw` should start with one clear setup step and then land in the live status UI. Work-item selection and startup settings are the only pre-status decisions. Merge strategy, AI reviews, collaboration mode, session limit, and backend selection should all be visible in that one startup surface and remain adjustable from the running UI.
 
 The product center of gravity is local orchestration. `ninthwave.sh` is thin active-session coordination infrastructure, not the product's front door.
 
@@ -18,7 +18,7 @@ The product center of gravity is local orchestration. `ninthwave.sh` is thin act
 
 1. Make plain `nw` feel immediate, local, and understandable.
 2. Replace follow-up prompts and delays with a single startup settings screen.
-3. Let users choose collaboration, AI reviews, merge behavior, and WIP from that startup screen.
+3. Let users choose collaboration, AI reviews, merge behavior, and session limit from that startup screen.
 4. Keep those same controls adjustable from the live status page after startup.
 5. Keep CLI flags as explicit per-run overrides for power users and scripts.
 6. Reframe `ninthwave.sh` around active coordination rather than delivery metrics.
@@ -38,7 +38,7 @@ When there are no persisted preferences or CLI overrides, seed startup settings 
 1. Collaboration: `Local`
 2. AI reviews: `Off`
 3. Merge strategy: `Manual`
-4. WIP limit: `User override if present, otherwise computed default`
+4. Session limit: `User override if present, otherwise computed default`
 
 These are the initial startup selections. Users can change them before orchestration begins, and the live UI can adjust them again after startup.
 
@@ -54,7 +54,7 @@ Startup should ask for:
    - `Merge`
    - `Reviews`
    - `Collaboration`
-   - `WIP limit`
+   - `Session limit`
    - `Backend`
 
 ## Startup Settings Screen
@@ -142,42 +142,42 @@ All merge strategies are CI-first. The difference is what happens after CI passe
 2. `Auto` -- CI must pass, then ninthwave auto-merges the PR
 3. `Bypass` -- CI must pass, then ninthwave admin-merges without human approval requirements
 
-## WIP Model
+## Session Limit Model
 
-WIP is part of the startup settings screen and remains adjustable from the live status UI.
+The session limit is part of the startup settings screen and remains adjustable from the live status UI.
 
-### Default WIP Behavior
+### Default Session Limit Behavior
 
-1. Plain `nw` includes `WIP limit` in the startup settings screen
-2. When no user override exists, `nw` computes a default WIP value
+1. Plain `nw` includes `Session limit` in the startup settings screen
+2. When no user override exists, `nw` computes a default session limit value
 3. The computed default should generally land in the `2-4` range
-4. Users can change WIP before startup and again from the live status UI
+4. Users can change the session limit before startup and again from the live status UI
 
-### Runtime WIP Controls
+### Runtime Session Limit Controls
 
 The live status page should support:
 
-1. `+` to increase WIP
-2. `-` to decrease WIP
+1. `+` to increase the session limit
+2. `-` to decrease the session limit
 
-Changing WIP from the live status page should:
+Changing the session limit from the live status page should:
 
 1. Update orchestration immediately for the current run
 2. Persist the new value to user-level config
 
-### WIP Persistence And Precedence
+### Session Limit Persistence And Precedence
 
-There are three WIP sources, in this order:
+There are three session limit sources, in this order:
 
 1. Explicit CLI `--session-limit` for the current run
-2. User-level persisted WIP preference
+2. User-level persisted session limit preference
 3. Computed default
 
-The persisted WIP preference overrides the computed default only. It does not replace explicit CLI intent for a run.
+The persisted session limit preference overrides the computed default only. It does not replace explicit CLI intent for a run.
 
-### Why WIP Persists
+### Why The Session Limit Persists
 
-WIP is a personal operator preference tied to machine capacity and working style. It should persist.
+The session limit is a personal operator preference tied to machine capacity and working style. It should persist.
 
 ## Runtime Controls UI
 
@@ -187,7 +187,7 @@ The live status page should continue exposing a lightweight settings or actions 
 2. `Reviews`
 3. `Merge`
 
-The live status page should also support direct WIP controls with `+` and `-`.
+The live status page should also support direct session limit controls with `+` and `-`.
 
 Recommended runtime options:
 
@@ -231,7 +231,7 @@ Examples of explicit override intent include:
 2. Share immediately
 3. Start with reviews enabled
 4. Start with a non-default merge strategy
-5. Start with a specific WIP limit
+5. Start with a specific session limit
 
 ## ninthwave.sh Role
 
@@ -285,22 +285,22 @@ Toward:
 3. Plain `nw` never silently resumes an old collaboration session
 4. Merge labels always mean CI must pass first
 5. `Manual`, `Auto`, and `Bypass` differ only in what happens after CI passes
-6. The same collaboration, review, merge, and WIP controls remain available from the live status UI
+6. The same collaboration, review, merge, and session limit controls remain available from the live status UI
 
 ## Acceptance Criteria
 
-1. Plain `nw` uses a single startup settings screen for merge, reviews, collaboration, WIP limit, and backend selection
+1. Plain `nw` uses a single startup settings screen for merge, reviews, collaboration, session limit, and backend selection
 2. There is no separate arming step before first claim
 3. When no saved default or CLI override exists, startup preselects `Local`, `Reviews Off`, and `Manual`
-4. Plain `nw` starts with user-persisted WIP when present, otherwise a computed default
+4. Plain `nw` starts with user-persisted session limit when present, otherwise a computed default
 5. The computed default generally falls in the `2-4` range
 6. Stopping and restarting `nw` never resumes an old session automatically
 7. Review mode can be changed at runtime to `Off`, `Ninthwave PRs`, or `All PRs`
 8. Merge strategy can be changed at runtime to `Manual` or `Auto`, plus `Bypass` when allowed
 9. Merge copy consistently explains `Manual`, `Auto`, and `Bypass` as CI-first modes
-10. Pressing `+` or `-` in the live status page changes WIP immediately
-11. WIP changes made from the live status page persist to user-level config
-12. An explicit `--session-limit` flag overrides both persisted and computed WIP for that run
+10. Pressing `+` or `-` in the live status page changes the session limit immediately
+11. Session limit changes made from the live status page persist to user-level config
+12. An explicit `--session-limit` flag overrides both persisted and computed session limit for that run
 13. Collaboration, reviews, and merge policy are all controllable from the live status UI
 14. `ninthwave.sh` no longer appears as the primary reason to start `nw`
 

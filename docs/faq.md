@@ -359,7 +359,7 @@ nw crew create
 nw crew join <crew-code>
 ```
 
-The broker handles WIP-bounded scheduling with author-affinity (tasks route to the operator who created them when possible).
+The broker handles session-bounded scheduling with author-affinity (tasks route to the operator who created them when possible).
 
 ### What is the self-hosted broker?
 

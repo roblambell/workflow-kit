@@ -77,7 +77,7 @@ It can span multiple paragraphs and include any instructions needed.
 
 ### Priority
 
-Determines scheduling order when multiple tasks are due simultaneously. The daemon evaluates all due tasks, but priority influences queue order when WIP slots are limited.
+Determines scheduling order when multiple tasks are due simultaneously. The daemon evaluates all due tasks, but priority influences queue order when session slots are limited.
 
 ### Timeout
 
@@ -213,7 +213,7 @@ The ninthwave daemon (`nw`) checks all enabled schedules every loop iteration:
 
 1. **Due check:** Compares the task's cron expression against the current time with a 2-minute tolerance window. This prevents missed fires if the daemon loop runs slightly late.
 2. **Double-fire prevention:** If a task already ran in the current minute, it is skipped.
-3. **Queue:** Due tasks are added to a queue. Tasks are dequeued when WIP slots are available.
+3. **Queue:** Due tasks are added to a queue. Tasks are dequeued when session slots are available.
 4. **Claim (crew mode):** In shared crew sessions, the daemon claims the schedule fire with the broker before launch. Denied claims mean another daemon already owns that fire. Disconnected broker cases are skipped instead of falling back to solo execution.
 5. **Launch:** After a successful claim (or immediately in solo mode), the daemon spawns a worker with the schedule's prompt.
 6. **Timeout:** Workers are killed if they exceed the task's timeout.
@@ -250,7 +250,7 @@ This means:
 
 4. **Treat schedule prompts as code.** The prompt body is executed by an AI agent. Prompt injection, overly broad instructions, or destructive commands in the prompt are as dangerous as the same things in a shell script triggered by cron.
 
-5. **Timeout is your safety net.** Set conservative timeouts. A runaway scheduled task consumes a WIP slot and machine resources until it times out or is manually killed.
+5. **Timeout is your safety net.** Set conservative timeouts. A runaway scheduled task consumes a session slot and machine resources until it times out or is manually killed.
 
 ## Example Files
 

@@ -29,7 +29,7 @@ v0.1.0 shipped March 2026. Twelve grind cycles (0-11) have shipped since then. S
 - Stacked branch execution -- dependent items launch early from the dependency's branch
 - Review worker integration -- automated code review dispatched against PRs
 - Worker health monitoring -- deterministic screen-based stall detection
-- Memory-aware WIP limits based on available RAM
+- Memory-aware session limits based on available RAM
 - Structured analytics with cost/token tracking
 - Observability: `nw logs` (view/tail/filter), `nw history <ID>` (state timeline), structured transition events, log rotation
 - Monorepo workspace detection (pnpm/yarn/npm)
@@ -37,7 +37,7 @@ v0.1.0 shipped March 2026. Twelve grind cycles (0-11) have shipped since then. S
 
 **0.2.0 scope reduction.** Narrowed focus to the core orchestration pipeline. Removed: external task backends (GitHub Issues, ClickUp, Sentry, PagerDuty), sandboxing (nono, policy proxy), remote dashboard server, webhook notifications, and legacy migration commands. These features were working but added surface area beyond the narrowest wedge. They may return as separate packages or plugins.
 
-**Crew mode foundation.** Multi-daemon coordination via WebSocket broker with creator-affinity scheduling -- items prefer the daemon whose human decomposed them, enabling easier steering and intervention. Affinity is a WIP-bounded preference, not a hard rule: when the creator's daemon hits its WIP limit, queued items overflow to other daemons. Review jobs are local-only and do not participate in crew claim scheduling. Mock broker for local testing, persistent daemon IDs, and reconnect state reconciliation. TUI displays crew status when connected.
+**Crew mode foundation.** Multi-daemon coordination via WebSocket broker with creator-affinity scheduling -- items prefer the daemon whose human decomposed them, enabling easier steering and intervention. Affinity is a session-bounded preference, not a hard rule: when the creator's daemon hits its session limit, queued items overflow to other daemons. Review jobs are local-only and do not participate in crew claim scheduling. Mock broker for local testing, persistent daemon IDs, and reconnect state reconciliation. TUI displays crew status when connected.
 
 **Competitive positioning.** Parallel AI coding exploded in early 2026: Claude Code Agent Teams (16+ agents), Cursor (8 agents), Superset IDE (10+ agents), dmux, Conductor. All launch parallel sessions. None decompose work, order dependencies, manage CI lifecycle, or orchestrate merges. ninthwave's moat is the integrated pipeline, not session launching.
 
@@ -116,7 +116,7 @@ The CLI is approaching feature-completeness for the core orchestration pipeline.
 - Extensible multiplexer support (ships with cmux, community can extend via Multiplexer interface).
 - Post-merge CI verification completes the change lifecycle automatically.
 - Every decomposed work item has a test plan with tracked outcomes.
-- Resource management is automatic -- memory-aware WIP, no manual tuning.
+- Resource management is automatic -- memory-aware session limits, no manual tuning.
 - Install to working parallel session in under 10 minutes.
 - Crew mode enables multi-daemon coordination for team workflows.
 
