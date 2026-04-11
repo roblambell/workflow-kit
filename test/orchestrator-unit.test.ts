@@ -3518,13 +3518,13 @@ describe("processComments (via processTransitions)", () => {
     expect(actions.filter((a) => a.type === "daemon-rebase")).toHaveLength(0);
   });
 
-  it("does not process comments for items without a workspaceRef", () => {
+  it("generates comment relay actions even without workspaceRef (worktree path resolution)", () => {
     const orch = new Orchestrator();
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
     orch.getItem("H-1-1")!.prNumber = 42;
-    // No workspaceRef set
+    // No workspaceRef set -- worktree may still exist on disk
 
     const actions = orch.processTransitions(
       snapshotWith([{
@@ -3537,7 +3537,11 @@ describe("processComments (via processTransitions)", () => {
       }]),
     );
 
-    expect(actions.filter((a) => a.type === "send-message")).toHaveLength(0);
+    // Comments should be relayed -- delivery success depends on resolveImplementerInboxTarget at execution time
+    const sendMsg = actions.find((a) => a.type === "send-message" && a.itemId === "H-1-1");
+    expect(sendMsg).toBeDefined();
+    expect(sendMsg!.message).toContain("@reviewer");
+    expect(sendMsg!.message).toContain("Fix this");
   });
 
   it("parked review-pending item with human comments triggers respawn", () => {
@@ -3605,7 +3609,9 @@ describe("processComments (via processTransitions)", () => {
     expect(item.sessionParked).toBe(true);
     expect(item.needsFeedbackResponse).toBeUndefined();
     expect(item.pendingFeedbackMessage).toBeUndefined();
-    expect(item.lastCommentCheck).toBeUndefined();
+    // lastCommentCheck is updated by processComments even for filtered bot comments
+    // (prevents re-processing on next cycle)
+    expect(item.lastCommentCheck).toBe("2026-01-15T12:02:00Z");
   });
 
   it("skips orchestrator's own audit-trail comments", () => {
@@ -3823,6 +3829,38 @@ describe("processComments (via processTransitions)", () => {
     expect(actions.filter((a) => a.type === "react-to-comment" && a.itemId === "H-1-1")).toEqual([
       { type: "react-to-comment", itemId: "H-1-1", commentId: 1404, commentType: "review" },
     ]);
+  });
+
+  it("processComments generates actions without workspaceRef -- delivery resolved at execution time", () => {
+    // After a session retry clears workspaceRef, comments should still be relayed.
+    // The worktree may still exist on disk; resolveImplementerInboxTarget handles that.
+    const orch = new Orchestrator();
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-pending");
+    orch.getItem("H-1-1")!.prNumber = 42;
+    // workspaceRef is undefined -- simulating post-retry state
+
+    const actions = orch.processTransitions(
+      snapshotWith([{
+        id: "H-1-1",
+        ciStatus: "pending",
+        prState: "open",
+        newComments: [
+          { id: 1601, body: "Please fix the error handling", author: "reviewer", createdAt: "2026-01-15T12:01:00Z", commentType: "issue" },
+        ],
+      }]),
+    );
+
+    // Actions should still be generated -- delivery depends on worktree path resolution at execution time
+    const sendMsg = actions.find((a) => a.type === "send-message" && a.itemId === "H-1-1");
+    expect(sendMsg).toBeDefined();
+    expect(sendMsg!.message).toContain("@reviewer");
+    expect(sendMsg!.message).toContain("Please fix the error handling");
+
+    const reactActions = actions.filter((a) => a.type === "react-to-comment" && a.itemId === "H-1-1");
+    expect(reactActions).toHaveLength(1);
+    expect(reactActions[0]!.commentId).toBe(1601);
   });
 
   it("relays GitHub review body comments", () => {
@@ -4880,7 +4918,8 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
       deps,
     );
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No inbox target");
     expect(item.state).toBe("ready");
     expect(item.needsCiFix).toBe(true);
   });
@@ -5057,7 +5096,8 @@ describe("implementer inbox delivery resolution", () => {
       deps,
     );
 
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No inbox target");
     expect(item.state).toBe("ready");
     expect(item.needsCiFix).toBe(true);
     expect(writeInbox).not.toHaveBeenCalled();
@@ -5200,6 +5240,116 @@ describe("implementer inbox delivery resolution", () => {
         reason: "no-worktree-path",
       }),
     });
+  });
+
+  it("executeNotifyCiFailure returns success:false when inbox target is missing", () => {
+    const hubRepo = setupTempRepo();
+    const worktreeDir = join(hubRepo, ".ninthwave", ".worktrees");
+    mkdirSync(worktreeDir, { recursive: true });
+
+    const { orch, events } = createEventCollector();
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-failed");
+    const item = orch.getItem("H-1-1")!;
+    item.prNumber = 42;
+    item.ciFailCount = 1;
+    // No workspaceRef and no worktree on disk
+
+    const writeInbox = vi.fn();
+    const deps = makeMinimalDeps({ io: { writeInbox } });
+    const ctx: ExecutionContext = {
+      projectRoot: hubRepo,
+      worktreeDir,
+      workDir: join(hubRepo, ".ninthwave", "work"),
+      aiTool: "claude",
+    };
+
+    const result = orch.executeAction(
+      { type: "notify-ci-failure", itemId: "H-1-1", message: "CI failed." },
+      ctx,
+      deps,
+    );
+
+    // Should return failure -- the notification was not delivered
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No inbox target");
+    // Still transitions to ready with needsCiFix for relaunch
+    expect(item.state).toBe("ready");
+    expect(item.needsCiFix).toBe(true);
+    expect(writeInbox).not.toHaveBeenCalled();
+  });
+
+  it("send-message succeeds when workspaceRef is undefined but worktree exists on disk", () => {
+    const hubRepo = setupTempRepo();
+    const worktreeDir = join(hubRepo, ".ninthwave", ".worktrees");
+    const worktreePath = join(worktreeDir, "ninthwave-H-1-1");
+    mkdirSync(worktreePath, { recursive: true });
+
+    const { orch, events } = createEventCollector();
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-pending");
+    const item = orch.getItem("H-1-1")!;
+    item.prNumber = 42;
+    // workspaceRef is undefined -- session was retried, but worktree still on disk
+
+    const writes: Array<{ targetRoot: string; itemId: string; message: string }> = [];
+    const deps = makeMinimalDeps({ io: { writeInbox: (targetRoot, itemId, message) => {
+        writes.push({ targetRoot, itemId, message });
+      } } });
+    const ctx: ExecutionContext = {
+      projectRoot: hubRepo,
+      worktreeDir,
+      workDir: join(hubRepo, ".ninthwave", "work"),
+      aiTool: "claude",
+    };
+
+    const result = orch.executeAction(
+      { type: "send-message", itemId: "H-1-1", message: "[ORCHESTRATOR] Review Feedback: @reviewer commented:\n\nFix this." },
+      ctx,
+      deps,
+    );
+
+    // Should succeed -- worktree exists on disk, resolveImplementerInboxTarget finds it
+    expect(result.success).toBe(true);
+    expect(writes).toEqual([
+      { targetRoot: worktreePath, itemId: "H-1-1", message: "[ORCHESTRATOR] Review Feedback: @reviewer commented:\n\nFix this." },
+    ]);
+  });
+
+  it("send-message returns success:false when no worktree path exists at all", () => {
+    const hubRepo = setupTempRepo();
+    const worktreeDir = join(hubRepo, ".ninthwave", ".worktrees");
+    mkdirSync(worktreeDir, { recursive: true });
+
+    const { orch, events } = createEventCollector();
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-pending");
+    const item = orch.getItem("H-1-1")!;
+    item.prNumber = 42;
+    // No workspaceRef and no worktree directory on disk
+
+    const writeInbox = vi.fn();
+    const deps = makeMinimalDeps({ io: { writeInbox } });
+    const ctx: ExecutionContext = {
+      projectRoot: hubRepo,
+      worktreeDir,
+      workDir: join(hubRepo, ".ninthwave", "work"),
+      aiTool: "claude",
+    };
+
+    const result = orch.executeAction(
+      { type: "send-message", itemId: "H-1-1", message: "Review feedback." },
+      ctx,
+      deps,
+    );
+
+    // Should fail gracefully -- no worktree target exists
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No safe worker inbox target");
+    expect(writeInbox).not.toHaveBeenCalled();
   });
 
   it("delivers rebase requests to the live worktree namespace", () => {

@@ -551,7 +551,8 @@ describe("Daemon lifecycle: reconstructed worker inbox targeting", () => {
       );
 
       const item = orch.getItem("REC-2")!;
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("No inbox target");
       expect(item.state).toBe("ready");
       expect(item.needsCiFix).toBe(true);
       expect(item.workspaceRef).toBeUndefined();

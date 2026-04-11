@@ -2009,8 +2009,9 @@ describe("Orchestrator", () => {
         deps,
       );
 
-      // Instead of failing, transitions to ready for re-launch
-      expect(result.success).toBe(true);
+      // Reports failure honestly, but still transitions to ready for re-launch
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("No inbox target");
       const item = orch.getItem("H-1-1")!;
       expect(item.state).toBe("ready");
       expect(item.needsCiFix).toBe(true);
