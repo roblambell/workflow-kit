@@ -778,7 +778,7 @@ export function executeNotifyCiFailure(
     item.needsCiFix = true;
     item.workspaceRef = undefined;
     orch.transition(item, "ready");
-    return { success: true };
+    return { success: false, error: `No inbox target for ${item.id} -- relaunching worker for CI fix` };
   }
 
   deps.io.writeInbox(delivery.projectRoot, item.id, message);

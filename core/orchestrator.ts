@@ -1622,7 +1622,6 @@ export class Orchestrator {
     if (!Orchestrator.COMMENT_RELAY_STATES.has(item.state)) return [];
     if (!snap?.newComments || snap.newComments.length === 0) return [];
     if (!item.prNumber) return [];
-    if (!item.workspaceRef) return [];
 
     const actions: Action[] = [];
 
