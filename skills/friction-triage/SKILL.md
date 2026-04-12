@@ -43,9 +43,8 @@ This skill is highly interactive. You MUST use your interactive question tool to
 
 ## Hard rules
 
-- **Never batch decisions.** One log, one question, one answer. No "handle all the mediums at once."
+- **Never group questions across logs.** Always one question per log. **But DO batch the slow parts:** investigation runs in parallel up front (Phase 2), execution runs after all decisions are collected (Phase 4). The human's interactive window in Phase 3 must be as tight as possible: no nested confirmations, no waiting for subagents, no follow-up "are you sure" prompts.
 - **Never commit.** The skill stages edits and writes new files. The human commits at the end if they want to.
-- **Never touch `.ninthwave/friction/processed/`.** That directory is out of scope for this skill.
 - **Work items must follow `.ninthwave/work-item-format.md`.** Read it before writing any new work item file.
 - **Generate lineage tokens with `nw lineage-token`** when creating a work item, the same way `/decompose` does.
 - **Duplicate detection is best-effort.** If you are not certain two logs are duplicates, surface it as an option and let the human decide. Do not auto-merge.
@@ -62,42 +61,36 @@ This skill is highly interactive. You MUST use your interactive question tool to
    ```bash
    ls .ninthwave/friction/*.md 2>/dev/null
    ```
-   Exclude `.gitkeep` and anything under `processed/`.
+   Exclude `.gitkeep`. Friction logs live flat in `.ninthwave/friction/`; there is no archive directory. The triage flow is "log -> handle -> delete", end of life.
 
 2. If there are zero logs, tell the user "Friction inbox is clean. Nothing to triage." and exit.
 
 3. Sort the logs by filename (timestamps in the filename make this FIFO by default). Oldest first.
 
-4. Announce: "Found N friction logs. I will walk you through them one by one. You decide what happens to each."
+4. Announce the shape of the session so the human knows what is coming: "Found N friction logs. I will investigate all of them in parallel first (this is the slow part). Then I will ask you about each one quickly. Then I will apply your decisions in a batch at the end. The interactive part should take a couple of minutes."
 
 ---
 
-## Phase 2: PER-LOG LOOP
+## Phase 2: INVESTIGATE (parallel)
 
-For each friction log, in order, run this loop. Do not jump ahead. Do not batch.
+**Goal:** Front-load all the slow work. Every friction log gets a grounded investigation before the human is asked anything.
 
-### Step 1: Read
+Triage decisions are dramatically better when grounded in the actual codebase, git history, the rest of the friction inbox, and the open work-item queue. Do not try to do this analysis from your own context: you will skim, you will guess, and recommendations will be soft. Delegate it to subagents, and run them in parallel so the human's interactive window in Phase 3 is not gated on slow exploration.
 
-Read the friction log file in full. Friction logs have this shape (defined in `agents/implementer.md`):
+### How to launch
 
-```
-item: <WORK_ITEM_ID>
-date: <ISO-8601 timestamp>
-severity: low|medium|high
-[harness: <optional tool/model info>]
-description: <free-form, may be multi-paragraph, may include "Recommendation:" inline>
-```
+**Launch one Explore subagent per log, all in parallel.** Issue a single assistant message containing N `Agent` tool calls, one per friction log. Do NOT spawn them sequentially. This is the entire point of the phase.
 
-### Step 2: Investigate (subagent)
-
-Triage decisions are dramatically better when grounded in the actual codebase, git history, the rest of the friction inbox, and the open work-item queue. So **launch one Explore subagent per log** to do that investigation before asking the user. Do not try to do this analysis from your own context: you will skim, you will guess, and the recommendation will be soft. Delegate it.
+If the inbox holds more than 10 logs, batch in groups of 10 (still parallel within each group). Wait for one group to finish before launching the next.
 
 **Subagent type:** in Claude Code use `subagent_type: "Explore"` with thoroughness "medium". On other platforms use the equivalent codebase-exploration agent.
 
-**Subagent prompt template** (fill in the bracketed parts before launching):
+### Subagent prompt template
+
+Fill in the bracketed parts for each log before launching:
 
 ```
-You are investigating ONE friction log from a ninthwave repo so a human can decide what to do with it. Read whatever you need (code, git log, other friction logs, open work items) to give a grounded recommendation. Do not propose code changes; just gather facts.
+You are investigating ONE friction log from a ninthwave repo so a human can decide what to do with it. Read whatever you need (code, git log, other friction logs, open work items) to give a grounded recommendation AND draft the concrete artifact that would be applied if the human approves.
 
 Friction log path: [path]
 Friction log contents (verbatim):
@@ -115,25 +108,46 @@ Investigate and report back, in this exact section order:
    Look in `.ninthwave/work/` for any open work items that already cover this friction. List filename and ID for each match. If none, say "none".
 
 4. DUPLICATE FRICTION LOGS
-   Look at the other files in `.ninthwave/friction/` (excluding `processed/`) for logs that overlap this one. List filename and a one-line reason for the overlap. If none, say "none".
+   Look at the other files in `.ninthwave/friction/` for logs that overlap this one. List filename and a one-line reason for the overlap. If none, say "none".
 
 5. SMALLEST CONCRETE FIX
    Describe the smallest change that would resolve this friction. Be specific: "edit `agents/implementer.md` around line 380 to add a step that does X" beats "improve the worker logic". If the fix is non-trivial or speculative, say so and sketch the shape instead.
 
 6. RECOMMENDATION
    Pick exactly one tag and give a one-sentence reason:
-     FIX_NOW       -- small code change, obvious, low risk
-     UPDATE_DOC    -- the fix is editing a doc / skill / prompt
+     FIX_NOW         -- small code change, obvious, low risk
+     UPDATE_DOC      -- the fix is editing a doc / skill / prompt
      CREATE_WORKITEM -- real fix is non-trivial, needs its own PR
-     DROP          -- already fixed, stale, or not actionable
-     MERGE_INTO    -- duplicate of another log; name which one
+     DROP            -- already fixed, stale, or not actionable
+     MERGE_INTO      -- duplicate of another log; name which one
 
-Cap your report at 300 words. Be concrete, not vague. No prose paragraphs, no hedging.
+7. DRAFT THE ARTIFACT
+   Produce the concrete thing that would be applied if the human approves your recommendation. Do not write any files; include the artifact inline in your report so the skill can apply it later.
+
+   - FIX_NOW or UPDATE_DOC: the exact file path and a before/after edit, ready for the Edit tool. Show enough surrounding context that `old_string` will be unique. Use fenced code blocks labeled `BEFORE` and `AFTER`.
+   - CREATE_WORKITEM: the full work item file. Filename in the form `{priority_num}-{domain_slug}--{ID}.md`. Body following `.ninthwave/work-item-format.md` exactly. Leave the lineage token as the literal string `<LINEAGE>`; the skill will fill it in.
+   - DROP: a one-line receipt naming the commit SHA or existing work item that resolves the friction.
+   - MERGE_INTO: the target log filename and a one-line note on what distinct context to append.
+
+Be concrete, not vague. No prose paragraphs, no hedging. Cap your report at 500 words including the artifact.
 ```
 
-Wait for the subagent to return before proceeding. Do not run multiple per-log subagents in parallel; this loop is intentionally one-at-a-time so the human can stay in flow.
+### After all subagents return
 
-**Synthesize** the report into a structured assessment block for your own working notes:
+Build a triage table in your working notes, indexed by log path. One entry per log:
+
+```
+{
+  <log_path>: {
+    assessment: <synthesized block, see below>,
+    rec: <FIX_NOW | UPDATE_DOC | CREATE_WORKITEM | DROP | MERGE_INTO>,
+    draft: <the concrete artifact from section 7, kept verbatim>,
+    full_report: <the subagent's full response, retained for fallbacks>
+  }
+}
+```
+
+Synthesized assessment block format:
 
 ```
 Log M of N: <filename>
@@ -147,95 +161,95 @@ Smallest fix: <one-line concrete description>
 Subagent rec: <FIX_NOW | UPDATE_DOC | CREATE_WORKITEM | DROP | MERGE_INTO> -- <one-line reason>
 ```
 
-**Carry the full subagent report in your working context for the rest of this log's loop.** Step 3 (Decide) and Step 4 (Execute) both need it. Do not throw it away after Step 2.
+The triage table is the only state Phase 3 and Phase 4 share. Carry it across both phases without dropping anything.
 
-### Step 3: Decide
+---
 
-Call your interactive question tool with the synthesized assessment AND the most relevant findings from the subagent report. The user should be able to make a real decision without going to read the friction log themselves.
+## Phase 3: DECIDE (quick interactive walk-through)
 
-Before the question, print the structured assessment block from Step 2 so the user sees the grounded context. Then ask:
+**Goal:** Collect every decision, fast. Do not execute anything.
 
-**Question:** "Project: ninthwave. Branch: <current>. Phase: friction-triage, log M of N (<filename>). The friction: <paraphrase>. The investigation found: <one-line on where the fix lands> | <one-line on whether it's already addressed> | <one-line on duplicates or existing work items, if any>. Smallest concrete fix: <smallest fix from the subagent>. I would pick <X> because <reason that references the investigation, not just the log text>. What should we do with this log?"
+Walk the triage table in FIFO order. For each log, in order:
 
-The recommendation in the question MUST be grounded in what the subagent found, not in heuristics from reading the log. Examples:
-- If the subagent says it is already addressed in commit abc123, recommend D) Drop and say so.
-- If the subagent found an existing work item that already covers it, recommend D) Drop (or E) Merge if it is a duplicate friction log) and name the work item.
-- If the subagent identified the exact file and line for a one-line fix, recommend A) or C).
-- If the smallest fix is non-trivial, recommend B) Create work item.
+1. **Print** the assessment block (so the human has the grounded context on screen above the question).
+2. **Call AskUserQuestion ONCE.** No follow-ups. No "are you sure". No inner confirmation loops.
+3. **Mark the subagent's recommendation** as `(Recommended)` and put it first in the option list (per the AskUserQuestion convention).
+4. **Use the `preview` field** on the recommended option to show the proposed artifact: the work item draft, the before/after diff, the receipt, etc. AskUserQuestion renders previews as monospace markdown blocks beside the option list, so the human can read what will happen if they approve without leaving the question.
+5. **Record** the user's choice in the triage table under a new `decision` key. Move to the next log immediately.
 
-**Options:**
+If the user picks an option the subagent did NOT draft for (e.g. the user picks B when the subagent recommended D), record the choice anyway. Phase 4 will draft inline using the investigation context from `full_report`.
 
-- **A) Fix now (small code change)** -- apply the rectification directly in the codebase. Use only when the fix is small (a few lines, one or two files) and obviously correct. Skill will Edit, show the diff, then delete the log.
-- **B) Create work item** -- the friction is real but the fix is non-trivial. Skill will write a new file in `.ninthwave/work/` following `.ninthwave/work-item-format.md`, then delete the log.
-- **C) Update a doc / skill / prompt** -- the fix is editing `agents/implementer.md`, `CLAUDE.md`, an existing skill, or another doc. Same mechanics as A, but called out separately because it is the most common friction outcome and the user often wants to confirm where the doc edit lands before approving.
-- **D) Drop** -- not worth acting on. Stale, already fixed, or the user does not agree with the original report. Skill will delete the log with no further action.
-- **E) Merge into another log** -- only offer this if Step 2 found a duplicate candidate. Skill will append the current log's distinct context to the other log, then delete the current one.
-- **F) Skip for now** -- leave the log in place and move to the next. Use sparingly. The whole point of this skill is to clear the inbox.
+### Question shape
 
-Always offer A, B, C, D, F. Only offer E when there is a real duplicate candidate.
+Every Phase 3 question follows the same structure (re-grounding the user each time, since they may have lost focus mid-walk-through):
 
-### Step 4: Execute
+> **Question:** "Project: ninthwave. Branch: `<current>`. Phase: friction-triage decide, log M of N (`<filename>`). The friction: `<one-sentence paraphrase>`. The investigation found: `<one-line on where the fix lands>` | `<one-line on whether it's already addressed>` | `<one-line on duplicates or existing work items, if any>`. Smallest concrete fix: `<smallest fix>`. I would pick `<X>` because `<reason that references the investigation, not just the log text>`. What should we do with this log?"
 
-Run the chosen action. **Use the subagent investigation as your starting point** for every option below. The investigation already named the file paths, the smallest concrete fix, and any related state. Do not re-explore from scratch.
+### Options
 
-**A) Fix now:**
-1. Open the file(s) the subagent identified in "Where a fix would land". Read the relevant region.
-2. Apply the change the subagent described in "Smallest concrete fix" with the Edit tool. If the subagent's fix is missing a detail, fill it in. If you disagree with the subagent's fix, say so out loud and propose an alternative before editing.
-3. Show the user a 3-5 line summary of what changed and which file.
+Always offer A, B, C, D, F. Only offer E when the subagent flagged a real duplicate candidate.
+
+- **A) Fix now (small code change)** -- apply the pre-drafted edit directly in the codebase. The diff will appear in the `preview` if this is the recommended option.
+- **B) Create work item** -- write the pre-drafted work item to `.ninthwave/work/`. The full file will appear in the `preview` if this is the recommended option.
+- **C) Update a doc / skill / prompt** -- apply the pre-drafted doc edit to `agents/implementer.md`, `CLAUDE.md`, an existing skill, etc. The diff will appear in the `preview` if this is the recommended option.
+- **D) Drop** -- delete the log with no further action. The receipt (commit SHA or existing work item ID) will appear in the `preview` if this is the recommended option.
+- **E) Merge into another log** -- append this log's distinct context to the duplicate the subagent named, then delete this log.
+- **F) Skip for now** -- leave the log in place and move on. Use sparingly: the point of this session is to drive the inbox to zero.
+
+The whole point of Phase 3 is speed: read assessment, click option, next. If the human wants to steer a draft, they pick "Other" with notes and Phase 4 honors them.
+
+---
+
+## Phase 4: EXECUTE (batch)
+
+**Goal:** Apply every recorded decision. The human's input window is closed; do not call AskUserQuestion in this phase.
+
+Walk the triage table in FIFO order. For each entry, look at the recorded `decision` and apply it.
+
+### Decision handlers
+
+**A) Fix now / C) Update doc:**
+1. Use the pre-drafted edit from `draft`. Open the file, locate the BEFORE block, apply the AFTER block via the Edit tool.
+2. If the user overrode the subagent's recommendation and there is no pre-drafted edit for this option, draft one inline from `full_report` and apply it.
+3. Print a 3-5 line summary of what changed and which file.
 
 **B) Create work item:**
-1. Read `.ninthwave/work-item-format.md` if you have not already in this session. The format is non-negotiable.
-2. Draft the work item using the subagent investigation as the seed:
-   - **Description** seeded from the friction's "what hurt" plus the subagent's "smallest concrete fix"
-   - **Key files** seeded from the subagent's "where a fix would land"
-   - **Test plan** derived from the affected files (ask the subagent's report for hints; if missing, infer from the file types)
-   - **ID** in the form `[CHML]-<feature_code>-<seq>`, derived from the friction's domain
-   - **Priority** mapped from severity: high -> Critical or High, medium -> High or Medium, low -> Medium or Low
-   - **Domain slug** derived from the friction area
-3. Generate a lineage token:
+1. Generate a lineage token:
    ```bash
    nw lineage-token
    ```
-4. Show the drafted work item to the user via a second AskUserQuestion with options "Looks good, write it" / "Edit before writing" / "Cancel and pick a different action". Because the draft is grounded in the subagent's investigation, "Looks good" should be the common answer.
-5. On approval, write the file to `.ninthwave/work/{priority_num}-{domain_slug}--{ID}.md`.
-6. On "Edit before writing", let the user steer the fields, then write.
-7. On "Cancel", return to Step 3 (Decide) for this same log.
-
-**C) Update a doc / skill / prompt:**
-1. Open the doc the subagent identified (typically `agents/implementer.md`, `CLAUDE.md`, or a `skills/*/SKILL.md`). Read the surrounding section so the edit fits the existing voice.
-2. Apply the change the subagent described in "Smallest concrete fix" with the Edit tool.
-3. Show the user a 3-5 line summary of what changed and which file.
+2. Substitute it for the `<LINEAGE>` placeholder in the drafted file body.
+3. Write the file to `.ninthwave/work/{priority_num}-{domain_slug}--{ID}.md`.
+4. Print the new ID and path.
+5. If the user picked B without a pre-drafted work item (because the subagent recommended something else), draft one inline from `full_report` using the same fields as the standard subagent template, then write.
 
 **D) Drop:**
-1. If the subagent said the friction is already addressed (commit SHA) or already covered by an existing work item, mention that out loud in one line so the user has the receipt.
-2. No file changes. Proceed to Step 5.
+1. Print the one-line receipt from `draft` so the user has the trail (commit SHA or existing work item ID).
+2. No file changes.
 
-**E) Merge into another log:**
-1. Read the target log the subagent named as the duplicate.
-2. Append a `---` divider and the current log's distinct content (do not duplicate fields that match).
+**E) Merge into <other log>:**
+1. Read the target log named in `draft`.
+2. Append a `---` divider and the distinct context from the current log (do not duplicate fields that already match).
 3. Use Edit to write the appended content.
 
-**F) Skip:** Proceed to the next log without deleting.
+**F) Skip:**
+1. Leave the log in place. Do nothing.
 
-### Step 5: Delete (unless F)
+### After each handler
 
 For decisions A, B, C, D, E, delete the friction log:
 
 ```bash
-rm .ninthwave/friction/<filename>
+rm <log_path>
 ```
 
-For F, leave it in place.
+For F, do not delete.
 
-### Step 6: Progress
-
-Print one line: "Log M of N handled: <decision letter> -- <one-line outcome>. <N - M> remaining."
-
-Then move to the next log.
+Print one line per log as it is handled: "Log M of N done: `<decision>` -- `<one-line outcome>`. `<remaining>` to go."
 
 ---
 
-## Phase 3: WRAP
+## Phase 5: WRAP
 
 When the loop finishes, summarize the session:
 
@@ -254,6 +268,6 @@ When the loop finishes, summarize the session:
 
 ## Why this skill exists (background for the worker reading this)
 
-Friction logs are the dogfooding signal that drives ninthwave's roadmap (see `VISION.md`: "the friction log is the roadmap"). They accumulate fast because workers and humans both write them. Clearing them is high leverage but easy to put off when the flow is async, so the design here is deliberately synchronous: a 10-minute focused session with the human at the keyboard, one log at a time, decisions made fast, inbox driven to zero.
+Friction logs are the dogfooding signal that drives ninthwave's roadmap (see `VISION.md`: "the friction log is the roadmap"). They accumulate fast because workers and humans both write them. Clearing them is high leverage but easy to put off when the flow is async, so the design here is deliberately **synchronous AND fast**: investigation runs in parallel up front so the slow part is over before the human starts answering, decisions are quick (one question per log, with the proposed artifact already drafted in the preview), and execution is batched at the end. The interactive window the human sits through should be a couple of minutes for a typical inbox.
 
-The skill's job is to keep that loop tight: small reads, small assessments, one question per log, no batching, no commits without permission.
+The skill's job is to keep that loop tight: parallel investigation, no nested confirmations, no waiting for subagents during the Decide phase, no commits without permission.
