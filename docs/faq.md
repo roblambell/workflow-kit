@@ -61,6 +61,45 @@ nw doctor
 
 This checks all prerequisites, configuration, and connectivity. It will tell you exactly what's missing or misconfigured.
 
+### How do I update ninthwave?
+
+Run `nw update`. It detects how your install was managed and runs the matching updater:
+
+| Install source | Detection | Updater |
+|---|---|---|
+| **Homebrew** | Bundle lives under a Homebrew prefix (`<prefix>/share/ninthwave` with the executable in `<prefix>/bin` and the real path inside `Cellar/ninthwave/`) | `brew upgrade ninthwave` |
+| **Direct install script** | Executable lives under `~/.ninthwave/bin/` (written by `curl -fsSL https://ninthwave.sh/install \| bash`) | Re-runs `curl -fsSL https://ninthwave.sh/install \| bash` |
+| **Unknown** (source builds, non-standard paths) | Neither of the above matches | Prints manual guidance and exits non-zero |
+
+These two install sources -- Homebrew and the direct install script -- are the only ones `nw update` automates in v1. For anything else, `nw update` prints the manual options it knows about:
+
+- `brew upgrade ninthwave`
+- `curl -fsSL https://ninthwave.sh/install | bash`
+- `git pull && task install` from a source clone
+
+Ninthwave does not hot-reload. After `nw update` prints `Update complete.`, restart any running `nw` sessions (daemon and workers) so they pick up the new binary.
+
+### What does the startup update prompt do?
+
+When you start `nw` and the passive update check has cached a newer version that you have not dismissed for this release, Ninthwave shows an interactive three-option prompt before the normal startup flow:
+
+```
+Ninthwave update available  vX.Y.Z -> vA.B.C
+Release notes: https://github.com/ninthwave-sh/ninthwave/releases/tag/vA.B.C
+
+  1. Update now
+  2. Skip
+  3. Skip until next version
+```
+
+Each option behaves differently:
+
+- **1. Update now** -- runs the same detected updater as `nw update`, prints the result, and exits so you can restart with the new version. This is always the "exit startup" path, even if the updater itself fails -- you should not continue into the session with a half-updated binary.
+- **2. Skip** -- continues into the current session without updating and without persisting anything. The prompt will appear again the next time you run `nw` while `vA.B.C` is still the latest release.
+- **3. Skip until next version** -- persists `skipped_update_version: "A.B.C"` in `~/.ninthwave/config.json` and then continues into the current session. The startup prompt stays suppressed for that specific version. As soon as a newer release (`vA.B.D`, `vA.C.0`, ...) is published and the passive check picks it up, the prompt reappears because `skipped_update_version` no longer matches the latest release.
+
+The prompt itself is driven off the passive update-check cache at `~/.ninthwave/update-check.json`, which refreshes at most once per 24 hours. To disable the check entirely (no startup prompt, no passive notice), set `"update_checks_enabled": false` in `~/.ninthwave/config.json`.
+
 ---
 
 ## Core Concepts
