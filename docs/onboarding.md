@@ -218,9 +218,6 @@ Every file and directory created during onboarding, plus the user-managed instru
 | `.ninthwave/friction/.gitkeep` | File | Always | Yes | Yes | Keeps empty dir in git |
 | `.ninthwave/decisions/` | Directory | Always | N/A | Yes | Decision inbox entries |
 | `.ninthwave/decisions/.gitkeep` | File | Always | Yes | Yes | Keeps empty dir in git |
-| `.ninthwave/schedules/` | Directory | Always | N/A | Yes | Scheduled task definitions |
-| `.ninthwave/schedules/friction--review.md` | File | Only on fresh init (dir is new) | **No** | Yes | Weekday friction inbox review schedule |
-| `.ninthwave/schedules/decisions--review.md` | File | Only on fresh init (dir is new) | **No** | Yes | Weekday decisions inbox review schedule |
 
 ### Managed tool copies (tool integration)
 
@@ -288,11 +285,8 @@ project-root/
 │   │   └── .gitkeep
 │   ├── friction/                        # friction log
 │   │   └── .gitkeep
-│   ├── decisions/                       # decision inbox
-│   │   └── .gitkeep
-│   └── schedules/                       # scheduled tasks
-│       ├── friction--review.md
-│       └── decisions--review.md
+│   └── decisions/                       # decision inbox
+│       └── .gitkeep
 │
 ├── .claude/
 │   ├── agents/                          # ← managed copies
@@ -346,8 +340,6 @@ Init always creates `.ninthwave/.gitignore` with deny-by-default rules for ninth
 !config.json
 !work/
 !work/**
-!schedules/
-!schedules/**
 !friction/
 !friction/**
 !decisions/
@@ -409,8 +401,7 @@ Running `nw init` multiple times is safe:
 | `.ninthwave/config` | Overwritten (init is authoritative for detection) |
 | `.ninthwave/config.json` | Overwritten if monorepo detected |
 | `.ninthwave/domains.conf` | Preserved (user configuration) |
-| `.ninthwave/work/`, `friction/`, `decisions/`, `schedules/` | Directories ensured, contents preserved |
-| Seeded review schedule files | Only created if `schedules/` dir is new |
+| `.ninthwave/work/`, `friction/`, `decisions/` | Directories ensured, contents preserved |
 | Skill managed copies | Re-copied from the canonical bundle |
 | Agent managed copies | Refreshed when stale, left alone when already current |
 | `AGENTS.md` | Preserved as a user-managed input if present; never written or pruned by init |

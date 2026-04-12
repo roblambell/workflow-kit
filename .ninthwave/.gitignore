@@ -4,15 +4,13 @@
 # Committed project files
 !.gitignore
 !config.json
-# work-item-format.md and schedule-format.md are intentionally NOT allowlisted
-# in this dogfood repo: canonical sources live at core/docs/*.md, and the
-# copies under .ninthwave/ are scaffold-generated mirrors that `nw init`
-# writes. Consumer repos DO allowlist them (see the template in
-# core/commands/init.ts), because they don't have the canonical sources.
+# work-item-format.md is intentionally NOT allowlisted in this dogfood repo:
+# the canonical source lives at core/docs/work-item-format.md, and the copy
+# under .ninthwave/ is a scaffold-generated mirror that `nw init` writes.
+# Consumer repos DO allowlist it (see the template in
+# core/commands/init.ts), because they don't have the canonical source.
 !work/
 !work/**
-!schedules/
-!schedules/**
 !friction/
 !friction/**
 !decisions/

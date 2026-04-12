@@ -208,7 +208,7 @@ export function validateAgentFiles(toolIds: string[], projectRoot: string): void
 
 /**
  * Select a single AI tool. Thin wrapper around selectAiTools for callers
- * that only need one tool (e.g., `nw start`, schedule runner).
+ * that only need one tool (e.g., `nw start`).
  */
 export async function selectAiTool(
   options: SelectAiToolOptions,

@@ -34,8 +34,6 @@ Ninthwave is the orchestration layer for parallel AI coding. Turn plans into sma
 
 I work in small iterations. I push planning down to a fairly detailed low spec, then use `/decompose` to break it into work items and let `nw` work through the queue.
 
-Separately, I use scheduled Ninthwave work for more periodic high spec alignment, rationalization, and reconciliation: updating docs, checking for entropy or unnecessary complexity, and running broader security reviews.
-
 When I'm confident in a breakdown, I leave Ninthwave in auto mode and let it merge as checks pass. When I want a closer look, I switch to manual mode and either review the PRs and leave feedback there, or jump straight into the worker session and iterate with the implementer directly.
 
 ## How it works

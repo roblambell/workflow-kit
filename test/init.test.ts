@@ -106,10 +106,6 @@ function createFakeBundle(dir: string): string {
     join(bundleDir, "core", "docs", "work-item-format.md"),
     "# Work Item File Format Guide\n\n(fake bundle content)\n",
   );
-  writeFileSync(
-    join(bundleDir, "core", "docs", "schedule-format.md"),
-    "# Schedule File Format Guide\n\n(fake bundle content)\n",
-  );
 
   // Create VERSION file
   writeFileSync(join(bundleDir, "VERSION"), "0.1.0\n");

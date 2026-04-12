@@ -372,7 +372,6 @@ describe("cmdBroker --save-crew-url", () => {
       join(configDir, "config.json"),
       JSON.stringify({
         review_external: true,
-        schedule_enabled: true,
         custom_key: "preserved",
       }),
     );
@@ -389,7 +388,6 @@ describe("cmdBroker --save-crew-url", () => {
 
     const raw = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
     expect(raw.review_external).toBe(true);
-    expect(raw.schedule_enabled).toBe(true);
     expect(raw.custom_key).toBe("preserved");
     expect(raw.crew_url).toBe("ws://localhost:5555");
   });
