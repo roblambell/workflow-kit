@@ -430,6 +430,9 @@ describe("bootstrapTuiUpdateNotice", () => {
       currentVersion: "0.4.0",
       latestVersion: "0.5.0",
       checkedAt: 1_000,
+      installSource: "unknown" as const,
+      updateCommand: null,
+      promptSuppressed: false,
     };
     const viewOptions: ViewOptions = { showBlockerDetail: true };
     const refreshUpdateState = vi.fn(async () => cachedState);
@@ -453,12 +456,18 @@ describe("bootstrapTuiUpdateNotice", () => {
       currentVersion: "0.4.0",
       latestVersion: "0.5.0",
       checkedAt: 1_000,
+      installSource: "unknown" as const,
+      updateCommand: null,
+      promptSuppressed: false,
     };
     const refreshedState = {
       status: "update-available" as const,
       currentVersion: "0.4.0",
       latestVersion: "0.5.1",
       checkedAt: 2_000,
+      installSource: "unknown" as const,
+      updateCommand: null,
+      promptSuppressed: false,
     };
     const viewOptions: ViewOptions = { showBlockerDetail: true };
     const refreshUpdateState = vi.fn(async () => refreshedState);

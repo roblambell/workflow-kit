@@ -105,6 +105,13 @@ export type TmuxLayoutMode = "dashboard" | "windows";
 
 const TMUX_LAYOUT_MODES: readonly TmuxLayoutMode[] = ["dashboard", "windows"] as const;
 
+function parseSkippedUpdateVersion(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+
+  const normalized = value.trim().replace(/^v/, "");
+  return /^\d+(?:\.\d+)*$/.test(normalized) ? normalized : undefined;
+}
+
 export function isTmuxLayoutMode(value: unknown): value is TmuxLayoutMode {
   return TMUX_LAYOUT_MODES.includes(value as TmuxLayoutMode);
 }
@@ -121,6 +128,7 @@ export interface UserConfig {
   review_mode?: PersistedReviewMode;
   collaboration_mode?: PersistedCollaborationMode;
   update_checks_enabled?: boolean;
+  skipped_update_version?: string;
 }
 
 /**
@@ -163,6 +171,10 @@ export function loadUserConfig(homeOverride?: string): UserConfig {
     }
     if (typeof parsed.update_checks_enabled === "boolean") {
       result.update_checks_enabled = parsed.update_checks_enabled;
+    }
+    const skippedUpdateVersion = parseSkippedUpdateVersion(parsed.skipped_update_version);
+    if (skippedUpdateVersion) {
+      result.skipped_update_version = skippedUpdateVersion;
     }
     return result;
   } catch {
@@ -243,6 +255,13 @@ export function saveUserConfig(
     if (key === "update_checks_enabled") {
       if (typeof value === "boolean") {
         merged[key] = value;
+      }
+      continue;
+    }
+    if (key === "skipped_update_version") {
+      const parsed = parseSkippedUpdateVersion(value);
+      if (parsed) {
+        merged[key] = parsed;
       }
       continue;
     }

@@ -145,6 +145,9 @@ function makeUpdateState(overrides: Partial<PassiveUpdateState> = {}): PassiveUp
     currentVersion: "0.4.0",
     latestVersion: "0.5.0",
     checkedAt: 1_000,
+    installSource: "unknown",
+    updateCommand: null,
+    promptSuppressed: false,
     ...overrides,
   };
 }

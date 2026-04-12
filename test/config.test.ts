@@ -366,6 +366,19 @@ describe("loadUserConfig", () => {
     expect(config.update_checks_enabled).toBe(false);
   });
 
+  it("reads skipped_update_version from valid JSON", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ skipped_update_version: "v0.5.0" }),
+    );
+
+    const config = loadUserConfig(tmpHome);
+    expect(config.skipped_update_version).toBe("0.5.0");
+  });
+
   it("ignores invalid persisted TUI enum values safely", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
@@ -590,6 +603,29 @@ describe("saveUserConfig", () => {
     expect(config).toMatchObject({
       ai_tools: ["claude"],
       update_checks_enabled: false,
+    });
+  });
+
+  it("saves skipped_update_version without clobbering unrelated keys", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ custom_key: "hello", ai_tools: ["claude"] }),
+    );
+
+    saveUserConfig({ skipped_update_version: "v0.5.0" }, tmpHome);
+
+    const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
+    expect(content.custom_key).toBe("hello");
+    expect(content.ai_tools).toEqual(["claude"]);
+    expect(content.skipped_update_version).toBe("0.5.0");
+
+    const config = loadUserConfig(tmpHome);
+    expect(config).toMatchObject({
+      ai_tools: ["claude"],
+      skipped_update_version: "0.5.0",
     });
   });
 
