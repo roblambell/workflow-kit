@@ -38,6 +38,7 @@ import { cmdInbox } from "./commands/inbox.ts";
 import { cmdLogs } from "./commands/logs.ts";
 import { cmdLineageToken } from "./commands/lineage-token.ts";
 import { cmdReviewInbox } from "./commands/review-inbox.ts";
+import { cmdUpdate } from "./commands/update.ts";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -186,6 +187,19 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
     },
     flags: {},
     examples: ["nw stop"],
+  },
+  {
+    name: "update",
+    usage: "update",
+    description: "Update ninthwave to the latest published version",
+    group: "workflow",
+    needsRoot: false,
+    needsWork: false,
+    handler: (ctx) => {
+      cmdUpdate(ctx.args);
+    },
+    flags: {},
+    examples: ["nw update"],
   },
 
   // ── Diagnostics ─────────────────────────────────────────────────────

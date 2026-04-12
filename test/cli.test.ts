@@ -158,6 +158,49 @@ describe("CLI dispatch", () => {
     expect(flag.stdout).toBe(subcommand.stdout);
     expect(flag.exitCode).toBe(0);
   });
+
+  it("dispatches update command without a project root", () => {
+    // `nw update` needs to work even outside a ninthwave-initialized project
+    // (no .ninthwave/ directory, no work queue). We run the CLI binary via
+    // `bun run`, which makes resolveCurrentInstall see a dev-checkout layout
+    // that doesn't match the homebrew or direct-install fingerprints, so the
+    // command should fall through to the manual-guidance path and exit
+    // non-zero without trying to spawn any updater.
+    const result = runCli("update");
+    expect(result.exitCode).not.toBe(0);
+    const combined = `${result.stdout}\n${result.stderr}`;
+    expect(combined).toContain("Could not detect how this ninthwave install was managed");
+    expect(combined).toContain("brew upgrade ninthwave");
+    expect(combined).toContain("curl -fsSL https://ninthwave.sh/install | bash");
+  });
+});
+
+describe("update command registration", () => {
+  it("is registered in the command registry", () => {
+    const entry = lookupCommand("update");
+    expect(entry).toBeDefined();
+    expect(entry!.name).toBe("update");
+  });
+
+  it("does not require a project root or work queue", () => {
+    const entry = lookupCommand("update")!;
+    expect(entry.needsRoot).toBe(false);
+    expect(entry.needsWork).toBe(false);
+  });
+
+  it("appears in plain --help output", () => {
+    const result = runCli("--help");
+    expect(result.exitCode).toBe(0);
+    // The `update` token can collide with other words in descriptions, so
+    // anchor the assertion to the usage column which starts with "  update".
+    expect(result.stdout).toMatch(/^\s{2}update\b/m);
+  });
+
+  it("appears in --help-all output", () => {
+    const result = runCli("--help-all");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/^\s{2}update\b/m);
+  });
 });
 
 describe("grouped help (nw --help)", () => {
