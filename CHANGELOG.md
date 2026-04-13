@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.4.4] - 2026-04-13
+
+### Added
+- add interactive startup update prompt (H-UPD-3) (#649)
+- add manual nw update command (H-UPD-2) (#647)
+- add decision-triage skill for synchronous decisions inbox clearing
+- queue H-RVPB-1 machine-actionable reviewer pushback
+- add friction-triage skill for synchronous inbox clearing
+- add install-aware update runtime state (H-UPD-1) (#644)
+- post-worktree-create bootstrap hook and stale index.lock cleanup (H-WR-1) (#637)
+- add CI lifecycle observability events (H-CF-7) (#634)
+- emoji reaction acknowledgment for PR comments (M-CF-2) (#628)
+- read agent instructions from seeded worktree artifacts (#627)
+- ship core/docs format guides via nw init
+
+### Changed
+- delete remaining schedule modules and docs (H-RS-2) (#648)
+- front-load friction-triage investigation, batch execution
+- remove shared schedule integration (H-RS-1) (#645)
+- rename WIP to session in test files (M-TS-2) (#640)
+- rename WIP to session in core source comments (M-TS-1) (#636)
+- split CI fail counters by lifetime (H-CF-8) (#635)
+
+### Fixed
+- allowlist .ninthwave/decisions/ in dogfood gitignore
+- suppress git rev-parse stderr in inbox/heartbeat (H-CF-7)
+- stop opencode workers pausing for permission prompts (#643)
+- three parked-item feedback loop bugs (#642)
+- auto-save uncommitted work before session respawn (H-WR-3) (#641)
+- silent inbox delivery failures for CI and PR comments (H-WR-2) (#638)
+- workspace-based WIP counting and SHA gate for review loops
+- reviewer agent must use COMMENT event, never APPROVE/REQUEST_CHANGES
+- simplify PR comment branding to minimal Ninthwave link
+- park live workers at CI retry breaker (H-CF-5) (#632)
+- enforce exclusive post-PR inbox loop and bump max review rounds
+- extend ci fix ack timeout (H-CF-6) (#633)
+- suppress reactions on ninthwave comments (H-CF-4) (#631)
+- exclude review check from CI aggregation (H-CF-3) (#630)
+- respawn parked workers for PR feedback (H-CF-1) (#629)
+
 ## Unreleased
 
 ### Fixed
