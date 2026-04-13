@@ -1,6 +1,8 @@
 # Changelog
 
-## [0.4.4] - 2026-04-13
+## [0.4.5] - 2026-04-13
+
+Supersedes a dead v0.4.4 tag whose release workflow failed before shipping. All intended 0.4.4 changes are included here.
 
 ### Changed
 - GitHub org renamed from `ninthwave-sh` to `ninthwave-io`. The Homebrew tap moved with it: install via `brew install ninthwave-io/tap/ninthwave`. Existing users on the old tap should migrate with `brew untap ninthwave-sh/tap && brew tap ninthwave-io/tap && brew upgrade ninthwave`. GitHub redirects handle old URLs for now, but the new paths are canonical.
