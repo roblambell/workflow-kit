@@ -32,9 +32,11 @@ Ninthwave is the orchestration layer for parallel AI coding. Turn plans into sma
 
 ## How I use it
 
-I work in small iterations. I push planning down to a fairly detailed low spec, then use `/decompose` to break it into work items and let `nw` work through the queue.
+I always start in plan mode and run several harnesses in parallel. Once a plan is detailed enough I look at its scope: if the change feels like a single PR's worth of work, I let the harness that planned it carry on and implement it directly. If it looks bigger than that, I run it through `/decompose` so `nw` can pick up the work items.
 
-When I'm confident in a breakdown, I leave Ninthwave in auto mode and let it merge as checks pass. When I want a closer look, I switch to manual mode and either review the PRs and leave feedback there, or jump straight into the worker session and iterate with the implementer directly.
+For greenfield and rapid prototyping I leave Ninthwave in auto mode and let it run. On existing projects I stay in manual mode: I review PRs as they open, leave feedback inline, and Ninthwave actions it from there. Once I am happy with a PR I merge it manually. Dropping into a worker session is a last resort for when something is genuinely stuck.
+
+Claude Code on Opus 4.6 runs end to end without intervention. Copilot CLI on Opus 4.6, and Codex and OpenCode on gpt-5.4 high, follow the work spec fine but sometimes stumble on Ninthwave's harness scaffolding -- heartbeats, inbox polling, and the end-of-session wait for inbox messages -- so those sessions occasionally need a nudge.
 
 ## How it works
 
@@ -96,7 +98,7 @@ For other installs (source clones, non-standard paths), `nw update` prints manua
    nw
    ```
 
-From there, Ninthwave launches the queue, opens reviewable PRs, watches checks, and keeps the pipeline moving. Leave it in auto mode when you want merges to keep flowing, or switch to manual mode when you want to review PRs and send feedback back through the loop.
+From there, Ninthwave launches the queue, opens reviewable PRs, watches checks, and keeps the pipeline moving. Use auto mode for greenfield work or rapid prototyping; on existing projects, stay in manual mode and review each PR as it opens, leaving feedback inline for Ninthwave to action.
 
 ## License
 
