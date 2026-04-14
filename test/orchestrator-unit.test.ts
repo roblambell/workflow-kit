@@ -3685,6 +3685,7 @@ describe("processComments (via processTransitions)", () => {
         id: "H-1-1",
         ciStatus: "pass",
         prState: "open",
+        headSha: "abc123",
       }]),
       FEEDBACK_FLUSH_NOW,
     );
