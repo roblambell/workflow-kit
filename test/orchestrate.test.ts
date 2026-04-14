@@ -2624,6 +2624,74 @@ describe("pending feedback batch persistence", () => {
 
     require("fs").rmSync(tmpDir, { recursive: true, force: true });
   });
+
+  it("replays expired feedback handoff after restart before merge can resume", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("FB-RST-2"));
+
+    const tmpDir = join(require("os").tmpdir(), `nw-reconstruct-feedback-handoff-${Date.now()}`);
+    const wtDir = join(tmpDir, ".ninthwave", ".worktrees");
+    const wtPath = join(wtDir, "ninthwave-FB-RST-2");
+    require("fs").mkdirSync(wtPath, { recursive: true });
+
+    const daemonState: DaemonState = {
+      pid: 1234,
+      startedAt: "2026-03-29T00:00:00Z",
+      updatedAt: "2026-03-29T00:02:05Z",
+      items: [
+        {
+          id: "FB-RST-2",
+          state: "review-pending",
+          prNumber: 78,
+          title: "Test item",
+          lastTransition: "2026-03-29T00:02:00Z",
+          ciFailCount: 0,
+          retryCount: 0,
+          reviewCompleted: false,
+          needsFeedbackResponse: true,
+          pendingFeedbackMessage: "[ORCHESTRATOR] Review Feedback Batch: 1 trusted human comment on PR #78.\n\n@reviewer commented on PR #78:\n\nPlease replay this feedback after restart.",
+          lastReviewedCommitSha: "sha-2",
+          workspaceRef: "workspace:feedback",
+        },
+      ],
+    };
+
+    reconstructState(
+      orch,
+      tmpDir,
+      wtDir,
+      undefined,
+      () => "FB-RST-2\t78\tready",
+      daemonState,
+    );
+
+    const item = orch.getItem("FB-RST-2")!;
+    expect(item.needsFeedbackResponse).toBe(true);
+    expect(item.pendingFeedbackMessage).toContain("replay this feedback after restart");
+
+    const actions = orch.processTransitions(
+      {
+        items: [{
+          id: "FB-RST-2",
+          prNumber: 78,
+          prState: "open",
+          ciStatus: "pass",
+          headSha: "sha-2",
+          workerAlive: true,
+        }],
+        readyIds: [],
+      },
+      new Date("2026-03-29T00:02:30Z"),
+    );
+
+    expect(
+      actions.some((action) => action.type === "send-message" && action.itemId === "FB-RST-2")
+      || actions.some((action) => action.type === "retry" && action.itemId === "FB-RST-2"),
+    ).toBe(true);
+    expect(["review-pending", "launching"]).toContain(item.state);
+
+    require("fs").rmSync(tmpDir, { recursive: true, force: true });
+  });
 });
 
 describe("serializeOrchestratorState includes CI fail counters", () => {

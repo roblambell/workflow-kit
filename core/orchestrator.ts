@@ -1051,12 +1051,14 @@ export class Orchestrator {
 
     if (item.reviewCompleted) {
       item.reviewCompleted = false;
-      item.pendingFeedbackMessage = message;
       item.lastReviewedCommitSha = snap?.headSha ?? item.lastReviewedCommitSha ?? null;
       if (item.state === "ci-passed") {
         this.transition(item, "review-pending", snap?.eventTime);
       }
     }
+
+    item.needsFeedbackResponse = true;
+    item.pendingFeedbackMessage = message;
 
     return {
       hold: true,
@@ -1069,6 +1071,31 @@ export class Orchestrator {
         },
       ],
     };
+  }
+
+  private continuePendingFeedbackHandoff(
+    item: OrchestratorItem,
+    snap: ItemSnapshot | undefined,
+  ): Action[] | null {
+    if (!item.needsFeedbackResponse || !item.pendingFeedbackMessage) return null;
+    if (item.state === "ci-passed") {
+      item.reviewCompleted = false;
+      this.transition(item, "review-pending", snap?.eventTime);
+    }
+    if (item.sessionParked) {
+      return this.respawnForFeedback(item, item.pendingFeedbackMessage);
+    }
+
+    const liveness = !item.workspaceRef ? "dead" as const : this.checkWorkerLiveness(item, snap);
+    if (liveness === "dead") {
+      return this.respawnForFeedback(item, item.pendingFeedbackMessage);
+    }
+
+    return [{
+      type: "send-message",
+      itemId: item.id,
+      message: item.pendingFeedbackMessage,
+    }];
   }
 
   /** Handle ci-failed state: retry circuit breaker, recovery, notification, unresponsive detection. */
@@ -1267,6 +1294,9 @@ export class Orchestrator {
   ): Action[] {
     const actions: Action[] = [];
     // External merge and rebase tracking handled by interceptors.
+
+    const pendingFeedbackHandoff = this.continuePendingFeedbackHandoff(item, snap);
+    if (pendingFeedbackHandoff) return pendingFeedbackHandoff;
 
     const feedback = this.resolvePendingFeedbackBatch(item, snap, now);
     if (feedback) return feedback.actions;
@@ -1718,6 +1748,9 @@ export class Orchestrator {
     now: Date = new Date(),
   ): Action[] {
     const actions: Action[] = [];
+
+    const pendingFeedbackHandoff = this.continuePendingFeedbackHandoff(item, snap);
+    if (pendingFeedbackHandoff) return pendingFeedbackHandoff;
 
     const feedback = this.resolvePendingFeedbackBatch(item, snap, now);
     if (feedback) return feedback.actions;

@@ -184,6 +184,8 @@ export function reconstructState(
     lastReviewedCommitSha?: string | null;
     lastCommentCheck?: string;
     pendingFeedbackBatch?: PendingFeedbackBatch;
+    needsFeedbackResponse?: boolean;
+    pendingFeedbackMessage?: string;
     rebaseRequested?: boolean;
     lastRebaseNudgeAt?: string;
     rebaseNudgeCount?: number;
@@ -222,6 +224,8 @@ export function reconstructState(
         lastReviewedCommitSha: si.lastReviewedCommitSha,
         lastCommentCheck: si.lastCommentCheck,
         pendingFeedbackBatch: si.pendingFeedbackBatch,
+        needsFeedbackResponse: si.needsFeedbackResponse,
+        pendingFeedbackMessage: si.pendingFeedbackMessage,
         rebaseRequested: si.rebaseRequested,
         lastRebaseNudgeAt: si.lastRebaseNudgeAt,
         rebaseNudgeCount: si.rebaseNudgeCount,
@@ -260,6 +264,8 @@ export function reconstructState(
       if (saved.lastReviewedCommitSha != null) item.lastReviewedCommitSha = saved.lastReviewedCommitSha;
       if (saved.lastCommentCheck) item.lastCommentCheck = saved.lastCommentCheck;
       if (saved.pendingFeedbackBatch) item.pendingFeedbackBatch = saved.pendingFeedbackBatch;
+      if (saved.needsFeedbackResponse) item.needsFeedbackResponse = saved.needsFeedbackResponse;
+      if (saved.pendingFeedbackMessage) item.pendingFeedbackMessage = saved.pendingFeedbackMessage;
       if (saved.rebaseRequested) item.rebaseRequested = saved.rebaseRequested;
       if (saved.lastRebaseNudgeAt) item.lastRebaseNudgeAt = saved.lastRebaseNudgeAt;
       if (saved.rebaseNudgeCount != null) item.rebaseNudgeCount = saved.rebaseNudgeCount;
