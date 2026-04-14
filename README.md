@@ -60,19 +60,6 @@ Requires [gh](https://cli.github.com).
 
 Run inside [cmux](https://cmux.com) or [tmux](https://github.com/tmux/tmux/wiki) for the best experience. Ninthwave can launch workers in headless mode, but attachable sessions are what let you jump straight into a worker when you need to inspect or steer it. If you are not already comfortable with tmux, start with cmux.
 
-## Updating
-
-```bash
-nw update
-```
-
-`nw update` detects how your install was managed and runs the matching updater. v1 supports two install sources:
-
-- **Homebrew** (`brew install ninthwave-io/tap/ninthwave`) -- runs `brew upgrade ninthwave`
-- **Direct install script** (`curl -fsSL https://ninthwave.sh/install | bash`, which places `nw` under `~/.ninthwave/bin/`) -- re-runs the install script
-
-For other installs (source clones, non-standard paths), `nw update` prints manual guidance instead of guessing. Ninthwave does not hot-reload, so restart any running `nw` sessions after a successful update. When you start `nw` and a newer version is available, Ninthwave also shows a startup prompt with Update / Skip / Skip-until-next-version options -- see the [FAQ](docs/faq.md#how-do-i-update-ninthwave) for details.
-
 <p align="center">
   <img src="docs/assets/cmux-worker-panels.png" alt="cmux showing active Ninthwave worker sessions and in-flight task output one step away while Ninthwave runs" />
 </p>
