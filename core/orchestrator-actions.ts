@@ -915,7 +915,7 @@ export function executeSendMessage(
     return { success: false, error: `No safe worker inbox target available for ${item.id}` };
   }
 
-  if (item.needsFeedbackResponse && item.pendingFeedbackMessage === message) {
+  if (item.workspaceRef && item.needsFeedbackResponse && item.pendingFeedbackMessage === message) {
     item.needsFeedbackResponse = false;
     item.pendingFeedbackMessage = undefined;
   }
