@@ -3665,12 +3665,26 @@ describe("processComments (via processTransitions)", () => {
     expect(item.state).toBe("review-pending");
     expect(item.sessionParked).toBe(true);
 
-    const actions = orch.processTransitions(
+    const waitingActions = orch.processTransitions(
       snapshotWith([{
         id: "H-1-1",
         ciStatus: "pass",
         prState: "open",
         headSha: "abc123",
+      }]),
+      FEEDBACK_FLUSH_NOW,
+    );
+
+    expect(waitingActions).toEqual([]);
+    expect(item.pendingFeedbackBatch).toBeDefined();
+    expect(item.state).toBe("review-pending");
+    expect(item.sessionParked).toBe(true);
+
+    const actions = orch.processTransitions(
+      snapshotWith([{
+        id: "H-1-1",
+        ciStatus: "pass",
+        prState: "open",
       }]),
       FEEDBACK_FLUSH_NOW,
     );

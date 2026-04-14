@@ -1585,6 +1585,9 @@ export class Orchestrator {
       }
     }
 
+    const feedback = this.resolvePendingFeedbackBatch(item, snap, now);
+    if (feedback) return feedback.actions;
+
     return actions;
   }
 
