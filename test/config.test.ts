@@ -4,12 +4,22 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { join } from "path";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import {
+  generateProjectIdentity,
   loadConfig,
+  loadMergedProjectConfig,
+  loadOrGenerateProjectIdentity,
   saveConfig,
   loadUserConfig,
   saveUserConfig,
 } from "../core/config.ts";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
+
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const BROKER_SECRET_PATTERN = /^[A-Za-z0-9+/]{43}=$/;
+const ZERO_SECRET = "A".repeat(43) + "=";
+const SAMPLE_UUID_A = "00000000-0000-4000-8000-000000000001";
+const SAMPLE_UUID_B = "11111111-1111-4111-a111-111111111111";
 
 afterEach(() => {
   cleanupTempRepos();
@@ -135,6 +145,222 @@ describe("loadConfig", () => {
 
     const config = loadConfig(repo);
     expect(config).toEqual({});
+  });
+
+  it("parses a valid project_id and broker_secret from config.json", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({
+        project_id: SAMPLE_UUID_A,
+        broker_secret: ZERO_SECRET,
+      }),
+    );
+
+    const config = loadConfig(repo);
+    expect(config.project_id).toBe(SAMPLE_UUID_A);
+    expect(config.broker_secret).toBe(ZERO_SECRET);
+  });
+
+  it("rejects a malformed project_id", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    for (const bad of [
+      "not-a-uuid",
+      "00000000-0000-1000-8000-000000000001", // wrong version
+      "00000000-0000-4000-c000-000000000001", // wrong variant
+      42,
+      null,
+    ]) {
+      writeFileSync(
+        join(configDir, "config.json"),
+        JSON.stringify({ project_id: bad }),
+      );
+      expect(loadConfig(repo).project_id).toBeUndefined();
+    }
+  });
+
+  it("rejects a malformed broker_secret", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    for (const bad of [
+      "short",
+      "A".repeat(44), // wrong length / missing pad
+      "A".repeat(42) + "==", // decodes to 31 bytes
+      "!!!".repeat(14) + "A=", // illegal chars
+      42,
+    ]) {
+      writeFileSync(
+        join(configDir, "config.json"),
+        JSON.stringify({ broker_secret: bad }),
+      );
+      expect(loadConfig(repo).broker_secret).toBeUndefined();
+    }
+  });
+});
+
+describe("loadMergedProjectConfig", () => {
+  it("layers config.local.json over config.json for project_id and broker_secret", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({
+        project_id: SAMPLE_UUID_A,
+        broker_secret: ZERO_SECRET,
+      }),
+    );
+    writeFileSync(
+      join(configDir, "config.local.json"),
+      JSON.stringify({
+        project_id: SAMPLE_UUID_B,
+      }),
+    );
+
+    const merged = loadMergedProjectConfig(repo);
+    // Local override wins for project_id; broker_secret falls through to shared.
+    expect(merged.project_id).toBe(SAMPLE_UUID_B);
+    expect(merged.broker_secret).toBe(ZERO_SECRET);
+  });
+
+  it("uses committed values when no local overlay is present", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({
+        project_id: SAMPLE_UUID_A,
+        broker_secret: ZERO_SECRET,
+      }),
+    );
+
+    const merged = loadMergedProjectConfig(repo);
+    expect(merged.project_id).toBe(SAMPLE_UUID_A);
+    expect(merged.broker_secret).toBe(ZERO_SECRET);
+  });
+});
+
+describe("generateProjectIdentity", () => {
+  it("produces a UUID v4 and a base64-encoded 32-byte secret", () => {
+    const { project_id, broker_secret } = generateProjectIdentity();
+    expect(project_id).toMatch(UUID_V4_PATTERN);
+    expect(broker_secret).toMatch(BROKER_SECRET_PATTERN);
+    expect(Buffer.from(broker_secret, "base64")).toHaveLength(32);
+  });
+
+  it("returns distinct values on successive calls", () => {
+    const first = generateProjectIdentity();
+    const second = generateProjectIdentity();
+    expect(first.project_id).not.toBe(second.project_id);
+    expect(first.broker_secret).not.toBe(second.broker_secret);
+  });
+});
+
+describe("loadOrGenerateProjectIdentity", () => {
+  it("writes both fields when config.json is absent", () => {
+    const repo = setupTempRepo();
+    const identity = loadOrGenerateProjectIdentity(repo);
+    expect(identity.project_id).toMatch(UUID_V4_PATTERN);
+    expect(identity.broker_secret).toMatch(BROKER_SECRET_PATTERN);
+
+    const configPath = join(repo, ".ninthwave", "config.json");
+    expect(existsSync(configPath)).toBe(true);
+    const onDisk = JSON.parse(readFileSync(configPath, "utf-8"));
+    expect(onDisk.project_id).toBe(identity.project_id);
+    expect(onDisk.broker_secret).toBe(identity.broker_secret);
+  });
+
+  it("is idempotent when both fields are already present", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    const committed = {
+      project_id: SAMPLE_UUID_A,
+      broker_secret: ZERO_SECRET,
+      custom_key: "hello",
+    };
+    writeFileSync(join(configDir, "config.json"), JSON.stringify(committed));
+
+    const identity = loadOrGenerateProjectIdentity(repo);
+    expect(identity).toEqual({
+      project_id: SAMPLE_UUID_A,
+      broker_secret: ZERO_SECRET,
+    });
+
+    // File contents unchanged except for pretty-printing by saveConfig -- but
+    // we expect no write at all, so the raw bytes should still match the
+    // original compact JSON.
+    const rawAfter = readFileSync(join(configDir, "config.json"), "utf-8");
+    expect(rawAfter).toBe(JSON.stringify(committed));
+  });
+
+  it("generates only the missing field when one is already present", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ project_id: SAMPLE_UUID_A }),
+    );
+
+    const identity = loadOrGenerateProjectIdentity(repo);
+    expect(identity.project_id).toBe(SAMPLE_UUID_A);
+    expect(identity.broker_secret).toMatch(BROKER_SECRET_PATTERN);
+
+    const onDisk = JSON.parse(
+      readFileSync(join(configDir, "config.json"), "utf-8"),
+    );
+    expect(onDisk.project_id).toBe(SAMPLE_UUID_A);
+    expect(onDisk.broker_secret).toBe(identity.broker_secret);
+  });
+
+  it("preserves unrelated keys when merging generated fields", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({
+        crew_url: "wss://crew.example/ws",
+        custom_key: "hello",
+      }),
+    );
+
+    loadOrGenerateProjectIdentity(repo);
+
+    const onDisk = JSON.parse(
+      readFileSync(join(configDir, "config.json"), "utf-8"),
+    );
+    expect(onDisk.crew_url).toBe("wss://crew.example/ws");
+    expect(onDisk.custom_key).toBe("hello");
+    expect(onDisk.project_id).toMatch(UUID_V4_PATTERN);
+    expect(onDisk.broker_secret).toMatch(BROKER_SECRET_PATTERN);
+  });
+
+  it("does not persist identity into config.json when already supplied via config.local.json", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.local.json"),
+      JSON.stringify({
+        project_id: SAMPLE_UUID_A,
+        broker_secret: ZERO_SECRET,
+      }),
+    );
+
+    const identity = loadOrGenerateProjectIdentity(repo);
+    expect(identity).toEqual({
+      project_id: SAMPLE_UUID_A,
+      broker_secret: ZERO_SECRET,
+    });
+    expect(existsSync(join(configDir, "config.json"))).toBe(false);
   });
 });
 

@@ -41,7 +41,7 @@ import {
   pruneManagedGeneratedEntries,
 } from "./setup.ts";
 import { AI_TOOL_PROFILES } from "../ai-tools.ts";
-import { loadConfig } from "../config.ts";
+import { generateProjectIdentity, loadConfig } from "../config.ts";
 import { seedOpencodeConfig } from "../opencode-config.ts";
 
 // --- Detection types ---
@@ -522,16 +522,40 @@ export function detectAll(
 
 /**
  * Generate .ninthwave/config.json content.
+ *
+ * Always emits `project_id` and `broker_secret`: if `existingConfig` supplies
+ * them they are preserved verbatim, otherwise a fresh pair is generated via
+ * `generateProjectIdentity` so the committed file identifies the project to
+ * the broker from first launch.
  */
 export function generateConfig(
   _detection: DetectionResult,
-  existingConfig?: { crew_url?: string },
+  existingConfig?: {
+    crew_url?: string;
+    project_id?: string;
+    broker_secret?: string;
+  },
 ): string {
   const config: {
     crew_url?: string;
+    project_id?: string;
+    broker_secret?: string;
   } = {};
   if (existingConfig?.crew_url) {
     config.crew_url = existingConfig.crew_url;
+  }
+
+  // Identity fields: prefer existing values so re-running `nw init` never
+  // rotates the project's identity; generate only what's missing.
+  const existingProjectId = existingConfig?.project_id;
+  const existingBrokerSecret = existingConfig?.broker_secret;
+  if (existingProjectId && existingBrokerSecret) {
+    config.project_id = existingProjectId;
+    config.broker_secret = existingBrokerSecret;
+  } else {
+    const fresh = generateProjectIdentity();
+    config.project_id = existingProjectId ?? fresh.project_id;
+    config.broker_secret = existingBrokerSecret ?? fresh.broker_secret;
   }
   return JSON.stringify(config, null, 2) + "\n";
 }

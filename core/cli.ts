@@ -9,6 +9,22 @@ import { lookupCommand, printHelp, printHelpAll, printCommandHelp } from "./help
 import { cmdNoArgs } from "./commands/onboard.ts";
 import { WORK_ITEM_ID_CLI_PATTERN, cmdRunItems } from "./commands/run-items.ts";
 import { ensureMuxInteractiveOrDie } from "./mux.ts";
+import { loadOrGenerateProjectIdentity } from "./config.ts";
+
+/**
+ * Backfill `project_id` / `broker_secret` into `.ninthwave/config.json` when
+ * an existing repo predates those fields. Safe no-op for projects that have
+ * not yet been initialized (no `.ninthwave/` directory). Never fatal --
+ * identity generation is best-effort and should not block the CLI.
+ */
+function ensureProjectIdentity(projectRoot: string): void {
+  if (!existsSync(join(projectRoot, ".ninthwave"))) return;
+  try {
+    loadOrGenerateProjectIdentity(projectRoot);
+  } catch {
+    // Best-effort; missing identity will simply block broker features later.
+  }
+}
 
 /** Commands that use the interactive startup flow when available. */
 const COMMANDS_USING_INTERACTIVE_STARTUP = new Set(["start"]);
@@ -25,7 +41,9 @@ function getProjectRoot(): string {
     die("Not inside a git repository");
   }
   // Strip trailing /.git
-  return result.stdout.replace(/\/.git$/, "");
+  const projectRoot = result.stdout.replace(/\/.git$/, "");
+  ensureProjectIdentity(projectRoot);
+  return projectRoot;
 }
 
 // ── Argument parsing ─────────────────────────────────────────────────
@@ -61,6 +79,9 @@ if (!command) {
       ? gitResult.stdout.replace(/\/.git$/, "")
       : null;
 
+  if (projectRoot) {
+    ensureProjectIdentity(projectRoot);
+  }
   await cmdNoArgs(projectRoot);
   process.exit(0);
 }
@@ -80,6 +101,9 @@ if (command.startsWith("-")) {
   }
   const projectRoot = gitResult.stdout.replace(/\/.git$/, "");
   const isInitialized = existsSync(join(projectRoot, ".ninthwave"));
+  if (isInitialized) {
+    ensureProjectIdentity(projectRoot);
+  }
   if (process.stdin.isTTY && isInitialized) {
     await ensureMuxInteractiveOrDie(process.argv.slice(2));
   }

@@ -24,6 +24,23 @@ import {
 export interface ProjectConfig {
   crew_url?: string;
   /**
+   * Stable anonymized identifier for this project. Written once to
+   * `.ninthwave/config.json` by `loadOrGenerateProjectIdentity` and
+   * referenced by the broker/crew protocols so projects can be recognized
+   * without leaking directory names or repo slugs. May be overridden in
+   * `.ninthwave/config.local.json` for forks that need to present a
+   * different identity to a shared broker.
+   */
+  project_id?: string;
+  /**
+   * Per-project shared secret (32 random bytes, base64-encoded) used to
+   * authenticate this project to the broker. Lives in the committed
+   * `.ninthwave/config.json` by default so all clones of the project agree
+   * on the same identity, and can be overridden per-developer in
+   * `.ninthwave/config.local.json`.
+   */
+  broker_secret?: string;
+  /**
    * Per-tool launch overrides. User-specific; belongs in
    * `.ninthwave/config.local.json` (gitignored) rather than `config.json`
    * because values like `CLAUDE_CONFIG_DIR` point at the developer's local
@@ -45,6 +62,105 @@ function parseProjectCrewUrl(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Validate a `project_id` string. Only accepts lowercase RFC 4122 version 4
+ * UUIDs; anything else is treated as absent so we can regenerate a valid
+ * one. Strict parsing keeps the broker protocol from having to defend
+ * against surprise shapes later.
+ */
+function parseProjectId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  // UUID v4: 8-4-4-4-12 hex, version nibble is 4, variant nibble is 8/9/a/b.
+  const uuidV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  return uuidV4.test(value) ? value : undefined;
+}
+
+/**
+ * Validate a `broker_secret` string. Only accepts the canonical (non-URL)
+ * base64 encoding of exactly 32 random bytes. Anything shorter, longer, or
+ * mis-encoded is treated as absent.
+ */
+function parseBrokerSecret(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  // 32 bytes base64-encoded is 44 chars including a single trailing '='.
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(value)) return undefined;
+  try {
+    // Node/Bun Buffer round-trip to confirm the decoded payload is exactly 32 bytes.
+    const decoded = Buffer.from(value, "base64");
+    if (decoded.length !== 32) return undefined;
+    if (decoded.toString("base64") !== value) return undefined;
+    return value;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Generate a fresh project identity pair. Exposed as a helper so tests can
+ * stub the random source and so `loadOrGenerateProjectIdentity` has a
+ * single point of entropy.
+ */
+export function generateProjectIdentity(): { project_id: string; broker_secret: string } {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const broker_secret = Buffer.from(bytes).toString("base64");
+  return {
+    project_id: crypto.randomUUID(),
+    broker_secret,
+  };
+}
+
+/**
+ * Ensure `.ninthwave/config.json` contains a `project_id` and a
+ * `broker_secret`. Missing fields are generated with
+ * `generateProjectIdentity` and merged into the file without clobbering
+ * unknown keys. Values already present in `config.local.json` also count as
+ * satisfying the requirement and do not trigger a write.
+ *
+ * Returns the resolved identity (committed + local overlay applied).
+ */
+export function loadOrGenerateProjectIdentity(
+  projectRoot: string,
+): { project_id: string; broker_secret: string } {
+  const shared = loadConfig(projectRoot);
+  const local = loadLocalConfig(projectRoot);
+
+  // Writes happen at the shared-config layer only; the local overlay is
+  // read-only from our perspective. If the local file supplies a value, we
+  // treat the shared side as "already satisfied" so we don't force a
+  // commit-worthy field into the shared file just because a developer
+  // happened to override it locally.
+  const effectiveProjectId = local.project_id ?? shared.project_id;
+  const effectiveBrokerSecret = local.broker_secret ?? shared.broker_secret;
+
+  const needsProjectId = effectiveProjectId === undefined;
+  const needsBrokerSecret = effectiveBrokerSecret === undefined;
+
+  if (!needsProjectId && !needsBrokerSecret) {
+    return {
+      project_id: effectiveProjectId!,
+      broker_secret: effectiveBrokerSecret!,
+    };
+  }
+
+  const generated = generateProjectIdentity();
+  const updates: Partial<ProjectConfig> = {};
+  if (needsProjectId && shared.project_id === undefined) {
+    updates.project_id = generated.project_id;
+  }
+  if (needsBrokerSecret && shared.broker_secret === undefined) {
+    updates.broker_secret = generated.broker_secret;
+  }
+  if (Object.keys(updates).length > 0) {
+    saveConfig(projectRoot, updates);
+  }
+
+  return {
+    project_id: effectiveProjectId ?? generated.project_id,
+    broker_secret: effectiveBrokerSecret ?? generated.broker_secret,
+  };
 }
 
 /**
@@ -89,6 +205,8 @@ export function loadMergedProjectConfig(projectRoot: string): ProjectConfig {
   const local = loadLocalConfig(projectRoot);
   const merged: ProjectConfig = { ...shared };
   if (local.crew_url !== undefined) merged.crew_url = local.crew_url;
+  if (local.project_id !== undefined) merged.project_id = local.project_id;
+  if (local.broker_secret !== undefined) merged.broker_secret = local.broker_secret;
   const overrides = mergeToolOverrides(shared.ai_tool_overrides, local.ai_tool_overrides);
   if (overrides) merged.ai_tool_overrides = overrides;
   return merged;
@@ -114,6 +232,10 @@ function loadProjectConfigFile<T extends boolean>(
     const result: Partial<ProjectConfig> = withDefaults ? { ...defaults } : {};
     const crewUrl = parseProjectCrewUrl(parsed.crew_url);
     if (crewUrl !== undefined) result.crew_url = crewUrl;
+    const projectId = parseProjectId(parsed.project_id);
+    if (projectId !== undefined) result.project_id = projectId;
+    const brokerSecret = parseBrokerSecret(parsed.broker_secret);
+    if (brokerSecret !== undefined) result.broker_secret = brokerSecret;
     const overrides = parseBuiltInAiToolOverrides(parsed.ai_tool_overrides);
     if (overrides) result.ai_tool_overrides = overrides;
     return result as T extends true ? ProjectConfig : Partial<ProjectConfig>;

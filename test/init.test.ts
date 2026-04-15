@@ -468,8 +468,12 @@ describe("detectTestCommand", () => {
 
 // --- generateConfig ---
 
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const BROKER_SECRET_PATTERN = /^[A-Za-z0-9+/]{43}=$/;
+
 describe("generateConfig", () => {
-  it("outputs an empty JSON object when no overrides are supplied", () => {
+  it("generates a project identity when no overrides are supplied", () => {
     const detection: DetectionResult = {
       ci: "github-actions",
       testCommand: "bun test",
@@ -483,7 +487,10 @@ describe("generateConfig", () => {
     const config = generateConfig(detection);
     const parsed = JSON.parse(config);
 
-    expect(parsed).toEqual({});
+    expect(parsed.project_id).toMatch(UUID_V4_PATTERN);
+    expect(parsed.broker_secret).toMatch(BROKER_SECRET_PATTERN);
+    expect(Buffer.from(parsed.broker_secret, "base64")).toHaveLength(32);
+    expect(Object.keys(parsed).sort()).toEqual(["broker_secret", "project_id"]);
   });
 
   it("does not include dead config keys", () => {
@@ -511,8 +518,8 @@ describe("generateConfig", () => {
     // review_external was removed in H-SUX-3
     expect(parsed).not.toHaveProperty("review_external");
 
-    // Fresh init writes no keys by default.
-    expect(Object.keys(parsed)).toEqual([]);
+    // Fresh init writes only the auto-provisioned identity fields.
+    expect(Object.keys(parsed).sort()).toEqual(["broker_secret", "project_id"]);
   });
 
   it("includes an existing valid crew_url override when provided", () => {
@@ -532,7 +539,67 @@ describe("generateConfig", () => {
     const parsed = JSON.parse(config);
 
     expect(parsed.crew_url).toBe("wss://crew.example/ws");
-    expect(Object.keys(parsed)).toEqual(["crew_url"]);
+    // Identity fields are auto-provisioned; they should not overwrite the
+    // crew_url override.
+    expect(Object.keys(parsed).sort()).toEqual([
+      "broker_secret",
+      "crew_url",
+      "project_id",
+    ]);
+  });
+
+  it("preserves existing project_id and broker_secret without rotating them", () => {
+    const detection: DetectionResult = {
+      ci: null,
+      testCommand: null,
+      mux: null,
+      aiTools: [],
+      repoType: "single",
+      observabilityBackends: [],
+      workspace: null,
+    };
+
+    // Canonical base64 of 32 zero bytes round-trips without reserved-bit issues.
+    const existing = {
+      project_id: "00000000-0000-4000-8000-000000000001",
+      broker_secret: "A".repeat(43) + "=",
+    };
+    const first = JSON.parse(generateConfig(detection, existing));
+    const second = JSON.parse(generateConfig(detection, existing));
+
+    expect(first.project_id).toBe(existing.project_id);
+    expect(first.broker_secret).toBe(existing.broker_secret);
+    expect(second.project_id).toBe(existing.project_id);
+    expect(second.broker_secret).toBe(existing.broker_secret);
+  });
+
+  it("generates only the missing identity field when one is already present", () => {
+    const detection: DetectionResult = {
+      ci: null,
+      testCommand: null,
+      mux: null,
+      aiTools: [],
+      repoType: "single",
+      observabilityBackends: [],
+      workspace: null,
+    };
+
+    const onlyId = JSON.parse(
+      generateConfig(detection, {
+        project_id: "11111111-1111-4111-8111-111111111111",
+      }),
+    );
+    expect(onlyId.project_id).toBe("11111111-1111-4111-8111-111111111111");
+    expect(onlyId.broker_secret).toMatch(BROKER_SECRET_PATTERN);
+
+    const presetSecret = "A".repeat(43) + "=";
+    const onlySecret = JSON.parse(
+      generateConfig(detection, {
+        broker_secret: presetSecret,
+      }),
+    );
+    expect(onlySecret.broker_secret).toBe(presetSecret);
+    expect(onlySecret.project_id).toMatch(UUID_V4_PATTERN);
   });
 
   it("produces pretty-printed JSON ending with newline", () => {
@@ -694,7 +761,9 @@ describe("initProject", () => {
     const parsed = JSON.parse(config);
     expect(parsed).not.toHaveProperty("review_external");
     expect(parsed).not.toHaveProperty("ai_tools");
-    expect(Object.keys(parsed)).toEqual([]);
+    // Only the auto-provisioned identity fields should be written on a
+    // fresh init.
+    expect(Object.keys(parsed).sort()).toEqual(["broker_secret", "project_id"]);
   });
 
   it("creates a full working setup on a fresh repo", () => {
@@ -1425,6 +1494,9 @@ describe("initProject config.json", () => {
     expect(configJson).not.toHaveProperty("ai_tools");
     // No workspace data in config.json
     expect(configJson).not.toHaveProperty("workspace");
+    // Identity fields are auto-provisioned on first init.
+    expect(configJson.project_id).toMatch(UUID_V4_PATTERN);
+    expect(configJson.broker_secret).toMatch(BROKER_SECRET_PATTERN);
   });
 
   it("config.json round-trips correctly", () => {
@@ -1477,7 +1549,8 @@ describe("initProject config.json", () => {
     );
     // Workspace data is no longer written to config.json
     expect(configJson).not.toHaveProperty("workspace");
-    expect(Object.keys(configJson)).toEqual([]);
+    // Only the auto-provisioned identity fields should remain.
+    expect(Object.keys(configJson).sort()).toEqual(["broker_secret", "project_id"]);
   });
 
   it("fresh init does not invent crew_url", () => {
@@ -1496,7 +1569,31 @@ describe("initProject config.json", () => {
     );
 
     expect(configJson).not.toHaveProperty("crew_url");
-    expect(Object.keys(configJson)).toEqual([]);
+    // Identity fields are auto-provisioned on first init.
+    expect(Object.keys(configJson).sort()).toEqual(["broker_secret", "project_id"]);
+  });
+
+  it("re-running init leaves project identity untouched", () => {
+    const projectDir = setupTempRepo();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    initProject(projectDir, bundleDir, deps);
+    const firstConfig = JSON.parse(
+      readFileSync(join(projectDir, ".ninthwave/config.json"), "utf-8"),
+    );
+
+    initProject(projectDir, bundleDir, deps);
+    const secondConfig = JSON.parse(
+      readFileSync(join(projectDir, ".ninthwave/config.json"), "utf-8"),
+    );
+
+    expect(secondConfig.project_id).toBe(firstConfig.project_id);
+    expect(secondConfig.broker_secret).toBe(firstConfig.broker_secret);
   });
 });
 
