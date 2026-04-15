@@ -5,6 +5,7 @@
 import { join } from "path";
 import { existsSync, unlinkSync } from "fs";
 import { heartbeatFilePath, writeHeartbeat, clearFeedbackDoneSignal } from "./daemon.ts";
+import { cleanHeadlessPhase } from "./headless.ts";
 import { cleanInbox } from "./commands/inbox.ts";
 import { validatePickupCandidate } from "./commands/launch.ts";
 import { NINTHWAVE_FOOTER, ORCHESTRATOR_LINK } from "./gh.ts";
@@ -851,6 +852,9 @@ export function executeClean(
       unlinkSync(hbPath);
     }
   } catch { /* best-effort -- heartbeat cleanup failure doesn't block clean */ }
+
+  // Clean up headless phase file (best-effort)
+  try { cleanHeadlessPhase(ctx.projectRoot, item.id); } catch { /* best-effort */ }
 
   // Clean up inbox files in the active and legacy namespaces (best-effort)
   for (const inboxRoot of new Set([item.worktreePath, ctx.projectRoot])) {

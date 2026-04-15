@@ -9,6 +9,10 @@ import {
   headlessLogFilePath,
   headlessPidDir,
   headlessPidFilePath,
+  headlessPhaseFilePath,
+  writeHeadlessPhase,
+  readHeadlessPhase,
+  cleanHeadlessPhase,
 } from "../core/headless.ts";
 
 describe("HeadlessAdapter", () => {
@@ -152,5 +156,69 @@ describe("HeadlessAdapter", () => {
     expect(adapter.splitPane("pwd")).toBeNull();
     expect(adapter.setStatus("H-RSH-4", "build", "Building", "hammer", "#fff")).toBe(false);
     expect(adapter.setProgress("H-RSH-4", 0.5, "Halfway")).toBe(false);
+  });
+
+  // ── Phase file tests ────────────────────────────────────────────────
+
+  it("writeHeadlessPhase creates phase file and readHeadlessPhase reads it back", () => {
+    const projectRoot = makeProjectRoot();
+
+    writeHeadlessPhase(projectRoot, "H-PH-1", "starting");
+    expect(readHeadlessPhase(projectRoot, "H-PH-1")).toBe("starting");
+
+    writeHeadlessPhase(projectRoot, "H-PH-1", "implementing");
+    expect(readHeadlessPhase(projectRoot, "H-PH-1")).toBe("implementing");
+
+    writeHeadlessPhase(projectRoot, "H-PH-1", "waiting");
+    expect(readHeadlessPhase(projectRoot, "H-PH-1")).toBe("waiting");
+  });
+
+  it("readHeadlessPhase returns null when no phase file exists", () => {
+    const projectRoot = makeProjectRoot();
+    expect(readHeadlessPhase(projectRoot, "H-NOPE-1")).toBeNull();
+  });
+
+  it("readHeadlessPhase returns null for invalid phase content", () => {
+    const projectRoot = makeProjectRoot();
+    const phasePath = headlessPhaseFilePath(projectRoot, "H-BAD-1");
+    mkdirSync(join(phasePath, ".."), { recursive: true });
+    writeFileSync(phasePath, "bogus-phase");
+    expect(readHeadlessPhase(projectRoot, "H-BAD-1")).toBeNull();
+  });
+
+  it("cleanHeadlessPhase removes the phase file", () => {
+    const projectRoot = makeProjectRoot();
+    writeHeadlessPhase(projectRoot, "H-CL-1", "implementing");
+    expect(existsSync(headlessPhaseFilePath(projectRoot, "H-CL-1"))).toBe(true);
+
+    cleanHeadlessPhase(projectRoot, "H-CL-1");
+    expect(existsSync(headlessPhaseFilePath(projectRoot, "H-CL-1"))).toBe(false);
+    expect(readHeadlessPhase(projectRoot, "H-CL-1")).toBeNull();
+  });
+
+  it("cleanHeadlessPhase is a no-op when phase file does not exist", () => {
+    const projectRoot = makeProjectRoot();
+    expect(() => cleanHeadlessPhase(projectRoot, "H-NOPE-1")).not.toThrow();
+  });
+
+  it("closeWorkspace cleans pid file but preserves phase file for recovery", () => {
+    const projectRoot = makeProjectRoot();
+    const kill = vi.fn((_pid: number, signal?: NodeJS.Signals | 0) => {
+      if (signal === 0) {
+        const err = new Error("missing") as NodeJS.ErrnoException;
+        err.code = "ESRCH";
+        throw err;
+      }
+    }) as unknown as typeof process.kill;
+    const adapter = new HeadlessAdapter(projectRoot, { kill });
+
+    mkdirSync(headlessPidDir(projectRoot), { recursive: true });
+    writeFileSync(headlessPidFilePath(projectRoot, "H-PH-2"), "303");
+    writeHeadlessPhase(projectRoot, "H-PH-2", "waiting");
+
+    expect(adapter.closeWorkspace("headless:H-PH-2")).toBe(true);
+    expect(existsSync(headlessPidFilePath(projectRoot, "H-PH-2"))).toBe(false);
+    // Phase file survives closeWorkspace so the orchestrator can read it for recovery
+    expect(readHeadlessPhase(projectRoot, "H-PH-2")).toBe("waiting");
   });
 });

@@ -1044,6 +1044,208 @@ describe("handleImplementing", () => {
   });
 });
 
+// ── Headless worker recovery (H-WRK-4) ─────────────────────────────
+
+describe("headless worker recovery", () => {
+  it("recovers a headless worker in waiting phase without consuming retry budget", () => {
+    const orch = new Orchestrator({ maxRetries: 1 });
+    orch.addItem(makeWorkItem("H-REC-1"));
+    orch.hydrateState("H-REC-1", "implementing");
+    const item = orch.getItem("H-REC-1")!;
+    item.workspaceRef = "headless:H-REC-1";
+
+    // Simulate 5 not-alive checks (debounce threshold)
+    let actions: Action[] = [];
+    for (let i = 0; i < 5; i++) {
+      actions = orch.processTransitions(
+        snapshotWith([{ id: "H-REC-1", workerAlive: false, headlessPhase: "waiting" }]),
+        NOW,
+      );
+    }
+
+    // Recovery: retry action emitted, retryCount NOT consumed
+    expect(actions.some((a) => a.type === "retry" && a.itemId === "H-REC-1")).toBe(true);
+    expect(item.retryCount).toBe(0);
+    expect(item.pendingRetryWorkspaceRef).toBe("headless:H-REC-1");
+  });
+
+  it("recovers a headless worker in implementing phase without consuming retry budget", () => {
+    const orch = new Orchestrator({ maxRetries: 1 });
+    orch.addItem(makeWorkItem("H-REC-2"));
+    orch.hydrateState("H-REC-2", "implementing");
+    const item = orch.getItem("H-REC-2")!;
+    item.workspaceRef = "headless:H-REC-2";
+
+    let actions: Action[] = [];
+    for (let i = 0; i < 5; i++) {
+      actions = orch.processTransitions(
+        snapshotWith([{ id: "H-REC-2", workerAlive: false, headlessPhase: "implementing" }]),
+        NOW,
+      );
+    }
+
+    expect(actions.some((a) => a.type === "retry" && a.itemId === "H-REC-2")).toBe(true);
+    expect(item.retryCount).toBe(0);
+  });
+
+  it("does NOT recover a headless worker in starting phase (no progress)", () => {
+    const orch = new Orchestrator({ maxRetries: 1 });
+    orch.addItem(makeWorkItem("H-REC-3"));
+    orch.hydrateState("H-REC-3", "implementing");
+    const item = orch.getItem("H-REC-3")!;
+    item.workspaceRef = "headless:H-REC-3";
+
+    for (let i = 0; i < 5; i++) {
+      orch.processTransitions(
+        snapshotWith([{ id: "H-REC-3", workerAlive: false, headlessPhase: "starting" }]),
+        NOW,
+      );
+    }
+
+    // Should use stuckOrRetry, consuming the retry budget
+    expect(item.retryCount).toBe(1);
+  });
+
+  it("does NOT recover a non-headless worker even with implementing phase", () => {
+    const orch = new Orchestrator({ maxRetries: 0, gracePeriodMs: 0 });
+    orch.addItem(makeWorkItem("H-REC-4"));
+    orch.hydrateState("H-REC-4", "implementing");
+    const item = orch.getItem("H-REC-4")!;
+    item.workspaceRef = "tmux:H-REC-4";
+
+    for (let i = 0; i < 5; i++) {
+      orch.processTransitions(
+        snapshotWith([{ id: "H-REC-4", workerAlive: false, headlessPhase: "implementing" }]),
+        NOW,
+      );
+    }
+
+    // Non-headless: stuckOrRetry with maxRetries=0 -> stuck
+    expect(item.state).toBe("stuck");
+  });
+
+  it("does NOT recover a headless worker with no phase file", () => {
+    const orch = new Orchestrator({ maxRetries: 1 });
+    orch.addItem(makeWorkItem("H-REC-5"));
+    orch.hydrateState("H-REC-5", "implementing");
+    const item = orch.getItem("H-REC-5")!;
+    item.workspaceRef = "headless:H-REC-5";
+
+    for (let i = 0; i < 5; i++) {
+      orch.processTransitions(
+        snapshotWith([{ id: "H-REC-5", workerAlive: false, headlessPhase: null }]),
+        NOW,
+      );
+    }
+
+    // No phase -> stuckOrRetry consumes retry budget
+    expect(item.retryCount).toBe(1);
+  });
+
+  it("recovers on launch timeout for headless worker with waiting phase", () => {
+    const orch = new Orchestrator({ launchTimeoutMs: 1000, gracePeriodMs: 0 });
+    orch.addItem(makeWorkItem("H-REC-6"));
+    orch.hydrateState("H-REC-6", "implementing");
+    const item = orch.getItem("H-REC-6")!;
+    item.workspaceRef = "headless:H-REC-6";
+
+    const futureTime = new Date(Date.now() + 2000);
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-REC-6", workerAlive: false, lastCommitTime: null, headlessPhase: "waiting" }]),
+      futureTime,
+    );
+
+    expect(item.retryCount).toBe(0);
+    expect(actions.some((a) => a.type === "retry")).toBe(true);
+  });
+
+  it("recovers on activity timeout for headless worker with implementing phase", () => {
+    const orch = new Orchestrator({ activityTimeoutMs: 1000, gracePeriodMs: 0 });
+    orch.addItem(makeWorkItem("H-REC-7"));
+    orch.hydrateState("H-REC-7", "implementing");
+    const item = orch.getItem("H-REC-7")!;
+    item.workspaceRef = "headless:H-REC-7";
+
+    const staleTime = "2026-01-15T10:00:00Z";
+    const futureNow = new Date("2026-01-15T12:00:00Z");
+
+    const actions = orch.processTransitions(
+      snapshotWith([{ id: "H-REC-7", workerAlive: false, lastCommitTime: staleTime, headlessPhase: "implementing" }]),
+      futureNow,
+    );
+
+    expect(item.retryCount).toBe(0);
+    expect(actions.some((a) => a.type === "retry")).toBe(true);
+  });
+
+  it("emits headless-recovery event on recovery", () => {
+    const events: Array<{ id: string; event: string; data?: Record<string, unknown> }> = [];
+    const orch = new Orchestrator({
+      maxRetries: 1,
+      onEvent: (id, event, data) => events.push({ id, event, data }),
+    });
+    orch.addItem(makeWorkItem("H-REC-8"));
+    orch.hydrateState("H-REC-8", "implementing");
+    const item = orch.getItem("H-REC-8")!;
+    item.workspaceRef = "headless:H-REC-8";
+
+    for (let i = 0; i < 5; i++) {
+      orch.processTransitions(
+        snapshotWith([{ id: "H-REC-8", workerAlive: false, headlessPhase: "waiting" }]),
+        NOW,
+      );
+    }
+
+    const recoveryEvents = events.filter(e => e.event === "headless-recovery");
+    expect(recoveryEvents.length).toBe(1);
+    expect(recoveryEvents[0].id).toBe("H-REC-8");
+  });
+
+  it("exhausts retry budget after recovery when worker never makes progress", () => {
+    const orch = new Orchestrator({ maxRetries: 1, gracePeriodMs: 0 });
+    orch.addItem(makeWorkItem("H-REC-9"));
+    orch.hydrateState("H-REC-9", "implementing");
+    const item = orch.getItem("H-REC-9")!;
+    item.workspaceRef = "headless:H-REC-9";
+
+    // First: recover with "waiting" phase (no retry budget consumed)
+    for (let i = 0; i < 5; i++) {
+      orch.processTransitions(
+        snapshotWith([{ id: "H-REC-9", workerAlive: false, headlessPhase: "waiting" }]),
+        NOW,
+      );
+    }
+    expect(item.retryCount).toBe(0);
+
+    // Re-enter implementing after relaunch
+    orch.hydrateState("H-REC-9", "implementing");
+    item.workspaceRef = "headless:H-REC-9";
+
+    // Second: crash with "starting" phase (retry budget consumed)
+    for (let i = 0; i < 5; i++) {
+      orch.processTransitions(
+        snapshotWith([{ id: "H-REC-9", workerAlive: false, headlessPhase: "starting" }]),
+        NOW,
+      );
+    }
+    // maxRetries=1, retryCount goes to 1
+    expect(item.retryCount).toBe(1);
+
+    // Re-enter implementing after second relaunch
+    orch.hydrateState("H-REC-9", "implementing");
+    item.workspaceRef = "headless:H-REC-9";
+
+    // Third: crash again with "starting" -> stuck (budget exhausted)
+    for (let i = 0; i < 5; i++) {
+      orch.processTransitions(
+        snapshotWith([{ id: "H-REC-9", workerAlive: false, headlessPhase: "starting" }]),
+        NOW,
+      );
+    }
+    expect(item.state).toBe("stuck");
+  });
+});
+
 // ── Heartbeat-based health detection (tested via processTransitions) ──
 
 describe("heartbeat-based health detection", () => {

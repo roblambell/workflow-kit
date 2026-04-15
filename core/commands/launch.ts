@@ -21,7 +21,7 @@ import { allocatePartition, getPartitionFor, releasePartition } from "../partiti
 import { ensureWorktreeExcluded } from "../worktree-utils.ts";
 import { classifyPrMetadataMatch, readWorkItem } from "../work-item-files.ts";
 import { prList as defaultPrList } from "../gh.ts";
-import { headlessLogFilePath } from "../headless.ts";
+import { headlessLogFilePath, writeHeadlessPhase } from "../headless.ts";
 import { cleanInbox } from "./inbox.ts";
 import {
   allToolIds,
@@ -633,6 +633,7 @@ ${itemText}`;
     }
     if (launchMux.type === "headless") {
       logHeadlessLaunch(item.id, projectRoot, workspaceRef);
+      try { writeHeadlessPhase(projectRoot, item.id, "starting"); } catch { /* best-effort */ }
     }
     return { worktreePath, workspaceRef };
   } catch (err) {

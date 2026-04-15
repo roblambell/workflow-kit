@@ -13,6 +13,7 @@ import {
 } from "./orchestrator.ts";
 import { type RequestQueue, type RequestPriority } from "./request-queue.ts";
 import { readHeartbeat, readVerdictFile, readFeedbackDoneSignal } from "./daemon.ts";
+import { readHeadlessPhase } from "./headless.ts";
 import { snapshotInboxState } from "./commands/inbox.ts";
 import {
   checkPrStatusDetailed,
@@ -563,6 +564,11 @@ export function buildSnapshot(
       const commitTime = getLastCommitTime(repoRoot, `ninthwave/${orchItem.id}`);
       snap.lastCommitTime = commitTime;
       orchItem.lastCommitTime = commitTime;
+      if (orchItem.workspaceRef?.startsWith("headless:")) {
+        try {
+          snap.headlessPhase = readHeadlessPhase(repoRoot, orchItem.id) ?? null;
+        } catch { /* best-effort */ }
+      }
     }
 
     // Track branch HEAD SHA for all states that can reach evaluateMerge or need
@@ -842,6 +848,11 @@ export async function buildSnapshotAsync(
       const commitTime = await getLastCommitTime(repoRoot, `ninthwave/${orchItem.id}`);
       snap.lastCommitTime = commitTime;
       orchItem.lastCommitTime = commitTime;
+      if (orchItem.workspaceRef?.startsWith("headless:")) {
+        try {
+          snap.headlessPhase = readHeadlessPhase(repoRoot, orchItem.id) ?? null;
+        } catch { /* best-effort */ }
+      }
     }
 
     // Track branch HEAD SHA for review gating (see sync version for rationale)

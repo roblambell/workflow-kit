@@ -3,6 +3,7 @@
 
 import type { WorkItem, Priority } from "./types.ts";
 import type { PickupCandidateValidation } from "./commands/launch.ts";
+import type { HeadlessPhase } from "./headless.ts";
 
 /** Recursive partial -- makes all nested interface fields optional. Used by test mock factories. */
 export type DeepPartial<T> = {
@@ -317,6 +318,8 @@ export interface ItemSnapshot {
   isMergeable?: boolean;
   /** Whether the worker session is alive. */
   workerAlive?: boolean;
+  /** Headless worker phase signal. Null when no phase file exists. */
+  headlessPhase?: HeadlessPhase | null;
 /** ISO timestamp of the most recent commit on the worktree branch, or null if none beyond base. */
   lastCommitTime?: string | null;
   /** Timestamp from the external system for the current state (ISO string).

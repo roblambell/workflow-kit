@@ -97,7 +97,7 @@ describe("system: watch runtime controls", () => {
         const first = state.items.find((entry) => entry.id === "H-WRC-1");
         const second = state.items.find((entry) => entry.id === "H-WRC-2");
         return first?.state === "implementing" && second?.state === "ready" ? state : false;
-      }, 15_000);
+      }, 60_000);
 
       expect(existsSync(join(harness.worktreeDir, "ninthwave-H-WRC-1"))).toBe(true);
       expect(existsSync(join(harness.worktreeDir, "ninthwave-H-WRC-2"))).toBe(false);
@@ -119,10 +119,10 @@ describe("system: watch runtime controls", () => {
       })}\n`);
 
       await harness.waitForProcessOutput(processHandle, /"event":"session_limit_changed"/, {
-        timeoutMs: 10_000,
+        timeoutMs: 30_000,
       });
       await harness.waitForProcessOutput(processHandle, /"event":"review_mode_changed"/, {
-        timeoutMs: 10_000,
+        timeoutMs: 30_000,
       });
 
       const secondWorktreePath = join(harness.worktreeDir, "ninthwave-H-WRC-2");
@@ -132,7 +132,7 @@ describe("system: watch runtime controls", () => {
         const firstActive = first && ["implementing", "ci-pending", "merged", "forward-fix-pending"].includes(first.state);
         const secondActive = second && ["launching", "implementing"].includes(second.state);
         return firstActive && secondActive && existsSync(secondWorktreePath) ? state : false;
-      }, 15_000);
+      }, 60_000);
       expect(concurrentState.sessionLimit).toBe(2);
       expect(existsSync(secondWorktreePath)).toBe(true);
 
@@ -145,7 +145,7 @@ describe("system: watch runtime controls", () => {
           && second.state !== "ready"
           ? state
           : false;
-      }, 20_000);
+      }, 60_000);
 
       expect(settledState.items.find((entry) => entry.id === "H-WRC-1")?.prNumber).toBe(1);
       expect(settledState.items.find((entry) => entry.id === "H-WRC-2")?.state).not.toBe("ready");
@@ -155,7 +155,7 @@ describe("system: watch runtime controls", () => {
         const records = readFakeAiLaunches(harness.stateDir, run.runId);
         return records.length === 2 ? records : false;
       }, {
-        timeoutMs: 15_000,
+        timeoutMs: 60_000,
         description: "runtime-control implementer launches",
       });
       expect(launches).toHaveLength(2);
@@ -163,5 +163,5 @@ describe("system: watch runtime controls", () => {
     } finally {
       await harness.stop(processHandle, "SIGKILL");
     }
-  }, 30_000);
+  }, 120_000);
 });

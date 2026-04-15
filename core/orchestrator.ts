@@ -780,6 +780,9 @@ export class Orchestrator {
     if (!snap?.prNumber) {
       const liveness = this.checkWorkerLiveness(item, snap);
       if (liveness === "dead") {
+        if (this.isRecoverableHeadlessStop(item, snap)) {
+          return this.recoverHeadlessWorker(item, "worker-stopped: headless session died without PR (recoverable)");
+        }
         return this.stuckOrRetry(item, "worker-crashed: session died without creating PR");
       }
       if (liveness === "alive") {
@@ -825,6 +828,9 @@ export class Orchestrator {
         // Process alive: suppress launch timeout, use activity timeout as hard cap
         if (isActivityTimedOut(item.lastTransition, now, this.config.activityTimeoutMs)) {
           if (this.shouldDeferTimeout(item, now)) return [];
+          if (this.isRecoverableHeadlessStop(item, snap)) {
+            return this.recoverHeadlessWorker(item, "worker-stopped: headless activity timeout (recoverable)");
+          }
           return this.stuckOrRetry(item, "worker-stalled: process alive but no commits after activity timeout");
         }
         // Suppressed launch timeout -- log it if we would have timed out
@@ -838,12 +844,18 @@ export class Orchestrator {
         }
       } else if (isLaunchTimedOut(lastPositiveSignalTime, now, this.config.launchTimeoutMs)) {
         if (this.shouldDeferTimeout(item, now)) return [];
+        if (this.isRecoverableHeadlessStop(item, snap)) {
+          return this.recoverHeadlessWorker(item, "worker-stopped: headless launch timeout (recoverable)");
+        }
         return this.stuckOrRetry(item, "worker-stalled: no commits after launch timeout");
       }
     } else {
       // Has commits -- check against activity timeout (same for alive or dead)
       if (isActivityTimedOut(commitTime, now, this.config.activityTimeoutMs)) {
         if (this.shouldDeferTimeout(item, now)) return [];
+        if (this.isRecoverableHeadlessStop(item, snap)) {
+          return this.recoverHeadlessWorker(item, "worker-stopped: headless activity timeout with commits (recoverable)");
+        }
         return this.stuckOrRetry(item, "worker-stalled: no new commits after activity timeout");
       }
     }
@@ -962,6 +974,45 @@ export class Orchestrator {
     item.notAliveCount = 0;
     item.lastAliveAt = undefined;
     // Stash workspace ref for executeRetry, clear for session slot freeing
+    item.pendingRetryWorkspaceRef = item.workspaceRef;
+    item.workspaceRef = undefined;
+    this.transition(item, "ready");
+    return [{ type: "retry", itemId: item.id }];
+  }
+
+  /**
+   * Check whether a dead headless worker should be recovered rather than
+   * consuming retry budget. Recoverable when:
+   * - workspace is headless (ref starts with "headless:")
+   * - worker is not alive
+   * - phase is "waiting" OR phase is "implementing" (made progress)
+   */
+  private isRecoverableHeadlessStop(
+    item: OrchestratorItem,
+    snap: ItemSnapshot | undefined,
+  ): boolean {
+    if (!item.workspaceRef?.startsWith("headless:")) return false;
+    if (snap?.workerAlive === true) return false;
+    const phase = snap?.headlessPhase;
+    return phase === "waiting" || phase === "implementing";
+  }
+
+  /**
+   * Relaunch a headless worker that stopped after making progress or
+   * reaching wait mode. Does NOT consume retryCount -- the safety net is
+   * activity/launch timeouts plus eventual stuckOrRetry if the worker
+   * never progresses after relaunch.
+   */
+  private recoverHeadlessWorker(item: OrchestratorItem, reason: string): Action[] {
+    this.config.onEvent?.(item.id, "headless-recovery", {
+      reason,
+      retryCount: item.retryCount,
+    });
+    item.notAliveCount = 0;
+    item.lastAliveAt = undefined;
+    item.lastCommitTime = undefined;
+    // Stash workspace ref for executeRetry to close (closeWorkspace cleans
+    // the phase file), then clear for session slot freeing.
     item.pendingRetryWorkspaceRef = item.workspaceRef;
     item.workspaceRef = undefined;
     this.transition(item, "ready");

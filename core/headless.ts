@@ -14,6 +14,10 @@ import type { Multiplexer, MuxType } from "./mux.ts";
 
 export const HEADLESS_WORKSPACE_PREFIX = "headless:";
 
+export type HeadlessPhase = "starting" | "implementing" | "waiting";
+
+const VALID_PHASES = new Set<string>(["starting", "implementing", "waiting"]);
+
 export interface HeadlessIO {
   existsSync: typeof existsSync;
   mkdirSync: typeof mkdirSync;
@@ -101,6 +105,47 @@ export function headlessPidDir(projectRoot: string): string {
 
 export function headlessLogFilePath(projectRoot: string, ref: string): string {
   return join(headlessLogDir(projectRoot), `${encodeRef(stripHeadlessWorkspaceRef(ref))}.log`);
+}
+
+export function headlessPhaseFilePath(projectRoot: string, itemId: string): string {
+  return join(headlessPidDir(projectRoot), `${itemId}.phase`);
+}
+
+export function writeHeadlessPhase(
+  projectRoot: string,
+  itemId: string,
+  phase: HeadlessPhase,
+  io: Pick<HeadlessIO, "existsSync" | "mkdirSync" | "writeFileSync"> = defaultIO,
+): void {
+  const dir = headlessPidDir(projectRoot);
+  if (!io.existsSync(dir)) io.mkdirSync(dir, { recursive: true });
+  io.writeFileSync(headlessPhaseFilePath(projectRoot, itemId), phase);
+}
+
+export function readHeadlessPhase(
+  projectRoot: string,
+  itemId: string,
+  io: Pick<HeadlessIO, "existsSync" | "readFileSync"> = defaultIO,
+): HeadlessPhase | null {
+  const filePath = headlessPhaseFilePath(projectRoot, itemId);
+  try {
+    if (!io.existsSync(filePath)) return null;
+    const content = io.readFileSync(filePath, "utf-8").trim();
+    return VALID_PHASES.has(content) ? (content as HeadlessPhase) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function cleanHeadlessPhase(
+  projectRoot: string,
+  itemId: string,
+  io: Pick<HeadlessIO, "existsSync" | "unlinkSync"> = defaultIO,
+): void {
+  const filePath = headlessPhaseFilePath(projectRoot, itemId);
+  try {
+    if (io.existsSync(filePath)) io.unlinkSync(filePath);
+  } catch { /* best-effort */ }
 }
 
 export function headlessPidFilePath(projectRoot: string, ref: string): string {

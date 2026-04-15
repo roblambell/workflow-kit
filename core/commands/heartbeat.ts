@@ -3,6 +3,7 @@
 
 import { die } from "../output.ts";
 import { writeHeartbeat, type DaemonIO } from "../daemon.ts";
+import { headlessPhaseFilePath, writeHeadlessPhase } from "../headless.ts";
 import {
   existsSync,
   renameSync,
@@ -117,6 +118,16 @@ export function cmdHeartbeat(
   }
 
   writeHeartbeat(projectRoot, id, progress, label, deps.io, prNumber);
+
+  // Update headless phase if a phase file exists (headless workers only).
+  if (progress > 0) {
+    try {
+      if (deps.io.existsSync(headlessPhaseFilePath(projectRoot, id))) {
+        const phase = progress >= 1.0 ? "waiting" as const : "implementing" as const;
+        writeHeadlessPhase(projectRoot, id, phase);
+      }
+    } catch { /* best-effort */ }
+  }
 
   const msg = `Heartbeat: ${id} ${(progress * 100).toFixed(0)}% -- ${label}`;
   console.log(msg);
