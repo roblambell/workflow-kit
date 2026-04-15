@@ -10,6 +10,8 @@ import type {
   ConnectionAction,
 } from "./crew.ts";
 import { WebSocketCrewBroker, saveCrewCode } from "./crew.ts";
+import { makeBrokerHasher } from "./broker-hash.ts";
+import { loadMergedProjectConfig, type ProjectConfig } from "./config.ts";
 import { resolveRepoRef } from "./repo-ref.ts";
 import type {
   RuntimeCollaborationActionRequest,
@@ -37,16 +39,23 @@ export interface CollaborationSessionBrokerInfo {
 
 export interface ApplyRuntimeCollaborationActionDeps {
   projectRoot: string;
+  /**
+   * @deprecated Kept for the dead-but-present pre-H-BAJ-3 code paths while
+   * the UI strings still surface it. The new protocol does not send repo
+   * references to the broker.
+   */
   crewRepoUrl: string;
   crewName?: string;
   log: (entry: LogEntry) => void;
   fetchFn?: typeof fetch;
   saveCrewCodeFn?: typeof saveCrewCode;
+  /** Inject a project config override (defaults to reading from disk). */
+  config?: ProjectConfig;
   createBroker?: (
     projectRoot: string,
     crewUrl: string,
-    crewCode: string,
-    crewRepoUrl: string,
+    crewId: string,
+    brokerSecret: string,
     deps: ConstructorParameters<typeof WebSocketCrewBroker>[4],
     crewName?: string,
   ) => CrewBroker;
@@ -93,6 +102,32 @@ export function resolveCrewSocketUrl(crewUrl?: string): string {
   return crewUrl ?? DEFAULT_CREW_URL;
 }
 
+/**
+ * Derive the per-project `crew_id` that daemons use as the WebSocket path
+ * token.
+ *
+ * The crew id is `HMAC-SHA256(broker_secret, project_id)` truncated to 22
+ * base64url characters via {@link makeBrokerHasher}. Two daemons configured
+ * with the same `project_id` and `broker_secret` land on the same crew with
+ * no user input -- the brokerside auto-create handler treats unknown ids as
+ * fresh crews, so nothing needs to happen out-of-band.
+ *
+ * Throws a `TypeError` when the config is missing either field or when
+ * `broker_secret` is not a canonical base64-encoded 32 bytes; callers can
+ * surface that as "run `nw init` / `nw onboard`" friction.
+ */
+export function resolveCrewId(config: ProjectConfig): string {
+  const projectId = config.project_id;
+  const brokerSecret = config.broker_secret;
+  if (typeof projectId !== "string" || projectId.length === 0) {
+    throw new TypeError("resolveCrewId: project_id is missing from project config");
+  }
+  if (typeof brokerSecret !== "string" || brokerSecret.length === 0) {
+    throw new TypeError("resolveCrewId: broker_secret is missing from project config");
+  }
+  return makeBrokerHasher(brokerSecret)(projectId);
+}
+
 export function resolveCrewHttpUrl(crewUrl?: string): string {
   return resolveCrewSocketUrl(crewUrl).replace(/^wss?:\/\//, "https://");
 }
@@ -136,32 +171,42 @@ export async function createCrewCode(
   return payload.code;
 }
 
+/**
+ * Construct a {@link WebSocketCrewBroker} from a {@link ProjectConfig}.
+ *
+ * The crew id and broker hasher both derive from `project_id` +
+ * `broker_secret`, so callers pass the config straight through and the
+ * factory handles the hashing. A `createBroker` override is supported for
+ * tests that want to inject a mock broker.
+ */
 export function createCrewBrokerInstance(
   projectRoot: string,
   crewUrl: string,
-  crewCode: string,
-  crewRepoUrl: string,
+  config: ProjectConfig,
   log: (entry: LogEntry) => void,
   crewName?: string,
   createBroker?: ApplyRuntimeCollaborationActionDeps["createBroker"],
 ): CrewBroker {
   const resolvedName = crewName ?? hostname();
+  const crewId = resolveCrewId(config);
+  const brokerSecret = config.broker_secret!;
+  const deps = { log: (level: "info" | "warn" | "error", msg: string) => log({ ts: new Date().toISOString(), level, event: "crew_client", message: msg }) };
   if (createBroker) {
     return createBroker(
       projectRoot,
       crewUrl,
-      crewCode,
-      crewRepoUrl,
-      { log: (level, msg) => log({ ts: new Date().toISOString(), level, event: "crew_client", message: msg }) },
+      crewId,
+      brokerSecret,
+      deps,
       resolvedName,
     );
   }
   return new WebSocketCrewBroker(
     projectRoot,
     crewUrl,
-    crewCode,
-    crewRepoUrl,
-    { log: (level, msg) => log({ ts: new Date().toISOString(), level, event: "crew_client", message: msg }) },
+    crewId,
+    brokerSecret,
+    deps,
     resolvedName,
   );
 }
@@ -194,11 +239,14 @@ export async function applyRuntimeCollaborationAction(
   }
 
   const nextCrewUrl = resolveCrewSocketUrl(state.crewUrl);
+  // Auto-join: both "share" and "join" now resolve to the same crew id
+  // derived from the project config. The distinction between the two paths
+  // survives in the UI (share vs join) but the protocol is identical.
   let nextCrewCode: string;
+  let effectiveConfig: ProjectConfig;
   try {
-    nextCrewCode = request.action === "share"
-      ? await createCrewCode(state.crewUrl, deps.crewRepoUrl, fetchFn)
-      : (request.code ?? "").trim().toUpperCase();
+    effectiveConfig = deps.config ?? loadMergedProjectConfig(deps.projectRoot);
+    nextCrewCode = resolveCrewId(effectiveConfig);
   } catch (error) {
     deps.log({
       ts: new Date().toISOString(),
@@ -209,10 +257,6 @@ export async function applyRuntimeCollaborationAction(
     return { error: error instanceof Error ? error.message : String(error) };
   }
 
-  if (!nextCrewCode) {
-    return { error: "Enter a session code to join." };
-  }
-
   if (request.action === "share") {
     deps.log({ ts: new Date().toISOString(), level: "info", event: "runtime_share_created", crewCode: nextCrewCode });
   }
@@ -221,8 +265,7 @@ export async function applyRuntimeCollaborationAction(
   const nextBroker = createCrewBrokerInstance(
     deps.projectRoot,
     nextCrewUrl,
-    nextCrewCode,
-    deps.crewRepoUrl,
+    effectiveConfig,
     deps.log,
     deps.crewName,
     deps.createBroker,
