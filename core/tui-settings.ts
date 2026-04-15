@@ -34,7 +34,7 @@ export type TuiSettingsChoiceRow = Extract<TuiSettingsRow, { kind: "choice" }>;
 
 export const TUI_SETTINGS_DEFAULTS: TuiSettingsDefaults = {
   mergeStrategy: "manual",
-  reviewMode: "off",
+  reviewMode: "on",
   collaborationMode: "local",
 };
 

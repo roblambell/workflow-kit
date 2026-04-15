@@ -1069,22 +1069,18 @@ describe("runStartupSettingsScreen", () => {
     });
 
     sendKeys([
-      "\x1B[C", // merge -> auto
-      "\x1B[B", // reviews
-      "\x1B[C", // off -> on
+      "\x1B[C", // reviews off -> on
       "\x1B[B", // collaboration
       "\x1B[C", // local -> share
-      "\x1B[B", // session limit
-      "\x1B[C", // 4 -> 5
       "\r",
     ]);
 
     const result = await resultPromise;
     expect(result.cancelled).toBe(false);
-    expect(result.mergeStrategy).toBe("auto");
+    expect(result.mergeStrategy).toBe("manual");
     expect(result.reviewMode).toBe("on");
     expect(result.collaborationMode).toBe("share");
-    expect(result.sessionLimit).toBe(5);
+    expect(result.sessionLimit).toBe(4);
   });
 
   it("confirms defaults on Enter", async () => {
@@ -1100,7 +1096,7 @@ describe("runStartupSettingsScreen", () => {
     const result = await resultPromise;
     expect(result.cancelled).toBe(false);
     expect(result.mergeStrategy).toBe("manual");
-    expect(result.reviewMode).toBe("off");
+    expect(result.reviewMode).toBe("on");
     expect(result.collaborationMode).toBe("local");
     expect(result.sessionLimit).toBe(4);
   });
@@ -1143,29 +1139,6 @@ describe("runStartupSettingsScreen", () => {
     expect((await ctrlCPromise).cancelled).toBe(true);
   });
 
-  it("surfaces CI-first merge descriptions without renaming startup labels", async () => {
-    const { io, sendKeys, getOutput } = createMockIO();
-
-    const resultPromise = runStartupSettingsScreen(io, {
-      summaryLines: ["Items: A-1"],
-      defaultSessionLimit: 4,
-    });
-
-    expect(getOutput()).toContain("[manual]");
-    expect(getOutput()).toContain("CI must pass, then a human merges the PR");
-
-    sendKeys(["\x1B[C"]);
-
-    expect(getOutput()).toContain("[auto]");
-    expect(getOutput()).toContain("CI must pass, then ninthwave auto-merges the PR");
-
-    sendKeys(["\r"]);
-
-    const result = await resultPromise;
-    expect(result.cancelled).toBe(false);
-    expect(result.mergeStrategy).toBe("auto");
-  });
-
   it("keeps title, footer, and the active row visible in a short terminal", async () => {
     const { io, sendKey, getOutput } = createMockIO({ rows: 9, cols: 38 });
 
@@ -1177,7 +1150,7 @@ describe("runStartupSettingsScreen", () => {
       defaultSessionLimit: 4,
     });
 
-      const activeLabels = ["Merge", "Reviews", "Collaboration", "Session limit"];
+    const activeLabels = ["Reviews", "Collaboration"];
 
     for (let i = 0; i < activeLabels.length; i++) {
       const lines = getPlainFrameLines(getOutput());
@@ -1196,7 +1169,7 @@ describe("runStartupSettingsScreen", () => {
     const result = await resultPromise;
     expect(result.cancelled).toBe(false);
     expect(result.mergeStrategy).toBe("manual");
-    expect(result.reviewMode).toBe("off");
+    expect(result.reviewMode).toBe("on");
     expect(result.collaborationMode).toBe("local");
     expect(result.sessionLimit).toBe(4);
   });
@@ -1237,19 +1210,41 @@ describe("runStartupSettingsScreen", () => {
       },
     });
 
-    description.sendKeys(["\x1B[B", "\x1B[B", "\x1B[B"]);
+    description.sendKeys(["\x1B[B"]);
 
     const lines = getPlainFrameLines(description.getOutput());
     expect(lines.length).toBeLessThanOrEqual(12);
     for (const line of lines) {
       expect(line.length).toBeLessThanOrEqual(32);
     }
-    expect(lines.some((line) => line.includes("> Session limit"))).toBe(true);
+    expect(lines.some((line) => line.includes("> Collaboration"))).toBe(true);
 
     description.sendKeys(["\r"]);
 
     const result = await descriptionPromise;
     expect(result.cancelled).toBe(false);
+  });
+
+  it("shows only Reviews and Collaboration rows", async () => {
+    const { io, sendKeys, getOutput } = createMockIO();
+
+    const resultPromise = runStartupSettingsScreen(io, {
+      summaryLines: ["Items: A-1"],
+      defaultSessionLimit: 4,
+    });
+
+    const output = getOutput();
+    expect(output).toContain("Reviews");
+    expect(output).toContain("Collaboration");
+    expect(output).not.toContain("> Merge");
+    expect(output).not.toContain("> Session limit");
+
+    sendKeys(["\r"]);
+
+    const result = await resultPromise;
+    expect(result.cancelled).toBe(false);
+    expect(result.mergeStrategy).toBe("manual");
+    expect(result.sessionLimit).toBe(4);
   });
 });
 
@@ -1277,7 +1272,7 @@ describe("runSelectionScreen", () => {
     const resultPromise = runSelectionScreen(io, [], 4);
     sendKeyBatches(
       ["\r"],
-      ["\x1B[B", "\x1B[B", "\x1B[C", "\r"],
+      ["\x1B[B", "\x1B[C", "\r"],
     );
 
     const result = await resultPromise;
@@ -1292,7 +1287,7 @@ describe("runSelectionScreen", () => {
     const resultPromise = runSelectionScreen(io, [], 4);
     sendKeyBatches(
       ["\r"],
-      ["\x1B[B", "\x1B[B", "\x1B[C", "\x1B[C", "\r"],
+      ["\x1B[B", "\x1B[C", "\x1B[C", "\r"],
       ["\x1B"],
     );
 
@@ -1326,7 +1321,7 @@ describe("runSelectionScreen", () => {
     expect(result!.futureOnly).toBe(false);
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.sessionLimit).toBe(4);
-    expect(result!.reviewMode).toBe("off");
+    expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toBeNull();
     expect(result!.cancelled).toBe(false);
   });
@@ -1484,7 +1479,7 @@ describe("runSelectionScreen", () => {
     expect(result).not.toBeNull();
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.sessionLimit).toBe(5);
-    expect(result!.reviewMode).toBe("off");
+    expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toBeNull();
   });
 
@@ -1751,23 +1746,19 @@ describe("runSelectionScreen -- startup defaults", () => {
     sendKeyBatches(
       ["\r"],
       [
-        "\x1B[C", // merge -> auto
+        "\x1B[C", // reviews off -> on (default is "on" but on the "off" → "on" cycle)
         "\x1B[B",
-        "\x1B[C", // reviews -> on
-        "\x1B[B",
-        "\x1B[C", // collaboration -> share
-        "\x1B[B",
-        "\x1B[C", // session limit 4 -> 5
+        "\x1B[C", // collaboration local -> share
         "\r",
       ],
     );
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(result!.mergeStrategy).toBe("auto");
-    expect(result!.reviewMode).toBe("on");
+    expect(result!.mergeStrategy).toBe("manual");
+    expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toEqual({ type: "connect" });
-    expect(result!.sessionLimit).toBe(5);
+    expect(result!.sessionLimit).toBe(4);
   });
 
   it("returns join connectionAction when join is selected", async () => {
@@ -1778,10 +1769,9 @@ describe("runSelectionScreen -- startup defaults", () => {
     sendKeyBatches(
       ["\r"],
       [
-        "\x1B[B",
-        "\x1B[B",
-        "\x1B[C",
-        "\x1B[C",
+        "\x1B[B", // → Collaboration row
+        "\x1B[C", // local -> share
+        "\x1B[C", // share -> join
         "\r",
       ],
       [
@@ -1803,10 +1793,9 @@ describe("runSelectionScreen -- startup defaults", () => {
     sendKeyBatches(
       ["\r"],
       [
-        "\x1B[B",
-        "\x1B[B",
-        "\x1B[C",
-        "\x1B[C",
+        "\x1B[B", // → Collaboration row
+        "\x1B[C", // local -> share
+        "\x1B[C", // share -> join
         "\r",
       ],
       ["\x1B"],
@@ -1825,10 +1814,9 @@ describe("runSelectionScreen -- startup defaults", () => {
     sendKeyBatches(
       ["\r"],
       [
-        "\x1B[B",
-        "\x1B[B",
-        "\x1B[C",
-        "\x1B[C",
+        "\x1B[B", // → Collaboration row
+        "\x1B[C", // local -> share
+        "\x1B[C", // share -> join
         "\r",
       ],
       [
@@ -1924,7 +1912,7 @@ describe("runSelectionScreen -- startup settings display", () => {
     expect(getOutput()).toContain("A-1");
   });
 
-  it("settings screen shows manual merge strategy", async () => {
+  it("settings screen shows AI reviews default chip", async () => {
     const { io, sendKeyBatches, getOutput } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
@@ -1933,19 +1921,7 @@ describe("runSelectionScreen -- startup settings display", () => {
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(getOutput()).toContain("[manual]");
-  });
-
-  it("settings screen shows AI reviews off", async () => {
-    const { io, sendKeyBatches, getOutput } = createMockIO();
-    const items = [makeWorkItem("A-1", "Task")];
-
-    const resultPromise = runSelectionScreen(io, items, 4);
-    sendKeyBatches(["\r"], ["\r"]);
-
-    const result = await resultPromise;
-    expect(result).not.toBeNull();
-    expect(getOutput()).toContain("[off]");
+    expect(getOutput()).toContain("[on]");
   });
 
   it("settings screen shows collaboration defaults", async () => {
@@ -1953,7 +1929,7 @@ describe("runSelectionScreen -- startup settings display", () => {
     const items = [makeWorkItem("A-1", "Task")];
 
     const resultPromise = runSelectionScreen(io, items, 4);
-    sendKeyBatches(["\r"], ["\x1B[B", "\x1B[B", "\r"]);
+    sendKeyBatches(["\r"], ["\x1B[B", "\r"]);
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
@@ -1961,7 +1937,7 @@ describe("runSelectionScreen -- startup settings display", () => {
     expect(getOutput()).toContain("Local by default, no connection");
   });
 
-  it("renders startup chips with reserved bracket slots", async () => {
+  it("renders review chips with reserved bracket slots", async () => {
     const { io, sendKeys, getOutput } = createMockIO();
 
     const resultPromise = runStartupSettingsScreen(io, {
@@ -1969,10 +1945,10 @@ describe("runSelectionScreen -- startup settings display", () => {
       defaultSessionLimit: 4,
     });
 
-    const mergeLine = getPlainFrameLine(getOutput(), "> Merge");
+    const reviewLine = getPlainFrameLine(getOutput(), "> Reviews");
 
-    expect(mergeLine).toContain(" auto ");
-    expect(mergeLine).toContain("[manual]");
+    expect(reviewLine).toContain(" off ");
+    expect(reviewLine).toContain("[on]");
 
     sendKeys(["\r"]);
 
@@ -1980,7 +1956,7 @@ describe("runSelectionScreen -- startup settings display", () => {
     expect(result.cancelled).toBe(false);
   });
 
-  it("keeps merge option columns fixed when moving horizontally", async () => {
+  it("keeps review option columns fixed when moving horizontally", async () => {
     const { io, sendKeys, getOutput } = createMockIO();
 
     const resultPromise = runStartupSettingsScreen(io, {
@@ -1988,16 +1964,16 @@ describe("runSelectionScreen -- startup settings display", () => {
       defaultSessionLimit: 4,
     });
 
-    const beforeMove = getPlainFrameLine(getOutput(), "> Merge");
-    const beforeStarts = ["auto", "manual"].map((label) => getStartupChipStart(beforeMove, label));
+    const beforeMove = getPlainFrameLine(getOutput(), "> Reviews");
+    const beforeStarts = ["on", "off"].map((label) => getStartupChipStart(beforeMove, label));
 
     sendKeys(["\x1B[C"]);
 
-    const afterMove = getPlainFrameLine(getOutput(), "> Merge");
-    const afterStarts = ["auto", "manual"].map((label) => getStartupChipStart(afterMove, label));
+    const afterMove = getPlainFrameLine(getOutput(), "> Reviews");
+    const afterStarts = ["on", "off"].map((label) => getStartupChipStart(afterMove, label));
 
-    expect(beforeMove).toContain("[manual]");
-    expect(afterMove).toContain("[auto]");
+    expect(beforeMove).toContain("[on]");
+    expect(afterMove).toContain("[off]");
     expect(beforeStarts).toEqual(afterStarts);
 
     sendKeys(["\r"]);
@@ -2222,7 +2198,7 @@ describe("runTuiSelectionFlow (via interactive.ts)", () => {
     expect(result!.allSelected).toBe(true);
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.sessionLimit).toBe(4);
-    expect(result!.reviewMode).toBe("off");
+    expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toBeNull();
   });
 
@@ -2248,7 +2224,7 @@ describe("runTuiSelectionFlow (via interactive.ts)", () => {
     expect(result!.itemIds).toEqual(["A-1", "B-2"]);
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.sessionLimit).toBe(3);
-    expect(result!.reviewMode).toBe("off");
+    expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toBeNull();
   });
 });

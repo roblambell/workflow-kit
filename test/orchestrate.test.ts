@@ -6038,7 +6038,7 @@ describe("resolveInteractiveStartupConfig", () => {
     expect(result.savedToolIds).toEqual(["opencode", "copilot"]);
   });
 
-  it("falls back to manual/off/local when persisted defaults are absent", () => {
+  it("falls back to manual/on/local when persisted defaults are absent", () => {
     const result = resolveInteractiveStartupConfig(
       { review_external: true } as any,
       {},
@@ -6047,7 +6047,7 @@ describe("resolveInteractiveStartupConfig", () => {
 
     expect(result.defaults).toEqual({
       mergeStrategy: "manual",
-      reviewMode: "off",
+      reviewMode: "on",
       collaborationMode: "local",
     });
     expect(result.savedToolIds).toBeUndefined();
@@ -6086,15 +6086,18 @@ describe("resolveInteractiveStartupConfig", () => {
 
     const persisted = buildStartupPersistenceUpdates(result, {
       savedToolIds: startupConfig.savedToolIds,
+      defaults: startupConfig.defaults,
+      defaultSessionLimit: 1,
     });
     const runtime = resolveStartupCollaborationAction(
       { connectMode: true, crewUrl: "wss://config.example" },
       result.connectionAction,
     );
 
+    // mergeStrategy "auto" and reviewMode "on" both match the persisted defaults,
+    // so neither is re-saved. collaboration_mode changes from "share" to "join".
+    // sessionLimit 6 differs from defaultSessionLimit 1, so it is persisted.
     expect(persisted).toEqual({
-      merge_strategy: "auto",
-      review_mode: "on",
       session_limit: 6,
       collaboration_mode: "join",
       ai_tools: ["opencode", "copilot"],

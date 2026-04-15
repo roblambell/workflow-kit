@@ -386,12 +386,43 @@ describe("buildStartupPersistenceUpdates", () => {
   };
 
   it("maps local collaboration mode from a null connection action", () => {
-    expect(buildStartupPersistenceUpdates(baseResult)).toMatchObject({
+    const updates = buildStartupPersistenceUpdates(baseResult);
+    expect(updates).toMatchObject({
       merge_strategy: "manual",
       review_mode: "on",
-      session_limit: 3,
       collaboration_mode: "local",
     });
+    // Session limit is only persisted when it differs from the resolved default.
+    expect(updates).not.toHaveProperty("session_limit");
+  });
+
+  it("only persists session_limit when it differs from the resolved default", () => {
+    // Same session limit as default -> not persisted.
+    const sameAsDefault = buildStartupPersistenceUpdates(baseResult, {
+      defaultSessionLimit: 3,
+    });
+    expect(sameAsDefault).not.toHaveProperty("session_limit");
+
+    // Different session limit -> persisted.
+    const changed = buildStartupPersistenceUpdates(baseResult, {
+      defaultSessionLimit: 2,
+    });
+    expect(changed).toMatchObject({ session_limit: 3 });
+  });
+
+  it("skips persistence for settings that match the resolved defaults", () => {
+    const updates = buildStartupPersistenceUpdates(baseResult, {
+      defaults: {
+        mergeStrategy: "manual",
+        reviewMode: "on",
+        collaborationMode: "local",
+      },
+      defaultSessionLimit: 3,
+    });
+    expect(updates).not.toHaveProperty("merge_strategy");
+    expect(updates).not.toHaveProperty("review_mode");
+    expect(updates).not.toHaveProperty("collaboration_mode");
+    expect(updates).not.toHaveProperty("session_limit");
   });
 
   it("maps share collaboration mode from a connect action", () => {
@@ -449,7 +480,7 @@ describe("runInteractiveFlow", () => {
     makeWorkItem("B-2", "Second task", "medium"),
   ];
 
-  it("returns complete result with local-first defaults for valid legacy flow", async () => {
+  it("returns complete result with startup defaults for valid legacy flow", async () => {
     const prompt = makePrompt(["1 2", "", ""]);
     const result = await runInteractiveFlow(items, 3, { prompt, useLegacyPrompts: true });
 
@@ -457,7 +488,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.itemIds).toEqual(["A-1", "B-2"]);
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.sessionLimit).toBe(3);
-    expect(result!.reviewMode).toBe("off");
+    expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toBeNull();
     expect(result!.allSelected).toBe(true);
   });
@@ -496,16 +527,16 @@ describe("runInteractiveFlow", () => {
     expect(result!.mergeStrategy).toBe("manual");
   });
 
-  it("always returns reviews off", async () => {
+  it("readline fallback always returns reviews on regardless of defaultReviewMode", async () => {
     const prompt = makePrompt(["1", "", ""]);
     const result = await runInteractiveFlow(items, 3, {
       prompt,
       useLegacyPrompts: true,
-      defaultReviewMode: "on",
+      defaultReviewMode: "off",
     });
 
     expect(result).not.toBeNull();
-    expect(result!.reviewMode).toBe("off");
+    expect(result!.reviewMode).toBe("on");
   });
 
   it("defaults to local connectionAction on empty collaboration choice", async () => {

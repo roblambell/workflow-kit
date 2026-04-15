@@ -18,7 +18,6 @@ import type { AiToolProfile } from "./ai-tools.ts";
 import {
   COLLABORATION_MODE_OPTIONS,
   REVIEW_MODE_OPTIONS,
-  STARTUP_MERGE_STRATEGY_OPTIONS,
   TUI_SETTINGS_DEFAULTS,
   type TuiSettingsDefaults,
 } from "./tui-settings.ts";
@@ -928,13 +927,10 @@ export function runStartupSettingsScreen(
 ): Promise<StartupSettingsScreenResult> {
   return new Promise((resolve) => {
     const defaults = opts.defaultSettings ?? TUI_SETTINGS_DEFAULTS;
-    const settingRowCount = 4;
+    const settingRowCount = 2;
     let activeRow = 0;
     let scrollOffset = 0;
-    let mergeIndex = Math.max(
-      0,
-      STARTUP_MERGE_STRATEGY_OPTIONS.findIndex((option) => option.persistedValue === defaults.mergeStrategy),
-    );
+    const mergeStrategy = defaults.mergeStrategy;
     let reviewIndex = Math.max(
       0,
       REVIEW_MODE_OPTIONS.findIndex((option) => option.persistedValue === defaults.reviewMode),
@@ -943,8 +939,7 @@ export function runStartupSettingsScreen(
       0,
       COLLABORATION_MODE_OPTIONS.findIndex((option) => option.persistedValue === defaults.collaborationMode),
     );
-    let sessionLimit = Math.max(1, Math.min(10, opts.defaultSessionLimit));
-    const currentMergeOption = () => STARTUP_MERGE_STRATEGY_OPTIONS[mergeIndex]!;
+    const sessionLimit = Math.max(1, Math.min(10, opts.defaultSessionLimit));
     const currentReviewOption = () => REVIEW_MODE_OPTIONS[reviewIndex]!;
     const currentCollaborationOption = () => COLLABORATION_MODE_OPTIONS[collaborationIndex]!;
 
@@ -957,28 +952,18 @@ export function runStartupSettingsScreen(
       return `${pointer} ${BOLD}${title.padEnd(16)}${RESET} ${values.join(" ")}`;
     };
 
-    const mergeValues = () => STARTUP_MERGE_STRATEGY_OPTIONS.map((option, index) =>
-      renderStartupChip(option.startupLabel, index === mergeIndex),
-    );
     const reviewValues = () => REVIEW_MODE_OPTIONS.map((option, index) =>
       renderStartupChip(option.startupLabel, index === reviewIndex),
     );
     const collaborationValues = () => COLLABORATION_MODE_OPTIONS.map((option, index) =>
       renderStartupChip(option.startupLabel, index === collaborationIndex),
     );
-    const sessionValues = () => Array.from({ length: 10 }, (_, idx) => idx + 1).map((value) =>
-      renderStartupChip(value, value === sessionLimit),
-    );
     const activeDescription = () => {
       switch (activeRow) {
         case 0:
-          return currentMergeOption().startupDescription;
-        case 1:
           return currentReviewOption().startupDescription;
-        case 2:
+        case 1:
           return currentCollaborationOption().startupDescription;
-        case 3:
-          return "Maximum work items allowed to run in parallel";
         default:
           return "";
       }
@@ -1005,10 +990,8 @@ export function runStartupSettingsScreen(
       }
 
       const choiceRows = [
-        renderChoiceRow("Merge", mergeValues(), activeRow === 0),
-        renderChoiceRow("Reviews", reviewValues(), activeRow === 1),
-        renderChoiceRow("Collaboration", collaborationValues(), activeRow === 2),
-        renderChoiceRow("Session limit", sessionValues(), activeRow === 3),
+        renderChoiceRow("Reviews", reviewValues(), activeRow === 0),
+        renderChoiceRow("Collaboration", collaborationValues(), activeRow === 1),
       ];
 
       for (let i = 0; i < choiceRows.length; i++) {
@@ -1062,31 +1045,23 @@ export function runStartupSettingsScreen(
         case "\x1B[D":
         case "h":
           if (activeRow === 0) {
-            mergeIndex = (mergeIndex - 1 + STARTUP_MERGE_STRATEGY_OPTIONS.length) % STARTUP_MERGE_STRATEGY_OPTIONS.length;
-          } else if (activeRow === 1) {
             reviewIndex = (reviewIndex - 1 + REVIEW_MODE_OPTIONS.length) % REVIEW_MODE_OPTIONS.length;
-          } else if (activeRow === 2) {
+          } else if (activeRow === 1) {
             collaborationIndex = (collaborationIndex - 1 + COLLABORATION_MODE_OPTIONS.length) % COLLABORATION_MODE_OPTIONS.length;
-          } else if (activeRow === 3) {
-            sessionLimit = Math.max(1, sessionLimit - 1);
           }
           break;
         case "\x1B[C":
         case "l":
           if (activeRow === 0) {
-            mergeIndex = (mergeIndex + 1) % STARTUP_MERGE_STRATEGY_OPTIONS.length;
-          } else if (activeRow === 1) {
             reviewIndex = (reviewIndex + 1) % REVIEW_MODE_OPTIONS.length;
-          } else if (activeRow === 2) {
+          } else if (activeRow === 1) {
             collaborationIndex = (collaborationIndex + 1) % COLLABORATION_MODE_OPTIONS.length;
-          } else if (activeRow === 3) {
-            sessionLimit = Math.min(10, sessionLimit + 1);
           }
           break;
         case "\r":
           io.offKey(handler);
           resolve({
-            mergeStrategy: currentMergeOption().runtimeValue as Extract<MergeStrategy, "auto" | "manual">,
+            mergeStrategy,
             reviewMode: currentReviewOption().persistedValue,
             collaborationMode: currentCollaborationOption().persistedValue,
             sessionLimit,
@@ -1097,7 +1072,7 @@ export function runStartupSettingsScreen(
         case "\x03":
           io.offKey(handler);
           resolve({
-            mergeStrategy: currentMergeOption().runtimeValue as Extract<MergeStrategy, "auto" | "manual">,
+            mergeStrategy,
             reviewMode: currentReviewOption().persistedValue,
             collaborationMode: currentCollaborationOption().persistedValue,
             sessionLimit,

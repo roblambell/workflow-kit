@@ -946,7 +946,7 @@ describe("cmdNoArgs", () => {
     expect(interactiveCalled).toBe(true);
   });
 
-  it("reads review_external from project config to set default review mode", async () => {
+  it("defaults review mode to on when user config is empty", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -962,9 +962,9 @@ describe("cmdNoArgs", () => {
       saveUserConfig: () => {},
       runInteractiveFlow: async (_todos, _wip, deps) => {
         interactiveCalled = true;
-        // Verify that the deps include the correct defaultReviewMode
-        expect(deps?.defaultReviewMode).toBe("off");
-        expect(deps?.defaultSettings?.reviewMode).toBe("off");
+        // Default review mode comes from TUI_SETTINGS_DEFAULTS, which is now "on".
+        expect(deps?.defaultReviewMode).toBe("on");
+        expect(deps?.defaultSettings?.reviewMode).toBe("on");
         return {
           itemIds: ["H-1"],
           mergeStrategy: "auto" as MergeStrategy,
@@ -992,10 +992,10 @@ describe("cmdNoArgs", () => {
       loadConfig: () => ({ review_external: true, ai_tools: ["claude"] } as any),
       loadUserConfig: () => ({ ai_tools: ["opencode", "copilot"], merge_strategy: "auto", collaboration_mode: "share" }),
       runInteractiveFlow: async (_todos, _wip, deps) => {
-        expect(deps?.defaultReviewMode).toBe("off");
+        expect(deps?.defaultReviewMode).toBe("on");
         expect(deps?.defaultSettings).toEqual({
           mergeStrategy: "auto",
-          reviewMode: "off",
+          reviewMode: "on",
           collaborationMode: "share",
         });
         expect(deps?.savedToolIds).toEqual(["opencode", "copilot"]);
@@ -1038,11 +1038,12 @@ describe("cmdNoArgs", () => {
     expect(savedUpdates).toHaveLength(1);
     expect(savedUpdates[0]).toMatchObject({
       merge_strategy: "auto",
-      review_mode: "on",
       session_limit: 4,
       collaboration_mode: "share",
       ai_tools: ["opencode", "copilot"],
     });
+    // reviewMode "on" matches the new startup default, so it is not re-saved.
+    expect(savedUpdates[0]).not.toHaveProperty("review_mode");
     expect(watchArgs).toContain("--connect");
     expect(watchArgs).toContain("--tool");
     expect(watchArgs).toContain("opencode,copilot");
@@ -1077,14 +1078,16 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).toContain("--crew");
     expect(watchArgs).toContain("K2F9-AB3X-7YPL-QM4N");
     expect(savedUpdates).toHaveLength(1);
-    // mergeStrategy "manual" matches TUI defaults, so it is not re-saved
+    // mergeStrategy "manual" and reviewMode "on" both match TUI defaults,
+    // so neither is re-saved. Session limit 4 differs from computeDefaultSessionLimit() (1),
+    // so it is persisted.
     expect(savedUpdates[0]).toMatchObject({
-      review_mode: "on",
       session_limit: 4,
       collaboration_mode: "join",
     });
     expect(savedUpdates[0]).not.toHaveProperty("backend_mode");
     expect(savedUpdates[0]).not.toHaveProperty("merge_strategy");
+    expect(savedUpdates[0]).not.toHaveProperty("review_mode");
     expect(savedUpdates[0]).not.toHaveProperty("code");
     expect(JSON.stringify(savedUpdates[0])).not.toContain("K2F9-AB3X-7YPL-QM4N");
   });

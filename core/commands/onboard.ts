@@ -566,6 +566,7 @@ export async function cmdNoArgs(
       ...buildStartupPersistenceUpdates(result, {
         savedToolIds: userConfig.ai_tools,
         defaults: defaultSettings,
+        defaultSessionLimit,
       }),
     });
   } catch {

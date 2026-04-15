@@ -1534,7 +1534,8 @@ export async function cmdOrchestrate(
     // Pre-detect tools and config for TUI flow
     const installedTools = detectInstalledAITools();
 
-    const result = await runInteractiveFlow(workItems, sessionLimit, {
+    const startupDefaultSessionLimit = sessionLimit;
+    const result = await runInteractiveFlow(workItems, startupDefaultSessionLimit, {
       defaultReviewMode: interactiveStartupConfig.defaults.reviewMode,
       defaultSettings: interactiveStartupConfig.defaults,
       installedTools,
@@ -1556,6 +1557,7 @@ export async function cmdOrchestrate(
         ...buildStartupPersistenceUpdates(result, {
           savedToolIds: interactiveStartupConfig.savedToolIds,
           defaults: interactiveStartupConfig.defaults,
+          defaultSessionLimit: startupDefaultSessionLimit,
         }),
       });
       persistedUserCfg = loadUserConfig();
