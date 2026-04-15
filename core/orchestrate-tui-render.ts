@@ -599,7 +599,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     collaborationJoinInputActive: false,
     collaborationJoinInputValue: "",
     collaborationBusy: false,
-    reviewMode: "ninthwave-prs",
+    reviewMode: "on",
     pendingReviewMode: undefined,
     panelMode,
     logBuffer,

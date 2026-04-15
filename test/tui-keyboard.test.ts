@@ -152,8 +152,8 @@ describe("filterLogsByLevel", () => {
 // ── Type exports ─────────────────────────────────────────────────────────────
 
 describe("runtime control type cycle arrays", () => {
-  it("REVIEW_MODE_CYCLE contains all three modes", () => {
-    expect(REVIEW_MODE_CYCLE).toEqual(["off", "ninthwave-prs", "all-prs"]);
+  it("REVIEW_MODE_CYCLE contains both modes", () => {
+    expect(REVIEW_MODE_CYCLE).toEqual(["off", "on"]);
   });
 
   it("COLLABORATION_MODE_CYCLE contains all three modes", () => {
@@ -786,7 +786,7 @@ describe("setupKeyboardShortcuts", () => {
     ], {
       pendingSessionLimit: 4,
       pendingStrategy: "auto",
-      pendingReviewMode: "all-prs",
+      pendingReviewMode: "on",
       pendingCollaborationMode: "shared",
       onShutdown,
     });
@@ -1097,24 +1097,24 @@ describe("controls overlay row navigation", () => {
 
     stdin.emit("data", "\x1b[C");
     expect(state.reviewMode).toBe("off");
-    expect(state.pendingReviewMode).toBe("ninthwave-prs");
+    expect(state.pendingReviewMode).toBe("on");
     expect(state.viewOptions.reviewMode).toBe("off");
-    expect(onReviewChange).toHaveBeenCalledWith("ninthwave-prs");
+    expect(onReviewChange).toHaveBeenCalledWith("on");
 
     applyRuntimeSnapshotToTuiState(state, {
       paused: state.paused ?? false,
       mergeStrategy: state.mergeStrategy,
       sessionLimit: state.sessionLimit ?? 3,
-      reviewMode: "ninthwave-prs",
+      reviewMode: "on",
       collaborationMode: state.collaborationMode,
     });
-    expect(state.reviewMode).toBe("ninthwave-prs");
+    expect(state.reviewMode).toBe("on");
     expect(state.pendingReviewMode).toBeUndefined();
 
     stdin.emit("data", "\x1b[C");
-    expect(state.reviewMode).toBe("ninthwave-prs");
-    expect(state.pendingReviewMode).toBe("all-prs");
-    expect(onReviewChange).toHaveBeenCalledWith("all-prs");
+    expect(state.reviewMode).toBe("on");
+    expect(state.pendingReviewMode).toBe("off");
+    expect(onReviewChange).toHaveBeenCalledWith("off");
 
     stdin.emit("data", "\x1b[D");
     expect(state.pendingReviewMode).toBeUndefined();

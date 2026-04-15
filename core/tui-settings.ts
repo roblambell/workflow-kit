@@ -2,8 +2,8 @@
 
 import type { MergeStrategy } from "./orchestrator.ts";
 
-export type StartupReviewMode = "off" | "mine" | "all";
-export type ReviewMode = "off" | "ninthwave-prs" | "all-prs";
+export type StartupReviewMode = "off" | "on";
+export type ReviewMode = "off" | "on";
 
 export type StartupCollaborationMode = "local" | "share" | "join";
 export type CollaborationIntent = StartupCollaborationMode;
@@ -85,27 +85,17 @@ export const REVIEW_MODE_OPTIONS: readonly ChoiceSettingOption<PersistedReviewMo
     persistable: true,
   },
   {
-    persistedValue: "mine",
-    runtimeValue: "ninthwave-prs",
-    startupLabel: "mine",
-    startupDescription: "Review only ninthwave-managed PRs",
-    runtimeLabel: "Ninthwave PRs",
+    persistedValue: "on",
+    runtimeValue: "on",
+    startupLabel: "on",
+    startupDescription: "AI reviews enabled",
+    runtimeLabel: "On",
     runtimeKey: "5",
-    persistable: true,
-  },
-  {
-    persistedValue: "all",
-    runtimeValue: "all-prs",
-    startupLabel: "all",
-    startupDescription: "Review all PRs (including external)",
-    runtimeLabel: "All PRs",
-    runtimeKey: "6",
     persistable: true,
   },
 ] as const;
 
 export const STARTUP_REVIEW_MODE_OPTIONS = [
-  REVIEW_MODE_OPTIONS[2]!,
   REVIEW_MODE_OPTIONS[1]!,
   REVIEW_MODE_OPTIONS[0]!,
 ] as const;
@@ -209,6 +199,16 @@ export function isPersistedReviewMode(value: unknown): value is PersistedReviewM
   return hasPersistedValue(REVIEW_MODE_OPTIONS, value);
 }
 
+/**
+ * Normalize a persisted review mode value, accepting legacy values ("mine", "all")
+ * and mapping them to "on". Returns undefined for unrecognized values.
+ */
+export function normalizePersistedReviewMode(value: unknown): PersistedReviewMode | undefined {
+  if (value === "on" || value === "off") return value;
+  if (value === "mine" || value === "all") return "on";
+  return undefined;
+}
+
 export function isPersistedCollaborationMode(value: unknown): value is PersistedCollaborationMode {
   return hasPersistedValue(COLLABORATION_MODE_OPTIONS, value);
 }
@@ -283,9 +283,8 @@ export function resolveTuiSettingsDefaults(userConfig: {
     mergeStrategy: isPersistedMergeStrategy(userConfig.merge_strategy)
       ? userConfig.merge_strategy
       : TUI_SETTINGS_DEFAULTS.mergeStrategy,
-    reviewMode: isPersistedReviewMode(userConfig.review_mode)
-      ? userConfig.review_mode
-      : TUI_SETTINGS_DEFAULTS.reviewMode,
+    reviewMode: normalizePersistedReviewMode(userConfig.review_mode)
+      ?? TUI_SETTINGS_DEFAULTS.reviewMode,
     collaborationMode: isPersistedCollaborationMode(userConfig.collaboration_mode)
       ? userConfig.collaboration_mode
       : TUI_SETTINGS_DEFAULTS.collaborationMode,

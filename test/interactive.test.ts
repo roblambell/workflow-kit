@@ -323,7 +323,7 @@ describe("confirmSummary", () => {
     mergeStrategy: "auto",
     sessionLimit: 3,
     allSelected: false,
-    reviewMode: "mine",
+    reviewMode: "on",
     connectionAction: null,
   };
 
@@ -345,7 +345,7 @@ describe("confirmSummary", () => {
   it("displays reviewMode and connection info", async () => {
     const connResult: InteractiveResult = {
       ...result,
-      reviewMode: "all",
+      reviewMode: "on",
       connectionAction: { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
     };
     const logs: string[] = [];
@@ -357,7 +357,7 @@ describe("confirmSummary", () => {
       console.log = origLog;
     }
     const output = logs.join("\n");
-    expect(output).toContain("all");
+    expect(output).toContain("on");
     expect(output).toContain("Join session (K2F9-AB3X-7YPL-QM4N)");
   });
 
@@ -381,14 +381,14 @@ describe("buildStartupPersistenceUpdates", () => {
     mergeStrategy: "manual",
     sessionLimit: 3,
     allSelected: false,
-    reviewMode: "mine",
+    reviewMode: "on",
     connectionAction: null,
   };
 
   it("maps local collaboration mode from a null connection action", () => {
     expect(buildStartupPersistenceUpdates(baseResult)).toMatchObject({
       merge_strategy: "manual",
-      review_mode: "mine",
+      review_mode: "on",
       session_limit: 3,
       collaboration_mode: "local",
     });
@@ -501,7 +501,7 @@ describe("runInteractiveFlow", () => {
     const result = await runInteractiveFlow(items, 3, {
       prompt,
       useLegacyPrompts: true,
-      defaultReviewMode: "all",
+      defaultReviewMode: "on",
     });
 
     expect(result).not.toBeNull();
@@ -562,7 +562,7 @@ describe("runInteractiveFlow", () => {
       widgetIO: io,
       defaultSettings: {
         mergeStrategy: "auto",
-        reviewMode: "mine",
+        reviewMode: "on",
         collaborationMode: "share",
       },
     });
@@ -571,7 +571,7 @@ describe("runInteractiveFlow", () => {
     const result = await resultPromise;
     expect(result).not.toBeNull();
     expect(result!.mergeStrategy).toBe("auto");
-    expect(result!.reviewMode).toBe("mine");
+    expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toEqual({ type: "connect" });
     expect(result!.sessionLimit).toBe(6);
   });
@@ -679,38 +679,33 @@ describe("displayItemsSummary", () => {
 // ── promptReviewMode ────────────────────────────────────────────────
 
 describe("promptReviewMode", () => {
-  it('returns "all" on input "1"', async () => {
-    const result = await promptReviewMode("mine", makePrompt(["1"]));
-    expect(result).toBe("all");
+  it('returns "on" on input "1"', async () => {
+    const result = await promptReviewMode("off", makePrompt(["1"]));
+    expect(result).toBe("on");
   });
 
   it('returns default on empty input', async () => {
-    const result = await promptReviewMode("mine", makePrompt([""]));
-    expect(result).toBe("mine");
+    const result = await promptReviewMode("on", makePrompt([""]));
+    expect(result).toBe("on");
   });
 
-  it('returns "all" as default when configured', async () => {
-    const result = await promptReviewMode("all", makePrompt([""]));
-    expect(result).toBe("all");
+  it('returns "off" as default when configured', async () => {
+    const result = await promptReviewMode("off", makePrompt([""]));
+    expect(result).toBe("off");
   });
 
-  it('returns "mine" on input "2"', async () => {
-    const result = await promptReviewMode("mine", makePrompt(["2"]));
-    expect(result).toBe("mine");
-  });
-
-  it('returns "off" on input "3"', async () => {
-    const result = await promptReviewMode("mine", makePrompt(["3"]));
+  it('returns "off" on input "2"', async () => {
+    const result = await promptReviewMode("on", makePrompt(["2"]));
     expect(result).toBe("off");
   });
 
   it("accepts name directly", async () => {
-    const result = await promptReviewMode("mine", makePrompt(["all"]));
-    expect(result).toBe("all");
+    const result = await promptReviewMode("off", makePrompt(["on"]));
+    expect(result).toBe("on");
   });
 
   it("retries on invalid input", async () => {
-    const result = await promptReviewMode("mine", makePrompt(["99", "off"]));
+    const result = await promptReviewMode("on", makePrompt(["99", "off"]));
     expect(result).toBe("off");
   });
 });

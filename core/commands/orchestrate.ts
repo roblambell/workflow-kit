@@ -483,7 +483,7 @@ export interface InteractiveEngineTransportRuntime {
   paused: boolean;
   mergeStrategy: MergeStrategy;
   sessionLimit: number;
-  reviewMode: "off" | "ninthwave-prs" | "all-prs";
+  reviewMode: "off" | "on";
   collaborationMode: "local" | "shared" | "joined";
 }
 
@@ -641,7 +641,7 @@ export function buildInteractiveEngineChildArgs(
     sessionLimit: number;
     toolOverride?: string;
     skipReview: boolean;
-    reviewMode: "off" | "ninthwave-prs" | "all-prs";
+    reviewMode: "off" | "on";
     watchMode: boolean;
     futureOnlyStartup: boolean;
     crewCode?: string;
@@ -667,7 +667,7 @@ export function buildInteractiveEngineChildArgs(
   }
   if (parsed.clickupListId) childArgs.push("--clickup-list", parsed.clickupListId);
   if (parsed.reviewAutoFix) childArgs.push("--review-auto-fix", parsed.reviewAutoFix);
-  if (parsed.reviewExternal || resolved.reviewMode === "all-prs") childArgs.push("--review-external");
+  if (parsed.reviewExternal) childArgs.push("--review-external");
   if (parsed.reviewSessionLimit !== undefined) childArgs.push("--review-session-limit", String(parsed.reviewSessionLimit));
   childArgs.push(resolved.skipReview ? "--no-review" : "--review");
   childArgs.push(parsed.fixForward ? "--fix-forward" : "--no-fix-forward");
@@ -1097,7 +1097,7 @@ interface InteractiveOperatorParentSessionOptions {
   toolOverride?: string;
   watchMode: boolean;
   futureOnlyStartup: boolean;
-  reviewMode: "off" | "ninthwave-prs" | "all-prs";
+  reviewMode: "off" | "on";
   collaborationMode: "local" | "shared" | "joined";
   bypassEnabled: boolean;
   fixForward: boolean;
@@ -1529,7 +1529,7 @@ export async function cmdOrchestrate(
 
   // Interactive mode: no --items and stdin is a TTY
   let interactiveSkipReview = false;
-  let interactiveReviewMode: "all" | "mine" | "off" | null = null;
+  let interactiveReviewMode: "on" | "off" | null = null;
   if (shouldEnterInteractive(itemIds.length > 0)) {
     // Pre-detect tools and config for TUI flow
     const installedTools = detectInstalledAITools();
@@ -1604,9 +1604,7 @@ export async function cmdOrchestrate(
 
   const startupReviewMode = interactiveReviewMode === "off"
     ? "off" as const
-    : interactiveReviewMode === "all"
-      ? "all-prs" as const
-      : "ninthwave-prs" as const;
+    : "on" as const;
   const startupCollaborationMode = crewCode
     ? (connectMode ? "shared" as const : "joined" as const)
     : persistedCollaborationModeToRuntime(interactiveStartupConfig.defaults.collaborationMode);
@@ -1983,11 +1981,9 @@ export async function cmdOrchestrate(
   // --review-session-limit 0 explicitly disables reviews, overriding config
   const reviewExternalEnabled = reviewSessionLimit === 0
     ? false
-    : interactiveReviewMode === "all"
-      ? true
-      : interactiveReviewMode === "mine" || interactiveReviewMode === "off"
-        ? false
-        : (parsedReviewExternal || projectConfig.review_external);
+    : interactiveReviewMode === "off"
+      ? false
+      : (parsedReviewExternal || projectConfig.review_external);
 
   // State persistence: serialize state each poll cycle so the status pane can display all items.
   // Written in both daemon and interactive mode -- the status pane reads this file to show
@@ -2020,7 +2016,7 @@ export async function cmdOrchestrate(
     : collaborationState.mode;
   const initialReviewMode = orch.config.skipReview
     ? "off" as const
-    : reviewExternalEnabled ? "all-prs" as const : "ninthwave-prs" as const;
+    : "on" as const;
   let operatorLastSnapshot: InteractiveEngineSnapshotRenderState = {
     daemonState: initialState,
     runtime: {

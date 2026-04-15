@@ -593,12 +593,10 @@ export async function cmdNoArgs(
   }
 
   // Review mode → CLI flags
-  if (result.reviewMode === "all") {
-    watchArgs.push("--review-external");
-  } else if (result.reviewMode === "off") {
+  if (result.reviewMode === "off") {
     watchArgs.push("--review-session-limit", "0");
   }
-  // "mine" → default behavior, no extra flag
+  // "on" → default behavior, no extra flag
 
   // Connection action → CLI flags
   if (result.connectionAction) {

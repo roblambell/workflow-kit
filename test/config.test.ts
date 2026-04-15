@@ -428,14 +428,14 @@ describe("loadUserConfig", () => {
       join(configDir, "config.json"),
       JSON.stringify({
         merge_strategy: "auto",
-        review_mode: "all",
+        review_mode: "on",
         collaboration_mode: "share",
       }),
     );
 
     const config = loadUserConfig(tmpHome);
     expect(config.merge_strategy).toBe("auto");
-    expect(config.review_mode).toBe("all");
+    expect(config.review_mode).toBe("on");
     expect(config.collaboration_mode).toBe("share");
   });
 
@@ -602,6 +602,26 @@ describe("loadUserConfig", () => {
     const config = loadUserConfig(tmpHome);
     expect(config.session_limit).toBeUndefined();
   });
+
+  it("normalizes legacy review_mode 'mine' to 'on'", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config.json"), JSON.stringify({ review_mode: "mine" }));
+
+    const config = loadUserConfig(tmpHome);
+    expect(config.review_mode).toBe("on");
+  });
+
+  it("normalizes legacy review_mode 'all' to 'on'", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config.json"), JSON.stringify({ review_mode: "all" }));
+
+    const config = loadUserConfig(tmpHome);
+    expect(config.review_mode).toBe("on");
+  });
 });
 
 describe("saveUserConfig", () => {
@@ -726,7 +746,7 @@ describe("saveUserConfig", () => {
     saveUserConfig({
       tmux_layout: "windows",
       merge_strategy: "auto",
-      review_mode: "mine",
+      review_mode: "on",
       collaboration_mode: "join",
       session_limit: 4,
     }, tmpHome);
@@ -735,7 +755,7 @@ describe("saveUserConfig", () => {
     expect(content.custom_key).toBe("hello");
     expect(content.tmux_layout).toBe("windows");
     expect(content.merge_strategy).toBe("auto");
-    expect(content.review_mode).toBe("mine");
+    expect(content.review_mode).toBe("on");
     expect(content.collaboration_mode).toBe("join");
     expect(content.session_limit).toBe(4);
 
@@ -743,7 +763,7 @@ describe("saveUserConfig", () => {
     expect(config).toMatchObject({
       tmux_layout: "windows",
       merge_strategy: "auto",
-      review_mode: "mine",
+      review_mode: "on",
       collaboration_mode: "join",
       session_limit: 4,
     });

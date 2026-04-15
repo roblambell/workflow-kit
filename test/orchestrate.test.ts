@@ -6024,7 +6024,7 @@ describe("resolveInteractiveStartupConfig", () => {
       {
         ai_tools: ["opencode", "copilot"],
         merge_strategy: "auto",
-        review_mode: "all",
+        review_mode: "on",
         collaboration_mode: "share",
       },
       projectRoot,
@@ -6032,7 +6032,7 @@ describe("resolveInteractiveStartupConfig", () => {
 
     expect(result.defaults).toEqual({
       mergeStrategy: "auto",
-      reviewMode: "all",
+      reviewMode: "on",
       collaborationMode: "share",
     });
     expect(result.savedToolIds).toEqual(["opencode", "copilot"]);
@@ -6056,12 +6056,12 @@ describe("resolveInteractiveStartupConfig", () => {
   it("honors explicit tool override while keeping resolved startup defaults", () => {
     const result = resolveInteractiveStartupConfig(
       { review_external: true } as any,
-      { review_mode: "mine" },
+      { review_mode: "on" },
       projectRoot,
       "claude",
     );
 
-    expect(result.defaults.reviewMode).toBe("mine");
+    expect(result.defaults.reviewMode).toBe("on");
   });
 
   it("builds full durable startup updates while keeping join codes runtime-only", () => {
@@ -6070,7 +6070,7 @@ describe("resolveInteractiveStartupConfig", () => {
       {
         ai_tools: ["opencode", "copilot"],
         merge_strategy: "auto",
-        review_mode: "all",
+        review_mode: "on",
         collaboration_mode: "share",
       },
       projectRoot,
@@ -6080,7 +6080,7 @@ describe("resolveInteractiveStartupConfig", () => {
       mergeStrategy: "auto",
       sessionLimit: 6,
       allSelected: false,
-      reviewMode: "all",
+      reviewMode: "on",
       connectionAction: { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
     };
 
@@ -6094,7 +6094,7 @@ describe("resolveInteractiveStartupConfig", () => {
 
     expect(persisted).toEqual({
       merge_strategy: "auto",
-      review_mode: "all",
+      review_mode: "on",
       session_limit: 6,
       collaboration_mode: "join",
       ai_tools: ["opencode", "copilot"],
@@ -6133,7 +6133,7 @@ describe("createRuntimeControlHandlers", () => {
     const extendResult = handlers.onExtendTimeout?.("ENG-1");
     handlers.onPauseChange?.(true);
     handlers.onStrategyChange?.("auto");
-    handlers.onReviewChange?.("all-prs");
+    handlers.onReviewChange?.("on");
     handlers.onSessionLimitChange?.(1);
     handlers.onShutdown?.();
 
@@ -6145,13 +6145,13 @@ describe("createRuntimeControlHandlers", () => {
       { type: "extend-timeout", itemId: "ENG-1", source: "keyboard" },
       { type: "set-paused", paused: true, source: "keyboard" },
       { type: "set-merge-strategy", strategy: "auto", source: "keyboard" },
-      { type: "set-review-mode", mode: "all-prs", source: "keyboard" },
+      { type: "set-review-mode", mode: "on", source: "keyboard" },
       { type: "set-session-limit", limit: 4, source: "keyboard" },
       { type: "shutdown", source: "keyboard" },
     ]);
     expect(savedUpdates).toEqual([
       { merge_strategy: "auto" },
-      { review_mode: "all" },
+      { review_mode: "on" },
       { session_limit: 4 },
     ]);
     expect(shareResult).toEqual({ mode: "shared" });
@@ -6731,7 +6731,7 @@ describe("watch engine runner", () => {
         sessionLimit: getSessionLimit(),
         heartbeats,
       }),
-      initialReviewMode: "ninthwave-prs",
+      initialReviewMode: "on",
       initialCollaborationMode: "local",
       getSessionLimit,
       setSessionLimit,
@@ -6792,7 +6792,7 @@ describe("watch engine runner", () => {
       paused: false,
       mergeStrategy: "manual",
       sessionLimit: 2,
-      reviewMode: "ninthwave-prs",
+      reviewMode: "on",
       collaborationMode: "local",
     });
   });
@@ -6846,7 +6846,7 @@ describe("watch engine runner", () => {
       paused: false,
       mergeStrategy: "manual",
       sessionLimit: 2,
-      reviewMode: "ninthwave-prs",
+      reviewMode: "on",
       collaborationMode: "local",
     });
     expect(snapshots[1]!.runtime).toEqual({
@@ -6930,7 +6930,7 @@ describe("shared engine wrappers", () => {
       emitSnapshot: vi.fn(),
       buildState: (items: OrchestratorItem[], heartbeats: ReadonlyMap<string, any>) =>
         serializeOrchestratorState(items, 1, "2026-04-01T00:00:00.000Z", { heartbeats }),
-      initialReviewMode: "ninthwave-prs" as const,
+      initialReviewMode: "on" as const,
       initialCollaborationMode: "local" as const,
       getSessionLimit: () => 1,
       setSessionLimit: () => {},
@@ -7003,7 +7003,7 @@ describe("shared engine wrappers", () => {
         emitSnapshot: (event) => snapshots.push(event),
         buildState: (items: OrchestratorItem[], heartbeats: ReadonlyMap<string, any>) =>
           serializeOrchestratorState(items, 2, "2026-04-01T00:00:00.000Z", { heartbeats }),
-        initialReviewMode: "ninthwave-prs",
+        initialReviewMode: "on",
         initialCollaborationMode: "local",
         getSessionLimit: () => currentSessionLimit,
         setSessionLimit: (limit) => {
@@ -7013,7 +7013,7 @@ describe("shared engine wrappers", () => {
 
       const runPromise = runner.run();
       runner.sendControl({ type: "set-paused", paused: true, source: "test-pause" });
-      runner.sendControl({ type: "set-review-mode", mode: "all-prs", source: "test-review" });
+      runner.sendControl({ type: "set-review-mode", mode: "off", source: "test-review" });
       runner.sendControl({ type: "set-collaboration-mode", mode: "shared", source: "test-collab" });
       runner.sendControl({ type: "set-session-limit", limit: 4, source: "test-session-limit" });
       runner.sendControl({ type: "set-merge-strategy", strategy: "auto", source: "test-merge" });
@@ -7047,14 +7047,14 @@ describe("shared engine wrappers", () => {
         paused: false,
         mergeStrategy: "manual",
         sessionLimit: 2,
-        reviewMode: "ninthwave-prs",
+        reviewMode: "on",
         collaborationMode: "local",
       },
       {
         paused: true,
         mergeStrategy: "auto",
         sessionLimit: 4,
-        reviewMode: "all-prs",
+        reviewMode: "off",
         collaborationMode: "shared",
       },
     ]);
@@ -7259,7 +7259,7 @@ describe("interactive watch operator session", () => {
       collaborationJoinInputActive: false,
       collaborationJoinInputValue: "",
       collaborationBusy: false,
-      reviewMode: "ninthwave-prs",
+      reviewMode: "on",
       pendingReviewMode: undefined,
       panelMode: "status-only",
       logBuffer: [],
@@ -7313,7 +7313,7 @@ describe("interactive watch operator session", () => {
         paused: false,
         mergeStrategy: "manual",
         sessionLimit: 2,
-        reviewMode: "ninthwave-prs",
+        reviewMode: "on",
         collaborationMode: "local",
         ...runtimeOverrides,
       },
@@ -8061,7 +8061,7 @@ describe("interactive watch operator session", () => {
           paused: false,
           mergeStrategy: "auto",
           sessionLimit: 4,
-          reviewMode: "all-prs",
+          reviewMode: "on",
           collaborationMode: "shared",
         },
       },
@@ -8074,7 +8074,7 @@ describe("interactive watch operator session", () => {
       paused: false,
       mergeStrategy: "auto",
       sessionLimit: 4,
-      reviewMode: "all-prs",
+      reviewMode: "on",
       collaborationMode: "shared",
     });
     expect(tuiState.engineDisconnected).toBe(false);

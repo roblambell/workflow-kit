@@ -1842,9 +1842,7 @@ function modeIndicatorText(viewOptions?: ViewOptions): string {
   const parts: string[] = [];
   if (collab) parts.push(collab);
   if (review) {
-    const label = review === "off" ? "reviews off"
-      : review === "ninthwave-prs" ? "reviews: ninthwave PRs"
-      : "reviews: all PRs";
+    const label = review === "off" ? "reviews off" : "reviews: on";
     parts.push(label);
   }
   return parts.join(" · ");

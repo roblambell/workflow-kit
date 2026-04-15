@@ -1071,7 +1071,7 @@ describe("runStartupSettingsScreen", () => {
     sendKeys([
       "\x1B[C", // merge -> auto
       "\x1B[B", // reviews
-      "\x1B[C", // off -> mine
+      "\x1B[C", // off -> on
       "\x1B[B", // collaboration
       "\x1B[C", // local -> share
       "\x1B[B", // session limit
@@ -1082,7 +1082,7 @@ describe("runStartupSettingsScreen", () => {
     const result = await resultPromise;
     expect(result.cancelled).toBe(false);
     expect(result.mergeStrategy).toBe("auto");
-    expect(result.reviewMode).toBe("mine");
+    expect(result.reviewMode).toBe("on");
     expect(result.collaborationMode).toBe("share");
     expect(result.sessionLimit).toBe(5);
   });
@@ -1729,7 +1729,7 @@ describe("runSelectionScreen -- startup defaults", () => {
     const resultPromise = runSelectionScreen(io, items, 7, {
       defaultSettings: {
         mergeStrategy: "auto",
-        reviewMode: "mine",
+        reviewMode: "on",
         collaborationMode: "share",
       },
     });
@@ -1738,7 +1738,7 @@ describe("runSelectionScreen -- startup defaults", () => {
     const result = await resultPromise;
     expect(result).not.toBeNull();
     expect(result!.mergeStrategy).toBe("auto");
-    expect(result!.reviewMode).toBe("mine");
+    expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toEqual({ type: "connect" });
     expect(result!.sessionLimit).toBe(7);
   });
@@ -1753,7 +1753,7 @@ describe("runSelectionScreen -- startup defaults", () => {
       [
         "\x1B[C", // merge -> auto
         "\x1B[B",
-        "\x1B[C", // reviews -> mine
+        "\x1B[C", // reviews -> on
         "\x1B[B",
         "\x1B[C", // collaboration -> share
         "\x1B[B",
@@ -1765,7 +1765,7 @@ describe("runSelectionScreen -- startup defaults", () => {
     const result = await resultPromise;
     expect(result).not.toBeNull();
     expect(result!.mergeStrategy).toBe("auto");
-    expect(result!.reviewMode).toBe("mine");
+    expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toEqual({ type: "connect" });
     expect(result!.sessionLimit).toBe(5);
   });
@@ -1849,12 +1849,12 @@ describe("runSelectionScreen -- startup defaults", () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
-    const resultPromise = runSelectionScreen(io, items, 4, { defaultReviewMode: "all" });
+    const resultPromise = runSelectionScreen(io, items, 4, { defaultReviewMode: "on" });
     sendKeyBatches(["\r"], ["\r"]);
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(result!.reviewMode).toBe("all");
+    expect(result!.reviewMode).toBe("on");
   });
 
   it("passes through defaultSessionLimit as the initial sessionLimit", async () => {

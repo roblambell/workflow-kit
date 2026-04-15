@@ -649,7 +649,11 @@ export function setupKeyboardShortcuts(
         : (tuiState.pendingStrategy ?? tuiState.mergeStrategy);
     const currentIdx = options.findIndex((option) => option.runtimeValue === currentValue);
     if (currentIdx < 0) return;
-    const nextIdx = Math.max(0, Math.min(currentIdx + delta, options.length - 1));
+    // review_mode is binary (off/on): Left and Right toggle between the two values.
+    // Other rows clamp at the edges so Left/Right don't wrap.
+    const nextIdx = row.id === "review_mode"
+      ? (currentIdx + delta + options.length) % options.length
+      : Math.max(0, Math.min(currentIdx + delta, options.length - 1));
     if (nextIdx === currentIdx) return;
     const nextOption = options[nextIdx]!;
 

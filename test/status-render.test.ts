@@ -5105,8 +5105,7 @@ describe("collaborationLabel", () => {
 describe("reviewModeLabel", () => {
   it("returns human-readable labels for all modes", () => {
     expect(reviewModeLabel("off")).toBe("Off");
-    expect(reviewModeLabel("ninthwave-prs")).toBe("Ninthwave PRs");
-    expect(reviewModeLabel("all-prs")).toBe("All PRs");
+    expect(reviewModeLabel("on")).toBe("On");
   });
 });
 
@@ -5209,8 +5208,9 @@ describe("renderControlsOverlay", () => {
     const row = stripAnsi(lines.find((line) => line.includes("Reviews")) ?? "");
     expect(row).toContain("Reviews");
     expect(row).toContain("[Off]");
-    expect(row).toContain("Ninthwave PRs");
-    expect(row).toContain("All PRs");
+    expect(row).toContain("On");
+    expect(row).not.toContain("Ninthwave PRs");
+    expect(row).not.toContain("All PRs");
   });
 
   it("marks the active row separately from the active value", () => {
@@ -5248,13 +5248,13 @@ describe("renderControlsOverlay", () => {
     const lines = renderControlsOverlay(100, 40, {
       ...baseOpts,
       pendingCollaborationMode: "shared",
-      pendingReviewMode: "all-prs",
+      pendingReviewMode: "on",
       pendingMergeStrategy: "auto",
       pendingSessionLimit: 4,
     });
     const text = stripAnsi(lines.join("\n"));
     expect(text).toContain("[Share pending]");
-    expect(text).toContain("[All PRs pending]");
+    expect(text).toContain("[On pending]");
     expect(text).toContain("[› Auto pending]");
     expect(text).toContain("[4 pending]");
     expect(text).toContain("until engine confirms");
@@ -5354,8 +5354,8 @@ describe("formatModeIndicator", () => {
   });
 
   it("shows review mode alone", () => {
-    const result = formatModeIndicator({ reviewMode: "ninthwave-prs" });
-    expect(stripAnsi(result)).toContain("reviews: ninthwave PRs");
+    const result = formatModeIndicator({ reviewMode: "on" });
+    expect(stripAnsi(result)).toContain("reviews: on");
   });
 
   it("shows both collaboration and review mode", () => {
@@ -5368,9 +5368,9 @@ describe("formatModeIndicator", () => {
     expect(plain).toContain("reviews off");
   });
 
-  it("shows 'reviews: all PRs' for all-prs mode", () => {
-    const result = formatModeIndicator({ reviewMode: "all-prs" });
-    expect(stripAnsi(result)).toContain("reviews: all PRs");
+  it("shows 'reviews: on' for on mode", () => {
+    const result = formatModeIndicator({ reviewMode: "on" });
+    expect(stripAnsi(result)).toContain("reviews: on");
   });
 });
 
@@ -5390,11 +5390,11 @@ describe("buildStatusLayout mode indicator in header", () => {
     const items = [makeStatusItem({ state: "implementing" })];
     const layout = buildStatusLayout(items, 80, 5, false, {
       collaborationMode: "shared",
-      reviewMode: "ninthwave-prs",
+      reviewMode: "on",
     });
     const headerText = layout.headerLines.map(stripAnsi).join("\n");
     expect(headerText).toContain("shared");
-    expect(headerText).toContain("reviews: ninthwave PRs");
+    expect(headerText).toContain("reviews: on");
   });
 
   it("does not include mode line when no mode info in viewOptions", () => {
@@ -5580,7 +5580,7 @@ describe("layout with narrow terminals", () => {
     ];
     const layout = buildStatusLayout(items, 80, 3, false, {
       collaborationMode: "shared",
-      reviewMode: "ninthwave-prs",
+      reviewMode: "on",
     });
     // Render at very small terminal height
     const frame = renderFullScreenFrame(layout, MIN_FULLSCREEN_ROWS, 80, 0);

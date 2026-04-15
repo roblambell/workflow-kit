@@ -7,6 +7,7 @@ import {
   isPersistedCollaborationMode,
   isPersistedMergeStrategy,
   isPersistedReviewMode,
+  normalizePersistedReviewMode,
   type PersistedCollaborationMode,
   type PersistedMergeStrategy,
   type PersistedReviewMode,
@@ -311,8 +312,9 @@ export function loadUserConfig(homeOverride?: string): UserConfig {
     if (isPersistedMergeStrategy(parsed.merge_strategy)) {
       result.merge_strategy = parsed.merge_strategy;
     }
-    if (isPersistedReviewMode(parsed.review_mode)) {
-      result.review_mode = parsed.review_mode;
+    const normalizedReviewMode = normalizePersistedReviewMode(parsed.review_mode);
+    if (normalizedReviewMode) {
+      result.review_mode = normalizedReviewMode;
     }
     if (isPersistedCollaborationMode(parsed.collaboration_mode)) {
       result.collaboration_mode = parsed.collaboration_mode;

@@ -595,7 +595,7 @@ describe("cmdNoArgs", () => {
       mergeStrategy: "auto" as MergeStrategy,
       sessionLimit: 3,
       allSelected: false,
-      reviewMode: "mine",
+      reviewMode: "on",
       connectionAction: null,
     };
 
@@ -740,7 +740,7 @@ describe("cmdNoArgs", () => {
         mergeStrategy: "auto" as MergeStrategy,
         sessionLimit: 4,
         allSelected: true,
-        reviewMode: "mine",
+        reviewMode: "on",
         connectionAction: null,
       }),
       runWatch: async (args) => { watchArgs = args; },
@@ -769,7 +769,7 @@ describe("cmdNoArgs", () => {
         sessionLimit: 4,
         allSelected: false,
         futureOnly: true,
-        reviewMode: "mine",
+        reviewMode: "on",
         connectionAction: null,
       }),
       runWatch: async (args) => { watchArgs = args; },
@@ -778,34 +778,6 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).toContain("--watch");
     expect(watchArgs).toContain("--future-only-startup");
     expect(watchArgs).not.toContain("--items");
-  });
-
-  it("passes --review-external when reviewMode is 'all'", async () => {
-    const projectDir = setupTempRepo();
-    mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
-
-    let watchArgs: string[] = [];
-
-    await cmdNoArgs(projectDir, {
-      isTTY: true,
-      ...NO_UPDATE_PROMPT,
-      parseWorkItems: () => [fakeWorkItem("H-1", "Task")],
-      isDaemonRunning: () => null,
-      loadConfig: () => ({ review_external: false } as any),
-      loadUserConfig: () => ({}),
-      saveUserConfig: () => {},
-      runInteractiveFlow: async () => ({
-        itemIds: ["H-1"],
-        mergeStrategy: "auto" as MergeStrategy,
-        sessionLimit: 4,
-        allSelected: false,
-        reviewMode: "all" as const,
-        connectionAction: null,
-      }),
-      runWatch: async (args) => { watchArgs = args; },
-    });
-
-    expect(watchArgs).toContain("--review-external");
   });
 
   it("passes --review-session-limit 0 when reviewMode is 'off'", async () => {
@@ -837,7 +809,7 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).toContain("0");
   });
 
-  it("does not pass review flags when reviewMode is 'mine'", async () => {
+  it("does not pass review flags when reviewMode is 'on'", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -856,7 +828,7 @@ describe("cmdNoArgs", () => {
         mergeStrategy: "auto" as MergeStrategy,
         sessionLimit: 4,
         allSelected: false,
-        reviewMode: "mine" as const,
+        reviewMode: "on" as const,
         connectionAction: null,
       }),
       runWatch: async (args) => { watchArgs = args; },
@@ -885,7 +857,7 @@ describe("cmdNoArgs", () => {
         mergeStrategy: "auto" as MergeStrategy,
         sessionLimit: 4,
         allSelected: false,
-        reviewMode: "mine" as const,
+        reviewMode: "on" as const,
         connectionAction: { type: "join" as const, code: "k2f9ab3x7yplqm4n" },
       }),
       runWatch: async (args) => { watchArgs = args; },
@@ -914,7 +886,7 @@ describe("cmdNoArgs", () => {
         mergeStrategy: "auto" as MergeStrategy,
         sessionLimit: 4,
         allSelected: false,
-        reviewMode: "mine" as const,
+        reviewMode: "on" as const,
         connectionAction: { type: "connect" as const },
       }),
       runWatch: async (args) => { watchArgs = args; },
@@ -964,7 +936,7 @@ describe("cmdNoArgs", () => {
           mergeStrategy: "auto" as MergeStrategy,
           sessionLimit: 4,
           allSelected: false,
-          reviewMode: "mine" as const,
+          reviewMode: "on" as const,
           connectionAction: null,
         };
       },
@@ -998,7 +970,7 @@ describe("cmdNoArgs", () => {
           mergeStrategy: "auto" as MergeStrategy,
           sessionLimit: 4,
           allSelected: false,
-          reviewMode: "all" as const,
+          reviewMode: "on" as const,
           connectionAction: null,
         };
       },
@@ -1055,7 +1027,7 @@ describe("cmdNoArgs", () => {
         mergeStrategy: "auto" as MergeStrategy,
         sessionLimit: 4,
         allSelected: false,
-        reviewMode: "all" as const,
+        reviewMode: "on" as const,
         connectionAction: { type: "connect" as const },
         aiTools: ["opencode", "copilot"],
         aiTool: "opencode",
@@ -1066,7 +1038,7 @@ describe("cmdNoArgs", () => {
     expect(savedUpdates).toHaveLength(1);
     expect(savedUpdates[0]).toMatchObject({
       merge_strategy: "auto",
-      review_mode: "all",
+      review_mode: "on",
       session_limit: 4,
       collaboration_mode: "share",
       ai_tools: ["opencode", "copilot"],
@@ -1096,7 +1068,7 @@ describe("cmdNoArgs", () => {
         mergeStrategy: "manual" as MergeStrategy,
         sessionLimit: 4,
         allSelected: false,
-        reviewMode: "mine" as const,
+        reviewMode: "on" as const,
         connectionAction: { type: "join" as const, code: "k2f9ab3x7yplqm4n" },
       }),
       runWatch: async (args) => { watchArgs = args; },
@@ -1107,7 +1079,7 @@ describe("cmdNoArgs", () => {
     expect(savedUpdates).toHaveLength(1);
     // mergeStrategy "manual" matches TUI defaults, so it is not re-saved
     expect(savedUpdates[0]).toMatchObject({
-      review_mode: "mine",
+      review_mode: "on",
       session_limit: 4,
       collaboration_mode: "join",
     });

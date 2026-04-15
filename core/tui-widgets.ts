@@ -262,7 +262,7 @@ export interface TextInputResult {
 
 interface StartupSettingsScreenResult {
   mergeStrategy: Extract<MergeStrategy, "auto" | "manual">;
-  reviewMode: "all" | "mine" | "off";
+  reviewMode: "on" | "off";
   collaborationMode: "local" | "share" | "join";
   sessionLimit: number;
   cancelled: boolean;
@@ -276,7 +276,7 @@ export interface SelectionScreenResult {
   futureOnly?: boolean;
   mergeStrategy: MergeStrategy;
   sessionLimit: number;
-  reviewMode: "all" | "mine" | "off";
+  reviewMode: "on" | "off";
   connectionAction: ConnectionAction | null;
   cancelled: boolean;
   /** Selected AI tool ID, undefined when the step was skipped. */
@@ -1244,7 +1244,7 @@ export async function runSelectionScreen(
   items: WorkItem[],
   defaultSessionLimit: number,
   opts: {
-    defaultReviewMode?: "all" | "mine" | "off";
+    defaultReviewMode?: "on" | "off";
     defaultSettings?: TuiSettingsDefaults;
     showConnectionStep?: boolean;
     /** Installed AI tools for the tool selection step. Empty/single = skip screen. */
@@ -1317,7 +1317,7 @@ export async function runSelectionScreen(
 
   const defaultMergeStrategy: Extract<MergeStrategy, "auto" | "manual"> = resolvedDefaults.mergeStrategy;
   const initialSessionLimit = Math.max(1, Math.min(10, defaultSessionLimit));
-  const defaultReviewMode: "all" | "mine" | "off" = resolvedDefaults.reviewMode;
+  const defaultReviewMode: "on" | "off" = resolvedDefaults.reviewMode;
   const defaultConnectionAction: ConnectionAction | null = null;
 
   // Step 2: AI coding tool (conditional -- only when 2+ tools detected)
@@ -1392,7 +1392,7 @@ export async function runSelectionScreen(
 
   let mergeStrategy: MergeStrategy = defaultMergeStrategy;
   let sessionLimit = initialSessionLimit;
-  let reviewMode: "all" | "mine" | "off" = defaultReviewMode;
+  let reviewMode: "on" | "off" = defaultReviewMode;
   let connectionAction: ConnectionAction | null = defaultConnectionAction;
 
   if (opts.showConnectionStep === false) {

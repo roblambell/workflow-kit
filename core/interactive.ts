@@ -40,7 +40,7 @@ export interface InteractiveResult {
   allSelected: boolean;
   /** True when starting with no current items and watching future work only. */
   futureOnly?: boolean;
-  reviewMode: "all" | "mine" | "off";
+  reviewMode: "on" | "off";
   connectionAction: ConnectionAction | null;
   /** Selected AI tool ID, undefined when the step was skipped. */
   aiTool?: string;
@@ -58,7 +58,7 @@ export interface InteractiveDeps {
   /** When false, skip the connection step (e.g. run-more re-entry where session is already active). */
   showConnectionStep?: boolean;
   /** Default review mode from project config. */
-  defaultReviewMode?: "all" | "mine" | "off";
+  defaultReviewMode?: "on" | "off";
   /** Resolved startup settings defaults for future TUI settings widgets. */
   defaultSettings?: TuiSettingsDefaults;
   /** Pre-detected installed AI tool profiles. Skip tool step if undefined or single entry. */
@@ -313,7 +313,7 @@ export async function promptSessionLimit(
 
 /**
  * Prompt the user to choose AI review mode.
- * Returns "all", "mine", or "off".
+ * Returns "on" or "off".
  */
 export async function promptReviewMode(
   defaultMode: ReviewMode,
@@ -349,7 +349,7 @@ export async function promptReviewMode(
     if (byName) return byName.persistedValue;
 
     console.log(
-      `  ${YELLOW}Enter 1-${STARTUP_REVIEW_MODE_OPTIONS.length} or a mode name (all/mine/off).${RESET}`,
+      `  ${YELLOW}Enter 1-${STARTUP_REVIEW_MODE_OPTIONS.length} or a mode name (on/off).${RESET}`,
     );
   }
 }
