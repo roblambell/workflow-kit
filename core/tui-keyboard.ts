@@ -107,7 +107,6 @@ export interface CollaborationActionResult {
 }
 
 type CollaborationActionHandler = () => void | CollaborationActionResult | Promise<void | CollaborationActionResult>;
-type CollaborationJoinSubmitHandler = (code: string) => void | CollaborationActionResult | Promise<void | CollaborationActionResult>;
 
 // ── TUI keyboard state ────────────────────────────────────────────
 
@@ -155,10 +154,6 @@ export interface TuiState {
   pendingCollaborationMode?: CollaborationMode;
   /** Active collaboration intent shown in the controls overlay. */
   collaborationIntent?: CollaborationIntent;
-  /** Whether the controls overlay is capturing join-session text input. */
-  collaborationJoinInputActive?: boolean;
-  /** Current join-session input value. */
-  collaborationJoinInputValue?: string;
   /** Whether a collaboration action is currently in flight. */
   collaborationBusy?: boolean;
   /** Inline collaboration error shown in the controls overlay. */
@@ -207,16 +202,12 @@ export interface TuiState {
   onCollaborationLocal?: CollaborationActionHandler;
   /** Called when the user selects Share in the controls overlay. */
   onCollaborationShare?: CollaborationActionHandler;
-  /** Called when the user submits a Join code in the controls overlay. */
-  onCollaborationJoinSubmit?: CollaborationJoinSubmitHandler;
   /** Called after any key that should trigger an immediate re-render. */
   onUpdate?: () => void;
   /** Extend timeout for the currently selected item in grace period. */
   onExtendTimeout?: (itemId: string) => boolean;
   /** Graceful shutdown request routed through the engine protocol. */
   onShutdown?: () => void;
-  /** Session code (if sharing via ninthwave.sh). Shown in help overlay. */
-  sessionCode?: string;
   /** Tmux session name (when running outside tmux). Shown in help overlay. */
   tmuxSessionName?: string;
   /** True when the operator lost its child engine and is showing recovery UI. */
@@ -273,12 +264,10 @@ export function applyRuntimeSnapshotToTuiState(
     tuiState.pendingPaused = undefined;
   }
 
-  if (!tuiState.collaborationJoinInputActive) {
-    tuiState.collaborationIntent = collaborationIntentFromMode(
-      tuiState.pendingCollaborationMode ?? runtime.collaborationMode,
-    );
-    tuiState.viewOptions.collaborationIntent = tuiState.collaborationIntent;
-  }
+  tuiState.collaborationIntent = collaborationIntentFromMode(
+    tuiState.pendingCollaborationMode ?? runtime.collaborationMode,
+  );
+  tuiState.viewOptions.collaborationIntent = tuiState.collaborationIntent;
 }
 
 /**
@@ -430,19 +419,11 @@ export function setupKeyboardShortcuts(
     if (tuiState.collaborationIntent === undefined) {
       tuiState.collaborationIntent = collaborationIntentFromMode(tuiState.collaborationMode);
     }
-    if (tuiState.collaborationJoinInputActive === undefined) {
-      tuiState.collaborationJoinInputActive = false;
-    }
-    if (tuiState.collaborationJoinInputValue === undefined) {
-      tuiState.collaborationJoinInputValue = "";
-    }
     if (tuiState.collaborationBusy === undefined) {
       tuiState.collaborationBusy = false;
     }
     tuiState.viewOptions.collaborationMode = tuiState.collaborationMode;
     tuiState.viewOptions.collaborationIntent = tuiState.collaborationIntent;
-    tuiState.viewOptions.collaborationJoinInputActive = tuiState.collaborationJoinInputActive;
-    tuiState.viewOptions.collaborationJoinInputValue = tuiState.collaborationJoinInputValue;
     tuiState.viewOptions.collaborationBusy = tuiState.collaborationBusy;
     tuiState.viewOptions.collaborationError = tuiState.collaborationError;
   };
@@ -461,24 +442,13 @@ export function setupKeyboardShortcuts(
     syncCollaborationView();
   };
 
-  const exitJoinInput = (preserveIntent = false) => {
+  const clearCollaborationFeedback = (preserveIntent = false) => {
     if (!tuiState) return;
-    tuiState.collaborationJoinInputActive = false;
-    tuiState.collaborationJoinInputValue = "";
     tuiState.collaborationBusy = false;
     tuiState.collaborationError = undefined;
     if (!preserveIntent) {
       tuiState.collaborationIntent = collaborationIntentFromMode(tuiState.collaborationMode);
     }
-    syncCollaborationView();
-  };
-
-  const enterJoinInput = () => {
-    if (!tuiState) return;
-    tuiState.collaborationIntent = "join";
-    tuiState.collaborationJoinInputActive = true;
-    tuiState.collaborationBusy = false;
-    tuiState.collaborationError = undefined;
     syncCollaborationView();
   };
 
@@ -504,21 +474,13 @@ export function setupKeyboardShortcuts(
 
     const nextMode = result?.mode ?? fallbackMode;
     tuiState.pendingCollaborationMode = nextMode;
-    tuiState.collaborationBusy = false;
-    tuiState.collaborationError = undefined;
-    if (nextMode === "joined") {
-      exitJoinInput(true);
-    } else {
-      exitJoinInput(true);
-    }
-    syncCollaborationView();
+    clearCollaborationFeedback(true);
     tuiState.onUpdate?.();
   };
 
   const runCollaborationAction = (
     fallbackMode: CollaborationMode,
-    handler?: CollaborationActionHandler | CollaborationJoinSubmitHandler,
-    arg?: string,
+    handler?: CollaborationActionHandler,
   ) => {
     if (!tuiState) return;
     tuiState.collaborationBusy = true;
@@ -526,9 +488,7 @@ export function setupKeyboardShortcuts(
     syncCollaborationView();
     tuiState.onUpdate?.();
     try {
-      const maybePromise = arg === undefined
-        ? (handler as CollaborationActionHandler | undefined)?.()
-        : (handler as CollaborationJoinSubmitHandler | undefined)?.(arg);
+      const maybePromise = handler?.();
       if (maybePromise && typeof (maybePromise as PromiseLike<void | CollaborationActionResult>).then === "function") {
         void (maybePromise as Promise<void | CollaborationActionResult>)
           .then((result) => applyCollaborationActionResult(fallbackMode, result))
@@ -553,30 +513,17 @@ export function setupKeyboardShortcuts(
   const triggerCollaborationIntent = (intent: CollaborationIntent) => {
     if (!tuiState) return;
     resetCollaborationFeedback();
-    if (intent === "join") {
-      enterJoinInput();
-      return;
-    }
 
     const fallbackMode = collaborationIntentToMode(intent);
-    const handler = intent === "share"
-      ? (tuiState.onCollaborationShare ?? (() => tuiState.onCollaborationChange?.("shared")))
-      : (tuiState.onCollaborationLocal ?? (() => tuiState.onCollaborationChange?.("local")));
-    runCollaborationAction(fallbackMode, handler);
-  };
-
-  const submitJoinInput = () => {
-    if (!tuiState) return;
-    const joinCode = (tuiState.collaborationJoinInputValue ?? "").trim();
-    if (!joinCode) {
-      tuiState.collaborationError = "Enter a session code to join.";
-      syncCollaborationView();
-      tuiState.onUpdate?.();
+    if (intent === "local") {
+      const handler = tuiState.onCollaborationLocal ?? (() => tuiState.onCollaborationChange?.("local"));
+      runCollaborationAction(fallbackMode, handler);
       return;
     }
 
-    const handler = tuiState.onCollaborationJoinSubmit ?? (() => tuiState.onCollaborationChange?.("joined"));
-    runCollaborationAction("joined", handler, joinCode);
+    // Both share and join auto-connect to the project's derived broker session.
+    const handler = tuiState.onCollaborationShare ?? (() => tuiState.onCollaborationChange?.(fallbackMode));
+    runCollaborationAction(fallbackMode, handler);
   };
 
   const clampControlsRowIndex = () => {
@@ -586,7 +533,7 @@ export function setupKeyboardShortcuts(
 
   const dismissControls = () => {
     if (!tuiState) return;
-    exitJoinInput();
+    clearCollaborationFeedback();
     tuiState.showControls = false;
     tuiState.viewOptions.showControls = false;
   };
@@ -610,10 +557,10 @@ export function setupKeyboardShortcuts(
     if (visible) {
       setHelpVisible(false);
       clampControlsRowIndex();
-      exitJoinInput();
+      clearCollaborationFeedback();
       syncCollaborationView();
     } else {
-      exitJoinInput();
+      clearCollaborationFeedback();
     }
     tuiState.showControls = visible;
     tuiState.viewOptions.showControls = visible;
@@ -796,35 +743,6 @@ export function setupKeyboardShortcuts(
     }
 
     if (tuiState.showControls) {
-      if (tuiState.collaborationJoinInputActive) {
-        switch (key) {
-          case "\r":
-            submitJoinInput();
-            return;
-          case "\x1b":
-            exitJoinInput();
-            tuiState.onUpdate?.();
-            return;
-          case "\x7f":
-          case "\b":
-            if (!tuiState.collaborationBusy && (tuiState.collaborationJoinInputValue ?? "").length > 0) {
-              tuiState.collaborationJoinInputValue = (tuiState.collaborationJoinInputValue ?? "").slice(0, -1);
-              tuiState.collaborationError = undefined;
-              syncCollaborationView();
-              tuiState.onUpdate?.();
-            }
-            return;
-          default:
-            if (!tuiState.collaborationBusy && /^[\x20-\x7E]$/.test(key)) {
-              tuiState.collaborationJoinInputValue += key.toUpperCase();
-              tuiState.collaborationError = undefined;
-              syncCollaborationView();
-              tuiState.onUpdate?.();
-              return;
-            }
-        }
-      }
-
       switch (key) {
         case "\x1b[A":
           moveControlsRow(-1);
@@ -846,11 +764,7 @@ export function setupKeyboardShortcuts(
           clampControlsRowIndex();
           const row = TUI_SETTINGS_ROWS[tuiState.controlsRowIndex ?? 0] ?? TUI_SETTINGS_ROWS[0]!;
           if (row.id === "collaboration_mode") {
-            if ((tuiState.collaborationIntent ?? collaborationIntentFromMode(tuiState.collaborationMode)) === "join") {
-              enterJoinInput();
-            } else {
-              triggerCollaborationIntent(tuiState.collaborationIntent ?? collaborationIntentFromMode(tuiState.collaborationMode));
-            }
+            triggerCollaborationIntent(tuiState.collaborationIntent ?? collaborationIntentFromMode(tuiState.collaborationMode));
             tuiState.onUpdate?.();
             return;
           }

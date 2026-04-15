@@ -79,7 +79,7 @@ describe("COMMAND_REGISTRY", () => {
   it("workflow group contains expected commands", () => {
     const workflow = COMMAND_REGISTRY.filter((c) => c.group === "workflow").map((c) => c.name);
     expect(workflow).toContain("init");
-    expect(workflow).toContain("crew");
+    expect(workflow).not.toContain("crew");
     expect(workflow).toContain("status");
     expect(workflow).toContain("stop");
   });
@@ -223,7 +223,7 @@ describe("grouped help (nw --help)", () => {
 
   it("shows workflow commands", () => {
     const result = runCli("--help");
-    expect(result.stdout).toContain("crew");
+    expect(result.stdout).toContain("broker");
     expect(result.stdout).toContain("status");
     expect(result.stdout).toContain("init");
     expect(result.stdout).toContain("stop");

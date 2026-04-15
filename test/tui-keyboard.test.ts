@@ -61,8 +61,6 @@ function makeTuiState(overrides: Partial<TuiState> = {}): TuiState {
     controlsRowIndex: 0,
     collaborationMode: "local",
     collaborationIntent: "local",
-    collaborationJoinInputActive: false,
-    collaborationJoinInputValue: "",
     collaborationBusy: false,
     reviewMode: "off",
     panelMode: "status-only" as PanelMode,
@@ -398,20 +396,6 @@ describe("setupKeyboardShortcuts", () => {
     expect(onPauseChange).not.toHaveBeenCalled();
     cleanup();
 
-    const joinState = makeTuiState({
-      showControls: true,
-      collaborationJoinInputActive: true,
-      collaborationJoinInputValue: "CODE",
-      collaborationIntent: "join",
-      onPauseChange,
-    });
-    joinState.viewOptions.showControls = true;
-    cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, joinState);
-    stdin.emit("data", "\x1b");
-    expect(joinState.showControls).toBe(true);
-    expect(joinState.collaborationJoinInputActive).toBe(false);
-    expect(onPauseChange).not.toHaveBeenCalled();
-    cleanup();
   });
 
   it("Escape dismisses help overlay before controls", () => {
@@ -985,100 +969,6 @@ describe("controls overlay row navigation", () => {
     });
     expect(state.collaborationMode).toBe("local");
     expect(state.pendingCollaborationMode).toBeUndefined();
-    cleanup();
-  });
-
-  it("entering Join from the controls overlay enables join input and mirrors it to viewOptions", () => {
-    const ac = new AbortController();
-    const stdin = makeFakeStdin();
-    const state = makeTuiState({
-      showControls: true,
-      controlsRowIndex: 0,
-      collaborationMode: "local",
-      collaborationIntent: "local",
-    });
-    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
-
-    stdin.emit("data", "\x1b[C");
-    stdin.emit("data", "\x1b[C");
-    expect(state.collaborationMode).toBe("local");
-    expect(state.collaborationIntent).toBe("join");
-    expect(state.collaborationJoinInputActive).toBe(false);
-
-    stdin.emit("data", "\r");
-
-    expect(state.collaborationMode).toBe("local");
-    expect(state.collaborationJoinInputActive).toBe(true);
-    expect(state.viewOptions.collaborationIntent).toBe("join");
-    expect(state.viewOptions.collaborationJoinInputActive).toBe(true);
-    expect(state.viewOptions.collaborationJoinInputValue).toBe("");
-    cleanup();
-  });
-
-  it("printable input, backspace, Enter submit, and Escape cancel stay inside join-input mode", () => {
-    const ac = new AbortController();
-    const stdin = makeFakeStdin();
-    const onCollaborationJoinSubmit = vi.fn((code: string) => ({
-      mode: "joined" as const,
-      error: code === "AB12" ? undefined : "unexpected code",
-    }));
-    const state = makeTuiState({
-      showControls: true,
-      controlsRowIndex: 0,
-      collaborationMode: "local",
-      collaborationIntent: "join",
-      collaborationJoinInputActive: true,
-      onCollaborationJoinSubmit,
-    });
-    const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
-
-    stdin.emit("data", "a");
-    stdin.emit("data", "b");
-    stdin.emit("data", "1");
-    stdin.emit("data", "2");
-    expect(state.collaborationJoinInputValue).toBe("AB12");
-    expect(state.viewOptions.collaborationJoinInputValue).toBe("AB12");
-
-    stdin.emit("data", "\x7f");
-    expect(state.collaborationJoinInputValue).toBe("AB1");
-    expect(state.controlsRowIndex).toBe(0);
-
-    stdin.emit("data", "2");
-    stdin.emit("data", "\r");
-    expect(onCollaborationJoinSubmit).toHaveBeenCalledWith("AB12");
-    expect(state.collaborationMode).toBe("local");
-    expect(state.pendingCollaborationMode).toBe("joined");
-    expect(state.collaborationIntent).toBe("join");
-    expect(state.collaborationJoinInputActive).toBe(false);
-
-    applyRuntimeSnapshotToTuiState(state, {
-      paused: state.paused ?? false,
-      mergeStrategy: state.mergeStrategy,
-      sessionLimit: state.sessionLimit ?? 3,
-      reviewMode: state.reviewMode,
-      collaborationMode: "joined",
-    });
-    expect(state.collaborationMode).toBe("joined");
-    expect(state.pendingCollaborationMode).toBeUndefined();
-
-    stdin.emit("data", "\x1b[C");
-    expect(state.collaborationJoinInputActive).toBe(false);
-
-    state.collaborationMode = "local";
-    state.collaborationIntent = "join";
-    state.collaborationJoinInputActive = true;
-    state.collaborationJoinInputValue = "CODE";
-    state.viewOptions.collaborationMode = "local";
-    state.viewOptions.collaborationIntent = "join";
-    state.viewOptions.collaborationJoinInputActive = true;
-    state.viewOptions.collaborationJoinInputValue = "CODE";
-
-    stdin.emit("data", "\x1b");
-    expect(state.showControls).toBe(true);
-    expect(state.collaborationMode).toBe("local");
-    expect(state.collaborationIntent).toBe("local");
-    expect(state.collaborationJoinInputActive).toBe(false);
-    expect(state.viewOptions.collaborationJoinInputActive).toBe(false);
     cleanup();
   });
 

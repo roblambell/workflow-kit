@@ -25,7 +25,6 @@ import {
 } from "./commands/pr-monitor.ts";
 import { cmdCiFailures } from "./commands/ci.ts";
 import { cmdInit } from "./commands/init.ts";
-import { cmdCrew } from "./commands/crew.ts";
 import { cmdBroker } from "./commands/broker.ts";
 import { cmdReconcile } from "./commands/reconcile.ts";
 import { cmdAnalytics } from "./commands/analytics.ts";
@@ -114,22 +113,6 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
       "-y": "Skip confirmation prompts",
     },
     examples: ["nw init", "nw init --global", "nw init --yes"],
-  },
-  {
-    name: "crew",
-    usage: "crew [<session-code>|create|join <session-code>]",
-    description: "Coordinate with teammates on the same repo",
-    group: "workflow",
-    needsRoot: true,
-    needsWork: true,
-    handler: async (ctx) => { await cmdCrew(ctx.args, ctx.workDir, ctx.worktreeDir, ctx.projectRoot); },
-    flags: {},
-    examples: [
-      "nw crew",
-      "nw crew K2F9-AB3X-7YPL-QM4N",
-      "nw crew create",
-      "nw crew join K2F9-AB3X-7YPL-QM4N",
-    ],
   },
   {
     name: "broker",

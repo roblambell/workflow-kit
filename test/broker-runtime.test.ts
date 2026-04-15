@@ -164,11 +164,9 @@ describe("broker-runtime", () => {
 
       const update = await waitForMessageByType<{
         type: string;
-        crewCode: string;
         daemonCount: number;
       }>(ws, "crew_update");
 
-      expect(update.crewCode).toBe(code);
       expect(update.daemonCount).toBe(1);
       expect(server.getCrew(code)).toBeDefined();
       ws.close();

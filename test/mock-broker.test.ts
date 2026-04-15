@@ -63,13 +63,13 @@ function createCrew(_port?: number): Promise<string> {
 
 function connectWs(
   port: number,
-  crewCode: string,
+  crewId: string,
   daemonId: string,
   name: string,
   operatorId?: string,
 ): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    let url = `ws://localhost:${port}/api/crews/${crewCode}/ws?daemonId=${daemonId}&name=${name}`;
+    let url = `ws://localhost:${port}/api/crews/${crewId}/ws?daemonId=${daemonId}&name=${name}`;
     if (operatorId) url += `&operatorId=${encodeURIComponent(operatorId)}`;
     const ws = new WebSocket(url);
     ws.addEventListener("open", () => resolve(ws));

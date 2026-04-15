@@ -452,7 +452,7 @@ Or set it manually in `.ninthwave/config.json`:
 { "crew_url": "ws://your-host:4444" }
 ```
 
-The orchestrator resolves `crew_url` at startup: CLI `--crew-url` flag > project config > hosted default (`wss://ninthwave.sh`).
+The orchestrator resolves `crew_url` at startup: project config > hosted default (`wss://ninthwave.sh`).
 
 ### Repo-Reference Verification
 

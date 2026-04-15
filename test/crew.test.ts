@@ -11,9 +11,6 @@ import {
   WebSocketCrewBroker,
   getOrCreateDaemonId,
   daemonIdPath,
-  readCrewCode,
-  saveCrewCode,
-  crewCodePath,
   type CrewBrokerDeps,
   type ReconnectState,
   type ClientMessage,
@@ -97,7 +94,6 @@ function startTestServer(opts?: {
         if (msg.type === "sync") {
           const reply: ServerMessage = opts?.syncAck ?? {
             type: "sync_ack",
-            crewCode: "ABCD-EFGH-IJKL-MNOP",
             workItemIds: [],
           };
           if (opts?.syncAckDelayMs) {
@@ -267,7 +263,7 @@ describe("WebSocketCrewBroker", () => {
         message(ws: any, raw: string | Buffer) {
           const msg = JSON.parse(String(raw));
           if (msg.type === "sync") {
-            ws.send(JSON.stringify({ type: "sync_ack", crewCode: "test", workItemIds: [] }));
+            ws.send(JSON.stringify({ type: "sync_ack", workItemIds: [] }));
           }
         },
         close() {},
@@ -527,7 +523,7 @@ describe("WebSocketCrewBroker", () => {
               syncCount++;
               if (syncCount <= 1) {
                 // First sync: send sync_ack
-                ws.send(JSON.stringify({ type: "sync_ack", crewCode: "test", workItemIds: [] }));
+                ws.send(JSON.stringify({ type: "sync_ack", workItemIds: [] }));
               } else {
                 // Subsequent sync (reconnect): send reconnect_state
                 ws.send(JSON.stringify({
@@ -661,46 +657,6 @@ describe("WebSocketCrewBroker", () => {
   });
 });
 
-// ── Crew code persistence ──────────────────────────────────────────
-
-describe("crew code persistence", () => {
-  let tempDir: string;
-
-  beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "crew-code-test-"));
-  });
-
-  afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  it("readCrewCode returns null when no code saved", () => {
-    expect(readCrewCode(tempDir)).toBeNull();
-  });
-
-  it("saveCrewCode and readCrewCode round-trip", () => {
-    saveCrewCode(tempDir, "K2F9-AB3X-7YPL-QM4N");
-    expect(readCrewCode(tempDir)).toBe("K2F9-AB3X-7YPL-QM4N");
-  });
-
-  it("saveCrewCode overwrites previous value", () => {
-    saveCrewCode(tempDir, "AAAA-BBBB-CCCC-DDDD");
-    saveCrewCode(tempDir, "XXXX-YYYY-ZZZZ-1234");
-    expect(readCrewCode(tempDir)).toBe("XXXX-YYYY-ZZZZ-1234");
-  });
-
-  it("readCrewCode returns null for empty file", () => {
-    const filePath = crewCodePath(tempDir);
-    mkdirSync(join(tempDir, ".ninthwave", "projects"), { recursive: true });
-    // crewCodePath uses userStateDir which depends on HOME
-    // Write directly to the path
-    const dir = require("path").dirname(filePath);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(filePath, "", "utf-8");
-    expect(readCrewCode(tempDir)).toBeNull();
-  });
-});
-
 // ── Report method ──────────────────────────────────────────────────
 
 describe("report method", () => {
@@ -765,7 +721,6 @@ describe("report method", () => {
     const { server, port } = startTestServer({
       syncAck: {
         type: "sync_ack",
-        crewCode: "ABCD-EFGH-IJKL-MNOP",
         workItemIds: [],
         telemetrySettings: { sendTokenUsage: true },
         privacySettings: { allowHostedRelay: false },

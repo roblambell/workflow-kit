@@ -26,11 +26,7 @@ export interface ParsedWatchArgs {
   watchIntervalSecs?: number;
   jsonFlag: boolean;
   skipPreflight: boolean;
-  crewCode?: string;
   connectMode: boolean;
-  crewPort: number;
-  crewUrl?: string;
-  crewName?: string;
   bypassEnabled: boolean;
   toolOverride?: string;
 }
@@ -56,11 +52,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   let watchIntervalSecs: number | undefined;
   let jsonFlag = false;
   let skipPreflight = false;
-  let crewCode: string | undefined;
   let connectMode = false;
-  let crewPort = 0;
-  let crewUrl: string | undefined;
-  let crewName: string | undefined;
   let bypassEnabled = false;
   let toolOverride: string | undefined;
 
@@ -183,25 +175,9 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         skipPreflight = true;
         i += 1;
         break;
-      case "--crew":
-        crewCode = args[i + 1];
-        i += 2;
-        break;
       case "--connect":
         connectMode = true;
         i += 1;
-        break;
-      case "--crew-port":
-        crewPort = parseInt(args[i + 1] ?? "0", 10);
-        i += 2;
-        break;
-      case "--crew-url":
-        crewUrl = args[i + 1];
-        i += 2;
-        break;
-      case "--crew-name":
-        crewName = args[i + 1];
-        i += 2;
         break;
       case "--dangerously-bypass":
         bypassEnabled = true;
@@ -227,7 +203,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
     daemonMode, isDaemonChild, isInteractiveEngineChild, clickupListId, remoteFlag,
     reviewAutoFix, reviewSessionLimit,
     fixForward, skipReview, watchMode, futureOnlyStartup, noWatch, watchIntervalSecs,
-    jsonFlag, skipPreflight, crewCode, connectMode, crewPort, crewUrl, crewName,
+    jsonFlag, skipPreflight, connectMode,
     bypassEnabled, toolOverride,
   };
 }

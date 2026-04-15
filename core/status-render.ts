@@ -34,7 +34,6 @@ export type { CollaborationMode, ReviewMode } from "./tui-settings.ts";
 
 /** Crew status info for TUI display. */
 export interface CrewStatusInfo {
-  crewCode: string;
   daemonCount: number;
   availableCount: number;
   claimedCount: number;
@@ -73,10 +72,6 @@ export interface ViewOptions {
   collaborationMode?: CollaborationMode;
   /** Active collaboration intent in the controls overlay. */
   collaborationIntent?: CollaborationIntent;
-  /** Whether the controls overlay is capturing join-session text input. */
-  collaborationJoinInputActive?: boolean;
-  /** Current join-session input value shown in the controls overlay. */
-  collaborationJoinInputValue?: string;
   /** Whether a collaboration action is currently submitting. */
   collaborationBusy?: boolean;
   /** Inline collaboration error shown in the controls overlay. */
@@ -2759,7 +2754,6 @@ export function renderStartupOverlay(
 export function renderHelpOverlay(
   termWidth: number,
   termRows: number,
-  sessionCode?: string,
   tmuxSessionName?: string,
   version?: string,
 ): string[] {
@@ -2775,16 +2769,6 @@ export function renderHelpOverlay(
   };
 
   const sections: string[][] = [];
-
-  // Session section (if sharing via ninthwave.sh)
-  if (sessionCode) {
-    sections.push([
-      `${BOLD}Session${RESET}`,
-      `  ${BRAND}${sessionCode}${RESET}`,
-      `  ${DIM}Dashboard: ${BRAND}ninthwave.sh${RESET}${DIM}/stats/${sessionCode}${RESET}`,
-      `  ${DIM}Join:      nw --crew ${sessionCode}${RESET}`,
-    ]);
-  }
 
   // Tmux section (when running outside tmux)
   if (tmuxSessionName) {
@@ -3012,9 +2996,6 @@ export function renderControlsOverlay(
     collaborationMode: CollaborationMode;
     pendingCollaborationMode?: CollaborationMode;
     collaborationIntent?: CollaborationIntent;
-    sessionCode?: string;
-    collaborationJoinInputActive?: boolean;
-    collaborationJoinInputValue?: string;
     collaborationBusy?: boolean;
     collaborationError?: string;
     reviewMode: ReviewMode;
@@ -3031,9 +3012,6 @@ export function renderControlsOverlay(
     collaborationMode,
     pendingCollaborationMode,
     collaborationIntent,
-    sessionCode,
-    collaborationJoinInputActive: _collaborationJoinInputActive = false,
-    collaborationJoinInputValue: _collaborationJoinInputValue = "",
     collaborationBusy: _collaborationBusy = false,
     collaborationError: _collaborationError,
     reviewMode,
@@ -3071,22 +3049,7 @@ export function renderControlsOverlay(
 
   const selectedCollaborationMode = pendingCollaborationMode
     ?? (collaborationIntent ? collaborationIntentToMode(collaborationIntent) : collaborationMode);
-  const joinInputActive = _collaborationJoinInputActive || collaborationIntent === "join";
   const collaborationDetailLines: string[] = [];
-  const joinCommand = sessionCode ? `nw --crew ${sessionCode}` : undefined;
-
-  if (sessionCode) {
-    collaborationDetailLines.push(
-      `  ${DIM}Code:${RESET}    ${BRAND}${sessionCode}${RESET}`,
-      `  ${DIM}Command:${RESET}`,
-      `    ${joinCommand}`,
-    );
-  }
-
-  if (joinInputActive) {
-    const joinInputDisplay = _collaborationJoinInputValue.trim() || "enter code";
-    collaborationDetailLines.push(`  ${DIM}Join code:${RESET} ${BOLD}[${joinInputDisplay}]${RESET}`);
-  }
 
   if (_collaborationBusy) {
     const busyLabel = selectedCollaborationMode === "shared"
@@ -3107,8 +3070,7 @@ export function renderControlsOverlay(
 
   if (collaborationDetailLines.length === 0) {
     collaborationDetailLines.push(
-      `  ${DIM}Share creates a live session code and invite command.${RESET}`,
-      `  ${DIM}Join opens a session-code prompt in this overlay.${RESET}`,
+      `  ${DIM}Share and Join both auto-connect to this project's shared broker session.${RESET}`,
     );
   }
 

@@ -434,12 +434,11 @@ Use `nw repos` to see discovered sibling repositories.
 Crew mode allows multiple operators (each running their own `nw` orchestration session) to collaborate on the same set of work items. A shared broker coordinates task distribution so items aren't double-claimed.
 
 ```bash
-# Create a crew
-nw crew create
-
-# Join an existing crew
-nw crew join <crew-code>
+# Opt into the shared broker session
+nw --connect
 ```
+
+Membership is derived from the project config (`project_id` + `broker_secret` in `.ninthwave/config.json`). Two daemons with the same values land in the same crew automatically -- no codes to share.
 
 The broker handles session-bounded scheduling with author-affinity (tasks route to the operator who created them when possible).
 
@@ -471,20 +470,9 @@ The self-hosted broker is an explicit opt-in alternative. Most users never need 
    { "crew_url": "ws://broker-host:4444" }
    ```
 
-   Or pass it at the CLI:
+3. Opt into the shared broker session with `nw --connect`. Membership is derived from `project_id` + `broker_secret`, so every daemon on the same project lands in the same crew automatically.
 
-   ```bash
-   nw --crew-url ws://broker-host:4444
-   ```
-
-3. Create and join the crew as usual:
-
-   ```bash
-   nw crew create       # on one machine
-   nw crew join <code>  # on other machines
-   ```
-
-The `crew_url` resolution order is: `--crew-url` CLI flag > `crew_url` in `.ninthwave/config.json` > hosted default (`wss://ninthwave.sh`).
+The `crew_url` resolution order is: `crew_url` in `.ninthwave/config.json` > hosted default (`wss://ninthwave.sh`).
 
 ### What does the self-hosted broker handle vs. the hosted default?
 

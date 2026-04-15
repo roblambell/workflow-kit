@@ -10,8 +10,6 @@ import type { UserConfig } from "./config.ts";
 import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
-import type { ConnectionAction } from "./commands/crew.ts";
-import { formatInvalidCrewCodeMessage, parseCrewCode } from "./commands/crew.ts";
 import { hasAgentFiles, isAiToolId } from "./ai-tools.ts";
 import type { AiToolProfile } from "./ai-tools.ts";
 import type { StartupItemsRefreshResult } from "./startup-items.ts";
@@ -28,6 +26,11 @@ import {
   type WidgetIO,
   type SelectionScreenResult,
 } from "./tui-widgets.ts";
+
+// Connection action: "connect" opts into broker auto-join.
+// The "join" variant has been retired; broker membership is now derived
+// from `project_id` + `broker_secret` in the project config.
+export type ConnectionAction = { type: "connect" };
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -392,20 +395,9 @@ export async function promptConnectionMode(
       return null;
     }
 
-    if (selection === "2" || selection === "share" || selection === "connect") {
+    if (selection === "2" || selection === "share" || selection === "connect" || selection === "3" || selection === "join") {
+      // Share and join both resolve to the same auto-joined broker session.
       return { type: "connect" };
-    }
-
-    if (selection === "3" || selection === "join") {
-      while (true) {
-        const code = await prompt(`${BOLD}Session code: ${RESET}`);
-        if (code === "" || code.toLowerCase() === "q") return null;
-        const normalizedCode = parseCrewCode(code);
-        if (normalizedCode) {
-          return { type: "join", code: normalizedCode };
-        }
-        console.log(`  ${YELLOW}${formatInvalidCrewCodeMessage(code)}${RESET}`);
-      }
     }
 
     console.log(`  ${YELLOW}Enter 1-3 or a mode name (share/join/local).${RESET}`);
@@ -437,10 +429,7 @@ export async function confirmSummary(
   console.log(`  ${BOLD}Session limit:${RESET}   ${result.sessionLimit}`);
   console.log(`  ${BOLD}AI reviews:${RESET}      ${result.reviewMode}`);
   if (result.connectionAction) {
-    const connectionLabel = result.connectionAction.type === "connect"
-      ? "Share session (new)"
-      : `Join session (${result.connectionAction.code})`;
-    console.log(`  ${BOLD}Collaboration:${RESET}   ${connectionLabel}`);
+    console.log(`  ${BOLD}Collaboration:${RESET}   Share session (auto-join)`);
   } else {
     console.log(`  ${BOLD}Collaboration:${RESET}   Local by default`);
   }
@@ -473,11 +462,9 @@ export function buildStartupPersistenceUpdates(
   const defaults = options.defaults;
 
   const mergeStrategy = result.mergeStrategy === "auto" ? "auto" as const : "manual" as const;
-  const collaborationMode = result.connectionAction?.type === "connect"
-    ? "share" as const
-    : result.connectionAction?.type === "join"
-    ? "join" as const
-    : "local" as const;
+  const collaborationMode: "local" | "share" = result.connectionAction
+    ? "share"
+    : "local";
 
   // Only persist settings the user actively changed from their startup defaults.
   // This prevents a wrong default from being cemented by pressing Enter.

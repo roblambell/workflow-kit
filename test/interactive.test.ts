@@ -346,7 +346,7 @@ describe("confirmSummary", () => {
     const connResult: InteractiveResult = {
       ...result,
       reviewMode: "on",
-      connectionAction: { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
+      connectionAction: { type: "connect" },
     };
     const logs: string[] = [];
     const origLog = console.log;
@@ -358,7 +358,7 @@ describe("confirmSummary", () => {
     }
     const output = logs.join("\n");
     expect(output).toContain("on");
-    expect(output).toContain("Join session (K2F9-AB3X-7YPL-QM4N)");
+    expect(output).toContain("Share session (auto-join)");
   });
 
   it("displays Local when connectionAction is null", async () => {
@@ -432,16 +432,14 @@ describe("buildStartupPersistenceUpdates", () => {
     })).toMatchObject({ collaboration_mode: "share" });
   });
 
-  it("maps join collaboration mode without persisting the join code", () => {
+  it("maps connect action to share collaboration mode without leaking extra fields", () => {
     const updates = buildStartupPersistenceUpdates({
       ...baseResult,
-      connectionAction: { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
+      connectionAction: { type: "connect" },
     });
 
-    expect(updates).toMatchObject({ collaboration_mode: "join" });
-    expect(updates).not.toHaveProperty("crewCode");
+    expect(updates).toMatchObject({ collaboration_mode: "share" });
     expect(updates).not.toHaveProperty("code");
-    expect(JSON.stringify(updates)).not.toContain("K2F9-AB3X-7YPL-QM4N");
   });
 
   it("persists multiple selected tools via ai_tools", () => {
@@ -555,20 +553,14 @@ describe("runInteractiveFlow", () => {
     expect(result!.connectionAction).toEqual({ type: "connect" });
   });
 
-  it("returns join when join is explicitly chosen in legacy flow", async () => {
-    const prompt = makePrompt(["1", "join", "k2f9ab3x7yplqm4n", ""]);
+  it("returns connect when join is explicitly chosen in legacy flow", async () => {
+    // "Join" and "share" both auto-connect to the project's deterministic
+    // broker session derived from project_id + broker_secret.
+    const prompt = makePrompt(["1", "join", ""]);
     const result = await runInteractiveFlow(items, 3, { prompt, useLegacyPrompts: true });
 
     expect(result).not.toBeNull();
-    expect(result!.connectionAction).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
-  });
-
-  it("falls back to local when join code entry is cancelled in legacy flow", async () => {
-    const prompt = makePrompt(["1", "join", "q", ""]);
-    const result = await runInteractiveFlow(items, 3, { prompt, useLegacyPrompts: true });
-
-    expect(result).not.toBeNull();
-    expect(result!.connectionAction).toBeNull();
+    expect(result!.connectionAction).toEqual({ type: "connect" });
   });
 
   it("returns an explicit future-only result in the empty-queue TUI path", async () => {
@@ -769,9 +761,9 @@ describe("promptConnectionMode", () => {
     expect(result).toEqual({ type: "connect" });
   });
 
-  it("uses join as the default when configured", async () => {
-    const result = await promptConnectionMode(makePrompt(["", "k2f9ab3x7yplqm4n"]), "join");
-    expect(result).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
+  it("uses join as the default when configured (auto-connect, no code prompt)", async () => {
+    const result = await promptConnectionMode(makePrompt([""]), "join");
+    expect(result).toEqual({ type: "connect" });
   });
 
   it('returns null (local) on input "local"', async () => {
@@ -779,19 +771,9 @@ describe("promptConnectionMode", () => {
     expect(result).toBeNull();
   });
 
-  it('returns join with normalized code on input "3" then valid code', async () => {
-    const result = await promptConnectionMode(makePrompt(["3", "k2f9ab3x7yplqm4n"]));
-    expect(result).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
-  });
-
-  it("returns null when user cancels join code prompt", async () => {
-    const result = await promptConnectionMode(makePrompt(["join", "q"]));
-    expect(result).toBeNull();
-  });
-
-  it("retries on invalid session code then accepts valid", async () => {
-    const result = await promptConnectionMode(makePrompt(["3", "invalid", "K2F9-AB3X-7YPL-QM4N"]));
-    expect(result).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
+  it('returns connect on input "3" (join shares the same auto-connect path as share)', async () => {
+    const result = await promptConnectionMode(makePrompt(["3"]));
+    expect(result).toEqual({ type: "connect" });
   });
 
   it("retries on invalid choice then accepts valid", async () => {

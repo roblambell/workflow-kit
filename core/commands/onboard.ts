@@ -43,7 +43,6 @@ import { detectInstalledAITools } from "../tool-select.ts";
 import { applyGithubToken } from "../gh.ts";
 import { ensureMuxInteractiveOrDie } from "../mux.ts";
 import { computeDefaultSessionLimit } from "./orchestrate.ts";
-import { requireCrewCode } from "./crew.ts";
 import { runUpdate, type UpdateRunResult } from "./update.ts";
 import {
   getPassiveUpdateStartupState,
@@ -601,11 +600,8 @@ export async function cmdNoArgs(
 
   // Connection action → CLI flags
   if (result.connectionAction) {
-    if (result.connectionAction.type === "join") {
-      watchArgs.push("--crew", requireCrewCode(result.connectionAction.code));
-    } else if (result.connectionAction.type === "connect") {
-      watchArgs.push("--connect");
-    }
+    // Both "share" and "join" map to the same auto-joined broker; use --connect.
+    watchArgs.push("--connect");
   }
 
   // AI tool(s) → --tool flag (comma-separated for multi-select)

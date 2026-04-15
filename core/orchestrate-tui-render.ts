@@ -127,12 +127,10 @@ export function crewStatusToRemoteItemSnapshots(
 
 export function crewStatusToDaemonCrewStatus(
   crewStatus: CrewStatus | null | undefined,
-  crewCode: string | null | undefined,
   connected: boolean,
 ): DaemonCrewStatus | undefined {
-  if (!crewStatus && !crewCode) return undefined;
+  if (!crewStatus && !connected) return undefined;
   return {
-    crewCode: crewStatus?.crewCode ?? crewCode ?? "",
     daemonCount: crewStatus?.daemonCount ?? 0,
     availableCount: crewStatus?.availableCount ?? 0,
     claimedCount: crewStatus?.claimedCount ?? 0,
@@ -391,7 +389,7 @@ export function renderTuiPanelFrameFromStatusItems(
       break;
     }
     case "help": {
-      const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName, readVersion());
+      const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.tmuxSessionName, readVersion());
       const content = helpLines.join("\n");
       write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
       break;
@@ -401,9 +399,6 @@ export function renderTuiPanelFrameFromStatusItems(
         collaborationMode: tuiState.collaborationMode,
         pendingCollaborationMode: tuiState.pendingCollaborationMode,
         collaborationIntent: tuiState.collaborationIntent,
-        sessionCode: tuiState.sessionCode,
-        collaborationJoinInputActive: tuiState.collaborationJoinInputActive,
-        collaborationJoinInputValue: tuiState.collaborationJoinInputValue,
         collaborationBusy: tuiState.collaborationBusy,
         collaborationError: tuiState.collaborationError,
         reviewMode: tuiState.reviewMode,
@@ -486,7 +481,6 @@ export function renderTuiFrame(
   viewOptions?: ViewOptions,
   scrollOffset: number = 0,
   remoteItems?: RemoteItemRenderState,
-  sessionCode?: string,
   maxTimeoutExtensions: number = DEFAULT_CONFIG.maxTimeoutExtensions,
   heartbeats?: ReadonlyMap<string, WorkerProgress>,
 ): void {
@@ -501,7 +495,7 @@ export function renderTuiFrame(
 
   if (viewOptions?.showHelp) {
     // Render help overlay instead of the normal frame
-    const helpLines = renderHelpOverlay(termWidth, termRows, sessionCode, undefined, readVersion());
+    const helpLines = renderHelpOverlay(termWidth, termRows, undefined, readVersion());
     const content = helpLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else if (termRows >= MIN_FULLSCREEN_ROWS) {
@@ -596,8 +590,6 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     collaborationMode: "local",
     pendingCollaborationMode: undefined,
     collaborationIntent: "local",
-    collaborationJoinInputActive: false,
-    collaborationJoinInputValue: "",
     collaborationBusy: false,
     reviewMode: "on",
     pendingReviewMode: undefined,
@@ -671,7 +663,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
 
     switch (resolveActiveTuiOverlay(tuiState)) {
       case "help": {
-        const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.sessionCode, tuiState.tmuxSessionName, readVersion());
+        const helpLines = renderHelpOverlay(termWidth, termRows, tuiState.tmuxSessionName, readVersion());
         const content = helpLines.join("\n");
         write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
         break;
@@ -681,9 +673,6 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
           collaborationMode: tuiState.collaborationMode,
           pendingCollaborationMode: tuiState.pendingCollaborationMode,
           collaborationIntent: tuiState.collaborationIntent,
-          sessionCode: tuiState.sessionCode,
-          collaborationJoinInputActive: tuiState.collaborationJoinInputActive,
-          collaborationJoinInputValue: tuiState.collaborationJoinInputValue,
           collaborationBusy: tuiState.collaborationBusy,
           collaborationError: tuiState.collaborationError,
           reviewMode: tuiState.reviewMode,

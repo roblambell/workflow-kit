@@ -30,7 +30,6 @@ export interface SyncMessage {
 
 export interface SyncAckMessage {
   type: "sync_ack";
-  crewCode: string;
   workItemIds: string[];
   telemetrySettings?: {
     sendTokenUsage?: boolean;
@@ -86,7 +85,6 @@ export interface ErrorMessage {
 
 export interface CrewUpdateMessage {
   type: "crew_update";
-  crewCode: string;
   daemonCount: number;
   availableCount: number;
   claimedCount: number;
@@ -175,7 +173,6 @@ export interface CrewRemoteItemSnapshot {
 }
 
 export interface CrewStatus {
-  crewCode: string;
   daemonCount: number;
   availableCount: number;
   claimedCount: number;
@@ -344,7 +341,6 @@ export function parseCrewStatusUpdate(data: Record<string, unknown>, localDaemon
     : parseLegacyClaimedItemIds(data.claimedItems, localDaemonId);
 
   return {
-    crewCode: typeof data.crewCode === "string" ? data.crewCode : "",
     daemonCount: typeof data.daemonCount === "number" ? data.daemonCount : 0,
     availableCount: typeof data.availableCount === "number" ? data.availableCount : 0,
     claimedCount: typeof data.claimedCount === "number" ? data.claimedCount : 0,
@@ -478,31 +474,6 @@ export function resolveOperatorId(
   deps.writeFileSync(filePath, email, "utf-8");
 
   return email;
-}
-
-// ── Crew code persistence ──────────────────────────────────────────
-
-/** Path to the crew-code file in the user state directory. */
-export function crewCodePath(projectRoot: string): string {
-  return join(userStateDir(projectRoot), "crew-code");
-}
-
-/** Read a previously saved crew code. Returns null if none saved. */
-export function readCrewCode(projectRoot: string): string | null {
-  const filePath = crewCodePath(projectRoot);
-  if (!existsSync(filePath)) return null;
-  const code = readFileSync(filePath, "utf-8").trim();
-  return code.length > 0 ? code : null;
-}
-
-/** Save a crew code to the user state directory for persistent sessions. */
-export function saveCrewCode(projectRoot: string, code: string): void {
-  const filePath = crewCodePath(projectRoot);
-  const dir = dirname(filePath);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  writeFileSync(filePath, code, "utf-8");
 }
 
 // ── Injectable dependencies ─────────────────────────────────────────

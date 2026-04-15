@@ -1130,7 +1130,6 @@ describe("daemonStateToStatusItems", () => {
 describe("parseCrewStatusUpdate", () => {
   it("accepts verifying and done remote snapshot states", () => {
     const status = parseCrewStatusUpdate({
-      crewCode: "ABCD-EFGH",
       daemonCount: 2,
       availableCount: 1,
       claimedCount: 1,
@@ -1176,7 +1175,6 @@ describe("parseCrewStatusUpdate", () => {
 
   it("keeps legacy claimedItems payloads parsing cleanly when richer fields are absent", () => {
     const status = parseCrewStatusUpdate({
-      crewCode: "ABCD-EFGH",
       daemonCount: 2,
       availableCount: 1,
       claimedCount: 1,
@@ -1914,7 +1912,6 @@ describe("renderStatus with ViewOptions", () => {
       updatedAt: now,
       sessionLimit: 4,
       crewStatus: {
-        crewCode: "ABCD-EFGH-IJKL-MNOP",
         daemonCount: 2,
         availableCount: 5,
         claimedCount: 2,

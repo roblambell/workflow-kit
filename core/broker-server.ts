@@ -61,8 +61,8 @@ export class BrokerServer {
   private gracePeriodMs: number;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
-  /** Mapping from WebSocket to { crewCode, daemonId } for routing. */
-  private wsMap = new Map<BrokerSocket, { crewCode: string; daemonId: string }>();
+  /** Mapping from WebSocket to { crewId, daemonId } for routing. */
+  private wsMap = new Map<BrokerSocket, { crewId: string; daemonId: string }>();
 
   constructor(private opts: BrokerServerOptions) {
     this.store = new FileBrokerStore(opts.dataDir);
@@ -110,7 +110,7 @@ export class BrokerServer {
           }
 
           const upgraded = server.upgrade(req, {
-            data: { crewCode: code, daemonId, name: name ?? daemonId, operatorId },
+            data: { crewId: code, daemonId, name: name ?? daemonId, operatorId },
           });
 
           if (!upgraded) {
@@ -125,15 +125,15 @@ export class BrokerServer {
 
       websocket: {
         open(ws) {
-          const { crewCode, daemonId, name, operatorId } = ws.data as {
-            crewCode: string;
+          const { crewId, daemonId, name, operatorId } = ws.data as {
+            crewId: string;
             daemonId: string;
             name: string;
             operatorId: string;
           };
 
-          broker.wsMap.set(ws, { crewCode, daemonId });
-          broker.handleDaemonConnect(crewCode, daemonId, name, ws, operatorId);
+          broker.wsMap.set(ws, { crewId, daemonId });
+          broker.handleDaemonConnect(crewId, daemonId, name, ws, operatorId);
         },
 
         message(ws, message) {
@@ -142,7 +142,7 @@ export class BrokerServer {
 
           try {
             const msg = JSON.parse(String(message)) as InboundMessage;
-            broker.handleMessage(info.crewCode, info.daemonId, msg, ws);
+            broker.handleMessage(info.crewId, info.daemonId, msg, ws);
           } catch {
             broker.send(ws, { type: "error", message: "Invalid JSON" });
           }
@@ -151,7 +151,7 @@ export class BrokerServer {
         close(ws) {
           const info = broker.wsMap.get(ws);
           if (info) {
-            broker.handleDaemonDisconnect(info.crewCode, info.daemonId);
+            broker.handleDaemonDisconnect(info.crewId, info.daemonId);
             broker.wsMap.delete(ws);
           }
         },
@@ -202,8 +202,8 @@ export class BrokerServer {
 
   // ── Daemon lifecycle ──────────────────────────────────────────────
 
-  private handleDaemonConnect(crewCode: string, daemonId: string, name: string, ws: BrokerSocket, operatorId: string = ""): void {
-    const crew = this.store.getCrew(crewCode);
+  private handleDaemonConnect(crewId: string, daemonId: string, name: string, ws: BrokerSocket, operatorId: string = ""): void {
+    const crew = this.store.getCrew(crewId);
     if (!crew) return;
 
     const result = connectDaemon(crew, daemonId, name, ws, operatorId);
@@ -215,8 +215,8 @@ export class BrokerServer {
     this.persistCrew(crew);
   }
 
-  private handleDaemonDisconnect(crewCode: string, daemonId: string): void {
-    const crew = this.store.getCrew(crewCode);
+  private handleDaemonDisconnect(crewId: string, daemonId: string): void {
+    const crew = this.store.getCrew(crewId);
     if (!crew) return;
 
     const result = disconnectDaemon(crew, daemonId);
@@ -228,8 +228,8 @@ export class BrokerServer {
 
   // ── Message handling ──────────────────────────────────────────────
 
-  private handleMessage(crewCode: string, daemonId: string, msg: InboundMessage, ws: BrokerSocket): void {
-    const crew = this.store.getCrew(crewCode);
+  private handleMessage(crewId: string, daemonId: string, msg: InboundMessage, ws: BrokerSocket): void {
+    const crew = this.store.getCrew(crewId);
     if (!crew) return;
 
     const daemon = crew.daemons.get(daemonId);
@@ -259,7 +259,7 @@ export class BrokerServer {
   private handleSync(crew: CrewState, daemonId: string, items: SyncItemPayload[], ws: BrokerSocket): void {
     const result = syncCrewItems(crew, daemonId, items);
     this.writeEvents(result.events);
-    this.send(ws, { type: "sync_ack", crewCode: crew.code, workItemIds: result.workItemIds });
+    this.send(ws, { type: "sync_ack", workItemIds: result.workItemIds });
     this.broadcastCrewUpdate(crew);
     this.persistCrew(crew);
   }

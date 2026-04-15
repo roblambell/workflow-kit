@@ -96,7 +96,6 @@ import {
   type DaemonState,
 } from "../core/daemon.ts";
 import type { CrewBroker, CrewRemoteItemSnapshot, CrewStatus } from "../core/crew.ts";
-import { readCrewCode, crewCodePath } from "../core/crew.ts";
 import { hashRepoUrl } from "../core/repo-ref.ts";
 import { makeBrokerHasher } from "../core/broker-hash.ts";
 import {
@@ -2816,7 +2815,6 @@ describe("serializeOrchestratorState persists crew remote truth", () => {
 
     const state = serializeOrchestratorState([item], 9999, "2026-04-01T00:00:00Z", {
       crewStatus: {
-        crewCode: "ABCD-EFGH-IJKL-MNOP",
         daemonCount: 2,
         availableCount: 5,
         claimedCount: 1,
@@ -2827,7 +2825,6 @@ describe("serializeOrchestratorState persists crew remote truth", () => {
     });
 
     expect(state.crewStatus).toEqual({
-      crewCode: "ABCD-EFGH-IJKL-MNOP",
       daemonCount: 2,
       availableCount: 5,
       claimedCount: 1,
@@ -5872,7 +5869,6 @@ describe("orchestrateLoop crew mode", () => {
 describe("crew remote state helpers", () => {
   function makeCrewStatus(remoteItems: CrewStatus["remoteItems"]): CrewStatus {
     return {
-      crewCode: "ABCD-EFGH",
       daemonCount: 2,
       availableCount: 1,
       claimedCount: remoteItems.filter((item) => item.ownerDaemonId !== null).length,
@@ -6100,7 +6096,7 @@ describe("resolveInteractiveStartupConfig", () => {
     expect(result.defaults.reviewMode).toBe("on");
   });
 
-  it("builds full durable startup updates while keeping join codes runtime-only", () => {
+  it("builds full durable startup updates", () => {
     const startupConfig = resolveInteractiveStartupConfig(
       {} as any,
       {
@@ -6117,7 +6113,7 @@ describe("resolveInteractiveStartupConfig", () => {
       sessionLimit: 6,
       allSelected: false,
       reviewMode: "on",
-      connectionAction: { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
+      connectionAction: { type: "connect" },
     };
 
     const persisted = buildStartupPersistenceUpdates(result, {
@@ -6131,17 +6127,14 @@ describe("resolveInteractiveStartupConfig", () => {
     );
 
     // mergeStrategy "auto" and reviewMode "on" both match the persisted defaults,
-    // so neither is re-saved. collaboration_mode changes from "share" to "join".
+    // so neither is re-saved. collaboration_mode stays "share".
     // sessionLimit 6 differs from defaultSessionLimit 1, so it is persisted.
     expect(persisted).toEqual({
       session_limit: 6,
-      collaboration_mode: "join",
       ai_tools: ["opencode", "copilot"],
     });
-    expect(JSON.stringify(persisted)).not.toContain("K2F9-AB3X-7YPL-QM4N");
     expect(runtime).toEqual({
-      connectMode: false,
-      crewCode: "K2F9-AB3X-7YPL-QM4N",
+      connectMode: true,
       crewUrl: "wss://config.example",
     });
   });
@@ -6167,7 +6160,6 @@ describe("createRuntimeControlHandlers", () => {
     });
 
     const shareResult = handlers.onCollaborationShare?.();
-    const joinResult = handlers.onCollaborationJoinSubmit?.("ABCD-1234");
     const localResult = handlers.onCollaborationLocal?.();
     const extendResult = handlers.onExtendTimeout?.("ENG-1");
     handlers.onPauseChange?.(true);
@@ -6179,7 +6171,6 @@ describe("createRuntimeControlHandlers", () => {
     expect(currentSessionLimit).toBe(4);
     expect(sentControls).toEqual([
       { type: "set-collaboration-mode", mode: "shared", source: "keyboard" },
-      { type: "set-collaboration-mode", mode: "joined", code: "ABCD-1234", source: "keyboard" },
       { type: "set-collaboration-mode", mode: "local", source: "keyboard" },
       { type: "extend-timeout", itemId: "ENG-1", source: "keyboard" },
       { type: "set-paused", paused: true, source: "keyboard" },
@@ -6194,7 +6185,6 @@ describe("createRuntimeControlHandlers", () => {
       { session_limit: 4 },
     ]);
     expect(shareResult).toEqual({ mode: "shared" });
-    expect(joinResult).toEqual({ mode: "joined" });
     expect(localResult).toEqual({ mode: "local" });
     expect(extendResult).toBe(true);
   });
@@ -6237,74 +6227,44 @@ describe("applyRuntimeCollaborationAction", () => {
     };
   }
 
-  it("shares once, connects, and reuses the active code on repeat share", async () => {
+  it("shares once, connects, and reuses the active session on repeat share", async () => {
     const state = {
       mode: "local" as const,
       connectMode: false,
     };
     const broker = makeBroker();
     const createBroker = vi.fn(() => broker);
-    const saveCrewCodeFn = vi.fn();
     const onBrokerChanged = vi.fn();
 
     const firstResult = await applyRuntimeCollaborationAction(state, { action: "share" }, {
       projectRoot: "/project",
-      crewRepoUrl: "git@github.com:test/repo.git",
       crewName: "operator",
       log: () => {},
       config: TEST_CONFIG,
       createBroker,
-      saveCrewCodeFn,
       onBrokerChanged,
     });
     const secondResult = await applyRuntimeCollaborationAction(state, { action: "share" }, {
       projectRoot: "/project",
-      crewRepoUrl: "git@github.com:test/repo.git",
       crewName: "operator",
       log: () => {},
       config: TEST_CONFIG,
       createBroker,
-      saveCrewCodeFn,
       onBrokerChanged,
     });
 
-    expect(firstResult).toEqual({ mode: "shared", code: EXPECTED_CREW_ID });
-    expect(secondResult).toEqual({ mode: "shared", code: EXPECTED_CREW_ID });
-    // Share is now a no-network operation -- the crew id is derived locally.
+    expect(firstResult).toEqual({ mode: "shared" });
+    expect(secondResult).toEqual({ mode: "shared" });
+    // Share is a no-network operation -- the crew id is derived locally.
     expect(createBroker).toHaveBeenCalledTimes(1);
     expect(broker.connect).toHaveBeenCalledTimes(1);
-    expect(saveCrewCodeFn).toHaveBeenCalledTimes(1);
     expect(onBrokerChanged).toHaveBeenCalledTimes(1);
     expect(state).toMatchObject({
       mode: "shared",
-      crewCode: EXPECTED_CREW_ID,
+      crewIdPrefix: EXPECTED_CREW_ID.slice(0, 8),
       connectMode: true,
       crewBroker: broker,
     });
-  });
-
-  it("derives the crew id from project_id + broker_secret instead of hitting POST", async () => {
-    const state = {
-      mode: "local" as const,
-      connectMode: false,
-    };
-    const fetchFn = vi.fn();
-    const broker = makeBroker();
-
-    const result = await applyRuntimeCollaborationAction(state, { action: "share" }, {
-      projectRoot: "/project",
-      crewRepoUrl: "git@github.com:test/repo.git",
-      log: () => {},
-      config: TEST_CONFIG,
-      fetchFn: fetchFn as unknown as typeof fetch,
-      createBroker: vi.fn(() => broker),
-      saveCrewCodeFn: vi.fn(),
-      onBrokerChanged: vi.fn(),
-    });
-
-    expect(result).toEqual({ mode: "shared", code: EXPECTED_CREW_ID });
-    // No POST: identity is derived locally.
-    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it("returns a broker connection failure without mutating startup collaboration state", async () => {
@@ -6320,11 +6280,9 @@ describe("applyRuntimeCollaborationAction", () => {
 
     const result = await applyRuntimeCollaborationAction(state, { action: "share" }, {
       projectRoot: "/project",
-      crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
       config: TEST_CONFIG,
       createBroker: vi.fn(() => rejectedBroker),
-      saveCrewCodeFn: vi.fn(),
       onBrokerChanged: vi.fn(),
     });
 
@@ -6346,15 +6304,13 @@ describe("applyRuntimeCollaborationAction", () => {
 
     const result = await applyRuntimeCollaborationAction(state, { action: "share" }, {
       projectRoot: "/project",
-      crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
       config: TEST_CONFIG,
       createBroker,
-      saveCrewCodeFn: vi.fn(),
       onBrokerChanged: vi.fn(),
     });
 
-    expect(result).toEqual({ mode: "shared", code: EXPECTED_CREW_ID });
+    expect(result).toEqual({ mode: "shared" });
     // createBroker now receives (projectRoot, crewUrl, crewId, brokerSecret, deps, name)
     expect(createBroker).toHaveBeenCalledWith(
       "/project",
@@ -6371,32 +6327,30 @@ describe("applyRuntimeCollaborationAction", () => {
     const currentBroker = makeBroker();
     const rejectedBroker = makeBroker({
       connect: vi.fn(async () => {
-        throw new Error("Invalid session code");
+        throw new Error("Broker unreachable");
       }),
     });
     const state = {
       mode: "shared" as const,
-      crewCode: "KEEP-1234",
+      crewIdPrefix: "abcdefgh",
       crewUrl: "wss://ninthwave.sh",
       crewBroker: currentBroker,
       connectMode: true,
     };
 
-    const result = await applyRuntimeCollaborationAction(state, { action: "join", code: "BAD1" }, {
+    const result = await applyRuntimeCollaborationAction(state, { action: "join" }, {
       projectRoot: "/project",
-      crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
       config: TEST_CONFIG,
       createBroker: vi.fn(() => rejectedBroker),
-      saveCrewCodeFn: vi.fn(),
       onBrokerChanged: vi.fn(),
     });
 
-    expect(result).toEqual({ error: "Invalid session code" });
+    expect(result).toEqual({ error: "Broker unreachable" });
     expect(currentBroker.disconnect).not.toHaveBeenCalled();
     expect(state).toMatchObject({
       mode: "shared",
-      crewCode: "KEEP-1234",
+      crewIdPrefix: "abcdefgh",
       crewBroker: currentBroker,
       connectMode: true,
     });
@@ -6405,46 +6359,38 @@ describe("applyRuntimeCollaborationAction", () => {
   it("joins the derived crew id, then disconnects cleanly back to local mode", async () => {
     const currentBroker = makeBroker();
     const joinedBroker = makeBroker();
-    const saveCrewCodeFn = vi.fn();
     const onBrokerChanged = vi.fn();
     const state = {
       mode: "shared" as const,
-      crewCode: "SHARE-1234",
+      crewIdPrefix: "sharepre",
       crewUrl: "wss://ninthwave.sh",
       crewBroker: currentBroker,
       connectMode: true,
     };
 
-    // `code` is accepted but ignored -- auto-join always resolves to the
-    // project's derived crew id.
-    const joinResult = await applyRuntimeCollaborationAction(state, { action: "join", code: "JOIN-5678" }, {
+    const joinResult = await applyRuntimeCollaborationAction(state, { action: "join" }, {
       projectRoot: "/project",
-      crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
       config: TEST_CONFIG,
       createBroker: vi.fn(() => joinedBroker),
-      saveCrewCodeFn,
       onBrokerChanged,
     });
     const localResult = await applyRuntimeCollaborationAction(state, { action: "local" }, {
       projectRoot: "/project",
-      crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
       config: TEST_CONFIG,
       createBroker: vi.fn(),
-      saveCrewCodeFn,
       onBrokerChanged,
     });
 
-    expect(joinResult).toEqual({ mode: "joined", code: EXPECTED_CREW_ID });
+    expect(joinResult).toEqual({ mode: "joined" });
     expect(localResult).toEqual({ mode: "local" });
     expect(joinedBroker.connect).toHaveBeenCalledTimes(1);
     expect(currentBroker.disconnect).toHaveBeenCalledTimes(1);
     expect(joinedBroker.disconnect).toHaveBeenCalledTimes(1);
-    expect(saveCrewCodeFn).toHaveBeenCalledTimes(1);
     expect(state).toMatchObject({
       mode: "local",
-      crewCode: undefined,
+      crewIdPrefix: undefined,
       crewBroker: undefined,
       connectMode: false,
     });
@@ -7225,8 +7171,6 @@ describe("interactive watch operator session", () => {
       collaborationMode: "local",
       pendingCollaborationMode: undefined,
       collaborationIntent: "local",
-      collaborationJoinInputActive: false,
-      collaborationJoinInputValue: "",
       collaborationBusy: false,
       reviewMode: "on",
       pendingReviewMode: undefined,
@@ -9491,13 +9435,11 @@ describe("resolveStartupCollaborationAction", () => {
     expect(resolveStartupCollaborationAction(
       {
         connectMode: false,
-        crewCode: "KEEP-1234",
         crewUrl: "wss://custom.example",
       },
       null,
     )).toEqual({
       connectMode: false,
-      crewCode: "KEEP-1234",
       crewUrl: "wss://custom.example",
     });
   });
@@ -9506,40 +9448,24 @@ describe("resolveStartupCollaborationAction", () => {
     expect(resolveStartupCollaborationAction(
       {
         connectMode: false,
-        crewCode: "OLD-1234",
         crewUrl: "wss://custom.example",
       },
       { type: "connect" },
     )).toEqual({
       connectMode: true,
-      crewCode: undefined,
       crewUrl: "wss://custom.example",
     });
   });
 
-  it("maps startup join directly into crew setup with a default broker URL", () => {
+  it("preserves an existing crew URL when startup share is selected", () => {
     expect(resolveStartupCollaborationAction(
       {
-        connectMode: true,
-      },
-      { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
-    )).toEqual({
-      connectMode: false,
-      crewCode: "K2F9-AB3X-7YPL-QM4N",
-      crewUrl: "wss://ninthwave.sh",
-    });
-  });
-
-  it("preserves an existing crew URL when startup join is selected", () => {
-    expect(resolveStartupCollaborationAction(
-      {
-        connectMode: true,
+        connectMode: false,
         crewUrl: "wss://config.example",
       },
-      { type: "join", code: "K2F9-AB3X-7YPL-QM4N" },
+      { type: "connect" },
     )).toEqual({
-      connectMode: false,
-      crewCode: "K2F9-AB3X-7YPL-QM4N",
+      connectMode: true,
       crewUrl: "wss://config.example",
     });
   });
@@ -9679,58 +9605,3 @@ describe("orchestrateLoop claims gating", () => {
   });
 });
 
-// ── Session lifecycle: no saved session reuse ────────────────────────
-
-describe("session lifecycle", () => {
-  it("readCrewCode finds saved code but cmdOrchestrate no longer uses it", () => {
-    // Verify that readCrewCode still works as a function (for backward compat)
-    // but it's no longer imported or called from orchestrate.ts
-    const tmpDir = mkdtempSync(join(tmpdir(), "nw-session-test-"));
-    try {
-      // No crew code saved -- should return null
-      expect(readCrewCode(tmpDir)).toBeNull();
-
-      // Write a crew code using the correct state directory path
-      const stateDir = userStateDir(tmpDir);
-      mkdirSync(stateDir, { recursive: true });
-      writeFileSync(crewCodePath(tmpDir), "test-code-123", "utf-8");
-
-      // readCrewCode still works as a standalone function
-      expect(readCrewCode(tmpDir)).toBe("test-code-123");
-
-      // But the orchestrate module no longer imports readCrewCode
-      // This is verified by the fact that the import was removed and the code compiles
-    } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
-      // Also clean up the state dir in ~/.ninthwave/
-      try { rmSync(userStateDir(tmpDir), { recursive: true, force: true }); } catch { /* best-effort */ }
-    }
-  });
-
-  it("saved crew code is written only on explicit share/join, not plain startup", () => {
-    // The only calls to saveCrewCode in orchestrate.ts are after broker setup:
-    // 1. Explicit --crew/--connect flows
-    // 2. Startup settings share/join flows
-    // There is no automatic re-activation of saved crew codes on plain startup.
-    const tmpDir = mkdtempSync(join(tmpdir(), "nw-session-test-"));
-    try {
-      // readCrewCode returns null when no code is saved
-      expect(readCrewCode(tmpDir)).toBeNull();
-
-      // Simulate: a saved crew code exists but plain nw ignores it
-      const stateDir = userStateDir(tmpDir);
-      mkdirSync(stateDir, { recursive: true });
-      writeFileSync(crewCodePath(tmpDir), "old-session-xyz", "utf-8");
-
-      // The crew code is there on disk
-      expect(readCrewCode(tmpDir)).toBe("old-session-xyz");
-
-      // But in the new code, cmdOrchestrate never reads it.
-      // Plain startup stays local unless the user explicitly selects share/join.
-      // Only explicit --crew <code> or startup collaboration choices set up crew mode.
-    } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
-      try { rmSync(userStateDir(tmpDir), { recursive: true, force: true }); } catch { /* best-effort */ }
-    }
-  });
-});

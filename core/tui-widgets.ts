@@ -8,11 +8,7 @@ import type { StartupItemsRefreshResult } from "./startup-items.ts";
 import type { WorkItem } from "./types.ts";
 import { PRIORITY_NUM } from "./types.ts";
 import type { MergeStrategy } from "./orchestrator.ts";
-import {
-  formatInvalidCrewCodeMessage,
-  parseCrewCode,
-  type ConnectionAction,
-} from "./commands/crew.ts";
+import type { ConnectionAction } from "./interactive.ts";
 import { hasAgentFiles, isAiToolId } from "./ai-tools.ts";
 import type { AiToolProfile } from "./ai-tools.ts";
 import {
@@ -1400,25 +1396,10 @@ export async function runSelectionScreen(
     mergeStrategy = settingsResult.mergeStrategy;
     sessionLimit = settingsResult.sessionLimit;
     reviewMode = settingsResult.reviewMode;
-    if (settingsResult.collaborationMode === "share") {
+    if (settingsResult.collaborationMode === "share" || settingsResult.collaborationMode === "join") {
+      // Share and join both resolve to the same auto-joined broker session
+      // derived from project_id + broker_secret in the project config.
       connectionAction = { type: "connect" };
-    } else if (settingsResult.collaborationMode === "join") {
-      io.write(CLEAR_SCREEN);
-      const joinCode = await runTextInput(io, {
-        title: "Ninthwave · Join session",
-        hint: "Format: XXXX-XXXX-XXXX-XXXX (e.g. K2F9-AB3X-7YPL-QM4N)",
-        validate: (value) => {
-          const trimmed = value.trim();
-          return parseCrewCode(trimmed) ? null : formatInvalidCrewCodeMessage(trimmed);
-        },
-      });
-      io.write(SHOW_CURSOR);
-
-      if (joinCode.cancelled) {
-        connectionAction = null;
-      } else {
-        connectionAction = { type: "join", code: parseCrewCode(joinCode.value.trim())! };
-      }
     } else {
       connectionAction = null;
     }

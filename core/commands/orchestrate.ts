@@ -162,7 +162,6 @@ import {
   resolveConfiguredCrewUrl,
   resolveStartupCollaborationAction,
   resolveCrewSocketUrl,
-  createCrewCode,
   createCrewBrokerInstance,
   applyRuntimeCollaborationAction,
   type CollaborationSessionState,
@@ -259,8 +258,6 @@ export {
   resolveStartupCollaborationAction,
   resolveCrewSocketUrl,
   resolveCrewHttpUrl,
-  buildCrewRepoReferencePayload,
-  createCrewCode,
   createCrewBrokerInstance,
   applyRuntimeCollaborationAction,
   type CollaborationSessionState,
@@ -638,10 +635,8 @@ export function buildInteractiveEngineChildArgs(
     reviewMode: "off" | "on";
     watchMode: boolean;
     futureOnlyStartup: boolean;
-    crewCode?: string;
     connectMode: boolean;
     crewUrl?: string;
-    crewName?: string;
     bypassEnabled: boolean;
   },
 ): string[] {
@@ -668,11 +663,7 @@ export function buildInteractiveEngineChildArgs(
   if (resolved.futureOnlyStartup) childArgs.push("--future-only-startup");
   if (parsed.noWatch) childArgs.push("--no-watch");
   if (parsed.watchIntervalSecs !== undefined) childArgs.push("--watch-interval", String(parsed.watchIntervalSecs));
-  if (resolved.crewCode) childArgs.push("--crew", resolved.crewCode);
   if (resolved.connectMode) childArgs.push("--connect");
-  if (parsed.crewPort) childArgs.push("--crew-port", String(parsed.crewPort));
-  if (resolved.crewUrl) childArgs.push("--crew-url", resolved.crewUrl);
-  if (resolved.crewName) childArgs.push("--crew-name", resolved.crewName);
   if (resolved.bypassEnabled) childArgs.push("--dangerously-bypass");
   if (resolved.toolOverride) childArgs.push("--tool", resolved.toolOverride);
   if (parsed.frictionDir) childArgs.push("--friction-log", parsed.frictionDir);
@@ -1095,7 +1086,6 @@ interface InteractiveOperatorParentSessionOptions {
   bypassEnabled: boolean;
   fixForward: boolean;
   reviewAutoFix?: "off" | "direct" | "pr";
-  crewCode?: string;
   connectMode: boolean;
   crewUrl?: string;
   loadRunnableWorkItems: (source: "startup" | "watch-scan" | "run-more") => WorkItem[];
@@ -1191,8 +1181,6 @@ async function runInteractiveOperatorParentSession(
       mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
       collaborationMode: operatorLastSnapshot.runtime.collaborationMode,
       collaborationIntent: collaborationIntentFromMode(operatorLastSnapshot.runtime.collaborationMode),
-      collaborationJoinInputActive: false,
-      collaborationJoinInputValue: "",
       collaborationBusy: false,
       reviewMode: operatorLastSnapshot.runtime.reviewMode,
       ...(opts.futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
@@ -1215,8 +1203,6 @@ async function runInteractiveOperatorParentSession(
     collaborationMode: operatorLastSnapshot.runtime.collaborationMode,
     pendingCollaborationMode: undefined,
     collaborationIntent: collaborationIntentFromMode(operatorLastSnapshot.runtime.collaborationMode),
-    collaborationJoinInputActive: false,
-    collaborationJoinInputValue: "",
     collaborationBusy: false,
     reviewMode: operatorLastSnapshot.runtime.reviewMode,
     pendingReviewMode: undefined,
@@ -1232,7 +1218,6 @@ async function runInteractiveOperatorParentSession(
     detailContentLines: 0,
     savedLogScrollOffset: 0,
     statusLayout: null,
-    sessionCode: opts.crewCode,
     engineDisconnected: false,
     startupOverlay: INTERACTIVE_STARTUP_OVERLAYS.preparingRuntime,
   };
@@ -1243,11 +1228,7 @@ async function runInteractiveOperatorParentSession(
     },
     getSessionLimit: () => tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? operatorLastSnapshot.runtime.sessionLimit,
     requestCollaborationAction: async (request) => {
-      const result = await requestCollaborationFromEngine(request);
-      if (!result.error && result.code) {
-        tuiState.sessionCode = result.code;
-      }
-      return result;
+      return requestCollaborationFromEngine(request);
     },
   });
   Object.assign(tuiState, runtimeControlHandlers, {
@@ -1271,7 +1252,6 @@ async function runInteractiveOperatorParentSession(
         reviewMode: operatorLastSnapshot.runtime.reviewMode,
         watchMode: opts.watchMode,
         futureOnlyStartup: opts.futureOnlyStartup,
-        crewCode: tuiState.sessionCode,
         connectMode: operatorLastSnapshot.runtime.collaborationMode === "shared",
         crewUrl: opts.crewUrl,
         bypassEnabled: opts.bypassEnabled,
@@ -1373,14 +1353,13 @@ export async function cmdOrchestrate(
     daemonMode, isDaemonChild, isInteractiveEngineChild, clickupListId, remoteFlag,
     reviewAutoFix, reviewSessionLimit,
     fixForward, skipReview: cliSkipReview, noWatch, watchIntervalSecs,
-    jsonFlag, skipPreflight, crewName,
+    jsonFlag, skipPreflight,
     bypassEnabled, toolOverride: parsedToolOverride,
   } = parsed;
   let toolOverride = parsedToolOverride;
   let watchMode = parsed.watchMode;
   let futureOnlyStartup = parsed.futureOnlyStartup;
-  let crewCode = parsed.crewCode;
-  let crewUrl = parsed.crewUrl;
+  let crewUrl: string | undefined;
   let connectMode = parsed.connectMode;
   let usedInteractiveOperatorParentSession = false;
 
@@ -1557,8 +1536,8 @@ export async function cmdOrchestrate(
     } catch {
       // best-effort persistence only
     }
-    ({ connectMode, crewCode, crewUrl } = resolveStartupCollaborationAction(
-      { connectMode, crewCode, crewUrl },
+    ({ connectMode, crewUrl } = resolveStartupCollaborationAction(
+      { connectMode, crewUrl },
       result.connectionAction,
     ));
     // Capture AI tool choice from TUI -- flows to selectAiTools via toolOverride
@@ -1600,8 +1579,8 @@ export async function cmdOrchestrate(
   const startupReviewMode = interactiveReviewMode === "off"
     ? "off" as const
     : "on" as const;
-  const startupCollaborationMode = crewCode
-    ? (connectMode ? "shared" as const : "joined" as const)
+  const startupCollaborationMode = connectMode
+    ? "shared" as const
     : persistedCollaborationModeToRuntime(interactiveStartupConfig.defaults.collaborationMode);
 
   if (tuiMode && !isInteractiveEngineChild) {
@@ -1623,7 +1602,6 @@ export async function cmdOrchestrate(
       bypassEnabled,
       fixForward,
       ...(reviewAutoFix !== undefined ? { reviewAutoFix } : {}),
-      ...(crewCode ? { crewCode } : {}),
       connectMode,
       ...(crewUrl ? { crewUrl } : {}),
       loadRunnableWorkItems: loadDiscoveryWorkItems,
@@ -1876,25 +1854,15 @@ export async function cmdOrchestrate(
     },
   };
 
-  // ── Crew mode setup ──────────────────────────────────────────────
+  // ── Broker auto-join setup ──────────────────────────────────────
   let crewBroker: CrewBroker | undefined;
 
-  // Resolve git remote URL for crew repo verification
-  let crewRepoUrl = "";
-  try {
-    const { execSync } = await import("child_process");
-    crewRepoUrl = execSync("git remote get-url origin", { cwd: projectRoot, encoding: "utf-8" }).trim();
-  } catch {
-    // No git remote available
-  }
-
-  // Local-first: never re-activate saved crew codes on plain startup.
-  // Previous collaboration state does not carry into a new run.
-  // Explicit --crew or --connect is required to enter collaboration mode.
+  // Local-first: never auto-connect on plain startup. Explicit --connect is
+  // required to enter collaboration mode. The broker session id is derived
+  // from project_id + broker_secret in the project config.
 
   const collaborationState: CollaborationSessionState = {
-    mode: crewCode ? (connectMode ? "shared" : "joined") : "local",
-    ...(crewCode ? { crewCode } : {}),
+    mode: connectMode ? "shared" : "local",
     ...(crewUrl ? { crewUrl } : {}),
     connectMode,
   };
@@ -1903,49 +1871,23 @@ export async function cmdOrchestrate(
 
   const syncCollaborationLocals = () => {
     crewBroker = collaborationState.crewBroker;
-    crewCode = collaborationState.crewCode;
     crewUrl = collaborationState.crewUrl;
     connectMode = collaborationState.connectMode;
     updateRuntimeCollaborationBindings();
   };
 
-  if (connectMode && !crewCode) {
+  if (connectMode) {
     emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.connectingSession);
     info("Sharing session via ninthwave.sh...");
     const result = await applyRuntimeCollaborationAction(collaborationState, { action: "share", source: "startup" }, {
       projectRoot,
-      crewRepoUrl,
-      crewName,
       log,
     });
-    if (result.error || !result.code) {
+    if (result.error) {
       die(result.error ?? "Failed to create session");
     }
     syncCollaborationLocals();
-    info(`Session created: ${crewCode}`);
-    info(`  Join: nw --crew ${crewCode}`);
-  }
-
-  if (crewCode) {
-    emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.connectingSession);
-    if (!collaborationState.crewBroker) {
-      info(`Joining session via ninthwave.sh (${crewCode})...`);
-      const result = await applyRuntimeCollaborationAction(collaborationState, {
-        action: "join",
-        code: crewCode,
-        source: "startup",
-      }, {
-        projectRoot,
-        crewRepoUrl,
-        crewName,
-        log,
-      });
-      if (result.error) {
-        die(`Failed to connect to crew server: ${result.error}`);
-      }
-      syncCollaborationLocals();
-    }
-    info(`Session active on ninthwave.sh as "${crewName ?? hostname()}"`);
+    info(`Session active on ninthwave.sh as "${hostname()}"`);
   }
 
   /** Get broker-fed remote item snapshots for live TUI rendering. */
@@ -1989,7 +1931,7 @@ export async function cmdOrchestrate(
     sessionLimit,
     operatorId,
     remoteItemSnapshots: crewStatusToRemoteItemSnapshots(initialCrewStatus),
-    crewStatus: crewStatusToDaemonCrewStatus(initialCrewStatus, crewCode, crewBroker?.isConnected() ?? false),
+    crewStatus: crewStatusToDaemonCrewStatus(initialCrewStatus, crewBroker?.isConnected() ?? false),
     ...(futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
   });
   initializeWatchRuntimeFiles(projectRoot, initialState);
@@ -2025,8 +1967,6 @@ export async function cmdOrchestrate(
   ): Promise<RuntimeCollaborationActionResult> => {
     const result = await applyRuntimeCollaborationAction(collaborationState, request, {
       projectRoot,
-      crewRepoUrl,
-      crewName,
       log,
     });
     syncCollaborationLocals();
@@ -2049,7 +1989,6 @@ export async function cmdOrchestrate(
     if (
       request.action === "share"
       && collaborationState.mode === "shared"
-      && collaborationState.crewCode === result.code
       && collaborationState.crewBroker?.isConnected()
     ) {
       return result;
@@ -2057,7 +1996,6 @@ export async function cmdOrchestrate(
 
     const mirrorResult = await applyLocalRuntimeCollaborationAction({
       action: "join",
-      code: result.code ?? request.code,
       source: request.source,
     });
     if (mirrorResult.error) return mirrorResult;
@@ -2066,10 +2004,10 @@ export async function cmdOrchestrate(
       collaborationState.mode = "shared";
       collaborationState.connectMode = true;
       syncCollaborationLocals();
-      return { mode: "shared", code: result.code };
+      return { mode: "shared" };
     }
 
-    return { mode: "joined", code: result.code ?? request.code };
+    return { mode: "joined" };
   };
   const runtimeControlHandlers = createRuntimeControlHandlers({
     sendControl: (command) => {
@@ -2086,8 +2024,6 @@ export async function cmdOrchestrate(
       mergeStrategy: orch.config.mergeStrategy,
       collaborationMode: initialCollaborationMode,
       collaborationIntent: "local",
-      collaborationJoinInputActive: false,
-      collaborationJoinInputValue: "",
       collaborationBusy: false,
       shutdownInProgress: false,
       reviewMode: initialReviewMode,
@@ -2110,8 +2046,6 @@ export async function cmdOrchestrate(
     collaborationMode: initialCollaborationMode,
     pendingCollaborationMode: undefined,
     collaborationIntent: "local",
-    collaborationJoinInputActive: false,
-    collaborationJoinInputValue: "",
     collaborationBusy: false,
     reviewMode: initialReviewMode,
     pendingReviewMode: undefined,
@@ -2141,7 +2075,6 @@ export async function cmdOrchestrate(
         }
       }
     },
-    sessionCode: crewCode ?? undefined,
     tmuxSessionName: tmuxOutsideSession ? tmuxSessionName : undefined,
     engineDisconnected: false,
   };
@@ -2274,11 +2207,9 @@ export async function cmdOrchestrate(
 
   updateRuntimeCollaborationBindings = () => {
     loopDeps.crewBroker = crewBroker;
-    tuiState.sessionCode = crewCode ?? undefined;
-    if (crewBroker && crewCode) {
+    if (crewBroker) {
       const crewStatus = crewBroker.getCrewStatus();
       tuiState.viewOptions.crewStatus = {
-        crewCode: crewStatus?.crewCode ?? crewCode,
         daemonCount: crewStatus?.daemonCount ?? 0,
         availableCount: crewStatus?.availableCount ?? 0,
         claimedCount: crewStatus?.claimedCount ?? 0,
@@ -2323,7 +2254,7 @@ export async function cmdOrchestrate(
       remoteItemSnapshots: crewStatusToRemoteItemSnapshots(crewStatus),
       heartbeats,
       inboxSnapshots,
-      crewStatus: crewStatusToDaemonCrewStatus(crewStatus, crewCode, crewBroker?.isConnected() ?? false),
+      crewStatus: crewStatusToDaemonCrewStatus(crewStatus, crewBroker?.isConnected() ?? false),
       ...(tuiState.viewOptions.emptyState ? { emptyState: tuiState.viewOptions.emptyState } : {}),
     });
   };
@@ -2415,41 +2346,6 @@ export async function cmdOrchestrate(
   };
   process.on("exit", exitAltScreen);
 
-  // Show session splash screen on startup (auto-dismisses after 3s or any keypress)
-  if (tuiMode && crewCode) {
-    const termWidth = getTerminalWidth();
-    const termRows = getTerminalHeight();
-    const BRAND_ANSI = "\x1B[38;2;212;160;48m"; // #D4A030
-    const lines: string[] = [];
-    const centerLine = (text: string, plainLen: number) => {
-      const pad = Math.max(0, Math.floor((termWidth - plainLen) / 2));
-      return " ".repeat(pad) + text;
-    };
-    const midRow = Math.floor(termRows / 2) - 3;
-    for (let i = 0; i < midRow; i++) lines.push("");
-    lines.push(centerLine(`\x1B[1m${BRAND_ANSI}${crewCode}\x1B[0m`, crewCode.length));
-    lines.push("");
-    const dashboardUrl = `ninthwave.sh/stats/${crewCode}`;
-    lines.push(centerLine(`\x1B[2m${dashboardUrl}\x1B[0m`, dashboardUrl.length));
-    const inviteCmd = `Join: nw --crew ${crewCode}`;
-    lines.push(centerLine(`\x1B[2m${inviteCmd}\x1B[0m`, inviteCmd.length));
-    lines.push("");
-    lines.push(centerLine("\x1B[2mPress ? for help\x1B[0m", 16));
-    process.stdout.write("\x1B[H" + lines.join("\x1B[K\n") + "\x1B[J");
-
-    // Auto-dismiss after 3s or any keypress (whichever first)
-    await Promise.race([
-      new Promise<void>((resolve) => setTimeout(resolve, 3000)),
-      new Promise<void>((resolve) => {
-        const onData = () => {
-          process.stdin.removeListener("data", onData);
-          resolve();
-        };
-        process.stdin.on("data", onData);
-      }),
-    ]);
-  }
-
   // Show tmux attach splash screen on startup (dismissed by any keypress)
   if (tuiMode && tmuxOutsideSession && tmuxSessionName) {
     const termWidth = getTerminalWidth();
@@ -2497,10 +2393,8 @@ export async function cmdOrchestrate(
           reviewMode: operatorLastSnapshot.runtime.reviewMode,
           watchMode,
           futureOnlyStartup,
-          crewCode,
           connectMode,
           crewUrl,
-          crewName,
           bypassEnabled,
         });
         const operatorResult = await runInteractiveWatchOperatorSession({

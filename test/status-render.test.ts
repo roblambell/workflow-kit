@@ -3593,7 +3593,6 @@ describe("small terminal fallback", () => {
 describe("connection mode TUI rendering", () => {
   it("formatConnectionInline shows 'Sharing' for solo session", () => {
     const output = formatConnectionInline({
-      crewCode: "K2F9-AB3X-7YPL-QM4N",
       daemonCount: 1,
       availableCount: 3,
       claimedCount: 5,
@@ -3605,7 +3604,6 @@ describe("connection mode TUI rendering", () => {
 
   it("formatConnectionInline shows daemon count for multi-daemon crew", () => {
     const output = formatConnectionInline({
-      crewCode: "K2F9-AB3X-7YPL-QM4N",
       daemonCount: 3,
       availableCount: 3,
       claimedCount: 5,
@@ -3617,7 +3615,6 @@ describe("connection mode TUI rendering", () => {
 
   it("formatConnectionInline shows Offline when disconnected", () => {
     const output = formatConnectionInline({
-      crewCode: "K2F9-AB3X-7YPL-QM4N",
       daemonCount: 0,
       availableCount: 0,
       claimedCount: 0,
@@ -3629,7 +3626,6 @@ describe("connection mode TUI rendering", () => {
 
   it("formatConnectionPanel renders full-width bar", () => {
     const output = formatConnectionPanel({
-      crewCode: "ABC",
       daemonCount: 2,
       availableCount: 1,
       claimedCount: 1,
@@ -3644,7 +3640,6 @@ describe("connection mode TUI rendering", () => {
   it("formatTitleMetrics renders inline connection status after Ninthwave", () => {
     const items: StatusItem[] = [makeStatusItem()];
     const output = formatTitleMetrics(items, 100, new Date().toISOString(), {
-      crewCode: "K2F9-AB3X-7YPL-QM4N",
       daemonCount: 1,
       availableCount: 0,
       claimedCount: 1,
@@ -3662,7 +3657,6 @@ describe("connection mode TUI rendering", () => {
     ];
     const output = formatStatusTable(items, 120, undefined, false, {
       crewStatus: {
-        crewCode: "K2F9-AB3X-7YPL-QM4N",
         daemonCount: 1,
         availableCount: 0,
         claimedCount: 1,
@@ -3683,7 +3677,6 @@ describe("connection mode TUI rendering", () => {
     ];
     const output = formatStatusTable(items, 120, 5, false, {
       crewStatus: {
-        crewCode: "ABC-DEF",
         daemonCount: 2,
         availableCount: 1,
         claimedCount: 1,
@@ -3700,7 +3693,6 @@ describe("connection mode TUI rendering", () => {
     const items: StatusItem[] = [makeStatusItem()];
     const withCrew = buildStatusLayout(items, 100, undefined, false, {
       crewStatus: {
-        crewCode: "K2F9-AB3X-7YPL-QM4N",
         daemonCount: 2,
         availableCount: 3,
         claimedCount: 1,
@@ -3810,7 +3802,7 @@ describe("renderHelpOverlay", () => {
   });
 
   it("shows version in centered footer", () => {
-    const lines = renderHelpOverlay(100, 40, undefined, undefined, "1.2.3");
+    const lines = renderHelpOverlay(100, 40, undefined, "1.2.3");
     const text = stripAnsi(lines.join("\n"));
     expect(text).toContain("Ninthwave v1.2.3");
   });
@@ -5112,7 +5104,6 @@ describe("reviewModeLabel", () => {
 // ── renderControlsOverlay ────────────────────────────────────────────────────
 
 describe("renderControlsOverlay", () => {
-  const sessionCode = "K2F9-AB3X-7YPL-QM4N";
   const baseOpts = {
     collaborationMode: "local" as CollaborationMode,
     reviewMode: "off" as ReviewMode,
@@ -5160,30 +5151,7 @@ describe("renderControlsOverlay", () => {
   it("explains share and join flows when no live session is active", () => {
     const lines = renderControlsOverlay(100, 40, baseOpts);
     const text = stripAnsi(lines.join("\n"));
-    expect(text).toContain("Share creates a live session code and invite command.");
-    expect(text).toContain("Join opens a session-code prompt in this overlay.");
-  });
-
-  it("shows shared session code and join command", () => {
-    const lines = renderControlsOverlay(100, 40, {
-      ...baseOpts,
-      collaborationMode: "shared",
-      sessionCode,
-    });
-    const text = stripAnsi(lines.join("\n"));
-    expect(text).toContain(`Code:    ${sessionCode}`);
-    expect(text).toContain(`nw --crew ${sessionCode}`);
-  });
-
-  it("shows a join input field in join mode", () => {
-    const lines = renderControlsOverlay(100, 40, {
-      ...baseOpts,
-      collaborationIntent: "join",
-      collaborationJoinInputActive: true,
-      collaborationJoinInputValue: "K2F9",
-    });
-    const text = stripAnsi(lines.join("\n"));
-    expect(text).toContain("Join code: [K2F9]");
+    expect(text).toContain("Share and Join both auto-connect");
   });
 
   it("shows inline busy and error collaboration feedback", () => {
@@ -5197,7 +5165,6 @@ describe("renderControlsOverlay", () => {
     const errorLines = renderControlsOverlay(100, 40, {
       ...baseOpts,
       collaborationIntent: "join",
-      collaborationJoinInputActive: true,
       collaborationError: "Broker unreachable",
     });
     expect(stripAnsi(errorLines.join("\n"))).toContain("Error:   Broker unreachable");
@@ -5275,17 +5242,12 @@ describe("renderControlsOverlay", () => {
     }
   });
 
-  it("keeps collaboration details readable on narrow terminals", () => {
+  it("fits collaboration details within narrow terminals", () => {
     const termWidth = 44;
     const lines = renderControlsOverlay(termWidth, 30, {
       ...baseOpts,
       collaborationMode: "shared",
-      sessionCode,
     });
-    const text = stripAnsi(lines.join("\n"));
-    expect(text).toContain(sessionCode);
-    expect(text).toContain("Command:");
-    expect(text).toContain("nw --crew");
     for (const line of lines) {
       expect(stripAnsiForWidth(line).length).toBeLessThanOrEqual(termWidth);
     }
@@ -5295,7 +5257,6 @@ describe("renderControlsOverlay", () => {
     const lines = renderControlsOverlay(80, 14, {
       ...baseOpts,
       collaborationMode: "shared",
-      sessionCode,
       collaborationError: "Broker unreachable",
     });
     const text = stripAnsi(lines.join("\n"));

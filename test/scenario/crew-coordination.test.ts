@@ -441,7 +441,6 @@ describe("scenario: crew coordination", () => {
     remoteItems: CrewRemoteItemSnapshot[],
   ): CrewStatus {
     return {
-      crewCode: "ABCD-EFGH",
       daemonCount: 2,
       availableCount: 1,
       claimedCount: remoteItems.filter((i) => i.ownerDaemonId !== null).length,

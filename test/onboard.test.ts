@@ -838,7 +838,7 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).not.toContain("--review-session-limit");
   });
 
-  it("passes --crew <code> for crew join action", async () => {
+  it("passes --connect for crew join action (auto-join via project config)", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -858,13 +858,13 @@ describe("cmdNoArgs", () => {
         sessionLimit: 4,
         allSelected: false,
         reviewMode: "on" as const,
-        connectionAction: { type: "join" as const, code: "k2f9ab3x7yplqm4n" },
+        connectionAction: { type: "connect" as const },
       }),
       runWatch: async (args) => { watchArgs = args; },
     });
 
-    expect(watchArgs).toContain("--crew");
-    expect(watchArgs).toContain("K2F9-AB3X-7YPL-QM4N");
+    expect(watchArgs).toContain("--connect");
+    expect(watchArgs).not.toContain("--crew");
   });
 
   it("passes --connect for crew connect action", async () => {
@@ -1070,20 +1070,20 @@ describe("cmdNoArgs", () => {
         sessionLimit: 4,
         allSelected: false,
         reviewMode: "on" as const,
-        connectionAction: { type: "join" as const, code: "k2f9ab3x7yplqm4n" },
+        connectionAction: { type: "connect" as const },
       }),
       runWatch: async (args) => { watchArgs = args; },
     });
 
-    expect(watchArgs).toContain("--crew");
-    expect(watchArgs).toContain("K2F9-AB3X-7YPL-QM4N");
+    expect(watchArgs).toContain("--connect");
+    expect(watchArgs).not.toContain("--crew");
     expect(savedUpdates).toHaveLength(1);
     // mergeStrategy "manual" and reviewMode "on" both match TUI defaults,
     // so neither is re-saved. Session limit 4 differs from computeDefaultSessionLimit() (1),
     // so it is persisted.
     expect(savedUpdates[0]).toMatchObject({
       session_limit: 4,
-      collaboration_mode: "join",
+      collaboration_mode: "share",
     });
     expect(savedUpdates[0]).not.toHaveProperty("backend_mode");
     expect(savedUpdates[0]).not.toHaveProperty("merge_strategy");

@@ -1281,20 +1281,19 @@ describe("runSelectionScreen", () => {
     expect(result!.connectionAction).toEqual({ type: "connect" });
   });
 
-  it("keeps future-only startup local when join code entry is cancelled", async () => {
+  it("supports future-only startup with direct join selection (auto-connect, no code prompt)", async () => {
     const { io, sendKeyBatches } = createMockIO();
 
     const resultPromise = runSelectionScreen(io, [], 4);
     sendKeyBatches(
       ["\r"],
       ["\x1B[B", "\x1B[C", "\x1B[C", "\r"],
-      ["\x1B"],
     );
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
     expect(result!.futureOnly).toBe(true);
-    expect(result!.connectionAction).toBeNull();
+    expect(result!.connectionAction).toEqual({ type: "connect" });
   });
 
   it("completes full flow: select items → confirm with local-first defaults", async () => {
@@ -1761,7 +1760,7 @@ describe("runSelectionScreen -- startup defaults", () => {
     expect(result!.sessionLimit).toBe(4);
   });
 
-  it("returns join connectionAction when join is selected", async () => {
+  it("returns connect connectionAction when join is selected (auto-connect, no code prompt)", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "Task")];
 
@@ -1774,63 +1773,11 @@ describe("runSelectionScreen -- startup defaults", () => {
         "\x1B[C", // share -> join
         "\r",
       ],
-      [
-        "k", "2", "f", "9", "a", "b", "3", "x",
-        "7", "y", "p", "l", "q", "m", "4", "n", "\r",
-      ],
     );
 
     const result = await resultPromise;
     expect(result).not.toBeNull();
-    expect(result!.connectionAction).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
-  });
-
-  it("falls back to local when join code entry is cancelled", async () => {
-    const { io, sendKeyBatches } = createMockIO();
-    const items = [makeWorkItem("A-1", "Task")];
-
-    const resultPromise = runSelectionScreen(io, items, 4);
-    sendKeyBatches(
-      ["\r"],
-      [
-        "\x1B[B", // → Collaboration row
-        "\x1B[C", // local -> share
-        "\x1B[C", // share -> join
-        "\r",
-      ],
-      ["\x1B"],
-    );
-
-    const result = await resultPromise;
-    expect(result).not.toBeNull();
-    expect(result!.connectionAction).toBeNull();
-  });
-
-  it("re-prompts for a valid join code before returning join", async () => {
-    const { io, sendKeyBatches, getOutput } = createMockIO();
-    const items = [makeWorkItem("A-1", "Task")];
-
-    const resultPromise = runSelectionScreen(io, items, 4);
-    sendKeyBatches(
-      ["\r"],
-      [
-        "\x1B[B", // → Collaboration row
-        "\x1B[C", // local -> share
-        "\x1B[C", // share -> join
-        "\r",
-      ],
-      [
-        "b", "a", "d", "\r",
-        "\x7f", "\x7f", "\x7f",
-        "k", "2", "f", "9", "a", "b", "3", "x",
-        "7", "y", "p", "l", "q", "m", "4", "n", "\r",
-      ],
-    );
-
-    const result = await resultPromise;
-    expect(result).not.toBeNull();
-    expect(result!.connectionAction).toEqual({ type: "join", code: "K2F9-AB3X-7YPL-QM4N" });
-    expect(getOutput()).toContain("Invalid session code: bad");
+    expect(result!.connectionAction).toEqual({ type: "connect" });
   });
 
   it("falls back to defaultReviewMode when defaultSettings are omitted", async () => {

@@ -29,7 +29,6 @@ export interface RemoteItemSnapshot {
 
 export interface CrewStatusUpdate {
   type: "crew_update";
-  crewCode: string;
   daemonCount: number;
   availableCount: number;
   claimedCount: number;
@@ -363,7 +362,6 @@ export function buildCrewStatusUpdate(crew: CrewState): CrewStatusUpdate {
 
   return {
     type: "crew_update",
-    crewCode: crew.code,
     daemonCount: connectedDaemons.length,
     availableCount,
     claimedCount,

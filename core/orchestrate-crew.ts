@@ -7,12 +7,10 @@ import type {
   CrewBroker,
   CrewRemoteItemSnapshot,
   CrewStatus,
-  ConnectionAction,
 } from "./crew.ts";
-import { WebSocketCrewBroker, saveCrewCode } from "./crew.ts";
+import { WebSocketCrewBroker } from "./crew.ts";
 import { makeBrokerHasher } from "./broker-hash.ts";
 import { loadMergedProjectConfig, type ProjectConfig } from "./config.ts";
-import { resolveRepoRef } from "./repo-ref.ts";
 import type {
   RuntimeCollaborationActionRequest,
   RuntimeCollaborationActionResult,
@@ -26,7 +24,8 @@ export const DEFAULT_CREW_URL = "wss://ninthwave.sh";
 
 export interface CollaborationSessionState {
   mode: "local" | "shared" | "joined";
-  crewCode?: string;
+  /** First 8 chars of the derived crew id; debug-only display hint. */
+  crewIdPrefix?: string;
   crewUrl?: string;
   crewBroker?: CrewBroker;
   connectMode: boolean;
@@ -34,21 +33,13 @@ export interface CollaborationSessionState {
 
 export interface CollaborationSessionBrokerInfo {
   mode: CollaborationSessionState["mode"];
-  crewCode?: string;
+  crewIdPrefix?: string;
 }
 
 export interface ApplyRuntimeCollaborationActionDeps {
   projectRoot: string;
-  /**
-   * @deprecated Kept for the dead-but-present pre-H-BAJ-3 code paths while
-   * the UI strings still surface it. The new protocol does not send repo
-   * references to the broker.
-   */
-  crewRepoUrl: string;
   crewName?: string;
   log: (entry: LogEntry) => void;
-  fetchFn?: typeof fetch;
-  saveCrewCodeFn?: typeof saveCrewCode;
   /** Inject a project config override (defaults to reading from disk). */
   config?: ProjectConfig;
   createBroker?: (
@@ -74,27 +65,17 @@ export function resolveConfiguredCrewUrl(
 export function resolveStartupCollaborationAction(
   current: {
     connectMode: boolean;
-    crewCode?: string;
     crewUrl?: string;
   },
-  connectionAction: ConnectionAction | null | undefined,
+  connectionAction: { type: "connect" } | null | undefined,
 ): {
   connectMode: boolean;
-  crewCode?: string;
   crewUrl?: string;
 } {
   if (!connectionAction) return current;
-  if (connectionAction.type === "connect") {
-    return {
-      connectMode: true,
-      crewCode: undefined,
-      crewUrl: current.crewUrl,
-    };
-  }
   return {
-    connectMode: false,
-    crewCode: connectionAction.code,
-    crewUrl: current.crewUrl ?? DEFAULT_CREW_URL,
+    connectMode: true,
+    crewUrl: current.crewUrl,
   };
 }
 
@@ -130,45 +111,6 @@ export function resolveCrewId(config: ProjectConfig): string {
 
 export function resolveCrewHttpUrl(crewUrl?: string): string {
   return resolveCrewSocketUrl(crewUrl).replace(/^wss?:\/\//, "https://");
-}
-
-export function buildCrewRepoReferencePayload(crewRepoUrl: string): Record<string, string> {
-  const trimmedRepoUrl = crewRepoUrl.trim();
-  if (!trimmedRepoUrl) return {};
-
-  try {
-    const resolved = resolveRepoRef({ repoUrl: trimmedRepoUrl });
-    return {
-      repoUrl: trimmedRepoUrl,
-      repoHash: resolved.repoHash,
-      repoRef: resolved.repoRef,
-    };
-  } catch {
-    return { repoUrl: trimmedRepoUrl };
-  }
-}
-
-export async function createCrewCode(
-  crewUrl: string | undefined,
-  crewRepoUrl: string,
-  fetchFn: typeof fetch,
-): Promise<string> {
-  const response = await fetchFn(`${resolveCrewHttpUrl(crewUrl)}/api/crews`, {
-    method: "POST",
-    body: JSON.stringify(buildCrewRepoReferencePayload(crewRepoUrl)),
-    headers: { "Content-Type": "application/json" },
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Failed to create session: ${response.status}${body ? ` ${body}` : ""}`);
-  }
-
-  const payload = await response.json() as { code?: string };
-  if (!payload.code) {
-    throw new Error("Failed to create session: missing crew code");
-  }
-  return payload.code;
 }
 
 /**
@@ -216,13 +158,10 @@ export async function applyRuntimeCollaborationAction(
   request: RuntimeCollaborationActionRequest,
   deps: ApplyRuntimeCollaborationActionDeps,
 ): Promise<RuntimeCollaborationActionResult> {
-  const fetchFn = deps.fetchFn ?? fetch;
-  const saveCrewCodeFn = deps.saveCrewCodeFn ?? saveCrewCode;
-
   if (request.action === "local") {
     state.crewBroker?.disconnect();
     state.crewBroker = undefined;
-    state.crewCode = undefined;
+    state.crewIdPrefix = undefined;
     state.connectMode = false;
     state.mode = "local";
     deps.onBrokerChanged?.(undefined, { mode: "local" });
@@ -232,21 +171,20 @@ export async function applyRuntimeCollaborationAction(
 
   if (request.action === "share"
     && state.mode === "shared"
-    && state.crewCode
     && state.crewBroker?.isConnected()) {
-    deps.log({ ts: new Date().toISOString(), level: "info", event: "runtime_share_reused", crewCode: state.crewCode });
-    return { mode: "shared", code: state.crewCode };
+    deps.log({ ts: new Date().toISOString(), level: "info", event: "runtime_share_reused" });
+    return { mode: "shared" };
   }
 
   const nextCrewUrl = resolveCrewSocketUrl(state.crewUrl);
   // Auto-join: both "share" and "join" now resolve to the same crew id
   // derived from the project config. The distinction between the two paths
   // survives in the UI (share vs join) but the protocol is identical.
-  let nextCrewCode: string;
+  let nextCrewId: string;
   let effectiveConfig: ProjectConfig;
   try {
     effectiveConfig = deps.config ?? loadMergedProjectConfig(deps.projectRoot);
-    nextCrewCode = resolveCrewId(effectiveConfig);
+    nextCrewId = resolveCrewId(effectiveConfig);
   } catch (error) {
     deps.log({
       ts: new Date().toISOString(),
@@ -257,8 +195,9 @@ export async function applyRuntimeCollaborationAction(
     return { error: error instanceof Error ? error.message : String(error) };
   }
 
+  const nextCrewIdPrefix = nextCrewId.slice(0, 8);
   if (request.action === "share") {
-    deps.log({ ts: new Date().toISOString(), level: "info", event: "runtime_share_created", crewCode: nextCrewCode });
+    deps.log({ ts: new Date().toISOString(), level: "info", event: "runtime_share_created" });
   }
 
   const nextMode = request.action === "share" ? "shared" : "joined";
@@ -283,7 +222,6 @@ export async function applyRuntimeCollaborationAction(
       ts: new Date().toISOString(),
       level: "warn",
       event: request.action === "share" ? "runtime_share_connect_failed" : "runtime_join_failed",
-      crewCode: nextCrewCode,
       error: error instanceof Error ? error.message : String(error),
     });
     return { error: error instanceof Error ? error.message : String(error) };
@@ -291,12 +229,11 @@ export async function applyRuntimeCollaborationAction(
 
   state.crewBroker?.disconnect();
   state.crewBroker = nextBroker;
-  state.crewCode = nextCrewCode;
+  state.crewIdPrefix = nextCrewIdPrefix;
   state.crewUrl = nextCrewUrl;
   state.connectMode = request.action === "share";
   state.mode = nextMode;
-  deps.onBrokerChanged?.(nextBroker, { mode: nextMode, crewCode: nextCrewCode });
-  saveCrewCodeFn(deps.projectRoot, nextCrewCode);
-  deps.log({ ts: new Date().toISOString(), level: "info", event: "runtime_crew_connected", crewCode: nextCrewCode, mode: nextMode });
-  return { mode: nextMode, code: nextCrewCode };
+  deps.onBrokerChanged?.(nextBroker, { mode: nextMode, crewIdPrefix: nextCrewIdPrefix });
+  deps.log({ ts: new Date().toISOString(), level: "info", event: "runtime_crew_connected", mode: nextMode });
+  return { mode: nextMode };
 }

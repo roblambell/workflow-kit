@@ -133,7 +133,6 @@ export interface DaemonRemoteItemSnapshot {
 }
 
 export interface DaemonCrewStatus {
-  crewCode: string;
   daemonCount: number;
   availableCount: number;
   claimedCount: number;
