@@ -32,6 +32,13 @@ import {
 } from "./broker-state.ts";
 import { InMemoryBrokerStore, type BrokerSocket, type CrewState } from "./broker-store.ts";
 
+/**
+ * Matches the permissive crew-id regex used by the production broker
+ * (`BrokerServer`). Crew ids are opaque HMAC digests, 16-64 base64url
+ * chars; the broker auto-creates an empty crew on the first connection.
+ */
+const CREW_ID_PATH_REGEX = /^\/api\/crews\/([A-Za-z0-9_-]{16,64})\/ws$/;
+
 // ── Types ───────────────────────────────────────────────────────────
 
 export interface BrokerOptions {
@@ -76,29 +83,13 @@ export class MockBroker {
     this.server = Bun.serve({
       port: this.opts.port ?? 0,
 
-      routes: {
-        "/api/crews": {
-          POST: async (req: Request) => {
-            let requestedCode: string | undefined;
-            try {
-              const body = await req.json() as { code?: unknown };
-              if (body && typeof body.code === "string" && body.code.length > 0) {
-                requestedCode = body.code;
-              }
-            } catch { /* no body or malformed */ }
-            const code = requestedCode && broker.store.hasCrew(requestedCode)
-              ? requestedCode
-              : broker.createCrew(requestedCode);
-            return Response.json({ code }, { status: 201 });
-          },
-        },
-      },
-
       fetch(req, server) {
         const url = new URL(req.url);
 
-        // WebSocket upgrade: /api/crews/:code/ws?daemonId=...&name=...
-        const wsMatch = url.pathname.match(/^\/api\/crews\/([A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4})\/ws$/);
+        // WebSocket upgrade: /api/crews/:crewId/ws?daemonId=...&name=...&operatorId=...
+        // Unknown crew ids auto-create an empty crew entry -- the shared
+        // `broker_secret` is the only thing needed to converge on a crew.
+        const wsMatch = url.pathname.match(CREW_ID_PATH_REGEX);
         if (wsMatch) {
           const code = wsMatch[1]!;
           const daemonId = url.searchParams.get("daemonId");
@@ -109,9 +100,9 @@ export class MockBroker {
             return new Response("Missing daemonId query param", { status: 400 });
           }
 
-          const crew = broker.store.getCrew(code);
+          let crew = broker.store.getCrew(code);
           if (!crew) {
-            return new Response("Crew not found", { status: 404 });
+            crew = broker.store.createCrew(code);
           }
 
           const upgraded = server.upgrade(req, {
@@ -192,26 +183,6 @@ export class MockBroker {
   /** Get a crew by code. */
   getCrew(code: string): CrewState | undefined {
     return this.store.getCrew(code);
-  }
-
-  // ── Crew management ───────────────────────────────────────────────
-
-  private createCrew(requestedCode?: string): string {
-    const code = requestedCode ?? this.generateCode();
-    this.store.createCrew(code);
-    return code;
-  }
-
-  private generateCode(): string {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let code: string;
-    do {
-      const parts = Array.from({ length: 4 }, () =>
-        Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""),
-      );
-      code = parts.join("-");
-    } while (this.store.hasCrew(code));
-    return code;
   }
 
   // ── Daemon lifecycle ──────────────────────────────────────────────

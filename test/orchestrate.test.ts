@@ -98,6 +98,7 @@ import {
 import type { CrewBroker, CrewRemoteItemSnapshot, CrewStatus } from "../core/crew.ts";
 import { readCrewCode, crewCodePath } from "../core/crew.ts";
 import { hashRepoUrl } from "../core/repo-ref.ts";
+import { makeBrokerHasher } from "../core/broker-hash.ts";
 import {
   buildStartupPersistenceUpdates,
   shouldEnterInteractive,
@@ -6212,6 +6213,15 @@ describe("createRuntimeControlHandlers", () => {
 });
 
 describe("applyRuntimeCollaborationAction", () => {
+  // A stable test project identity. Two daemons configured with the same
+  // `project_id` + `broker_secret` resolve to the same `crew_id`, which is
+  // what makes the new auto-join protocol work without a POST handshake.
+  const TEST_CONFIG = {
+    project_id: "11111111-1111-4111-8111-111111111111",
+    broker_secret: Buffer.alloc(32, 3).toString("base64"),
+  };
+  const EXPECTED_CREW_ID = makeBrokerHasher(TEST_CONFIG.broker_secret)(TEST_CONFIG.project_id);
+
   function makeBroker(overrides: Partial<CrewBroker> = {}): CrewBroker {
     return {
       connect: vi.fn(async () => {}),
@@ -6232,10 +6242,6 @@ describe("applyRuntimeCollaborationAction", () => {
       mode: "local" as const,
       connectMode: false,
     };
-    const fetchFn = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ code: "ABCD-1234" }),
-    }));
     const broker = makeBroker();
     const createBroker = vi.fn(() => broker);
     const saveCrewCodeFn = vi.fn();
@@ -6246,7 +6252,7 @@ describe("applyRuntimeCollaborationAction", () => {
       crewRepoUrl: "git@github.com:test/repo.git",
       crewName: "operator",
       log: () => {},
-      fetchFn: fetchFn as unknown as typeof fetch,
+      config: TEST_CONFIG,
       createBroker,
       saveCrewCodeFn,
       onBrokerChanged,
@@ -6256,57 +6262,49 @@ describe("applyRuntimeCollaborationAction", () => {
       crewRepoUrl: "git@github.com:test/repo.git",
       crewName: "operator",
       log: () => {},
-      fetchFn: fetchFn as unknown as typeof fetch,
+      config: TEST_CONFIG,
       createBroker,
       saveCrewCodeFn,
       onBrokerChanged,
     });
 
-    expect(firstResult).toEqual({ mode: "shared", code: "ABCD-1234" });
-    expect(secondResult).toEqual({ mode: "shared", code: "ABCD-1234" });
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(firstResult).toEqual({ mode: "shared", code: EXPECTED_CREW_ID });
+    expect(secondResult).toEqual({ mode: "shared", code: EXPECTED_CREW_ID });
+    // Share is now a no-network operation -- the crew id is derived locally.
     expect(createBroker).toHaveBeenCalledTimes(1);
     expect(broker.connect).toHaveBeenCalledTimes(1);
     expect(saveCrewCodeFn).toHaveBeenCalledTimes(1);
     expect(onBrokerChanged).toHaveBeenCalledTimes(1);
     expect(state).toMatchObject({
       mode: "shared",
-      crewCode: "ABCD-1234",
+      crewCode: EXPECTED_CREW_ID,
       connectMode: true,
       crewBroker: broker,
     });
   });
 
-  it("sends repo reference metadata when creating a shared session", async () => {
+  it("derives the crew id from project_id + broker_secret instead of hitting POST", async () => {
     const state = {
       mode: "local" as const,
       connectMode: false,
     };
-    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => ({
-      ok: true,
-      json: async () => ({ code: "ABCD-1234" }),
-      text: async () => "",
-      ...(init ?? {}),
-    }));
+    const fetchFn = vi.fn();
     const broker = makeBroker();
 
-    await applyRuntimeCollaborationAction(state, { action: "share" }, {
+    const result = await applyRuntimeCollaborationAction(state, { action: "share" }, {
       projectRoot: "/project",
       crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
+      config: TEST_CONFIG,
       fetchFn: fetchFn as unknown as typeof fetch,
       createBroker: vi.fn(() => broker),
       saveCrewCodeFn: vi.fn(),
       onBrokerChanged: vi.fn(),
     });
 
-    const [, init] = fetchFn.mock.calls[0] ?? [];
-    expect(init).toMatchObject({ method: "POST" });
-    expect(JSON.parse(String(init?.body))).toEqual({
-      repoUrl: "git@github.com:test/repo.git",
-      repoHash: hashRepoUrl("git@github.com:test/repo.git"),
-      repoRef: hashRepoUrl("git@github.com:test/repo.git"),
-    });
+    expect(result).toEqual({ mode: "shared", code: EXPECTED_CREW_ID });
+    // No POST: identity is derived locally.
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it("returns a broker connection failure without mutating startup collaboration state", async () => {
@@ -6324,10 +6322,7 @@ describe("applyRuntimeCollaborationAction", () => {
       projectRoot: "/project",
       crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
-      fetchFn: vi.fn(async () => ({
-        ok: true,
-        json: async () => ({ code: "ABCD-1234" }),
-      })) as unknown as typeof fetch,
+      config: TEST_CONFIG,
       createBroker: vi.fn(() => rejectedBroker),
       saveCrewCodeFn: vi.fn(),
       onBrokerChanged: vi.fn(),
@@ -6340,16 +6335,12 @@ describe("applyRuntimeCollaborationAction", () => {
     });
   });
 
-  it("uses an existing crew URL for share session creation and broker connection", async () => {
+  it("uses an existing crew URL for share session broker connection", async () => {
     const state = {
       mode: "local" as const,
       connectMode: false,
       crewUrl: "wss://config.example/socket",
     };
-    const fetchFn = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ code: "ABCD-1234" }),
-    }));
     const broker = makeBroker();
     const createBroker = vi.fn(() => broker);
 
@@ -6357,22 +6348,19 @@ describe("applyRuntimeCollaborationAction", () => {
       projectRoot: "/project",
       crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
-      fetchFn: fetchFn as unknown as typeof fetch,
+      config: TEST_CONFIG,
       createBroker,
       saveCrewCodeFn: vi.fn(),
       onBrokerChanged: vi.fn(),
     });
 
-    expect(result).toEqual({ mode: "shared", code: "ABCD-1234" });
-    expect(fetchFn).toHaveBeenCalledWith(
-      "https://config.example/socket/api/crews",
-      expect.objectContaining({ method: "POST" }),
-    );
+    expect(result).toEqual({ mode: "shared", code: EXPECTED_CREW_ID });
+    // createBroker now receives (projectRoot, crewUrl, crewId, brokerSecret, deps, name)
     expect(createBroker).toHaveBeenCalledWith(
       "/project",
       "wss://config.example/socket",
-      "ABCD-1234",
-      "git@github.com:test/repo.git",
+      EXPECTED_CREW_ID,
+      TEST_CONFIG.broker_secret,
       expect.any(Object),
       expect.any(String),
     );
@@ -6398,6 +6386,7 @@ describe("applyRuntimeCollaborationAction", () => {
       projectRoot: "/project",
       crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
+      config: TEST_CONFIG,
       createBroker: vi.fn(() => rejectedBroker),
       saveCrewCodeFn: vi.fn(),
       onBrokerChanged: vi.fn(),
@@ -6413,7 +6402,7 @@ describe("applyRuntimeCollaborationAction", () => {
     });
   });
 
-  it("joins a new code, then disconnects cleanly back to local mode", async () => {
+  it("joins the derived crew id, then disconnects cleanly back to local mode", async () => {
     const currentBroker = makeBroker();
     const joinedBroker = makeBroker();
     const saveCrewCodeFn = vi.fn();
@@ -6426,10 +6415,13 @@ describe("applyRuntimeCollaborationAction", () => {
       connectMode: true,
     };
 
+    // `code` is accepted but ignored -- auto-join always resolves to the
+    // project's derived crew id.
     const joinResult = await applyRuntimeCollaborationAction(state, { action: "join", code: "JOIN-5678" }, {
       projectRoot: "/project",
       crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
+      config: TEST_CONFIG,
       createBroker: vi.fn(() => joinedBroker),
       saveCrewCodeFn,
       onBrokerChanged,
@@ -6438,12 +6430,13 @@ describe("applyRuntimeCollaborationAction", () => {
       projectRoot: "/project",
       crewRepoUrl: "git@github.com:test/repo.git",
       log: () => {},
+      config: TEST_CONFIG,
       createBroker: vi.fn(),
       saveCrewCodeFn,
       onBrokerChanged,
     });
 
-    expect(joinResult).toEqual({ mode: "joined", code: "JOIN-5678" });
+    expect(joinResult).toEqual({ mode: "joined", code: EXPECTED_CREW_ID });
     expect(localResult).toEqual({ mode: "local" });
     expect(joinedBroker.connect).toHaveBeenCalledTimes(1);
     expect(currentBroker.disconnect).toHaveBeenCalledTimes(1);
@@ -6455,68 +6448,6 @@ describe("applyRuntimeCollaborationAction", () => {
       crewBroker: undefined,
       connectMode: false,
     });
-  });
-
-  it("sends repoUrl and repoHash websocket params when joining", async () => {
-    let receivedRepoUrl: string | null = null;
-    let receivedRepoHash: string | null = null;
-    const tmpDir = mkdtempSync(join(tmpdir(), "nw-crew-join-"));
-    // lint-ignore: no-leaked-server
-    const server = Bun.serve({
-      port: 0,
-      fetch(req, srv) {
-        const url = new URL(req.url);
-        if (url.pathname.includes("/api/crews/") && url.pathname.endsWith("/ws")) {
-          receivedRepoUrl = url.searchParams.get("repoUrl");
-          receivedRepoHash = url.searchParams.get("repoHash");
-          const upgraded = srv.upgrade(req);
-          if (upgraded) return undefined;
-          return new Response("Upgrade failed", { status: 400 });
-        }
-        return new Response("Not found", { status: 404 });
-      },
-      websocket: {
-        open(ws) {
-          ws.send(JSON.stringify({
-            type: "crew_update",
-            crewCode: "JOIN-5678",
-            daemonCount: 1,
-            availableCount: 0,
-            claimedCount: 0,
-            completedCount: 0,
-            daemonNames: ["remote"],
-          }));
-        },
-        message() {},
-        close() {},
-      },
-    });
-
-    try {
-      const state = {
-        mode: "local" as const,
-        connectMode: false,
-        crewUrl: `ws://localhost:${server.port}`,
-      };
-
-      const result = await applyRuntimeCollaborationAction(state, { action: "join", code: "JOIN-5678" }, {
-        projectRoot: tmpDir,
-        crewRepoUrl: "git@github.com:test/repo.git",
-        log: () => {},
-        saveCrewCodeFn: vi.fn(),
-        onBrokerChanged: vi.fn(),
-      });
-
-      expect(result).toEqual({ mode: "joined", code: "JOIN-5678" });
-      expect(receivedRepoUrl).toBe("git@github.com:test/repo.git");
-      expect(receivedRepoHash).toBe(hashRepoUrl("git@github.com:test/repo.git"));
-
-      state.crewBroker?.disconnect();
-    } finally {
-      server.stop(true);
-      rmSync(tmpDir, { recursive: true, force: true });
-      rmSync(join(crewCodePath(tmpDir), ".."), { recursive: true, force: true });
-    }
   });
 });
 

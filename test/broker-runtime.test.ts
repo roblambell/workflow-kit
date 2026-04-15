@@ -1,14 +1,21 @@
 // Tests for the persistent self-hosted broker runtime.
-// Covers: create crew, join, repo mismatch rejection, persistence across restart,
+// Covers: auto-join on unknown crew ids, persistence across restart,
 // reconnect resume, grace-period release, and rich remoteItems snapshots.
 
 import { describe, it, expect, afterEach } from "vitest";
 import { BrokerServer } from "../core/broker-server.ts";
 import { FileBrokerStore } from "../core/broker-store.ts";
-import { hashRepoUrl } from "../core/repo-ref.ts";
 import { existsSync, rmSync, mkdirSync, readdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+
+/**
+ * A base64url token that satisfies the new permissive crew-id regex
+ * (`[A-Za-z0-9_-]{16,64}`). Two daemons auto-join to the same crew just
+ * by using the same id; there is no POST handshake anymore.
+ */
+const TEST_CREW_ID = "ABCDEFGHIJKLMNOPQRSTUV";
+const ALT_CREW_ID = "ZYXWVUTSRQPONMLKJIHGFE";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -48,28 +55,28 @@ function startServer(opts: {
   return { server, port, dataDir, eventLogPath };
 }
 
-async function createCrew(port: number, body?: Record<string, string>): Promise<string> {
-  const res = await fetch(`http://localhost:${port}/api/crews`, {
-    method: "POST",
-    ...(body ? { body: JSON.stringify(body), headers: { "Content-Type": "application/json" } } : {}),
-  });
-  expect(res.status).toBe(201);
-  const payload = (await res.json()) as { code: string };
-  return payload.code;
+/**
+ * Synthesize a fresh crew id. Each call returns a unique 22-char token
+ * within the allowed charset so tests don't cross-contaminate.
+ */
+function freshCrewId(prefix = ""): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
+  const base = prefix + Math.random().toString(36).slice(2);
+  let out = base;
+  while (out.length < 22) out += chars[Math.floor(Math.random() * chars.length)];
+  return out.slice(0, 22).replace(/[^A-Za-z0-9_-]/g, "A");
 }
 
 function connectWs(
   port: number,
-  crewCode: string,
+  crewId: string,
   daemonId: string,
   name: string,
-  opts?: { operatorId?: string; repoUrl?: string; repoHash?: string },
+  opts?: { operatorId?: string },
 ): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    let url = `ws://localhost:${port}/api/crews/${crewCode}/ws?daemonId=${daemonId}&name=${name}`;
+    let url = `ws://localhost:${port}/api/crews/${crewId}/ws?daemonId=${daemonId}&name=${name}`;
     if (opts?.operatorId) url += `&operatorId=${encodeURIComponent(opts.operatorId)}`;
-    if (opts?.repoUrl) url += `&repoUrl=${encodeURIComponent(opts.repoUrl)}`;
-    if (opts?.repoHash) url += `&repoHash=${encodeURIComponent(opts.repoHash)}`;
     const ws = new WebSocket(url);
     ws.addEventListener("open", () => resolve(ws));
     ws.addEventListener("error", (e) => reject(e));
@@ -147,34 +154,12 @@ afterEach(() => {
 // ── Tests ───────────────────────────────────────────────────────────
 
 describe("broker-runtime", () => {
-  describe("crew creation", () => {
-    it("creates a crew with a 16-char code", async () => {
-      const { port } = startServer();
-      const code = await createCrew(port);
-      expect(code).toMatch(/^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/);
-    });
-
-    it("creates a crew with repo reference", async () => {
+  describe("auto-join", () => {
+    it("auto-creates a crew on first connection with a new id", async () => {
       const { server, port } = startServer();
-      const repoUrl = "https://github.com/ninthwave-io/ninthwave";
-      const code = await createCrew(port, { repoUrl });
-      const crew = server.getCrew(code);
-      expect(crew).toBeDefined();
-      expect(crew!.repoRef).toBe(hashRepoUrl(repoUrl));
-    });
-
-    it("returns existing crew when requested code already exists", async () => {
-      const { port } = startServer();
-      const code1 = await createCrew(port);
-      const code2 = await createCrew(port, { code: code1 });
-      expect(code2).toBe(code1);
-    });
-  });
-
-  describe("WebSocket join", () => {
-    it("joins a crew and receives crew_update on connect", async () => {
-      const { port } = startServer();
-      const code = await createCrew(port);
+      const code = freshCrewId("auto");
+      // No POST precedes the connection; the broker should create an empty
+      // crew on the fly and upgrade the WebSocket successfully.
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       const update = await waitForMessageByType<{
@@ -185,69 +170,26 @@ describe("broker-runtime", () => {
 
       expect(update.crewCode).toBe(code);
       expect(update.daemonCount).toBe(1);
+      expect(server.getCrew(code)).toBeDefined();
       ws.close();
     });
 
-    it("rejects connection to non-existent crew", async () => {
+    it("rejects WebSocket paths that do not match the crew-id regex", async () => {
       const { port } = startServer();
       try {
-        const ws = await connectWs(port, "ABCD-EFGH-IJKL-MNOP", "d1", "worker-1");
+        // Too short -- regex requires 16-64 base64url chars.
+        const ws = await connectWs(port, "shortid", "d1", "worker-1");
         ws.close();
         expect.unreachable("Should have failed");
       } catch {
-        // Expected
+        // Expected -- the upgrade is rejected (404).
       }
     });
-  });
 
-  describe("repo mismatch rejection", () => {
-    it("rejects daemon with mismatched repoUrl", async () => {
+    it("no longer exposes a POST /api/crews endpoint", async () => {
       const { port } = startServer();
-      const code = await createCrew(port, {
-        repoUrl: "https://github.com/ninthwave-io/ninthwave",
-      });
-
-      // Try to join with a different repo
-      const res = await fetch(
-        `http://localhost:${port}/api/crews/${code}/ws?daemonId=d1&name=worker-1&repoUrl=${encodeURIComponent("https://github.com/other-org/other-repo")}`,
-        { headers: { Upgrade: "websocket" } },
-      );
-      expect(res.status).toBe(403);
-      const body = await res.text();
-      expect(body).toContain("Repo mismatch");
-    });
-
-    it("allows daemon with matching repoUrl", async () => {
-      const { port } = startServer();
-      const repoUrl = "https://github.com/ninthwave-io/ninthwave";
-      const code = await createCrew(port, { repoUrl });
-
-      const ws = await connectWs(port, code, "d1", "worker-1", { repoUrl });
-      expect(ws.readyState).toBe(WebSocket.OPEN);
-      ws.close();
-    });
-
-    it("allows daemon with matching repoHash", async () => {
-      const { port } = startServer();
-      const repoUrl = "https://github.com/ninthwave-io/ninthwave";
-      const code = await createCrew(port, { repoUrl });
-      const repoHash = hashRepoUrl(repoUrl);
-
-      const ws = await connectWs(port, code, "d1", "worker-1", { repoHash });
-      expect(ws.readyState).toBe(WebSocket.OPEN);
-      ws.close();
-    });
-
-    it("allows daemon without repo params when crew has repoRef", async () => {
-      const { port } = startServer();
-      const code = await createCrew(port, {
-        repoUrl: "https://github.com/ninthwave-io/ninthwave",
-      });
-
-      // No repo params -- should be allowed (backward compat)
-      const ws = await connectWs(port, code, "d1", "worker-1");
-      expect(ws.readyState).toBe(WebSocket.OPEN);
-      ws.close();
+      const res = await fetch(`http://localhost:${port}/api/crews`, { method: "POST" });
+      expect(res.status).toBe(404);
     });
   });
 
@@ -256,9 +198,8 @@ describe("broker-runtime", () => {
       const tmpDir = createTmpDir();
       const dataDir = join(tmpDir, "crews");
 
-      // Start server 1, create crew and sync items
+      const code = freshCrewId("restart");
       const { server: s1, port: p1 } = startServer({ dataDir });
-      const code = await createCrew(p1);
       const ws1 = await connectWs(p1, code, "d1", "worker-1");
       await sendSync(ws1, "d1", ["item-A", "item-B"]);
       const claim = await sendClaim(ws1, "d1");
@@ -293,27 +234,12 @@ describe("broker-runtime", () => {
       expect(daemon!.claimedItems.has("item-A")).toBe(true);
     });
 
-    it("preserves repoRef across restart", async () => {
-      const tmpDir = createTmpDir();
-      const dataDir = join(tmpDir, "crews");
-
-      const { server: s1, port: p1 } = startServer({ dataDir });
-      const repoUrl = "https://github.com/ninthwave-io/ninthwave";
-      const code = await createCrew(p1, { repoUrl });
-      s1.stop();
-      servers = servers.filter((s) => s !== s1);
-
-      const { server: s2 } = startServer({ dataDir });
-      const crew = s2.getCrew(code);
-      expect(crew).toBeDefined();
-      expect(crew!.repoRef).toBe(hashRepoUrl(repoUrl));
-    });
   });
 
   describe("reconnect resume", () => {
     it("resumes claimed work items on reconnect before grace period", async () => {
       const { port } = startServer({ gracePeriodMs: 5000 });
-      const code = await createCrew(port);
+      const code = freshCrewId("resume");
 
       // Connect, sync, and claim
       const ws1 = await connectWs(port, code, "d1", "worker-1");
@@ -348,7 +274,7 @@ describe("broker-runtime", () => {
         gracePeriodMs: 100,
         checkIntervalMs: 25,
       });
-      const code = await createCrew(port);
+      const code = freshCrewId();
 
       // d1 connects, syncs, and claims
       const ws1 = await connectWs(port, code, "d1", "worker-1");
@@ -376,7 +302,7 @@ describe("broker-runtime", () => {
   describe("remoteItems snapshots", () => {
     it("includes remoteItems in crew_update broadcasts", async () => {
       const { port } = startServer();
-      const code = await createCrew(port);
+      const code = freshCrewId();
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       await sendSync(ws, "d1", ["item-A", "item-B"]);
@@ -414,7 +340,7 @@ describe("broker-runtime", () => {
 
     it("shows completed items as done in remoteItems", async () => {
       const { port } = startServer();
-      const code = await createCrew(port);
+      const code = freshCrewId();
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       await sendSync(ws, "d1", ["item-A"]);
@@ -436,7 +362,7 @@ describe("broker-runtime", () => {
 
     it("shows blocked items correctly in remoteItems", async () => {
       const { port } = startServer();
-      const code = await createCrew(port);
+      const code = freshCrewId();
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       // item-B depends on item-A
@@ -544,7 +470,7 @@ describe("broker-runtime", () => {
   describe("full workflow", () => {
     it("handles create, sync, claim, complete across WebSocket lifecycle", async () => {
       const { port } = startServer();
-      const code = await createCrew(port);
+      const code = freshCrewId();
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       // Sync items
@@ -572,7 +498,7 @@ describe("broker-runtime", () => {
 
     it("handles heartbeat ack", async () => {
       const { port } = startServer();
-      const code = await createCrew(port);
+      const code = freshCrewId();
       const ws = await connectWs(port, code, "d1", "worker-1");
 
       const ts = new Date().toISOString();

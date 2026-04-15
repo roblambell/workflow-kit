@@ -20,6 +20,14 @@ import {
   type ServerMessage,
 } from "../core/crew.ts";
 import { hashRepoUrl } from "../core/repo-ref.ts";
+import { makeBrokerHasher } from "../core/broker-hash.ts";
+
+/**
+ * Deterministic 32-byte test secret in canonical base64 form (as accepted by
+ * `makeBrokerHasher`). Used by WebSocketCrewBroker constructors throughout
+ * the suite; tests do not care which secret is used, only that one is valid.
+ */
+const TEST_BROKER_SECRET = Buffer.alloc(32, 1).toString("base64");
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -89,7 +97,7 @@ function startTestServer(opts?: {
         if (msg.type === "sync") {
           const reply: ServerMessage = opts?.syncAck ?? {
             type: "sync_ack",
-            crewCode: "test-crew",
+            crewCode: "ABCD-EFGH-IJKL-MNOP",
             workItemIds: [],
           };
           if (opts?.syncAckDelayMs) {
@@ -200,7 +208,7 @@ describe("WebSocketCrewBroker", () => {
   it("connects and disconnects", async () => {
     server = startTestServer();
     const { log } = createLogCollector();
-    const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+    const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
       log,
       heartbeatIntervalMs: 60_000, // don't fire during test
     });
@@ -214,7 +222,7 @@ describe("WebSocketCrewBroker", () => {
     server.server.stop();
     server = startTestServer();
 
-    const broker2 = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+    const broker2 = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
       log,
       heartbeatIntervalMs: 60_000,
     });
@@ -232,10 +240,13 @@ describe("WebSocketCrewBroker", () => {
     expect(broker2.isConnected()).toBe(false);
   });
 
-  it("sends daemonId, repoUrl, and repoHash query params on connect", async () => {
+  it("sends hashed daemonId, operatorId, and name query params on connect (no repoUrl)", async () => {
     let receivedDaemonId: string | null = null;
     let receivedRepoUrl: string | null = null;
     let receivedRepoHash: string | null = null;
+    let receivedOperatorId: string | null = null;
+    let receivedName: string | null = null;
+    // lint-ignore: no-leaked-server
     const customServer = Bun.serve({
       port: 0,
       fetch(req, srv) {
@@ -244,6 +255,8 @@ describe("WebSocketCrewBroker", () => {
           receivedDaemonId = url.searchParams.get("daemonId");
           receivedRepoUrl = url.searchParams.get("repoUrl");
           receivedRepoHash = url.searchParams.get("repoHash");
+          receivedOperatorId = url.searchParams.get("operatorId");
+          receivedName = url.searchParams.get("name");
           const upgraded = srv.upgrade(req);
           if (upgraded) return undefined;
         }
@@ -263,18 +276,27 @@ describe("WebSocketCrewBroker", () => {
 
     try {
       const { log } = createLogCollector();
-      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${customServer.port}`, "test-crew", "https://github.com/test/repo", {
+      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${customServer.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
         log,
         heartbeatIntervalMs: 60_000,
-      });
+      }, "machine-name");
       const connectPromise = broker.connect();
       await new Promise((r) => setTimeout(r, 50));
       broker.sync([]);
       await connectPromise;
 
-      expect(receivedDaemonId).toBe(broker.getDaemonId());
-      expect(receivedRepoUrl).toBe("https://github.com/test/repo");
-      expect(receivedRepoHash).toBe(hashRepoUrl("https://github.com/test/repo"));
+      const hash = makeBrokerHasher(TEST_BROKER_SECRET);
+      // daemonId on the wire is the hashed local daemonId; cleartext never leaves.
+      expect(receivedDaemonId).toBe(hash(broker.getDaemonId()));
+      expect(receivedDaemonId).not.toBe(broker.getDaemonId());
+      // name is hashed too.
+      expect(receivedName).toBe(hash("machine-name"));
+      // repoUrl / repoHash are intentionally absent under the anonymized protocol.
+      expect(receivedRepoUrl).toBeNull();
+      expect(receivedRepoHash).toBeNull();
+      // operatorId may be empty (no git email in the test env) or hashed if present.
+      const operator = broker.getOperatorId();
+      expect(receivedOperatorId).toBe(operator === "" ? "" : hash(operator));
       broker.disconnect();
     } finally {
       customServer.stop();
@@ -284,7 +306,7 @@ describe("WebSocketCrewBroker", () => {
   it("isConnected() returns false when WS drops, true after reconnect", async () => {
     server = startTestServer();
     const { log } = createLogCollector();
-    const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+    const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
       log,
       reconnectIntervalMs: 100, // fast reconnect for test
       heartbeatIntervalMs: 60_000,
@@ -321,19 +343,24 @@ describe("WebSocketCrewBroker", () => {
 
   describe("claim", () => {
     it("returns itemId on successful claim", async () => {
+      // The client only recognizes hashed work item ids coming back from the
+      // broker, so the mock server replies with the hash the client would
+      // have generated for "H-TEST-1" and the client maps it back to the
+      // local id before resolving the claim.
+      const hashedTest1 = makeBrokerHasher(TEST_BROKER_SECRET)("H-TEST-1");
       server = startTestServer({
         onMessage: (ws, msg) => {
           if (msg.type === "claim") {
             ws.send(JSON.stringify({
               type: "claim_response",
               requestId: msg.requestId,
-              workItemId: "H-TEST-1",
+              workItemId: hashedTest1,
             }));
           }
         },
       });
       const { log } = createLogCollector();
-      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
         log,
         claimTimeoutMs: 2_000,
         heartbeatIntervalMs: 60_000,
@@ -341,7 +368,8 @@ describe("WebSocketCrewBroker", () => {
 
       const connectP = broker.connect();
       await new Promise((r) => setTimeout(r, 50));
-      broker.sync([]);
+      // Sync the id so the reverse map learns the hash → local mapping.
+      broker.sync([{ id: "H-TEST-1", dependencies: [], priority: 1, author: "" }]);
       await connectP;
 
       const workItemId = await broker.claim();
@@ -362,7 +390,7 @@ describe("WebSocketCrewBroker", () => {
         },
       });
       const { log } = createLogCollector();
-      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
         log,
         claimTimeoutMs: 2_000,
         heartbeatIntervalMs: 60_000,
@@ -382,7 +410,7 @@ describe("WebSocketCrewBroker", () => {
       // Server doesn't reply to claim at all
       server = startTestServer();
       const { log } = createLogCollector();
-      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
         log,
         claimTimeoutMs: 200, // 200ms timeout for fast test
         heartbeatIntervalMs: 60_000,
@@ -405,7 +433,7 @@ describe("WebSocketCrewBroker", () => {
 
     it("returns null when not connected", async () => {
       const { log } = createLogCollector();
-      const broker = new WebSocketCrewBroker(tempDir, "ws://localhost:9999", "test-crew", "https://github.com/test/repo", {
+      const broker = new WebSocketCrewBroker(tempDir, "ws://localhost:9999", "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
         log,
         heartbeatIntervalMs: 60_000,
       });
@@ -421,7 +449,7 @@ describe("WebSocketCrewBroker", () => {
     it("logs warning on unknown message type (does not crash)", async () => {
       server = startTestServer();
       const { logs, log } = createLogCollector();
-      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
         log,
         heartbeatIntervalMs: 60_000,
       });
@@ -446,7 +474,7 @@ describe("WebSocketCrewBroker", () => {
     it("logs warning on malformed JSON (does not crash)", async () => {
       server = startTestServer();
       const { logs, log } = createLogCollector();
-      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
         log,
         heartbeatIntervalMs: 60_000,
       });
@@ -519,7 +547,7 @@ describe("WebSocketCrewBroker", () => {
 
       try {
         const { log } = createLogCollector();
-        const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${customServer.port}`, "test-crew", "https://github.com/test/repo", {
+        const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${customServer.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
           log,
           reconnectIntervalMs: 100,
           heartbeatIntervalMs: 60_000,
@@ -573,7 +601,7 @@ describe("WebSocketCrewBroker", () => {
         },
       });
       const { log } = createLogCollector();
-      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
         log,
         heartbeatIntervalMs: 60_000,
       });
@@ -586,9 +614,12 @@ describe("WebSocketCrewBroker", () => {
       broker.complete("H-TEST-1");
       await new Promise((r) => setTimeout(r, 50));
 
+      const hash = makeBrokerHasher(TEST_BROKER_SECRET);
       expect(receivedComplete).not.toBeNull();
-      expect(receivedComplete.workItemId).toBe("H-TEST-1");
-      expect(receivedComplete.daemonId).toBe(broker.getDaemonId());
+      // Wire carries hashed ids only; cleartext "H-TEST-1" must never appear.
+      expect(receivedComplete.workItemId).toBe(hash("H-TEST-1"));
+      expect(receivedComplete.daemonId).toBe(hash(broker.getDaemonId()));
+      expect(JSON.stringify(receivedComplete)).not.toContain("H-TEST-1");
       broker.disconnect();
     });
   });
@@ -607,7 +638,7 @@ describe("WebSocketCrewBroker", () => {
         },
       });
       const { log } = createLogCollector();
-      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "test-crew", "https://github.com/test/repo", {
+      const broker = new WebSocketCrewBroker(tempDir, `ws://localhost:${server.port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET, {
         log,
         heartbeatIntervalMs: 60_000,
       });
@@ -620,8 +651,10 @@ describe("WebSocketCrewBroker", () => {
       broker.heartbeat();
       await new Promise((r) => setTimeout(r, 50));
 
+      const hash = makeBrokerHasher(TEST_BROKER_SECRET);
       expect(receivedHeartbeat).not.toBeNull();
-      expect(receivedHeartbeat.daemonId).toBe(broker.getDaemonId());
+      expect(receivedHeartbeat.daemonId).toBe(hash(broker.getDaemonId()));
+      expect(receivedHeartbeat.daemonId).not.toBe(broker.getDaemonId());
       expect(receivedHeartbeat.ts).toBeDefined();
       broker.disconnect();
     });
@@ -694,7 +727,7 @@ describe("report method", () => {
     try {
       const { log } = createLogCollector();
       const broker = new WebSocketCrewBroker(
-        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", "https://github.com/test/repo",
+        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET,
         { log, heartbeatIntervalMs: 60_000 },
         "test-daemon",
       );
@@ -707,12 +740,20 @@ describe("report method", () => {
       broker.report("pr_opened", "test-item", { prNumber: 42, branch: "ninthwave/test-item" });
       await new Promise((r) => setTimeout(r, 50));
 
+      const hash = makeBrokerHasher(TEST_BROKER_SECRET);
       expect(receivedReport).not.toBeNull();
       expect(receivedReport.type).toBe("report");
+      // Event-name vocabulary is on the cleartext allowlist.
       expect(receivedReport.event).toBe("pr_opened");
-      expect(receivedReport.workItemPath).toBe("test-item");
+      // Work item path is hashed before the wire.
+      expect(receivedReport.workItemPath).toBe(hash("test-item"));
+      // Numeric metadata survives cleartext; branch (a non-allowlisted string) is hashed.
       expect(receivedReport.metadata.prNumber).toBe(42);
-      expect(receivedReport.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(receivedReport.metadata.branch).toBe(hash("ninthwave/test-item"));
+      // Session id is hashed too -- no raw UUID on the wire.
+      expect(receivedReport.sessionId).not.toMatch(/^[0-9a-f-]{36}$/);
+      expect(JSON.stringify(receivedReport)).not.toContain("test-item");
+      expect(JSON.stringify(receivedReport)).not.toContain("ninthwave/test-item");
       broker.disconnect();
     } finally {
       server.stop(true);
@@ -724,7 +765,7 @@ describe("report method", () => {
     const { server, port } = startTestServer({
       syncAck: {
         type: "sync_ack",
-        crewCode: "test-crew",
+        crewCode: "ABCD-EFGH-IJKL-MNOP",
         workItemIds: [],
         telemetrySettings: { sendTokenUsage: true },
         privacySettings: { allowHostedRelay: false },
@@ -739,7 +780,7 @@ describe("report method", () => {
     try {
       const { log } = createLogCollector();
       const broker = new WebSocketCrewBroker(
-        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", "https://github.com/test/repo",
+        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET,
         { log, heartbeatIntervalMs: 60_000 },
         "test-daemon",
       );
@@ -785,7 +826,7 @@ describe("report method", () => {
     try {
       const { log } = createLogCollector();
       const broker = new WebSocketCrewBroker(
-        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", "https://github.com/test/repo",
+        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET,
         { log, heartbeatIntervalMs: 60_000 },
         "test-daemon",
       );
@@ -831,7 +872,7 @@ describe("report method", () => {
     try {
       const { log } = createLogCollector();
       const broker = new WebSocketCrewBroker(
-        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", "https://github.com/test/repo",
+        tempDir, `ws://localhost:${port}`, "ABCD-EFGH-IJKL-MNOP", TEST_BROKER_SECRET,
         { log, heartbeatIntervalMs: 60_000 },
         "test-daemon",
       );
@@ -849,8 +890,10 @@ describe("report method", () => {
 
       expect(receivedEvents).toContain("session_end");
       expect(sessionEndReport.model).toBe("claude-sonnet-4-6");
+      // Empty workItemPath passes through unchanged (not hashed).
       expect(sessionEndReport.workItemPath).toBe("");
       expect(sessionEndReport.metadata).toEqual({});
+      // Session id is hashed -- expose only that it's present, not its shape.
       expect(sessionEndReport.sessionId).toBeDefined();
     } finally {
       server.stop(true);

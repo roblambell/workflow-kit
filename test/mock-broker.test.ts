@@ -48,11 +48,17 @@ function startBroker(opts: { heartbeatTimeoutMs?: number; gracePeriodMs?: number
   return { broker, port, eventLogPath };
 }
 
-async function createCrew(port: number): Promise<string> {
-  const res = await fetch(`http://localhost:${port}/api/crews`, { method: "POST" });
-  expect(res.status).toBe(201);
-  const body = (await res.json()) as { code: string };
-  return body.code;
+/**
+ * Synthesize a fresh crew id. Unknown crew ids now auto-create an empty
+ * crew on the first connection, so no POST / create handshake is needed.
+ */
+let crewIdCounter = 0;
+function createCrew(_port?: number): Promise<string> {
+  crewIdCounter += 1;
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let out = `CREW${String(crewIdCounter).padStart(4, "0")}`;
+  while (out.length < 22) out += chars[Math.floor(Math.random() * chars.length)];
+  return Promise.resolve(out.slice(0, 22));
 }
 
 function connectWs(
@@ -236,21 +242,21 @@ describe("mock-broker", () => {
   });
 
   describe("crew creation", () => {
-    it("creates a crew with a 16-char XXXX-XXXX-XXXX-XXXX code", async () => {
-      const { port } = startBroker();
-      const code = await createCrew(port);
-
-      expect(code).toMatch(/^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/);
-      expect(code.replace(/-/g, "")).toHaveLength(16);
+    it("crew ids match the new base64url path regex", async () => {
+      const code = await createCrew();
+      // The broker's auto-join regex is 16-64 base64url chars. Ids produced
+      // by the test harness stay within that alphabet.
+      expect(code).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
     });
 
-    it("creates unique crew codes", async () => {
-      const { port } = startBroker();
-      const codes = new Set<string>();
-      for (let i = 0; i < 20; i++) {
-        codes.add(await createCrew(port));
-      }
-      expect(codes.size).toBe(20);
+    it("auto-creates a crew on first WS connect", async () => {
+      const { broker, port } = startBroker();
+      const code = await createCrew(port);
+      expect(broker.getCrew(code)).toBeUndefined();
+      const ws = await connectWs(port, code, "d1", "worker-1");
+      await tick();
+      expect(broker.getCrew(code)).toBeDefined();
+      ws.close();
     });
   });
 

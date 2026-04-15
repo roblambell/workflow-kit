@@ -17,8 +17,20 @@ import {
   type CrewEvent,
   type CrewStatusUpdate,
 } from "./broker-state.ts";
-import { FileBrokerStore, type BrokerSocket, type CrewState } from "./broker-store.ts";
-import { resolveRepoRef, type RepoRefInput } from "./repo-ref.ts";
+import {
+  BrokerStoreCapacityError,
+  FileBrokerStore,
+  type BrokerSocket,
+  type CrewState,
+} from "./broker-store.ts";
+
+/**
+ * Crew id path tokens are hashed project secrets in base64url form.
+ * `makeBrokerHasher` emits 22 characters, but legitimate clients can
+ * vary the truncation length, so we accept 16-64 chars of base64url
+ * alphabet. Anything outside that is rejected as malformed.
+ */
+const CREW_ID_PATH_REGEX = /^\/api\/crews\/([A-Za-z0-9_-]{16,64})\/ws$/;
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -67,80 +79,33 @@ export class BrokerServer {
       hostname: this.opts.hostname ?? "0.0.0.0",
       port: this.opts.port ?? 0,
 
-      routes: {
-        "/api/crews": {
-          POST: async (req: Request) => {
-            let requestedCode: string | undefined;
-            let repoRefInput: RepoRefInput | undefined;
-            try {
-              const body = await req.json() as Record<string, unknown>;
-              if (body && typeof body.code === "string" && body.code.length > 0) {
-                requestedCode = body.code;
-              }
-              if (body) {
-                const repoUrl = typeof body.repoUrl === "string" ? body.repoUrl : undefined;
-                const repoHash = typeof body.repoHash === "string" ? body.repoHash : undefined;
-                const repoRef = typeof body.repoRef === "string" ? body.repoRef : undefined;
-                if (repoUrl || repoHash || repoRef) {
-                  repoRefInput = { repoUrl, repoHash, repoRef };
-                }
-              }
-            } catch { /* no body or malformed */ }
-
-            let resolvedRepoRef: string | null = null;
-            if (repoRefInput) {
-              try {
-                resolvedRepoRef = resolveRepoRef(repoRefInput).repoRef;
-              } catch {
-                return Response.json(
-                  { error: "Invalid repo reference" },
-                  { status: 400 },
-                );
-              }
-            }
-
-            const code = requestedCode && broker.store.hasCrew(requestedCode)
-              ? requestedCode
-              : broker.createCrew(requestedCode, resolvedRepoRef);
-            return Response.json({ code }, { status: 201 });
-          },
-        },
-      },
-
       fetch(req, server) {
         const url = new URL(req.url);
 
-        // WebSocket upgrade: /api/crews/:code/ws?daemonId=...&name=...&operatorId=...
-        const wsMatch = url.pathname.match(/^\/api\/crews\/([A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4})\/ws$/);
+        // WebSocket upgrade: /api/crews/:crewId/ws?daemonId=...&name=...&operatorId=...
+        // crewId is an opaque HMAC digest derived from the project's shared
+        // `broker_secret`. Unknown crew ids auto-create an empty crew so two
+        // daemons with the same secret converge without a preceding POST.
+        const wsMatch = url.pathname.match(CREW_ID_PATH_REGEX);
         if (wsMatch) {
           const code = wsMatch[1]!;
           const daemonId = url.searchParams.get("daemonId");
           const name = url.searchParams.get("name");
           const operatorId = url.searchParams.get("operatorId") ?? "";
-          const repoUrl = url.searchParams.get("repoUrl") ?? "";
-          const repoHash = url.searchParams.get("repoHash") ?? "";
 
           if (!daemonId) {
             return new Response("Missing daemonId query param", { status: 400 });
           }
 
-          const crew = broker.store.getCrew(code);
+          let crew = broker.store.getCrew(code);
           if (!crew) {
-            return new Response("Crew not found", { status: 404 });
-          }
-
-          // Enforce repo-reference matching
-          if (crew.repoRef && (repoUrl || repoHash)) {
             try {
-              const input: RepoRefInput = {};
-              if (repoUrl) input.repoUrl = repoUrl;
-              if (repoHash) input.repoHash = repoHash;
-              const daemonRef = resolveRepoRef(input).repoRef;
-              if (daemonRef !== crew.repoRef) {
-                return new Response("Repo mismatch: daemon repo does not match crew", { status: 403 });
+              crew = broker.store.createCrew(code);
+            } catch (err) {
+              if (err instanceof BrokerStoreCapacityError) {
+                return new Response("Broker at capacity", { status: 503 });
               }
-            } catch {
-              return new Response("Invalid repo reference on join", { status: 400 });
+              throw err;
             }
           }
 
@@ -233,26 +198,6 @@ export class BrokerServer {
   /** Get the underlying store (for testing). */
   getStore(): FileBrokerStore {
     return this.store;
-  }
-
-  // ── Crew management ───────────────────────────────────────────────
-
-  private createCrew(requestedCode?: string, repoRef?: string | null): string {
-    const code = requestedCode ?? this.generateCode();
-    this.store.createCrew(code, repoRef);
-    return code;
-  }
-
-  private generateCode(): string {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let code: string;
-    do {
-      const parts = Array.from({ length: 4 }, () =>
-        Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""),
-      );
-      code = parts.join("-");
-    } while (this.store.hasCrew(code));
-    return code;
   }
 
   // ── Daemon lifecycle ──────────────────────────────────────────────

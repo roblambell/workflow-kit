@@ -9,7 +9,7 @@ import { randomUUID } from "crypto";
 import { execSync } from "node:child_process";
 import { hostname } from "os";
 import { userStateDir } from "./daemon.ts";
-import { hashRepoUrl } from "./repo-ref.ts";
+import { makeBrokerHasher } from "./broker-hash.ts";
 
 // ── Shared message types ────────────────────────────────────────────
 // Imported by mock-broker.ts for type-safe server implementation.
@@ -219,16 +219,6 @@ function numberArrayOrUndefined(value: unknown): number[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const numbers = value.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry));
   return numbers.length > 0 ? numbers : undefined;
-}
-
-function resolveCrewRepoHash(repoUrl: string): string | null {
-  const trimmed = repoUrl.trim();
-  if (!trimmed) return null;
-  try {
-    return hashRepoUrl(trimmed);
-  } catch {
-    return null;
-  }
 }
 
 function parseCrewRemoteItemState(value: unknown): CrewRemoteItemState | null {
@@ -536,15 +526,61 @@ const CLAIM_TIMEOUT_MS = 5_000;
 const RECONNECT_INTERVAL_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
+/**
+ * Allowlist of metadata event-name strings that may be sent to the broker in
+ * cleartext. Anything outside the allowlist (other than booleans and numbers)
+ * is hashed before leaving the daemon so an operator name, repo slug, or
+ * similar identifier cannot leak through a report payload.
+ *
+ * The list covers the event-name vocabulary used by the daemon today; add to
+ * it rather than widening the allowlist when new telemetry is introduced.
+ */
+const METADATA_CLEARTEXT_STRING_ALLOWLIST: ReadonlySet<string> = new Set([
+  "pr_opened",
+  "pr_updated",
+  "pr_merged",
+  "pr_closed",
+  "ci_passed",
+  "ci_failed",
+  "session_start",
+  "session_started",
+  "session_end",
+  "session_ended",
+  "claim",
+  "complete",
+  "complete_ack",
+  "heartbeat",
+  "report",
+  "review",
+  "rebase",
+  "queued",
+  "implementing",
+  "merging",
+  "done",
+  "blocked",
+]);
+
 export class WebSocketCrewBroker implements CrewBroker {
   private ws: WebSocket | null = null;
   private connected = false;
+  /** Local (cleartext) daemon id -- never sent on the wire. */
   private daemonId: string;
+  /** Local (cleartext) operator id -- never sent on the wire. */
   private operatorId: string;
   private url: string;
-  private repoUrl: string;
-  private repoHash: string | null;
   private name: string;
+  /** Hashed (wire) version of daemonId -- always sent instead of daemonId. */
+  private hashedDaemonId: string;
+  /** Hashed (wire) version of operatorId -- always sent instead of operatorId. */
+  private hashedOperatorId: string;
+  /** Hashed (wire) version of `name` (the machine hostname). */
+  private hashedName: string;
+  /** HMAC-SHA256 hasher bound to the project's `broker_secret`. */
+  private hasher: (value: string) => string;
+  /** Reverse map of hash → local work item id, populated on sync(). */
+  private hashToLocal = new Map<string, string>();
+  /** Forward map of local work item id → hash, populated on sync(). */
+  private localToHash = new Map<string, string>();
   private deps: CrewBrokerDeps;
   private reconnectTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -562,29 +598,49 @@ export class WebSocketCrewBroker implements CrewBroker {
   private currentModel: string | undefined;
   private sendTokenUsage = false;
 
+  /**
+   * Create a crew broker bound to the given project identity.
+   *
+   * @param projectRoot  Local project root; used to persist daemon/operator ids.
+   * @param url          Base WebSocket URL, e.g. `ws://host:port`.
+   * @param crewId       Already-hashed path token (22+ char base64url).
+   * @param brokerSecret Canonical base64 `broker_secret`; used to build the
+   *                     per-wire hasher. The same secret on two daemons is
+   *                     what makes their anonymized ids correlate.
+   * @param deps         Injected deps (logger, optional timings, hooks).
+   * @param name         Display name (defaults to `os.hostname()`). Hashed
+   *                     before leaving the daemon.
+   */
   constructor(
     projectRoot: string,
     url: string,
-    crewCode: string,
-    repoUrl: string,
+    crewId: string,
+    brokerSecret: string,
     deps: CrewBrokerDeps,
     name?: string,
   ) {
     this.daemonId = getOrCreateDaemonId(projectRoot);
     this.operatorId = resolveOperatorId(projectRoot);
     this.name = name ?? hostname();
-    this.url = `${url}/api/crews/${crewCode}/ws`;
-    this.repoUrl = repoUrl;
-    this.repoHash = resolveCrewRepoHash(repoUrl);
+    this.hasher = makeBrokerHasher(brokerSecret);
+    this.hashedDaemonId = this.hasher(this.daemonId);
+    this.hashedOperatorId = this.operatorId === "" ? "" : this.hasher(this.operatorId);
+    this.hashedName = this.hasher(this.name);
+    this.url = `${url}/api/crews/${crewId}/ws`;
     this.deps = deps;
   }
 
-  /** Expose daemonId for testing. */
+  /** Expose the local (cleartext) daemonId for testing. */
   getDaemonId(): string {
     return this.daemonId;
   }
 
-  /** Expose operatorId for testing. */
+  /** Expose the hashed daemonId that goes on the wire (for testing / diagnostics). */
+  getHashedDaemonId(): string {
+    return this.hashedDaemonId;
+  }
+
+  /** Expose the local (cleartext) operatorId for testing. */
   getOperatorId(): string {
     return this.operatorId;
   }
@@ -599,15 +655,12 @@ export class WebSocketCrewBroker implements CrewBroker {
       this.connectPromise = { resolve, reject };
       this.sessionId ??= randomUUID();
       const wsUrl = new URL(this.url);
-      wsUrl.searchParams.set("daemonId", this.daemonId);
-      wsUrl.searchParams.set("name", this.name);
-      wsUrl.searchParams.set("operatorId", this.operatorId);
-      if (this.repoUrl.trim()) {
-        wsUrl.searchParams.set("repoUrl", this.repoUrl);
-      }
-      if (this.repoHash) {
-        wsUrl.searchParams.set("repoHash", this.repoHash);
-      }
+      // Every identifier on the wire is hashed. repoUrl / repoHash are
+      // intentionally omitted -- possession of the broker secret is the
+      // only authorization signal now.
+      wsUrl.searchParams.set("daemonId", this.hashedDaemonId);
+      wsUrl.searchParams.set("name", this.hashedName);
+      wsUrl.searchParams.set("operatorId", this.hashedOperatorId);
       this.ws = new WebSocket(wsUrl.toString());
 
       this.ws.onopen = () => {
@@ -652,10 +705,21 @@ export class WebSocketCrewBroker implements CrewBroker {
   }
 
   sync(items: SyncItem[]): void {
+    const hashedItems: SyncItem[] = items.map((item) => {
+      const hashedId = this.rememberWorkItemId(item.id);
+      const hashedDeps = item.dependencies.map((dep) => this.rememberWorkItemId(dep));
+      const hashedAuthor = item.author === "" ? "" : this.hasher(item.author);
+      return {
+        id: hashedId,
+        dependencies: hashedDeps,
+        priority: item.priority,
+        author: hashedAuthor,
+      };
+    });
     this.send({
       type: "sync",
-      daemonId: this.daemonId,
-      items,
+      daemonId: this.hashedDaemonId,
+      items: hashedItems,
     });
   }
 
@@ -676,16 +740,17 @@ export class WebSocketCrewBroker implements CrewBroker {
       this.send({
         type: "claim",
         requestId,
-        daemonId: this.daemonId,
+        daemonId: this.hashedDaemonId,
       });
     });
   }
 
   complete(workItemId: string): void {
+    const hashedId = this.rememberWorkItemId(workItemId);
     this.send({
       type: "complete",
-      workItemId,
-      daemonId: this.daemonId,
+      workItemId: hashedId,
+      daemonId: this.hashedDaemonId,
     });
   }
 
@@ -700,14 +765,19 @@ export class WebSocketCrewBroker implements CrewBroker {
       this.currentModel = model;
     }
 
+    const hashedWorkItemPath = workItemPath === ""
+      ? ""
+      : this.rememberWorkItemId(workItemPath);
+    const sanitizedMetadata = this.sanitizeReportMetadata(metadata);
+
     this.send({
       type: "report",
-      daemonId: this.daemonId,
+      daemonId: this.hashedDaemonId,
       event,
-      workItemPath,
-      metadata,
+      workItemPath: hashedWorkItemPath,
+      metadata: sanitizedMetadata,
       ...(model ? { model } : {}),
-      ...(this.sessionId ? { sessionId: this.sessionId } : {}),
+      ...(this.sessionId ? { sessionId: this.hasher(this.sessionId) } : {}),
       ...(this.sendTokenUsage && opts?.tokenUsage ? { tokenUsage: opts.tokenUsage } : {}),
     });
   }
@@ -715,7 +785,7 @@ export class WebSocketCrewBroker implements CrewBroker {
   heartbeat(): void {
     this.send({
       type: "heartbeat",
-      daemonId: this.daemonId,
+      daemonId: this.hashedDaemonId,
       ts: new Date().toISOString(),
     });
   }
@@ -775,7 +845,11 @@ export class WebSocketCrewBroker implements CrewBroker {
         if (pending) {
           clearTimeout(pending.timer);
           this.pendingClaims.delete(data.requestId);
-          pending.resolve(data.workItemId ?? null);
+          // The broker returns the hashed work item id; translate back.
+          const localId = typeof data.workItemId === "string" && data.workItemId.length > 0
+            ? this.hashToLocal.get(data.workItemId) ?? null
+            : null;
+          pending.resolve(localId);
         }
         break;
       }
@@ -808,8 +882,14 @@ export class WebSocketCrewBroker implements CrewBroker {
         break;
 
       case "crew_update":
-        this.crewStatus = parseCrewStatusUpdate(data, this.daemonId);
-        // Resolve connect promise -- crew_update is the first message for new daemons
+        // Translate hashed work item ids back to local ids before exposing the
+        // status to the rest of the daemon. Hashes that don't match any local
+        // sync (i.e. peer-owned items) become `peer-<prefix>` so the UI can
+        // still label them without leaking upstream identifiers.
+        this.crewStatus = parseCrewStatusUpdate(
+          this.translateCrewUpdatePayload(data),
+          this.hashedDaemonId,
+        );
         if (this.connectPromise) {
           this.connectPromise.resolve();
           this.connectPromise = null;
@@ -883,5 +963,99 @@ export class WebSocketCrewBroker implements CrewBroker {
     }
     this.pendingClaims.clear();
 
+  }
+
+  /**
+   * Hash `id` and cache the forward / reverse mapping so callers can feed
+   * cleartext work item ids in and get cleartext back on claim responses
+   * and crew updates. Idempotent: repeat calls return the cached hash.
+   */
+  private rememberWorkItemId(id: string): string {
+    const cached = this.localToHash.get(id);
+    if (cached) return cached;
+    const hashed = this.hasher(id);
+    this.localToHash.set(id, hashed);
+    this.hashToLocal.set(hashed, id);
+    return hashed;
+  }
+
+  /**
+   * Sanitize a report `metadata` object before it leaves the daemon.
+   *
+   * Structural fields the broker actually needs -- booleans, numbers, and a
+   * small allowlist of enum-shaped strings -- pass through. Any other string
+   * is replaced with its hash so that the broker gets a stable-but-opaque
+   * token in place of things like file paths, git emails, or repo slugs.
+   * Nested objects are sanitized recursively; arrays are mapped.
+   */
+  private sanitizeReportMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(metadata)) {
+      out[key] = this.sanitizeMetadataValue(value);
+    }
+    return out;
+  }
+
+  private sanitizeMetadataValue(value: unknown): unknown {
+    if (value === null || value === undefined) return value;
+    if (typeof value === "boolean" || typeof value === "number") return value;
+    if (typeof value === "string") {
+      if (value === "") return value;
+      if (METADATA_CLEARTEXT_STRING_ALLOWLIST.has(value)) return value;
+      return this.hasher(value);
+    }
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.sanitizeMetadataValue(entry));
+    }
+    if (typeof value === "object") {
+      const nested: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        nested[k] = this.sanitizeMetadataValue(v);
+      }
+      return nested;
+    }
+    // Fallback: drop non-serializable shapes (functions, symbols, etc.).
+    return null;
+  }
+
+  /**
+   * Walk a `crew_update` payload and rewrite every hashed work item id back
+   * into the local cleartext id. Hashes that the daemon never synced locally
+   * get a synthetic `peer-<prefix>` id so the TUI can label them without
+   * pulling cleartext strings out of thin air.
+   */
+  private translateCrewUpdatePayload(data: Record<string, unknown>): Record<string, unknown> {
+    const mapId = (value: unknown): unknown => {
+      if (typeof value !== "string" || value.length === 0) return value;
+      const local = this.hashToLocal.get(value);
+      return local ?? `peer-${value.slice(0, 8)}`;
+    };
+
+    const mapRecord = (value: unknown): unknown => {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+      const record = value as Record<string, unknown>;
+      const out: Record<string, unknown> = { ...record };
+      for (const field of ["id", "workItemId"] as const) {
+        if (typeof record[field] === "string") {
+          out[field] = mapId(record[field]);
+        }
+      }
+      for (const nestedKey of ["item", "workItem", "snapshot"] as const) {
+        const nested = record[nestedKey];
+        if (nested !== undefined) {
+          out[nestedKey] = mapRecord(nested);
+        }
+      }
+      return out;
+    };
+
+    const cloned: Record<string, unknown> = { ...data };
+    for (const listKey of ["items", "remoteItems", "claimedItems"] as const) {
+      const list = cloned[listKey];
+      if (Array.isArray(list)) {
+        cloned[listKey] = list.map((entry) => mapRecord(entry));
+      }
+    }
+    return cloned;
   }
 }

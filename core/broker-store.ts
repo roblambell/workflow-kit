@@ -54,28 +54,69 @@ export function createCrewState(code: string, repoRef?: string | null): CrewStat
   };
 }
 
+/**
+ * Default ceiling for the in-memory store.
+ *
+ * The frictionless auto-join protocol means any random 16-64 char path
+ * segment will silently allocate a crew. That is great for UX but fatal
+ * for a public broker with unbounded memory, so we cap the store and
+ * evict on insertion-order. Legitimate users land in the same crew
+ * deterministically (same `crew_id`), so LRU pressure only hurts an
+ * attacker spraying ids.
+ */
+export const IN_MEMORY_CREW_LIMIT = 10_000;
+
 export class InMemoryBrokerStore implements BrokerStore {
+  // Map preserves insertion order, which we use as an approximate LRU.
   private crews = new Map<string, CrewState>();
+  private limit: number;
+
+  constructor(limit: number = IN_MEMORY_CREW_LIMIT) {
+    this.limit = limit;
+  }
 
   hasCrew(code: string): boolean {
     return this.crews.has(code);
   }
 
   getCrew(code: string): CrewState | undefined {
-    return this.crews.get(code);
+    const crew = this.crews.get(code);
+    if (!crew) return undefined;
+    // Touch for LRU: re-insert so it moves to the end.
+    this.crews.delete(code);
+    this.crews.set(code, crew);
+    return crew;
   }
 
   createCrew(code: string, repoRef?: string | null): CrewState {
     const existing = this.crews.get(code);
-    if (existing) return existing;
+    if (existing) {
+      this.crews.delete(code);
+      this.crews.set(code, existing);
+      return existing;
+    }
 
     const crew = createCrewState(code, repoRef);
     this.crews.set(code, crew);
+    this.evictIfNeeded();
     return crew;
   }
 
   listCrews(): Iterable<CrewState> {
     return this.crews.values();
+  }
+
+  /** Current number of crews held in memory (exposed for testing). */
+  size(): number {
+    return this.crews.size;
+  }
+
+  private evictIfNeeded(): void {
+    while (this.crews.size > this.limit) {
+      const oldestKey = this.crews.keys().next().value;
+      if (oldestKey === undefined) return;
+      this.crews.delete(oldestKey);
+    }
   }
 }
 
@@ -156,18 +197,36 @@ function deserializeCrewState(data: SerializedCrewState): CrewState {
 
 // ── File-backed store ─────────────────────────────────────────────
 
+/** Hard ceiling for the persistent file-backed store. */
+export const FILE_STORE_CREW_LIMIT = 100_000;
+
+/** Thrown by {@link FileBrokerStore.createCrew} when {@link FILE_STORE_CREW_LIMIT} is exceeded. */
+export class BrokerStoreCapacityError extends Error {
+  constructor(limit: number) {
+    super(`FileBrokerStore is at capacity (${limit} crews)`);
+    this.name = "BrokerStoreCapacityError";
+  }
+}
+
 /**
  * Persistent BrokerStore backed by JSON files on disk.
  *
  * Each crew is stored as a separate JSON file: `<dataDir>/<code>.json`.
  * Load reads all files on construction; save writes the crew file atomically.
+ *
+ * Refuses to create new crews once the ceiling is hit -- the auto-join
+ * protocol would otherwise allow an unauthenticated peer to fill the
+ * disk with empty crew files. Crews already present in memory can still
+ * be looked up and mutated.
  */
 export class FileBrokerStore implements BrokerStore {
   private crews = new Map<string, CrewState>();
   private dataDir: string;
+  private limit: number;
 
-  constructor(dataDir: string) {
+  constructor(dataDir: string, limit: number = FILE_STORE_CREW_LIMIT) {
     this.dataDir = dataDir;
+    this.limit = limit;
     mkdirSync(dataDir, { recursive: true });
     this.loadAll();
   }
@@ -184,10 +243,19 @@ export class FileBrokerStore implements BrokerStore {
     const existing = this.crews.get(code);
     if (existing) return existing;
 
+    if (this.crews.size >= this.limit) {
+      throw new BrokerStoreCapacityError(this.limit);
+    }
+
     const crew = createCrewState(code, repoRef);
     this.crews.set(code, crew);
     this.saveCrew(crew);
     return crew;
+  }
+
+  /** Current number of crews held by the store (exposed for testing). */
+  size(): number {
+    return this.crews.size;
   }
 
   listCrews(): Iterable<CrewState> {

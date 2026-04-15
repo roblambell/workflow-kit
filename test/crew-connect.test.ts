@@ -4,9 +4,24 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { MockBroker } from "../core/mock-broker.ts";
 import { WebSocketCrewBroker, parseCrewStatusUpdate } from "../core/crew.ts";
+import { makeBrokerHasher } from "../core/broker-hash.ts";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+
+/**
+ * Deterministic 32-byte test secret in canonical base64, accepted by
+ * `makeBrokerHasher`. Reused across all brokers in this suite -- two
+ * daemons built with the same secret deterministically land in the same
+ * crew, which is exactly what the auto-join protocol requires.
+ */
+const TEST_BROKER_SECRET = Buffer.alloc(32, 7).toString("base64");
+/**
+ * A synthetic crew id that matches the new permissive path regex
+ * (`[A-Za-z0-9_-]{16,64}`) so we can connect to auto-created crews
+ * without touching the (removed) POST endpoint.
+ */
+const TEST_CREW_ID = "ABCDEFGHIJKLMNOPQRSTUV";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -42,11 +57,12 @@ function startBroker(): { broker: MockBroker; port: number } {
   return { broker, port };
 }
 
-async function createCrew(port: number): Promise<string> {
-  const res = await fetch(`http://localhost:${port}/api/crews`, { method: "POST" });
-  expect(res.status).toBe(201);
-  const body = (await res.json()) as { code: string };
-  return body.code;
+/**
+ * Resolve the crew id for the shared test secret. Crews are auto-created
+ * on first connection, so this just returns the id; no POST is needed.
+ */
+function resolveTestCrewId(): string {
+  return TEST_CREW_ID;
 }
 
 beforeEach(() => {
@@ -217,11 +233,11 @@ describe("parseCrewStatusUpdate", () => {
 describe("WebSocketCrewBroker system test", () => {
   it("connect() resolves for a new daemon (does not hang)", async () => {
     const { port } = startBroker();
-    const code = await createCrew(port);
+    const code = resolveTestCrewId();
     const projectRoot = createFakeProjectRoot("daemon-1");
 
     const broker = new WebSocketCrewBroker(
-      projectRoot, `ws://localhost:${port}`, code, "https://github.com/test/repo",
+      projectRoot, `ws://localhost:${port}`, code, TEST_BROKER_SECRET,
       { log: () => {} },
       "test-machine",
     );
@@ -235,11 +251,11 @@ describe("WebSocketCrewBroker system test", () => {
 
   it("connect() resolves and crew status is populated", async () => {
     const { port } = startBroker();
-    const code = await createCrew(port);
+    const code = resolveTestCrewId();
     const projectRoot = createFakeProjectRoot("daemon-2");
 
     const broker = new WebSocketCrewBroker(
-      projectRoot, `ws://localhost:${port}`, code, "https://github.com/test/repo",
+      projectRoot, `ws://localhost:${port}`, code, TEST_BROKER_SECRET,
       { log: () => {} },
       "test-machine-2",
     );
@@ -253,11 +269,11 @@ describe("WebSocketCrewBroker system test", () => {
 
   it("full cycle: connect → sync → claim → complete", async () => {
     const { port } = startBroker();
-    const code = await createCrew(port);
+    const code = resolveTestCrewId();
     const projectRoot = createFakeProjectRoot("daemon-3");
 
     const broker = new WebSocketCrewBroker(
-      projectRoot, `ws://localhost:${port}`, code, "https://github.com/test/repo",
+      projectRoot, `ws://localhost:${port}`, code, TEST_BROKER_SECRET,
       { log: () => {} },
       "test-machine-3",
     );
@@ -289,17 +305,17 @@ describe("WebSocketCrewBroker system test", () => {
 
   it("two daemons can connect to the same crew", async () => {
     const { port } = startBroker();
-    const code = await createCrew(port);
+    const code = resolveTestCrewId();
 
     const root1 = createFakeProjectRoot("daemon-a");
     const root2 = createFakeProjectRoot("daemon-b");
 
     const b1 = new WebSocketCrewBroker(
-      root1, `ws://localhost:${port}`, code, "https://github.com/test/repo",
+      root1, `ws://localhost:${port}`, code, TEST_BROKER_SECRET,
       { log: () => {} }, "machine-a",
     );
     const b2 = new WebSocketCrewBroker(
-      root2, `ws://localhost:${port}`, code, "https://github.com/test/repo",
+      root2, `ws://localhost:${port}`, code, TEST_BROKER_SECRET,
       { log: () => {} }, "machine-b",
     );
     clients.push(b1, b2);
@@ -321,17 +337,17 @@ describe("WebSocketCrewBroker system test", () => {
 
   it("two daemons claim different items (no overlap)", async () => {
     const { port } = startBroker();
-    const code = await createCrew(port);
+    const code = resolveTestCrewId();
 
     const root1 = createFakeProjectRoot("daemon-x");
     const root2 = createFakeProjectRoot("daemon-y");
 
     const b1 = new WebSocketCrewBroker(
-      root1, `ws://localhost:${port}`, code, "https://github.com/test/repo",
+      root1, `ws://localhost:${port}`, code, TEST_BROKER_SECRET,
       { log: () => {} }, "machine-x",
     );
     const b2 = new WebSocketCrewBroker(
-      root2, `ws://localhost:${port}`, code, "https://github.com/test/repo",
+      root2, `ws://localhost:${port}`, code, TEST_BROKER_SECRET,
       { log: () => {} }, "machine-y",
     );
     clients.push(b1, b2);
@@ -339,10 +355,16 @@ describe("WebSocketCrewBroker system test", () => {
     await b1.connect();
     await b2.connect();
 
-    b1.sync([
+    // Both daemons sync the same discovery set so each knows the local id
+    // for every hashed work item the broker might hand back. In the hashed
+    // protocol a daemon can only resolve a claim to a real id it has seen
+    // via sync; cleartext ids never travel peer-to-peer.
+    const items = [
       { id: "A-1", dependencies: [], priority: 1, author: "" },
       { id: "A-2", dependencies: [], priority: 2, author: "" },
-    ]);
+    ];
+    b1.sync(items);
+    b2.sync(items);
     await new Promise((r) => setTimeout(r, 50));
 
     const c1 = await b1.claim();
@@ -385,7 +407,7 @@ describe("WebSocketCrewBroker system test", () => {
         projectRoot,
         `ws://localhost:${server.port}`,
         "ABCD-EFGH-IJKL-MNOP",
-        "https://github.com/test/repo",
+        TEST_BROKER_SECRET,
         { log: () => {} },
         "repo-mismatch-client",
       );
