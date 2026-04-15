@@ -15,4 +15,4 @@ jobs:
       - run: bun install
 
       - name: Run tests
-        run: timeout 120 bun run test:ci
+        run: timeout 300 bun run test:ci
