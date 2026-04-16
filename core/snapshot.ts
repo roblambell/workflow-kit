@@ -928,10 +928,16 @@ export async function buildSnapshotAsync(
     return { snap, apiErrorIncrement, errorKind, errorMessage };
   };
 
-  // Dispatch: parallel via queue or sequential fallback
+  // Dispatch: when bulk cache is available, per-item processItem calls don't
+  // make GitHub API calls (all data resolved from cache), so bypass the
+  // rate-limiting queue and run in parallel directly. Without cache, route
+  // through the queue for token-bucket rate limiting and priority ordering.
   type ItemPollResult = Awaited<ReturnType<typeof processItem>>;
   let results: ItemPollResult[];
-  if (queue) {
+  if (prCache) {
+    // Bulk cache available: no per-item API calls, run all items in parallel
+    results = await Promise.all(activeItems.map((orchItem) => processItem(orchItem)));
+  } else if (queue) {
     results = await Promise.all(
       activeItems.map((orchItem) =>
         queue.enqueue({
