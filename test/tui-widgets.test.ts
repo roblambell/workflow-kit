@@ -1083,12 +1083,12 @@ describe("runSelectionScreen", () => {
     expect(result!.cancelled).toBe(false);
   });
 
-  it("returns { type: 'connect' } connectionAction when hasBrokerSecret is true", async () => {
+  it("returns { type: 'connect' } connectionAction when defaultConnect is true", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "First task", "high")];
 
     const resultPromise = runSelectionScreen(io, items, 4, {
-      hasBrokerSecret: true,
+      defaultConnect: true,
     });
 
     sendKeyBatches(
@@ -1101,12 +1101,12 @@ describe("runSelectionScreen", () => {
     expect(result!.connectionAction).toEqual({ type: "connect" });
   });
 
-  it("returns null connectionAction when hasBrokerSecret is false", async () => {
+  it("returns null connectionAction when defaultConnect is false", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "First task", "high")];
 
     const resultPromise = runSelectionScreen(io, items, 4, {
-      hasBrokerSecret: false,
+      defaultConnect: false,
     });
 
     sendKeyBatches(

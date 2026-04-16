@@ -101,6 +101,7 @@ import { hashRepoUrl } from "../core/repo-ref.ts";
 import { makeBrokerHasher } from "../core/broker-hash.ts";
 import {
   buildStartupPersistenceUpdates,
+  runInteractiveFlow,
   shouldEnterInteractive,
   type InteractiveResult,
 } from "../core/interactive.ts";
@@ -9587,6 +9588,83 @@ describe("resolveStartupCollaborationAction", () => {
     )).toEqual({
       connectMode: true,
       crewUrl: "wss://config.example",
+    });
+  });
+});
+
+// Composed end-to-end coverage for the cmdOrchestrate interactive-flow
+// connectMode pipeline. Exercises the three-step composition:
+//   1. resolveConnectMode(parsed.connectFlag, brokerSecret) -> connectMode
+//   2. runInteractiveFlow(..., { defaultConnect: connectMode }) -> connectionAction
+//   3. resolveStartupCollaborationAction({ connectMode, ... }, connectionAction) -> final connectMode
+//
+// Guards the regression noted on H-BS-5: when --local is explicit but
+// broker_secret is configured, the picker must NOT flip connectMode back
+// to true. Pairs with the sibling guard at the child-args layer (see
+// "forwarding --local to the child prevents it from re-applying the
+// config-based default and flipping to connect" in the child-args suite).
+describe("cmdOrchestrate interactive connectMode pipeline", () => {
+  const SECRET = "0123456789abcdef0123456789abcdef01234567890123456789012345678900";
+  const makeItems = (): WorkItem[] => [{
+    id: "A-1",
+    priority: "high",
+    title: "First task",
+    domain: "test",
+    dependencies: [],
+    bundleWith: [],
+    status: "open",
+    filePath: "/tmp/items/A-1.md",
+    rawText: "## A-1\nFirst task",
+    filePaths: [],
+    testPlan: "",
+  } as unknown as WorkItem];
+  const makePrompt = (answers: string[]) => {
+    let i = 0;
+    return async (_q: string): Promise<string> =>
+      i >= answers.length ? "" : answers[i++]!;
+  };
+  const runPipeline = async (
+    connectFlag: "connect" | "local" | undefined,
+    brokerSecret: string | undefined,
+  ): Promise<{ connectMode: boolean; crewUrl?: string }> => {
+    const initialConnectMode = resolveConnectMode(connectFlag, brokerSecret);
+    const result = await runInteractiveFlow(makeItems(), 3, {
+      prompt: makePrompt(["1", ""]),
+      useLegacyPrompts: true,
+      defaultConnect: initialConnectMode,
+    });
+    expect(result).not.toBeNull();
+    return resolveStartupCollaborationAction(
+      { connectMode: initialConnectMode, crewUrl: undefined },
+      result!.connectionAction,
+    );
+  };
+
+  it("--local + configured broker_secret keeps connectMode false through the picker", async () => {
+    expect(await runPipeline("local", SECRET)).toEqual({
+      connectMode: false,
+      crewUrl: undefined,
+    });
+  });
+
+  it("no flag + configured broker_secret auto-connects through the picker", async () => {
+    expect(await runPipeline(undefined, SECRET)).toEqual({
+      connectMode: true,
+      crewUrl: undefined,
+    });
+  });
+
+  it("no flag + no broker_secret stays local through the picker", async () => {
+    expect(await runPipeline(undefined, undefined)).toEqual({
+      connectMode: false,
+      crewUrl: undefined,
+    });
+  });
+
+  it("--connect + no broker_secret still opts into connect through the picker", async () => {
+    expect(await runPipeline("connect", undefined)).toEqual({
+      connectMode: true,
+      crewUrl: undefined,
     });
   });
 });

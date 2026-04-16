@@ -1023,11 +1023,16 @@ export async function runSelectionScreen(
     /** Project root for agent file validation. */
     projectRoot?: string;
     /**
-     * True when the merged project config has a `broker_secret`. Drives the
-     * default `connectionAction` -- when set, the screen returns
-     * `{ type: "connect" }`; when unset, it returns `null` (local-only).
+     * Resolved default connect intent. Drives the returned
+     * `connectionAction`: when true the screen returns `{ type: "connect" }`;
+     * when false (or undefined) it returns `null`.
+     *
+     * Callers should pass the already-resolved `connectMode` (from
+     * `resolveConnectMode`), NOT the raw `broker_secret` presence check,
+     * so `--local` on a project with `broker_secret` keeps the picker
+     * local.
      */
-    hasBrokerSecret?: boolean;
+    defaultConnect?: boolean;
   } = {},
 ): Promise<SelectionScreenResult | null> {
   const resolvedDefaults: TuiSettingsDefaults = {
@@ -1174,9 +1179,16 @@ export async function runSelectionScreen(
     return null;
   }
 
-  // Default the connection action from the project config: when a broker
-  // secret is present, opt into auto-connect; otherwise stay local.
-  const connectionAction: ConnectionAction | null = opts.hasBrokerSecret
+  // Default the connection action from the already-resolved connect intent
+  // (config default + explicit --connect/--local). Callers pass the
+  // resolved `connectMode` here so `--local` is honored even when the
+  // project has `broker_secret` configured.
+  //
+  // Note: this does not consult the persisted `collaboration_mode`
+  // preference (`opts.defaultSettings?.collaborationMode`). That precedence
+  // is resolved at the orchestrator layer; mirroring it here belongs to a
+  // separate pass (see the non-blocking review note on H-BS-5).
+  const connectionAction: ConnectionAction | null = opts.defaultConnect
     ? { type: "connect" }
     : null;
 

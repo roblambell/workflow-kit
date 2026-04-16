@@ -500,7 +500,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.reviewMode).toBe("on");
   });
 
-  it("readline fallback returns local (null) connectionAction when hasBrokerSecret is undefined", async () => {
+  it("readline fallback returns local (null) connectionAction when defaultConnect is undefined", async () => {
     const prompt = makePrompt(["1", ""]);
     const result = await runInteractiveFlow(items, 3, { prompt, useLegacyPrompts: true });
 
@@ -508,24 +508,24 @@ describe("runInteractiveFlow", () => {
     expect(result!.connectionAction).toBeNull();
   });
 
-  it("readline fallback returns local (null) connectionAction when hasBrokerSecret is false", async () => {
+  it("readline fallback returns local (null) connectionAction when defaultConnect is false", async () => {
     const prompt = makePrompt(["1", ""]);
     const result = await runInteractiveFlow(items, 3, {
       prompt,
       useLegacyPrompts: true,
-      hasBrokerSecret: false,
+      defaultConnect: false,
     });
 
     expect(result).not.toBeNull();
     expect(result!.connectionAction).toBeNull();
   });
 
-  it("readline fallback returns { type: 'connect' } connectionAction when hasBrokerSecret is true", async () => {
+  it("readline fallback returns { type: 'connect' } connectionAction when defaultConnect is true", async () => {
     const prompt = makePrompt(["1", ""]);
     const result = await runInteractiveFlow(items, 3, {
       prompt,
       useLegacyPrompts: true,
-      hasBrokerSecret: true,
+      defaultConnect: true,
     });
 
     expect(result).not.toBeNull();
@@ -568,12 +568,12 @@ describe("runInteractiveFlow", () => {
     expect(result!.maxInflight).toBe(6);
   });
 
-  it("TUI path returns { type: 'connect' } connectionAction when hasBrokerSecret is true", async () => {
+  it("TUI path returns { type: 'connect' } connectionAction when defaultConnect is true", async () => {
     const { io, sendKeyBatches } = createMockIO();
 
     const resultPromise = runInteractiveFlow(items, 3, {
       widgetIO: io,
-      hasBrokerSecret: true,
+      defaultConnect: true,
     });
     sendKeyBatches(["\r"], ["\r"]);
 
@@ -582,12 +582,12 @@ describe("runInteractiveFlow", () => {
     expect(result!.connectionAction).toEqual({ type: "connect" });
   });
 
-  it("TUI path returns null connectionAction when hasBrokerSecret is false", async () => {
+  it("TUI path returns null connectionAction when defaultConnect is false", async () => {
     const { io, sendKeyBatches } = createMockIO();
 
     const resultPromise = runInteractiveFlow(items, 3, {
       widgetIO: io,
-      hasBrokerSecret: false,
+      defaultConnect: false,
     });
     sendKeyBatches(["\r"], ["\r"]);
 
