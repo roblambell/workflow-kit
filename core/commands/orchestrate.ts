@@ -1534,6 +1534,10 @@ export async function cmdOrchestrate(
       installedTools,
       savedToolIds: interactiveStartupConfig.savedToolIds,
       projectRoot,
+      // Pass the already-resolved connectMode (config default + explicit
+      // --connect/--local) so the picker's default connectionAction
+      // honors --local even when broker_secret is configured.
+      defaultConnect: connectMode,
     });
     if (!result) {
       process.exit(0);

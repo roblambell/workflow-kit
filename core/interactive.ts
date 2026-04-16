@@ -68,6 +68,19 @@ export interface InteractiveDeps {
   savedToolIds?: string[];
   /** Project root for agent file validation on the tool selection screen. */
   projectRoot?: string;
+  /**
+   * Resolved default connect intent. True when the startup flow should
+   * default to auto-connect -- returning `{ type: "connect" }` -- and false
+   * when it should stay local (`null`).
+   *
+   * Callers should pass the already-resolved `connectMode` (from
+   * `resolveConnectMode`), NOT the raw `broker_secret` presence check.
+   * `resolveConnectMode` honors `--connect` / `--local` on top of the
+   * config default, so threading it through here preserves explicit
+   * opt-outs: `--local` on a project with `broker_secret` keeps the
+   * picker local even though the secret is configured.
+   */
+  defaultConnect?: boolean;
 }
 
 export interface StartupPersistenceOptions {
@@ -470,6 +483,7 @@ export async function runTuiSelectionFlow(
       refreshItems: deps.refreshStartupItems,
       savedToolIds: deps.savedToolIds,
       projectRoot: deps.projectRoot,
+      defaultConnect: deps.defaultConnect,
     });
     if (!result || result.cancelled) return null;
 
@@ -600,6 +614,14 @@ async function runReadlineFlow(
   }
 
   // Step 3: Summary + confirmation
+  // Default the connection action from the already-resolved connect intent
+  // (config default + explicit --connect/--local). Callers pass the
+  // resolved `connectMode` here so `--local` is honored even when the
+  // project has `broker_secret` configured.
+  const connectionAction: ConnectionAction | null = deps.defaultConnect
+    ? { type: "connect" }
+    : null;
+
   const result: InteractiveResult = {
     itemIds: itemResult.ids,
     mergeStrategy,
@@ -607,7 +629,7 @@ async function runReadlineFlow(
     allSelected: itemResult.allSelected,
     futureOnly: false,
     reviewMode,
-    connectionAction: null,
+    connectionAction,
     aiTool,
     aiTools,
   };

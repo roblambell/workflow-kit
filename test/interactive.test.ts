@@ -500,12 +500,36 @@ describe("runInteractiveFlow", () => {
     expect(result!.reviewMode).toBe("on");
   });
 
-  it("readline fallback always returns local (null) connectionAction", async () => {
+  it("readline fallback returns local (null) connectionAction when defaultConnect is undefined", async () => {
     const prompt = makePrompt(["1", ""]);
     const result = await runInteractiveFlow(items, 3, { prompt, useLegacyPrompts: true });
 
     expect(result).not.toBeNull();
     expect(result!.connectionAction).toBeNull();
+  });
+
+  it("readline fallback returns local (null) connectionAction when defaultConnect is false", async () => {
+    const prompt = makePrompt(["1", ""]);
+    const result = await runInteractiveFlow(items, 3, {
+      prompt,
+      useLegacyPrompts: true,
+      defaultConnect: false,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toBeNull();
+  });
+
+  it("readline fallback returns { type: 'connect' } connectionAction when defaultConnect is true", async () => {
+    const prompt = makePrompt(["1", ""]);
+    const result = await runInteractiveFlow(items, 3, {
+      prompt,
+      useLegacyPrompts: true,
+      defaultConnect: true,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toEqual({ type: "connect" });
   });
 
   it("returns an explicit future-only result in the empty-queue TUI path", async () => {
@@ -542,6 +566,34 @@ describe("runInteractiveFlow", () => {
     expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toBeNull();
     expect(result!.maxInflight).toBe(6);
+  });
+
+  it("TUI path returns { type: 'connect' } connectionAction when defaultConnect is true", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+
+    const resultPromise = runInteractiveFlow(items, 3, {
+      widgetIO: io,
+      defaultConnect: true,
+    });
+    sendKeyBatches(["\r"], ["\r"]);
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toEqual({ type: "connect" });
+  });
+
+  it("TUI path returns null connectionAction when defaultConnect is false", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+
+    const resultPromise = runInteractiveFlow(items, 3, {
+      widgetIO: io,
+      defaultConnect: false,
+    });
+    sendKeyBatches(["\r"], ["\r"]);
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toBeNull();
   });
 
   it("returns null when the empty-queue TUI path is cancelled", async () => {
