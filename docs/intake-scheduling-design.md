@@ -25,13 +25,13 @@ Problems:
 - **effectiveSessionLimit indirection.** Extra getter/setter machinery that exists only to support memory adjustment. Once that's gone, this layer has no purpose.
 - **Workspace-ref counting misses dead workers.** If a worker dies but the item is still in an active state, it should count -- it's a commitment the orchestrator will recover.
 - **No drain mode.** Minimum is clamped to 1. There's no way to say "finish what's in flight, don't start new work."
-- **Setting limit to 0 loses your number.** If drain mode were `intakeLimit = 0`, resuming means the user has to remember their preferred concurrency level.
+- **Setting limit to 0 loses your number.** If drain mode were `maxInflight = 0`, resuming means the user has to remember their preferred concurrency level.
 
 ## Proposed Model
 
 Two orthogonal controls:
 
-### 1. `intakeLimit` (number, default 1, min 1)
+### 1. `maxInflight` (number, default 1, min 1)
 
 How many work items can be concurrently in active states. Replaces `sessionLimit`.
 
@@ -40,39 +40,39 @@ How many work items can be concurrently in active states. Replaces `sessionLimit
 - No memory auto-adjustment -- the user sets the number they're comfortable with
 - No effectiveSessionLimit indirection -- the configured value is the value
 - Adjustable at runtime via TUI hotkeys (`+`/`-`)
-- Persisted in config as `intake_limit`
-- CLI flag: `--intake-limit`
+- Persisted in config as `max_inflight`
+- CLI flag: `--max-inflight`
 
-### 2. `paused` (boolean, default false, runtime-only)
+### 2. `acceptingWork` (boolean, default true, runtime-only)
 
-Whether the orchestrator accepts new work. When paused:
+Whether the orchestrator accepts new work. When not accepting work:
 
 - No new items are launched (launchReadyItems returns early)
 - In-flight items continue through their full lifecycle normally
 - Workers keep running: CI, review, rebase, fix-forward all proceed
-- TUI shows a clear PAUSED indicator
-- `+`/`-` still adjust intakeLimit (so when you unpause, the right limit is ready)
+- TUI shows a clear NOT ACCEPTING WORK indicator
+- `+`/`-` still adjust maxInflight (so when you resume accepting, the right limit is ready)
 - Toggle via TUI hotkey
 
-Paused is NOT persisted to config. Each `nw` session starts unpaused. This is an in-session flow control, not a preference.
+acceptingWork is NOT persisted to config. Each `nw` session starts accepting work. This is an in-session flow control, not a preference.
 
 ### Combined Behavior
 
-| Scenario | intakeLimit | paused | Effect |
+| Scenario | maxInflight | acceptingWork | Effect |
 |----------|-----------|--------|--------|
-| Normal operation | 3 | false | Launch items while activeItemCount < 3 |
-| At capacity | 3 | false | No launches (3 items already in flight) |
-| Draining | 3 | true | No launches; in-flight items finish normally |
-| Fully drained | 3 | true | Idle; orchestrator is quiet |
-| Resume after drain | 3 | false | Launches resume immediately; limit remembered |
+| Normal operation | 3 | true | Launch items while activeItemCount < 3 |
+| At capacity | 3 | true | No launches (3 items already in flight) |
+| Draining | 3 | false | No launches; in-flight items finish normally |
+| Fully drained | 3 | false | Idle; orchestrator is quiet |
+| Resume after drain | 3 | true | Launches resume immediately; limit remembered |
 
 ### Why Two Controls
 
-A single `intakeLimit = 0` for drain mode loses information. The user's preferred concurrency level disappears when they drain. With a separate toggle:
+A single `maxInflight = 0` for drain mode loses information. The user's preferred concurrency level disappears when they drain. With a separate toggle:
 
 - Drain: press `p`. Limit stays at 3. Items finish.
 - Resume: press `p` again. Limit is still 3. New items launch immediately.
-- Adjust while paused: press `+`. Limit moves to 4. When you unpause, you get 4 slots.
+- Adjust while draining: press `+`. Limit moves to 4. When you resume accepting work, you get 4 slots.
 
 The limit is a preference. The toggle is an action.
 
@@ -94,30 +94,30 @@ The limit is a preference. The toggle is an action.
 
 | Before | After | Scope |
 |--------|-------|-------|
-| `sessionLimit` | `intakeLimit` | TypeScript properties everywhere |
-| `session_limit` | `intake_limit` | Config key, JSON schema |
-| `--session-limit` | `--intake-limit` | CLI flag |
+| `sessionLimit` | `maxInflight` | TypeScript properties everywhere |
+| `session_limit` | `max_inflight` | Config key, JSON schema |
+| `--session-limit` | `--max-inflight` | CLI flag |
 | `activeSessionCount` | `activeItemCount` | Orchestrator property |
-| `availableSessionSlots` | `availableIntakeSlots` | Orchestrator property |
-| `setSessionLimit()` | `setIntakeLimit()` | Orchestrator method |
-| `computeDefaultSessionLimit()` | `computeDefaultIntakeLimit()` | Event loop helper |
-| `pendingSessionLimit` | `pendingIntakeLimit` | TUI state |
+| `availableSessionSlots` | `availableInflightSlots` | Orchestrator property |
+| `setSessionLimit()` | `setMaxInflight()` | Orchestrator method |
+| `computeDefaultSessionLimit()` | `computeDefaultMaxInflight()` | Event loop helper |
+| `pendingSessionLimit` | `pendingMaxInflight` | TUI state |
 
 ### Change
 
 | What | Before | After |
 |------|--------|-------|
 | Counting method | Items with any workspace ref | Items in `ACTIVE_SESSION_STATES` |
-| Minimum value | `Math.max(1, ...)` | `Math.max(1, ...)` (stays 1; drain is via pause) |
-| Launch gating | `activeSessionCount < effectiveSessionLimit` | `!paused && activeItemCount < intakeLimit` |
+| Minimum value | `Math.max(1, ...)` | `Math.max(1, ...)` (stays 1; drain is via acceptingWork) |
+| Launch gating | `activeSessionCount < effectiveSessionLimit` | `acceptingWork && activeItemCount < maxInflight` |
 
 ### Add
 
 | What | Where | Details |
 |------|-------|---------|
-| `paused` state | `core/orchestrator.ts` | Boolean, runtime-only, default false |
-| Pause toggle | `core/tui-keyboard.ts` | TUI hotkey |
-| Pause indicator | `core/status-render.ts` | Visual feedback in TUI |
+| `acceptingWork` state | `core/orchestrator.ts` | Boolean, runtime-only, default true |
+| Accept-work toggle | `core/tui-keyboard.ts` | TUI hotkey |
+| Not-accepting indicator | `core/status-render.ts` | Visual feedback in TUI |
 | Config migration | `core/config.ts` | Read old `session_limit` key as fallback |
 
 ## What Stays the Same
@@ -133,8 +133,8 @@ The limit is a preference. The toggle is an action.
 
 ### Merge strategy
 
-- **auto/bypass**: Items flow through automatically. Pause stops new launches but lets in-flight items merge.
-- **manual**: Items stop at review-pending for human review. Pause is additive -- stops new launches AND in-flight items still stop at the manual gate.
+- **auto/bypass**: Items flow through automatically. Not accepting work stops new launches but lets in-flight items merge.
+- **manual**: Items stop at review-pending for human review. Not accepting work is additive -- stops new launches AND in-flight items still stop at the manual gate.
 
 ### AI reviews
 
@@ -146,15 +146,15 @@ Orthogonal. Whether the session is local or collaborative doesn't change how int
 
 ## Blast Radius
 
-~180 references in `core/`, ~420 in `test/` across ~40 files. Most work is mechanical rename. Behavioral changes (remove memory calc, add state-based counting, add pause) touch ~5 core files.
+~180 references in `core/`, ~420 in `test/` across ~40 files. Most work is mechanical rename. Behavioral changes (remove memory calc, add state-based counting, add acceptingWork toggle) touch ~5 core files.
 
 ### Key files
 
 - `core/orchestrator-types.ts` -- type definitions, config, defaults
 - `core/orchestrator.ts` -- state machine, counting, launch gating
 - `core/orchestrate-event-loop.ts` -- poll loop, memory adjustment removal
-- `core/tui-keyboard.ts` -- hotkey handling, pause toggle
-- `core/status-render.ts` -- TUI display, pause indicator
+- `core/tui-keyboard.ts` -- hotkey handling, accept-work toggle
+- `core/status-render.ts` -- TUI display, not-accepting indicator
 - `core/config.ts` -- config schema, migration
 - `core/commands/orchestrate.ts` -- CLI flag handling
 - `core/commands/run-items.ts` -- batch launch path
@@ -165,14 +165,14 @@ Orthogonal. Whether the session is local or collaborative doesn't change how int
 
 ## Open Questions
 
-1. **Pause hotkey.** `p` for "pause"? Space bar? Something else? Must not conflict with existing TUI hotkeys.
+1. **Accept-work toggle hotkey.** `p` for "pause"? Space bar? Something else? Must not conflict with existing TUI hotkeys.
 
-2. **TUI pause display.** How prominent should the indicator be? Options: a label in the status bar, a color change on the active count, a full-width banner.
+2. **TUI not-accepting display.** How prominent should the indicator be? Options: a label in the status bar, a color change on the active count, a full-width banner.
 
-3. **Start paused from CLI?** `nw --paused` flag to start in drain mode? Useful for "spin up the TUI to monitor, but don't launch anything." May not be needed for v1.
+3. **Start not accepting from CLI?** `--no-new-work` flag to start in drain mode? Useful for "spin up the TUI to monitor, but don't launch anything." May not be needed for v1.
 
 4. **Backward compat for CLI flag.** Accept `--session-limit` as a deprecated alias? Or break cleanly since we're pre-1.0?
 
 5. **Status bar label.** Current format is `X/Y active sessions`. New format could be `X/Y active` or `X/Y in flight` or `X/Y items`. What reads best?
 
-6. **Pause persistence across restart.** Currently proposed as runtime-only (not persisted). If a user always wants to start paused (e.g., monitoring-only use case), they'd have to toggle every time. Is that acceptable?
+6. **Accept-work persistence across restart.** Currently proposed as runtime-only (not persisted). If a user always wants to start not accepting (e.g., monitoring-only use case), they'd have to toggle every time. Is that acceptable?
