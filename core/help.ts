@@ -101,7 +101,8 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
   // ── Workflow ────────────────────────────────────────────────────────
   {
     name: "init",
-    usage: "init [--global] [--yes]",
+    usage:
+      "init [--global] [--yes] [--broker-secret <value>] [--skip-broker]",
     description: "Auto-detect and initialize ninthwave",
     group: "workflow",
     needsRoot: false,
@@ -111,8 +112,18 @@ export const COMMAND_REGISTRY: ReadonlyArray<CommandEntry> = [
       "--global": "Install global shell alias and config",
       "--yes": "Skip confirmation prompts",
       "-y": "Skip confirmation prompts",
+      "--broker-secret":
+        "Use the given 32-byte base64 secret (team onboarding). Mutually exclusive with --skip-broker.",
+      "--skip-broker":
+        "Skip broker secret provisioning (local-only setup). Mutually exclusive with --broker-secret.",
     },
-    examples: ["nw init", "nw init --global", "nw init --yes"],
+    examples: [
+      "nw init",
+      "nw init --global",
+      "nw init --yes",
+      'nw init --yes --broker-secret "$SECRET"',
+      "nw init --yes --skip-broker",
+    ],
   },
   {
     name: "broker",

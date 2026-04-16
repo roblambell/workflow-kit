@@ -28,6 +28,7 @@ import {
   detectAll,
   generateConfig,
   initProject,
+  parseInitFlags,
   type InitDeps,
   type InitProjectOpts,
   type DetectionResult,
@@ -1782,6 +1783,149 @@ describe("initProject -- broker secret action", () => {
       ),
     );
     expect(localParsed.broker_secret).toBe(seeded);
+  });
+});
+
+// --- parseInitFlags (cmdInit CLI flag parsing) ---
+
+describe("parseInitFlags", () => {
+  // A syntactically-valid broker secret: 32 zero bytes encoded as base64.
+  const VALID_SECRET = Buffer.from(new Uint8Array(32)).toString("base64");
+
+  it("returns defaults when no flags are passed", () => {
+    const result = parseInitFlags([]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.flags.isGlobal).toBe(false);
+      expect(result.flags.autoYes).toBe(false);
+      expect(result.flags.flagAction).toBeUndefined();
+    }
+  });
+
+  it("parses --global and --yes", () => {
+    const result = parseInitFlags(["--global", "--yes"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.flags.isGlobal).toBe(true);
+      expect(result.flags.autoYes).toBe(true);
+    }
+  });
+
+  it("treats -y as an alias for --yes", () => {
+    const result = parseInitFlags(["-y"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.flags.autoYes).toBe(true);
+  });
+
+  it("parses --broker-secret <valid> into an 'enter' action", () => {
+    const result = parseInitFlags(["--broker-secret", VALID_SECRET]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.flags.flagAction).toEqual({
+        action: "enter",
+        value: VALID_SECRET,
+      });
+    }
+  });
+
+  it("rejects an invalid --broker-secret value with a helpful message", () => {
+    const result = parseInitFlags(["--broker-secret", "not-base64"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("--broker-secret");
+      expect(result.error).toContain("32-byte base64");
+    }
+  });
+
+  it("rejects --broker-secret without a following value", () => {
+    const result = parseInitFlags(["--broker-secret"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("requires a value");
+    }
+  });
+
+  it("parses --skip-broker into a 'skip' action", () => {
+    const result = parseInitFlags(["--skip-broker"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.flags.flagAction).toEqual({ action: "skip" });
+    }
+  });
+
+  it("rejects --broker-secret and --skip-broker together", () => {
+    const result = parseInitFlags([
+      "--broker-secret",
+      VALID_SECRET,
+      "--skip-broker",
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("mutually exclusive");
+    }
+  });
+
+  it("rejects --skip-broker followed by --broker-secret too (order-independent)", () => {
+    const result = parseInitFlags([
+      "--skip-broker",
+      "--broker-secret",
+      VALID_SECRET,
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  it("allows --broker-secret without --yes (skips the prompt non-interactively)", () => {
+    const result = parseInitFlags(["--broker-secret", VALID_SECRET]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.flags.autoYes).toBe(false);
+      expect(result.flags.flagAction).toEqual({
+        action: "enter",
+        value: VALID_SECRET,
+      });
+    }
+  });
+
+  it("allows --skip-broker without --yes", () => {
+    const result = parseInitFlags(["--skip-broker"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.flags.autoYes).toBe(false);
+      expect(result.flags.flagAction).toEqual({ action: "skip" });
+    }
+  });
+
+  it("combines --yes with --broker-secret cleanly for scripted onboarding", () => {
+    const result = parseInitFlags([
+      "--yes",
+      "--broker-secret",
+      VALID_SECRET,
+    ]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.flags.autoYes).toBe(true);
+      expect(result.flags.flagAction).toEqual({
+        action: "enter",
+        value: VALID_SECRET,
+      });
+    }
+  });
+
+  it("combines --yes with --skip-broker for guaranteed local-only setup", () => {
+    const result = parseInitFlags(["--yes", "--skip-broker"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.flags.autoYes).toBe(true);
+      expect(result.flags.flagAction).toEqual({ action: "skip" });
+    }
+  });
+
+  it("ignores unknown flags (permissive for forward-compat)", () => {
+    const result = parseInitFlags(["--nonexistent-flag", "--yes"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.flags.autoYes).toBe(true);
+    }
   });
 });
 

@@ -902,18 +902,111 @@ export function initProject(
 }
 
 /**
+ * Parsed result of `ninthwave init` CLI flags.
+ *
+ * `flagAction` captures a pre-resolved broker-secret decision derived from
+ * `--broker-secret`/`--skip-broker`. When it is `undefined`, `cmdInit` falls
+ * back to the normal TTY prompt (interactive) or silent generation
+ * (`--yes`/non-TTY), preserving the previous behavior for callers that pass
+ * neither flag.
+ */
+export interface InitFlags {
+  isGlobal: boolean;
+  autoYes: boolean;
+  flagAction: BrokerSecretAction | undefined;
+}
+
+export type ParseInitFlagsResult =
+  | { ok: true; flags: InitFlags }
+  | { ok: false; error: string };
+
+/**
+ * Parse the `ninthwave init` argv slice.
+ *
+ * Extracted as a pure function so the flag contract (mutual exclusion,
+ * value validation, boolean toggles) can be unit-tested without a real
+ * git repo or TTY. Any error is surfaced as a string so `cmdInit` can
+ * print/exit and tests can assert on the message.
+ */
+export function parseInitFlags(args: string[]): ParseInitFlagsResult {
+  let isGlobal = false;
+  let autoYes = false;
+  let skipBroker = false;
+  let brokerSecretValue: string | undefined;
+  let brokerSecretFlagSeen = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === "--global") {
+      isGlobal = true;
+    } else if (arg === "--yes" || arg === "-y") {
+      autoYes = true;
+    } else if (arg === "--skip-broker") {
+      skipBroker = true;
+    } else if (arg === "--broker-secret") {
+      brokerSecretFlagSeen = true;
+      const next = args[i + 1];
+      if (next === undefined) {
+        return {
+          ok: false,
+          error: "--broker-secret requires a value",
+        };
+      }
+      brokerSecretValue = next;
+      i++;
+    }
+    // Unknown flags are ignored to preserve the previous permissive
+    // behavior (e.g., future flags or harness-specific args).
+  }
+
+  if (brokerSecretFlagSeen && skipBroker) {
+    return {
+      ok: false,
+      error:
+        "--broker-secret and --skip-broker are mutually exclusive; pick one",
+    };
+  }
+
+  let flagAction: BrokerSecretAction | undefined;
+  if (skipBroker) {
+    flagAction = { action: "skip" };
+  } else if (brokerSecretFlagSeen) {
+    const validated = parseBrokerSecret(brokerSecretValue);
+    if (validated === undefined) {
+      return {
+        ok: false,
+        error:
+          "--broker-secret value is not a valid 32-byte base64 secret (expected 44 chars ending in '=')",
+      };
+    }
+    flagAction = { action: "enter", value: validated };
+  }
+
+  return {
+    ok: true,
+    flags: { isGlobal, autoYes, flagAction },
+  };
+}
+
+/**
  * CLI entry point for `ninthwave init`.
  *
  * Flags:
- *   --global  Set up global skills only
- *   --yes     Skip interactive prompts, accept defaults
+ *   --global                  Set up global skills only
+ *   --yes, -y                 Skip interactive prompts, accept defaults
+ *   --broker-secret <value>   Use the given 32-byte base64 secret (team onboarding)
+ *   --skip-broker             Skip broker secret provisioning (local-only setup)
  */
 export async function cmdInit(
   args: string[] = [],
   deps?: { brokerSecretPrompt?: BrokerSecretPromptFn },
 ): Promise<void> {
-  const isGlobal = args.includes("--global");
-  const autoYes = args.includes("--yes") || args.includes("-y");
+  const parsed = parseInitFlags(args);
+  if (!parsed.ok) {
+    console.error(`${RED}Error:${RESET} ${parsed.error}`);
+    process.exit(1);
+  }
+  const { isGlobal, autoYes, flagAction } = parsed.flags;
   const bundleDir = getBundleDir();
 
   if (isGlobal) {
@@ -953,15 +1046,21 @@ export async function cmdInit(
     agentSelection = selection ?? { agents: [], toolDirs: [] };
   }
 
-  // Resolve the broker secret decision. If a secret already exists, we
-  // never re-prompt or regenerate. Otherwise `--yes`/non-TTY default to
-  // generate (matches the old silent behavior) and interactive runs prompt.
+  // Resolve the broker secret decision. Precedence:
+  //   1. Existing secret in config (never rotated; flag values ignored).
+  //   2. Explicit CLI flag (`--broker-secret` / `--skip-broker`) -- works
+  //      regardless of `--yes`, so scripted onboarding can skip the prompt
+  //      even without `--yes`.
+  //   3. `--yes` or non-TTY: silent generate (preserves old default).
+  //   4. Interactive prompt.
   const existingSecret =
     loadLocalConfig(projectDir).broker_secret ??
     loadConfig(projectDir).broker_secret;
   let brokerSecretAction: BrokerSecretAction | undefined;
   if (existingSecret === undefined) {
-    if (autoYes || !isTTY) {
+    if (flagAction !== undefined) {
+      brokerSecretAction = flagAction;
+    } else if (autoYes || !isTTY) {
       brokerSecretAction = { action: "generate" };
     } else {
       const prompt = deps?.brokerSecretPrompt ?? defaultBrokerSecretPrompt;
