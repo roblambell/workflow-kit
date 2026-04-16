@@ -1241,6 +1241,14 @@ export async function orchestrateLoop(
         interactiveTiming.actionTypes = actions.map((action) => action.type);
       }
 
+      // Emit an early snapshot so the TUI reflects state transitions (e.g.
+      // queued->launching) immediately, before slow actions like launch/retry
+      // block the event loop for tens of seconds per item.
+      const hasSlowActions = actions.some((a) => a.type === "launch" || a.type === "retry");
+      if (hasSlowActions) {
+        deps.onPollComplete?.(orch.getAllItems(), snapshot, undefined, undefined);
+      }
+
       // Execute actions -- route GH API actions through the request queue for
       // proactive token-bucket rate limiting; non-API actions execute immediately.
       const actionExecutionStartMs = interactiveTiming ? nowMs() : 0;

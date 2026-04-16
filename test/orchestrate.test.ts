@@ -4220,6 +4220,47 @@ describe("onPollComplete callback", () => {
     }
   });
 
+  it("emits early snapshot before launch actions execute", async () => {
+    const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("T-1-1"));
+    orch.getItem("T-1-1")!.reviewCompleted = true;
+
+    let cycle = 0;
+    const pollCompleteCalls: { items: { id: string; state: string }[]; pollIntervalMs?: number }[] = [];
+
+    const deps: OrchestrateLoopDeps = {
+      buildSnapshot: (): PollSnapshot => {
+        cycle++;
+        if (cycle === 1) return { items: [], readyIds: ["T-1-1"] };
+        if (cycle === 2) return { items: [{ id: "T-1-1", workerAlive: true }], readyIds: [] };
+        if (cycle === 3) return { items: [{ id: "T-1-1", prNumber: 1, prState: "open", ciStatus: "pass" }], readyIds: [] };
+        return { items: [], readyIds: [] };
+      },
+      sleep: () => Promise.resolve(),
+      log: () => {},
+      actionDeps: mockActionDeps(),
+      onPollComplete: (items, _snapshot, pollIntervalMs) => {
+        pollCompleteCalls.push({
+          items: items.map((i) => ({ id: i.id, state: i.state })),
+          pollIntervalMs,
+        });
+      },
+    };
+
+    await orchestrateLoop(orch, defaultCtx, deps, { maxIterations: 200 });
+
+    // Cycle 1 produces a launch action, so onPollComplete should fire twice:
+    // once as an early snapshot (before launch, pollIntervalMs undefined) and
+    // once as the normal post-action snapshot (with pollIntervalMs set).
+    const cycle1Calls = pollCompleteCalls.filter(
+      (c) => c.items.length === 1 && c.items[0].id === "T-1-1" && c.items[0].state === "launching",
+    );
+    expect(cycle1Calls.length).toBeGreaterThanOrEqual(1);
+    // The early snapshot should have undefined pollIntervalMs
+    const earlySnapshot = cycle1Calls.find((c) => c.pollIntervalMs === undefined);
+    expect(earlySnapshot).toBeDefined();
+  });
+
   it("loop works fine without onPollComplete (undefined)", async () => {
     const orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("T-1-1"));
