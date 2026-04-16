@@ -82,7 +82,7 @@ describe("system: watch runtime controls", () => {
       "--watch",
       "--tool", "codex",
       "--merge-strategy", "manual",
-      "--session-limit", "1",
+      "--max-inflight", "1",
       "--review",
       "--skip-preflight",
       // Use 1-second intervals rather than 0 to avoid busy-loop behavior in CI.
@@ -108,7 +108,7 @@ describe("system: watch runtime controls", () => {
           // The fake worker heartbeats at progress=1.0 with prNumber=1 and exits in 2.5s, so it can
           // race past implementing/ci-pending into ci-passed/review-pending (with --review) before
           // the first poll observes the state. The invariant we care about is "first was picked up,
-          // second wasn't yet" -- session-limit=1 guarantees second stays in ready/queued.
+          // second wasn't yet" -- max-inflight=1 guarantees second stays in ready/queued.
           const firstPickedUp = first && first.state !== "queued" && first.state !== "ready";
           return firstPickedUp
             && second?.state === "ready"
@@ -135,7 +135,7 @@ describe("system: watch runtime controls", () => {
       expect(existsSync(secondWorktreePath)).toBe(false);
 
       harness.writeToProcess(processHandle, `${JSON.stringify({
-        type: "set-session-limit",
+        type: "set-max-inflight",
         limit: 2,
         source: "system-test",
       })}\n`);
@@ -150,7 +150,7 @@ describe("system: watch runtime controls", () => {
         source: "system-test",
       })}\n`);
 
-      await harness.waitForProcessOutput(processHandle, /"event":"session_limit_changed"/, {
+      await harness.waitForProcessOutput(processHandle, /"event":"max_inflight_changed"/, {
         timeoutMs: 30_000,
       });
       await harness.waitForProcessOutput(processHandle, /"event":"review_mode_changed"/, {
@@ -184,7 +184,7 @@ describe("system: watch runtime controls", () => {
           `stderr tail:\n${processHandle.stderr.slice(-4000)}\n`);
         throw err;
       }
-      expect(concurrentState.sessionLimit).toBe(2);
+      expect(concurrentState.maxInflight).toBe(2);
       expect(existsSync(secondWorktreePath)).toBe(true);
 
       const settledState = await harness.waitForOrchestratorState((state) => {

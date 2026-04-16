@@ -170,7 +170,7 @@ describe("Orchestrator", () => {
   // ── 3. Ready → Launching with session limit ────────────────────────
 
   it("launches ready items up to session limit", () => {
-    orch = new Orchestrator({ sessionLimit: 2 });
+    orch = new Orchestrator({ maxInflight: 2 });
 
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -191,7 +191,7 @@ describe("Orchestrator", () => {
   });
 
   it("respects session limit across existing active items", () => {
-    orch = new Orchestrator({ sessionLimit: 2 });
+    orch = new Orchestrator({ maxInflight: 2 });
 
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -740,7 +740,7 @@ describe("Orchestrator", () => {
   // ── 11. Batch complete → launch next ───────────────────────────
 
   it("launches next batch when previous items complete", () => {
-    orch = new Orchestrator({ fixForward: false, sessionLimit: 1 });
+    orch = new Orchestrator({ fixForward: false, maxInflight: 1 });
 
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -870,8 +870,8 @@ describe("Orchestrator", () => {
 
   // ── 15. Session count and slots ────────────────────────────────────
 
-  it("activeSessionCount reflects items with active workspaces", () => {
-    orch = new Orchestrator({ sessionLimit: 5 });
+  it("activeItemCount reflects items with active workspaces", () => {
+    orch = new Orchestrator({ maxInflight: 5 });
 
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -889,12 +889,12 @@ describe("Orchestrator", () => {
     orch.hydrateState("H-1-3", "done");
     orch.hydrateState("H-1-4", "queued");
 
-    expect(orch.activeSessionCount).toBe(2);
-    expect(orch.availableSessionSlots).toBe(3);
+    expect(orch.activeItemCount).toBe(2);
+    expect(orch.availableInflightSlots).toBe(3);
   });
 
   it("blocked does not count toward session limit", () => {
-    orch = new Orchestrator({ sessionLimit: 3 });
+    orch = new Orchestrator({ maxInflight: 3 });
 
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
@@ -909,8 +909,8 @@ describe("Orchestrator", () => {
     orch.hydrateState("H-1-3", "ci-pending");
     orch.getItem("H-1-3")!.workspaceRef = "workspace:2";
 
-    expect(orch.activeSessionCount).toBe(2);
-    expect(orch.availableSessionSlots).toBe(1);
+    expect(orch.activeItemCount).toBe(2);
+    expect(orch.availableInflightSlots).toBe(1);
   });
 
   // ── 16. Terminal states don't transition ───────────────────────
@@ -957,7 +957,7 @@ describe("Orchestrator", () => {
   // ── 17. Default config ─────────────────────────────────────────
 
   it("uses sensible defaults", () => {
-    expect(DEFAULT_CONFIG.sessionLimit).toBe(1);
+    expect(DEFAULT_CONFIG.maxInflight).toBe(1);
     expect(DEFAULT_CONFIG.mergeStrategy).toBe("auto");
     expect(DEFAULT_CONFIG.maxCiRetries).toBe(5);
   });
@@ -1012,7 +1012,7 @@ describe("Orchestrator", () => {
   // ── 21. Multiple items complete end-to-end ─────────────────────
 
   it("handles full lifecycle across multiple items", () => {
-    orch = new Orchestrator({ fixForward: false, sessionLimit: 2, mergeStrategy: "auto" });
+    orch = new Orchestrator({ fixForward: false, maxInflight: 2, mergeStrategy: "auto" });
 
     orch.addItem(makeWorkItem("A-1-1"));
     orch.getItem("A-1-1")!.reviewCompleted = true;
@@ -2545,7 +2545,7 @@ describe("Orchestrator", () => {
 
     describe("queued →", () => {
       it("→ ready when deps met (id in readyIds)", () => {
-        orch = new Orchestrator({ sessionLimit: 0 }); // prevent auto-launch
+        orch = new Orchestrator({ maxInflight: 0 }); // prevent auto-launch
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
         orch.processTransitions(emptySnapshot(["X-1-1"]));
@@ -2579,7 +2579,7 @@ describe("Orchestrator", () => {
       });
 
       it("stays ready when session limit reached", () => {
-        orch = new Orchestrator({ sessionLimit: 1 });
+        orch = new Orchestrator({ maxInflight: 1 });
         orch.addItem(makeWorkItem("X-1-1"));
         orch.getItem("X-1-1")!.reviewCompleted = true;
         orch.addItem(makeWorkItem("X-1-2"));
@@ -3847,7 +3847,7 @@ describe("Orchestrator", () => {
     });
 
     it("ready does not skip to implementing", () => {
-      orch = new Orchestrator({ sessionLimit: 0 });
+      orch = new Orchestrator({ maxInflight: 0 });
       orch.addItem(makeWorkItem("X-1-1"));
       orch.getItem("X-1-1")!.reviewCompleted = true;
       orch.hydrateState("X-1-1", "ready");
@@ -3858,7 +3858,7 @@ describe("Orchestrator", () => {
     });
 
     it("ready does not react to PR data", () => {
-      orch = new Orchestrator({ sessionLimit: 0 });
+      orch = new Orchestrator({ maxInflight: 0 });
       orch.addItem(makeWorkItem("X-1-1"));
       orch.getItem("X-1-1")!.reviewCompleted = true;
       orch.hydrateState("X-1-1", "ready");
@@ -3979,7 +3979,7 @@ describe("Orchestrator", () => {
     });
 
     it("multi-level dependency chain (A → B → C)", () => {
-      orch = new Orchestrator({ sessionLimit: 1 });
+      orch = new Orchestrator({ maxInflight: 1 });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("B-1-1", ["A-1-1"]));
@@ -4027,7 +4027,7 @@ describe("Orchestrator", () => {
     });
 
     it("independent items with no deps all launch immediately", () => {
-      orch = new Orchestrator({ sessionLimit: 10 });
+      orch = new Orchestrator({ maxInflight: 10 });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("A-1-2"));
@@ -4044,9 +4044,9 @@ describe("Orchestrator", () => {
 
   // ── Session-limited transitions ──────────────────────────────────────
 
-  describe("session-limited transitions", () => {
+  describe("max-inflight-limited transitions", () => {
     it("zero session limit prevents any launches", () => {
-      orch = new Orchestrator({ sessionLimit: 0 });
+      orch = new Orchestrator({ maxInflight: 0 });
       orch.addItem(makeWorkItem("X-1-1"));
       orch.getItem("X-1-1")!.reviewCompleted = true;
       orch.processTransitions(emptySnapshot(["X-1-1"]));
@@ -4054,7 +4054,7 @@ describe("Orchestrator", () => {
     });
 
     it("exact session limit: all slots used, no new launches", () => {
-      orch = new Orchestrator({ sessionLimit: 2 });
+      orch = new Orchestrator({ maxInflight: 2 });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("A-1-2"));
@@ -4074,11 +4074,11 @@ describe("Orchestrator", () => {
         ]),
       );
       expect(orch.getItem("A-1-3")!.state).toBe("ready");
-      expect(orch.activeSessionCount).toBe(2);
+      expect(orch.activeItemCount).toBe(2);
     });
 
     it("session slot freed by done transition allows new launch in same tick", () => {
-      orch = new Orchestrator({ fixForward: false, sessionLimit: 1 });
+      orch = new Orchestrator({ fixForward: false, maxInflight: 1 });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("A-1-2"));
@@ -4093,7 +4093,7 @@ describe("Orchestrator", () => {
     });
 
     it("all active session states count toward limit", () => {
-      orch = new Orchestrator({ sessionLimit: 8 });
+      orch = new Orchestrator({ maxInflight: 8 });
       const activeSessionStates: OrchestratorItemState[] = [
         "launching", "implementing", "ci-pending",
         "ci-passed", "ci-failed", "reviewing", "review-pending", "merging",
@@ -4108,12 +4108,12 @@ describe("Orchestrator", () => {
         }
       });
 
-      expect(orch.activeSessionCount).toBe(8);
-      expect(orch.availableSessionSlots).toBe(0);
+      expect(orch.activeItemCount).toBe(8);
+      expect(orch.availableInflightSlots).toBe(0);
     });
 
     it("non-session states do not count toward limit", () => {
-      orch = new Orchestrator({ sessionLimit: 4 });
+      orch = new Orchestrator({ maxInflight: 4 });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("A-1-2"));
@@ -4127,12 +4127,12 @@ describe("Orchestrator", () => {
       orch.hydrateState("A-1-3", "done");
       orch.hydrateState("A-1-4", "stuck");
 
-      expect(orch.activeSessionCount).toBe(0);
-      expect(orch.availableSessionSlots).toBe(4);
+      expect(orch.activeItemCount).toBe(0);
+      expect(orch.availableInflightSlots).toBe(4);
     });
 
     it("launches exactly up to session limit, no more", () => {
-      orch = new Orchestrator({ sessionLimit: 3 });
+      orch = new Orchestrator({ maxInflight: 3 });
       for (let i = 1; i <= 5; i++) {
         orch.addItem(makeWorkItem(`X-1-${i}`));
       }
@@ -4148,7 +4148,7 @@ describe("Orchestrator", () => {
     });
 
     it("merged state does not count toward session limit (allows launches)", () => {
-      orch = new Orchestrator({ sessionLimit: 1 });
+      orch = new Orchestrator({ maxInflight: 1 });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("B-1-1"));
@@ -4156,8 +4156,8 @@ describe("Orchestrator", () => {
       orch.hydrateState("A-1-1", "merged");
       orch.hydrateState("B-1-1", "ready");
 
-      // merged is not active, so activeSessionCount is 0, 1 slot available
-      expect(orch.activeSessionCount).toBe(0);
+      // merged is not active, so activeItemCount is 0, 1 slot available
+      expect(orch.activeItemCount).toBe(0);
       const actions = orch.processTransitions(emptySnapshot());
       expect(orch.getItem("B-1-1")!.state).toBe("launching");
     });
@@ -4298,7 +4298,7 @@ describe("Orchestrator", () => {
     });
 
     it("merged items free session slots for ready items in the same tick", () => {
-      orch = new Orchestrator({ fixForward: false, sessionLimit: 1 });
+      orch = new Orchestrator({ fixForward: false, maxInflight: 1 });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("B-1-1"));
@@ -4367,7 +4367,7 @@ describe("Orchestrator", () => {
     });
 
     it("mixed: merge + CI fail + launch in one tick", () => {
-      orch = new Orchestrator({ sessionLimit: 3, mergeStrategy: "auto" });
+      orch = new Orchestrator({ maxInflight: 3, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("A-1-1"));
       orch.getItem("A-1-1")!.reviewCompleted = true;
       orch.addItem(makeWorkItem("B-1-1"));
@@ -4547,7 +4547,7 @@ describe("Orchestrator", () => {
     });
 
     it("fresh orchestrator handles items in all 12 states without errors", () => {
-      const orch2 = new Orchestrator({ sessionLimit: 10 });
+      const orch2 = new Orchestrator({ maxInflight: 10 });
       const allStates: OrchestratorItemState[] = [
         "queued", "ready", "launching", "implementing",
         "ci-pending", "ci-passed", "ci-failed", "review-pending",
@@ -4566,7 +4566,7 @@ describe("Orchestrator", () => {
     });
 
     it("partial reconstruction: items at different lifecycle stages resume correctly", () => {
-      const orch2 = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
+      const orch2 = new Orchestrator({ maxInflight: 5, mergeStrategy: "auto" });
 
       // Batch 1 items at various stages
       orch2.addItem(makeWorkItem("A-1-1"));
@@ -4778,7 +4778,7 @@ describe("Orchestrator", () => {
     });
 
     it("retry from launching state re-launches in same cycle", () => {
-      orch = new Orchestrator({ maxRetries: 1, sessionLimit: 5 });
+      orch = new Orchestrator({ maxRetries: 1, maxInflight: 5 });
       orch.addItem(makeWorkItem("R-1-1"));
       orch.getItem("R-1-1")!.reviewCompleted = true;
       orch.hydrateState("R-1-1", "launching");
@@ -4804,7 +4804,7 @@ describe("Orchestrator", () => {
 
   describe("heartbeat stuck detection", () => {
     it("transitions implementing → stuck when no commits after launch timeout (process dead)", () => {
-      orch = new Orchestrator({ launchTimeoutMs: 30 * 60 * 1000, maxRetries: 0, sessionLimit: 5, gracePeriodMs: 0 });
+      orch = new Orchestrator({ launchTimeoutMs: 30 * 60 * 1000, maxRetries: 0, maxInflight: 5, gracePeriodMs: 0 });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.hydrateState("H-1-1", "implementing");
@@ -4825,7 +4825,7 @@ describe("Orchestrator", () => {
     });
 
     it("transitions implementing → stuck when stale commit beyond activity timeout", () => {
-      orch = new Orchestrator({ activityTimeoutMs: 60 * 60 * 1000, maxRetries: 0, sessionLimit: 5, gracePeriodMs: 0 });
+      orch = new Orchestrator({ activityTimeoutMs: 60 * 60 * 1000, maxRetries: 0, maxInflight: 5, gracePeriodMs: 0 });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.hydrateState("H-1-1", "implementing");
@@ -4844,7 +4844,7 @@ describe("Orchestrator", () => {
     });
 
     it("keeps implementing when worker has recent commits", () => {
-      orch = new Orchestrator({ activityTimeoutMs: 60 * 60 * 1000, sessionLimit: 5 });
+      orch = new Orchestrator({ activityTimeoutMs: 60 * 60 * 1000, maxInflight: 5 });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.hydrateState("H-1-1", "implementing");
@@ -4867,7 +4867,7 @@ describe("Orchestrator", () => {
         launchTimeoutMs: 5000,       // 5 seconds
         activityTimeoutMs: 10000,    // 10 seconds
         maxRetries: 0,
-        sessionLimit: 5,
+        maxInflight: 5,
         gracePeriodMs: 0,
       });
       orch.addItem(makeWorkItem("H-1-1"));
@@ -4889,7 +4889,7 @@ describe("Orchestrator", () => {
     });
 
     it("worker within grace period after launch is not marked stuck", () => {
-      orch = new Orchestrator({ launchTimeoutMs: 30 * 60 * 1000, sessionLimit: 5 });
+      orch = new Orchestrator({ launchTimeoutMs: 30 * 60 * 1000, maxInflight: 5 });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.hydrateState("H-1-1", "implementing");
@@ -4906,7 +4906,7 @@ describe("Orchestrator", () => {
     });
 
     it("heartbeat uses item.lastCommitTime when snapshot has no lastCommitTime", () => {
-      orch = new Orchestrator({ activityTimeoutMs: 60 * 60 * 1000, sessionLimit: 5 });
+      orch = new Orchestrator({ activityTimeoutMs: 60 * 60 * 1000, maxInflight: 5 });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.hydrateState("H-1-1", "implementing");
@@ -4929,7 +4929,7 @@ describe("Orchestrator", () => {
       orch = new Orchestrator({
         launchTimeoutMs: 30 * 60 * 1000,
         maxRetries: 1,
-        sessionLimit: 5,
+        maxInflight: 5,
         gracePeriodMs: 0,
       });
       orch.addItem(makeWorkItem("H-1-1"));
@@ -4953,7 +4953,7 @@ describe("Orchestrator", () => {
     });
 
     it("heartbeat skips when PR already appeared (takes priority)", () => {
-      orch = new Orchestrator({ launchTimeoutMs: 1000, sessionLimit: 5 });
+      orch = new Orchestrator({ launchTimeoutMs: 1000, maxInflight: 5 });
       orch.addItem(makeWorkItem("H-1-1"));
       orch.getItem("H-1-1")!.reviewCompleted = true;
       orch.hydrateState("H-1-1", "implementing");
@@ -4983,7 +4983,7 @@ describe("Orchestrator", () => {
 
   describe("priority-ordered merge queue", () => {
     it("merges multiple ci-passed items in priority order (highest first)", () => {
-      orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
+      orch = new Orchestrator({ maxInflight: 5, mergeStrategy: "auto" });
 
       // Add items with different priorities
       orch.addItem(makeWorkItem("L-1-1", [], "low"));
@@ -5019,7 +5019,7 @@ describe("Orchestrator", () => {
     });
 
     it("merges equal-priority items by ID order (lexicographic)", () => {
-      orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
+      orch = new Orchestrator({ maxInflight: 5, mergeStrategy: "auto" });
 
       // All medium priority
       orch.addItem(makeWorkItem("M-1-3", [], "medium"));
@@ -5054,7 +5054,7 @@ describe("Orchestrator", () => {
     });
 
     it("single ci-passed item skips queue logic and merges normally", () => {
-      orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
+      orch = new Orchestrator({ maxInflight: 5, mergeStrategy: "auto" });
 
       orch.addItem(makeWorkItem("H-1-1", [], "high"));
       orch.hydrateState("H-1-1", "ci-passed");
@@ -5074,7 +5074,7 @@ describe("Orchestrator", () => {
     });
 
     it("after merge execution, remaining ci-passed items get conflict checked next cycle", () => {
-      orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
+      orch = new Orchestrator({ maxInflight: 5, mergeStrategy: "auto" });
 
       orch.addItem(makeWorkItem("C-1-1", [], "critical"));
       orch.addItem(makeWorkItem("M-1-1", [], "medium"));
@@ -5127,7 +5127,7 @@ describe("Orchestrator", () => {
     });
 
     it("non-merge actions are preserved alongside the prioritized merge", () => {
-      orch = new Orchestrator({ sessionLimit: 5, mergeStrategy: "auto" });
+      orch = new Orchestrator({ maxInflight: 5, mergeStrategy: "auto" });
 
       // Two items in ci-passed, one in ci-pending that will fail
       orch.addItem(makeWorkItem("H-1-1", [], "high"));
@@ -5164,7 +5164,7 @@ describe("Orchestrator", () => {
     });
 
     it("priority order: critical > high > medium > low", () => {
-      orch = new Orchestrator({ sessionLimit: 10, mergeStrategy: "auto" });
+      orch = new Orchestrator({ maxInflight: 10, mergeStrategy: "auto" });
 
       const priorities: Priority[] = ["low", "medium", "high", "critical"];
       for (const p of priorities) {
@@ -5539,7 +5539,7 @@ describe("Orchestrator", () => {
 
     describe("processTransitions stacking", () => {
       it("promotes stackable-ready items and sets baseBranch", () => {
-        orch = new Orchestrator({ sessionLimit: 10 });
+        orch = new Orchestrator({ maxInflight: 10 });
         orch.addItem(makeWorkItem("A-1-1"));
         orch.getItem("A-1-1")!.reviewCompleted = true;
         orch.addItem(makeWorkItem("A-1-2", ["A-1-1"]));
@@ -5571,7 +5571,7 @@ describe("Orchestrator", () => {
       });
 
       it("normal readyIds promotion still works alongside stacking", () => {
-        orch = new Orchestrator({ sessionLimit: 10 });
+        orch = new Orchestrator({ maxInflight: 10 });
         orch.addItem(makeWorkItem("A-1-1"));
         orch.getItem("A-1-1")!.reviewCompleted = true;
         orch.addItem(makeWorkItem("A-1-2"));
@@ -5591,7 +5591,7 @@ describe("Orchestrator", () => {
       });
 
       it("does not double-promote items already promoted via readyIds", () => {
-        orch = new Orchestrator({ sessionLimit: 0 }); // prevent auto-launch
+        orch = new Orchestrator({ maxInflight: 0 }); // prevent auto-launch
         orch.addItem(makeWorkItem("A-1-1"));
         orch.getItem("A-1-1")!.reviewCompleted = true;
         orch.addItem(makeWorkItem("A-1-2", ["A-1-1"]));
@@ -5600,7 +5600,7 @@ describe("Orchestrator", () => {
         // A-1-2 in readyIds because dep is done
         orch.processTransitions(emptySnapshot(["A-1-2"]));
 
-        // Should be ready (not launched due to sessionLimit: 0), no baseBranch set
+        // Should be ready (not launched due to maxInflight: 0), no baseBranch set
         expect(orch.getItem("A-1-2")!.state).toBe("ready");
         expect(orch.getItem("A-1-2")!.baseBranch).toBeUndefined();
       });
@@ -5610,7 +5610,7 @@ describe("Orchestrator", () => {
 
     describe("launchReadyItems includes baseBranch", () => {
       it("launch action includes baseBranch for stacked items", () => {
-        orch = new Orchestrator({ sessionLimit: 10 });
+        orch = new Orchestrator({ maxInflight: 10 });
         orch.addItem(makeWorkItem("A-1-1"));
         orch.getItem("A-1-1")!.reviewCompleted = true;
         orch.addItem(makeWorkItem("A-1-2", ["A-1-1"]));
@@ -6611,12 +6611,12 @@ describe("Orchestrator", () => {
     // ── reviewing counts toward unified session limit (blocks new launches) ──
 
     it("reviewing counts toward unified session limit (blocks new launches)", () => {
-      orch = new Orchestrator({ sessionLimit: 2, mergeStrategy: "auto" });
+      orch = new Orchestrator({ maxInflight: 2, mergeStrategy: "auto" });
       orch.addItem(makeWorkItem("R-8-1"));
       orch.addItem(makeWorkItem("R-8-2"));
       orch.addItem(makeWorkItem("R-8-3"));
 
-      orch.hydrateState("R-8-1", "reviewing"); // counts toward sessionLimit (unified pool)
+      orch.hydrateState("R-8-1", "reviewing"); // counts toward maxInflight (unified pool)
       orch.getItem("R-8-1")!.prNumber = 42;
       orch.getItem("R-8-1")!.reviewWorkspaceRef = "workspace:review:1";
       orch.hydrateState("R-8-2", "implementing"); // counts as 1 active session
@@ -6630,13 +6630,13 @@ describe("Orchestrator", () => {
         ]),
       );
 
-      // R-8-3 should NOT be launched -- activeSessionCount=2 (reviewing + implementing), limit=2
+      // R-8-3 should NOT be launched -- activeItemCount=2 (reviewing + implementing), limit=2
       expect(orch.getItem("R-8-3")!.state).toBe("ready");
       expect(actions.some((a) => a.type === "launch" && a.itemId === "R-8-3")).toBe(false);
     });
 
-    it("activeSessionCount includes reviewing items", () => {
-      orch = new Orchestrator({ sessionLimit: 5 });
+    it("activeItemCount includes reviewing items", () => {
+      orch = new Orchestrator({ maxInflight: 5 });
       orch.addItem(makeWorkItem("R-8-4"));
       orch.addItem(makeWorkItem("R-8-5"));
       orch.hydrateState("R-8-4", "implementing");
@@ -6644,7 +6644,7 @@ describe("Orchestrator", () => {
       orch.hydrateState("R-8-5", "reviewing");
       orch.getItem("R-8-5")!.reviewWorkspaceRef = "workspace:review:1";
 
-      expect(orch.activeSessionCount).toBe(2); // both implementing and reviewing count
+      expect(orch.activeItemCount).toBe(2); // both implementing and reviewing count
     });
 
     // ── reviewCompleted resets on CI regression ──────────────────────
@@ -6726,10 +6726,10 @@ describe("Orchestrator", () => {
       expect(actions2.some((a) => a.type === "merge")).toBe(true);
     });
 
-    // ── reviewing counts in unified activeSessionCount ─────────────────────────
+    // ── reviewing counts in unified activeItemCount ─────────────────────────
 
-    it("reviewing counts in unified activeSessionCount", () => {
-      orch = new Orchestrator({ sessionLimit: 5 });
+    it("reviewing counts in unified activeItemCount", () => {
+      orch = new Orchestrator({ maxInflight: 5 });
       orch.addItem(makeWorkItem("R-11-1"));
       orch.addItem(makeWorkItem("R-11-2"));
       orch.addItem(makeWorkItem("R-11-3"));
@@ -6746,8 +6746,8 @@ describe("Orchestrator", () => {
       orch.getItem("R-11-4")!.reviewWorkspaceRef = "workspace:review:2";
       orch.hydrateState("R-11-5", "ready");
 
-      expect(orch.activeSessionCount).toBe(4); // implementing + ci-pending + 2 reviewing
-      expect(orch.availableSessionSlots).toBe(1); // 5 - 4
+      expect(orch.activeItemCount).toBe(4); // implementing + ci-pending + 2 reviewing
+      expect(orch.availableInflightSlots).toBe(1); // 5 - 4
     });
 
     // ── reviewing stays reviewing when no outcome yet ────────────────
@@ -6990,7 +6990,7 @@ describe("Orchestrator", () => {
     // ── All existing state count test updated for reviewing ──────────
 
     it("fresh orchestrator handles all 13 states (including reviewing) without errors", () => {
-      orch = new Orchestrator({ sessionLimit: 10 });
+      orch = new Orchestrator({ maxInflight: 10 });
       const allStates: OrchestratorItemState[] = [
         "queued", "ready", "launching", "implementing",
         "ci-pending", "ci-passed", "ci-failed", "review-pending", "reviewing",
@@ -7009,7 +7009,7 @@ describe("Orchestrator", () => {
     });
 
     it("reviewing is now included in active session states", () => {
-      orch = new Orchestrator({ sessionLimit: 10 });
+      orch = new Orchestrator({ maxInflight: 10 });
       const activeSessionStates: OrchestratorItemState[] = [
         "launching", "implementing", "ci-pending",
         "ci-passed", "ci-failed", "review-pending", "merging",
@@ -7024,7 +7024,7 @@ describe("Orchestrator", () => {
       orch.hydrateState("WR-8", "reviewing");
       orch.getItem("WR-8")!.reviewWorkspaceRef = "workspace:review:1";
 
-      expect(orch.activeSessionCount).toBe(8); // reviewing is now included
+      expect(orch.activeItemCount).toBe(8); // reviewing is now included
     });
 
     // ── Commit status actions ─────────────────────────────────────────
@@ -7366,7 +7366,7 @@ describe("Orchestrator", () => {
 
     for (const { label, body } of agentPrefixes) {
       it(`skips comments with [${label}] prefix`, () => {
-        orch = new Orchestrator({ sessionLimit: 5 });
+        orch = new Orchestrator({ maxInflight: 5 });
         orch.addItem(makeWorkItem("H-CF-1"));
         orch.getItem("H-CF-1")!.reviewCompleted = true;
         orch.hydrateState("H-CF-1", "ci-pending");
@@ -7395,7 +7395,7 @@ describe("Orchestrator", () => {
     }
 
     it("still relays non-agent comments to the worker", () => {
-      orch = new Orchestrator({ sessionLimit: 5 });
+      orch = new Orchestrator({ maxInflight: 5 });
       orch.addItem(makeWorkItem("H-CF-2"));
       orch.getItem("H-CF-2")!.reviewCompleted = true;
       orch.hydrateState("H-CF-2", "ci-pending");
@@ -7420,7 +7420,7 @@ describe("Orchestrator", () => {
     });
 
     it("still skips orchestrator HTML status markers", () => {
-      orch = new Orchestrator({ sessionLimit: 5 });
+      orch = new Orchestrator({ maxInflight: 5 });
       orch.addItem(makeWorkItem("H-CF-3"));
       orch.getItem("H-CF-3")!.reviewCompleted = true;
       orch.hydrateState("H-CF-3", "ci-pending");
@@ -7450,7 +7450,7 @@ describe("Orchestrator", () => {
   describe("debounced human feedback batches", () => {
     for (const mergeStrategy of ["auto", "bypass"] as const) {
       it(`holds ${mergeStrategy} merge progression until the feedback batch resolves`, () => {
-        orch = new Orchestrator({ sessionLimit: 5, mergeStrategy, bypassEnabled: mergeStrategy === "bypass" });
+        orch = new Orchestrator({ maxInflight: 5, mergeStrategy, bypassEnabled: mergeStrategy === "bypass" });
         const itemId = `H-BATCH-${mergeStrategy.toUpperCase()}`;
         orch.addItem(makeWorkItem(itemId));
         const item = orch.getItem(itemId)!;

@@ -229,17 +229,17 @@ nw
 nw H-AUTH-1 H-AUTH-2 H-API-1
 ```
 
-The session limit (`--session-limit`) controls how many sessions run simultaneously. The default is `1` unless you change it at runtime (via `+`/`-` on the live status page) or pass `--session-limit` explicitly:
+The max-inflight limit (`--max-inflight`) controls how many work items are in flight simultaneously. The default is `1` unless you change it at runtime (via `+`/`-` on the live status page) or pass `--max-inflight` explicitly:
 
 ```bash
-nw --items H-AUTH-1,H-AUTH-2 --session-limit 3
+nw --items H-AUTH-1,H-AUTH-2 --max-inflight 3
 ```
 
 ### What happens when I run `nw`?
 
 After you pick work items (and choose an AI tool if more than one is configured), `nw` shows one startup settings screen before the live status UI. That screen lets you confirm review mode, collaboration mode, and backend selection.
 
-Merge strategy and session limit are not on the startup screen. Startup begins in manual merge mode with a session limit of `1` (or your persisted preference if you have one). Both stay adjustable from the live status UI -- open the runtime controls overlay to change merge strategy, and press `+`/`-` to change the session limit.
+Merge strategy and max-inflight are not on the startup screen. Startup begins in manual merge mode with a max-inflight of `1` (or your persisted preference if you have one). Both stay adjustable from the live status UI -- open the runtime controls overlay to change merge strategy, and press `+`/`-` to change the max-inflight limit.
 
 There is no separate arming step after that screen. Once you confirm the startup settings, orchestration starts and the live status UI takes over.
 

@@ -145,7 +145,7 @@ export interface DaemonState {
   startedAt: string;
   updatedAt: string;
   statusPaneRef?: string | null;
-  sessionLimit?: number;
+  maxInflight?: number;
   /** Alternate empty-state copy for armed watch sessions. */
   emptyState?: "watch-armed";
   /** Operator identity (git email of the human running this daemon). */
@@ -729,7 +729,7 @@ export function serializeOrchestratorState(
   startedAt: string,
   extras?: {
     statusPaneRef?: string | null;
-    sessionLimit?: number;
+    maxInflight?: number;
     operatorId?: string;
     emptyState?: "watch-armed";
     crewStatus?: DaemonCrewStatus;
@@ -743,7 +743,7 @@ export function serializeOrchestratorState(
     startedAt,
     updatedAt: new Date().toISOString(),
     ...(extras?.statusPaneRef !== undefined ? { statusPaneRef: extras.statusPaneRef } : {}),
-    ...(extras?.sessionLimit !== undefined ? { sessionLimit: extras.sessionLimit } : {}),
+    ...(extras?.maxInflight !== undefined ? { maxInflight: extras.maxInflight } : {}),
     ...(extras?.emptyState ? { emptyState: extras.emptyState } : {}),
     ...(extras?.operatorId !== undefined ? { operatorId: extras.operatorId } : {}),
     ...(extras?.crewStatus ? { crewStatus: extras.crewStatus } : {}),

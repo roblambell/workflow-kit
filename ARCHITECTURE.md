@@ -83,9 +83,9 @@ stateDiagram-v2
     blocked --> queued : dep recovers
 ```
 
-### Session Limit
+### Max Inflight
 
-`activeSessionCount` counts items that hold an active worker session -- specifically, items with any workspace ref (`workspaceRef`, `reviewWorkspaceRef`, `rebaserWorkspaceRef`, or `fixForwardWorkspaceRef`). Items waiting for external CI with no local worker don't consume a session slot. Review workers share the unified `sessionLimit` pool.
+`activeItemCount` counts items that hold an active worker session -- specifically, items with any workspace ref (`workspaceRef`, `reviewWorkspaceRef`, `rebaserWorkspaceRef`, or `fixForwardWorkspaceRef`). Items waiting for external CI with no local worker don't consume an inflight slot. Review workers share the unified `maxInflight` pool.
 
 Clearing a workspace ref immediately frees the slot. This happens on merge, session parking (review-pending), and retry preparation (stuckOrRetry stashes the ref in `pendingRetryWorkspaceRef` for later cleanup). The freed slot is available for new launches in the same poll cycle.
 

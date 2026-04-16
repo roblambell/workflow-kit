@@ -298,7 +298,7 @@ import {
   interruptibleSleep,
   orchestrateLoop,
   buildSessionEndedMetadata,
-  computeDefaultSessionLimit,
+  computeDefaultMaxInflight,
   listWorktreeIds,
   listOpenItemIds,
   type CleanOrphanedDeps,
@@ -314,7 +314,7 @@ export {
   interruptibleSleep,
   orchestrateLoop,
   buildSessionEndedMetadata,
-  computeDefaultSessionLimit,
+  computeDefaultMaxInflight,
   listWorktreeIds,
   listOpenItemIds,
   type CleanOrphanedDeps,
@@ -473,7 +473,7 @@ export function detectTuiMode(isDaemonChild: boolean, jsonFlag: boolean, isTTY: 
 export interface InteractiveEngineTransportRuntime {
   paused: boolean;
   mergeStrategy: MergeStrategy;
-  sessionLimit: number;
+  maxInflight: number;
   reviewMode: "off" | "on";
   collaborationMode: "local" | "connected";
 }
@@ -629,7 +629,7 @@ export function buildInteractiveEngineChildArgs(
   resolved: {
     itemIds: string[];
     mergeStrategy: MergeStrategy;
-    sessionLimit: number;
+    maxInflight: number;
     toolOverride?: string;
     skipReview: boolean;
     reviewMode: "off" | "on";
@@ -647,8 +647,8 @@ export function buildInteractiveEngineChildArgs(
     ...resolved.itemIds,
     "--merge-strategy",
     resolved.mergeStrategy,
-    "--session-limit",
-    String(resolved.sessionLimit),
+    "--max-inflight",
+    String(resolved.maxInflight),
   ];
 
   if (parsed.pollIntervalOverride !== undefined) {
@@ -656,7 +656,7 @@ export function buildInteractiveEngineChildArgs(
   }
   if (parsed.clickupListId) childArgs.push("--clickup-list", parsed.clickupListId);
   if (parsed.reviewAutoFix) childArgs.push("--review-auto-fix", parsed.reviewAutoFix);
-  if (parsed.reviewSessionLimit !== undefined) childArgs.push("--review-session-limit", String(parsed.reviewSessionLimit));
+  if (parsed.reviewMaxInflight !== undefined) childArgs.push("--review-max-inflight", String(parsed.reviewMaxInflight));
   childArgs.push(resolved.skipReview ? "--no-review" : "--review");
   childArgs.push(parsed.fixForward ? "--fix-forward" : "--no-fix-forward");
   if (resolved.watchMode) childArgs.push("--watch");
@@ -817,7 +817,7 @@ export async function runInteractiveWatchOperatorSession(
 
   const write = (chunk: string) => stdout.write(chunk);
   const render = () => {
-    const effectiveLimit = opts.tuiState.pendingSessionLimit ?? lastSnapshot.runtime.sessionLimit;
+    const effectiveLimit = opts.tuiState.pendingMaxInflight ?? lastSnapshot.runtime.maxInflight;
     renderFrame(
       daemonStateToStatusItems(lastSnapshot.daemonState),
       effectiveLimit,
@@ -1078,7 +1078,7 @@ interface InteractiveOperatorParentSessionOptions {
   workItemMap: Map<string, WorkItem>;
   itemIds: string[];
   mergeStrategy: MergeStrategy;
-  sessionLimit: number;
+  maxInflight: number;
   toolOverride?: string;
   watchMode: boolean;
   futureOnlyStartup: boolean;
@@ -1138,7 +1138,7 @@ async function runInteractiveOperatorParentSession(
     runtime: InteractiveEngineTransportRuntime,
   ): InteractiveEngineSnapshotRenderState => {
     const orch = new Orchestrator({
-      sessionLimit: runtime.sessionLimit,
+      maxInflight: runtime.maxInflight,
       mergeStrategy: runtime.mergeStrategy,
       bypassEnabled: opts.bypassEnabled,
       fixForward: opts.fixForward,
@@ -1152,7 +1152,7 @@ async function runInteractiveOperatorParentSession(
     }
     return {
       daemonState: serializeOrchestratorState(orch.getAllItems(), process.pid, daemonStartedAt, {
-        sessionLimit: runtime.sessionLimit,
+        maxInflight: runtime.maxInflight,
         ...(opts.futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
       }),
       runtime,
@@ -1162,7 +1162,7 @@ async function runInteractiveOperatorParentSession(
   let operatorLastSnapshot = buildQueuedState(currentItemIds, {
     paused: false,
     mergeStrategy: opts.mergeStrategy,
-    sessionLimit: opts.sessionLimit,
+    maxInflight: opts.maxInflight,
     reviewMode: opts.reviewMode,
     collaborationMode: opts.collaborationMode,
   });
@@ -1188,8 +1188,8 @@ async function runInteractiveOperatorParentSession(
     },
     paused: false,
     pendingPaused: undefined,
-    sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
-    pendingSessionLimit: undefined,
+    maxInflight: operatorLastSnapshot.runtime.maxInflight,
+    pendingMaxInflight: undefined,
     mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
     pendingStrategy: undefined,
     pendingStrategyDeadlineMs: undefined,
@@ -1227,7 +1227,7 @@ async function runInteractiveOperatorParentSession(
     sendControl: (command) => {
       sendRuntimeControl(command);
     },
-    getSessionLimit: () => tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? operatorLastSnapshot.runtime.sessionLimit,
+    getMaxInflight: () => tuiState.pendingMaxInflight ?? tuiState.maxInflight ?? operatorLastSnapshot.runtime.maxInflight,
     projectRoot: opts.projectRoot,
     requestCollaborationAction: async (request) => {
       return requestCollaborationFromEngine(request);
@@ -1248,7 +1248,7 @@ async function runInteractiveOperatorParentSession(
       const childArgs = buildInteractiveEngineChildArgs(opts.parsed, {
         itemIds: currentItemIds,
         mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
-        sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
+        maxInflight: operatorLastSnapshot.runtime.maxInflight,
         toolOverride: currentToolOverride,
         skipReview: operatorLastSnapshot.runtime.reviewMode === "off",
         reviewMode: operatorLastSnapshot.runtime.reviewMode,
@@ -1277,7 +1277,7 @@ async function runInteractiveOperatorParentSession(
 
       if (operatorResult.completionAction === "run-more") {
         const freshItems = opts.loadRunnableWorkItems("run-more");
-        const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.sessionLimit);
+        const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.maxInflight);
         if (!interactiveResult) {
           break;
         }
@@ -1349,9 +1349,9 @@ export async function cmdOrchestrate(
     mergeStrategy,
   } = parsed;
   const {
-    sessionLimitOverride, pollIntervalOverride, frictionDir,
+    maxInflightOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, isInteractiveEngineChild, clickupListId, remoteFlag,
-    reviewAutoFix, reviewSessionLimit,
+    reviewAutoFix, reviewMaxInflight,
     fixForward, skipReview: cliSkipReview, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight,
     bypassEnabled, toolOverride: parsedToolOverride,
@@ -1478,12 +1478,12 @@ export async function cmdOrchestrate(
     die(`Another watch daemon is already running (PID ${existingPid}). Use 'ninthwave stop' first, or kill the stale process.`);
   }
 
-  // Compute memory-aware session default, allow --session-limit to override
-  // Precedence: CLI --session-limit > persisted user preference > computed default
-  const computedSessionLimit = computeDefaultSessionLimit();
+  // Compute memory-aware session default, allow --max-inflight to override
+  // Precedence: CLI --max-inflight > persisted user preference > computed default
+  const computedMaxInflight = computeDefaultMaxInflight();
   let persistedUserCfg = loadUserConfig();
-  const sessionLimitFromCli = sessionLimitOverride !== undefined;
-  let sessionLimit = sessionLimitOverride ?? persistedUserCfg.session_limit ?? computedSessionLimit;
+  const maxInflightFromCli = maxInflightOverride !== undefined;
+  let maxInflight = maxInflightOverride ?? persistedUserCfg.max_inflight ?? computedMaxInflight;
   // Apply the GitHub token before recovery and later polling paths use it.
   emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.preparingRuntime);
   applyGithubToken(projectRoot);
@@ -1506,8 +1506,8 @@ export async function cmdOrchestrate(
     // Pre-detect tools and config for TUI flow
     const installedTools = detectInstalledAITools();
 
-    const startupDefaultSessionLimit = sessionLimit;
-    const result = await runInteractiveFlow(workItems, startupDefaultSessionLimit, {
+    const startupDefaultMaxInflight = maxInflight;
+    const result = await runInteractiveFlow(workItems, startupDefaultMaxInflight, {
       defaultReviewMode: interactiveStartupConfig.defaults.reviewMode,
       defaultSettings: interactiveStartupConfig.defaults,
       installedTools,
@@ -1521,14 +1521,14 @@ export async function cmdOrchestrate(
     watchMode = watchMode || result.allSelected || result.futureOnly === true;
     futureOnlyStartup = futureOnlyStartup || result.futureOnly === true;
     mergeStrategy = result.mergeStrategy;
-    sessionLimit = result.sessionLimit;
+    maxInflight = result.maxInflight;
     interactiveReviewMode = result.reviewMode;
     interactiveSkipReview = result.reviewMode === "off";
     try {
       const persistenceUpdates = buildStartupPersistenceUpdates(result, {
         savedToolIds: interactiveStartupConfig.savedToolIds,
         defaults: interactiveStartupConfig.defaults,
-        defaultSessionLimit: startupDefaultSessionLimit,
+        defaultMaxInflight: startupDefaultMaxInflight,
       });
       saveUserConfig({ ...persistenceUpdates });
       // Dual-write mode settings to per-repo local config
@@ -1559,17 +1559,17 @@ export async function cmdOrchestrate(
   log({
     ts: new Date().toISOString(),
     level: "info",
-    event: "session_limit_resolved",
-    computedDefault: computedSessionLimit,
-    persistedUserSessionLimit: persistedUserCfg.session_limit,
-    effectiveLimit: sessionLimit,
-    overridden: sessionLimitFromCli,
+    event: "max_inflight_resolved",
+    computedDefault: computedMaxInflight,
+    persistedUserMaxInflight: persistedUserCfg.max_inflight,
+    effectiveLimit: maxInflight,
+    overridden: maxInflightFromCli,
     totalMemoryGB: Math.round(totalmem() / (1024 ** 3)),
   });
 
   if (itemIds.length === 0 && !watchMode && !daemonMode) {
     die(
-      "Usage: nw --items ID1 ID2 ... [--merge-strategy auto|manual] [--session-limit N] [--poll-interval SECS] [--daemon] [--no-watch] [--watch-interval SECS]",
+      "Usage: nw --items ID1 ID2 ... [--merge-strategy auto|manual] [--max-inflight N] [--poll-interval SECS] [--daemon] [--no-watch] [--watch-interval SECS]",
     );
   }
 
@@ -1601,7 +1601,7 @@ export async function cmdOrchestrate(
       workItemMap,
       itemIds,
       mergeStrategy,
-      sessionLimit,
+      maxInflight,
       toolOverride,
       watchMode,
       futureOnlyStartup,
@@ -1618,11 +1618,11 @@ export async function cmdOrchestrate(
   }
 
   // Create orchestrator
-  // skipReview: CLI --no-review, interactive "off" mode, or --review-session-limit 0 disables AI review gate
-  const skipReview = cliSkipReview || interactiveSkipReview || reviewSessionLimit === 0;
+  // skipReview: CLI --no-review, interactive "off" mode, or --review-max-inflight 0 disables AI review gate
+  const skipReview = cliSkipReview || interactiveSkipReview || reviewMaxInflight === 0;
   const testOrchestratorConfigOverrides = loadTestOrchestratorConfigOverrides();
   let orch = new Orchestrator({
-    sessionLimit,
+    maxInflight,
     mergeStrategy,
     bypassEnabled,
     fixForward,
@@ -1936,7 +1936,7 @@ export async function cmdOrchestrate(
   // with the current run -- even before the first poll cycle completes.
   const initialCrewStatus = crewBroker?.getCrewStatus();
   const initialState = serializeOrchestratorState(orch.getAllItems(), process.pid, daemonStartedAt, {
-    sessionLimit,
+    maxInflight,
     operatorId,
     remoteItemSnapshots: crewStatusToRemoteItemSnapshots(initialCrewStatus),
     crewStatus: crewStatusToDaemonCrewStatus(initialCrewStatus, crewBroker?.isConnected() ?? false),
@@ -1958,7 +1958,7 @@ export async function cmdOrchestrate(
     runtime: {
       paused: false,
       mergeStrategy: orch.config.mergeStrategy,
-      sessionLimit,
+      maxInflight,
       reviewMode: initialReviewMode,
       collaborationMode: initialCollaborationMode,
     },
@@ -2016,7 +2016,7 @@ export async function cmdOrchestrate(
     sendControl: (command) => {
       sendRuntimeControl(command);
     },
-    getSessionLimit: () => tuiState.pendingSessionLimit ?? sessionLimit,
+    getMaxInflight: () => tuiState.pendingMaxInflight ?? maxInflight,
     projectRoot,
     requestCollaborationAction: (request) => requestRuntimeCollaborationAction(request),
   });
@@ -2035,8 +2035,8 @@ export async function cmdOrchestrate(
     },
     paused: false,
     pendingPaused: undefined,
-    sessionLimit,
-    pendingSessionLimit: undefined,
+    maxInflight,
+    pendingMaxInflight: undefined,
     mergeStrategy: orch.config.mergeStrategy,
     pendingStrategy: undefined,
     pendingStrategyTimer: undefined,
@@ -2073,7 +2073,7 @@ export async function cmdOrchestrate(
     onUpdate: () => {
       if (tuiMode) {
         try {
-          renderTuiPanelFrame(lastTuiItems, sessionLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
+          renderTuiPanelFrame(lastTuiItems, maxInflight, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
         } catch {
           // Non-fatal
         }
@@ -2087,7 +2087,7 @@ export async function cmdOrchestrate(
     void bootstrapTuiUpdateNotice(tuiState.viewOptions, {
       onUpdate: () => {
         try {
-          renderTuiPanelFrame(lastTuiItems, sessionLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
+          renderTuiPanelFrame(lastTuiItems, maxInflight, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
         } catch {
           // Non-fatal.
         }
@@ -2140,7 +2140,7 @@ export async function cmdOrchestrate(
     if (tuiMode) {
       const renderStartMs = interactiveTiming ? Date.now() : 0;
       try {
-        renderTuiPanelFrame(lastTuiItems, sessionLimit, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
+        renderTuiPanelFrame(lastTuiItems, maxInflight, tuiState, undefined, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
       } catch {
         // Non-fatal -- TUI render failure shouldn't block the orchestrator
       }
@@ -2189,7 +2189,7 @@ export async function cmdOrchestrate(
         const write = (s: string) => process.stdout.write(s);
         write("\x1B[H"); // cursor home
         // Re-render the current TUI frame first (to show final state)
-        renderTuiPanelFrame(allItems, sessionLimit, tuiState, write, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
+        renderTuiPanelFrame(allItems, maxInflight, tuiState, write, getRemoteItemSnapshots(), orch.config.maxTimeoutExtensions, lastTuiHeartbeats);
         // Overlay the banner at the bottom
         const termRows = getTerminalHeight();
         const startRow = Math.max(1, termRows - bannerLines.length);
@@ -2252,7 +2252,7 @@ export async function cmdOrchestrate(
     const crewStatus = crewBroker?.getCrewStatus();
     return serializeOrchestratorState(items, process.pid, daemonStartedAt, {
       statusPaneRef: null,
-      sessionLimit,
+      maxInflight,
       operatorId,
       remoteItemSnapshots: crewStatusToRemoteItemSnapshots(crewStatus),
       heartbeats,
@@ -2277,9 +2277,9 @@ export async function cmdOrchestrate(
     buildState: buildEngineState,
     initialReviewMode,
     initialCollaborationMode,
-    getSessionLimit: () => sessionLimit,
-    setSessionLimit: (limit) => {
-      sessionLimit = limit;
+    getMaxInflight: () => maxInflight,
+    setMaxInflight: (limit) => {
+      maxInflight = limit;
     },
   });
   emitInteractiveEngineStartupOverlay(isInteractiveEngineChild, INTERACTIVE_STARTUP_OVERLAYS.startingEngine);
@@ -2390,7 +2390,7 @@ export async function cmdOrchestrate(
         const childArgs = buildInteractiveEngineChildArgs(parsed, {
           itemIds: orch.getAllItems().map((item) => item.id),
           mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
-          sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
+          maxInflight: operatorLastSnapshot.runtime.maxInflight,
           toolOverride,
           skipReview: operatorLastSnapshot.runtime.reviewMode === "off",
           reviewMode: operatorLastSnapshot.runtime.reviewMode,
@@ -2422,7 +2422,7 @@ export async function cmdOrchestrate(
         if (operatorResult.completionAction === "run-more") {
           cleanupKeyboard();
           const freshItems = loadDiscoveryWorkItems("run-more");
-          const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.sessionLimit);
+          const interactiveResult = await runInteractiveFlow(freshItems, operatorLastSnapshot.runtime.maxInflight);
           if (!interactiveResult) {
             cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
             break;
@@ -2446,7 +2446,7 @@ export async function cmdOrchestrate(
             break;
           }
           const nextOrch = new Orchestrator({
-            sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
+            maxInflight: operatorLastSnapshot.runtime.maxInflight,
             mergeStrategy: operatorLastSnapshot.runtime.mergeStrategy,
             bypassEnabled,
             fixForward,
@@ -2455,7 +2455,7 @@ export async function cmdOrchestrate(
           });
           for (const item of nextItems) nextOrch.addItem(item);
           const nextState = serializeOrchestratorState(nextOrch.getAllItems(), process.pid, daemonStartedAt, {
-            sessionLimit: operatorLastSnapshot.runtime.sessionLimit,
+            maxInflight: operatorLastSnapshot.runtime.maxInflight,
             operatorId,
             ...(futureOnlyStartup ? { emptyState: "watch-armed" as const } : {}),
           });
@@ -2504,7 +2504,7 @@ export async function cmdOrchestrate(
         // Re-parse work items and re-enter interactive selection
         // Widgets render in the same alt-screen buffer -- no screen switch needed
         const freshItems = loadDiscoveryWorkItems("run-more");
-        const interactiveResult = await runInteractiveFlow(freshItems, sessionLimit);
+        const interactiveResult = await runInteractiveFlow(freshItems, maxInflight);
         if (!interactiveResult) {
           // User cancelled selection -- restore keyboard and exit loop
           cleanupKeyboard = setupKeyboardShortcuts(abortController, log, process.stdin, tuiState);
@@ -2523,7 +2523,7 @@ export async function cmdOrchestrate(
           }
         }
         if (newDomains.size > 0) await ensureDomainLabelsAsync(projectRoot, [...newDomains]);
-        // Local-first: keep current session's merge/review/session-limit policy.
+        // Local-first: keep current session's merge/review/max-inflight policy.
         // The interactive flow only selects items and AI tools.
 
         // Restore keyboard shortcuts for the main TUI

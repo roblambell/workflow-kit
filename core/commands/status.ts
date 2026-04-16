@@ -342,13 +342,13 @@ export async function cmdStatusWatch(
 
 /**
  * Gather status items and metadata for full-screen layout rendering.
- * Returns items, sessionLimit, and sessionStartedAt (from daemon state if available).
+ * Returns items, maxInflight, and sessionStartedAt (from daemon state if available).
  */
 function gatherStatusItems(
   worktreeDir: string,
   projectRoot: string,
   deps: StatusDeps = defaultStatusDeps,
-): { items: StatusItem[]; sessionLimit: number | undefined; sessionStartedAt?: string; viewOptions?: ViewOptions } {
+): { items: StatusItem[]; maxInflight: number | undefined; sessionStartedAt?: string; viewOptions?: ViewOptions } {
   // Fast path: read state file (written by orchestrator in both daemon and interactive mode)
   const daemonState = readStateFile(projectRoot);
   const daemonPid = isDaemonRunning(projectRoot);
@@ -362,7 +362,7 @@ function gatherStatusItems(
       const items = daemonStateToStatusItems(daemonState);
       return {
         items: items.map((i) => ({ ...i })), // copy to avoid mutation
-        sessionLimit: daemonState.sessionLimit,
+        maxInflight: daemonState.maxInflight,
         sessionStartedAt: daemonState.startedAt,
         ...((daemonState.emptyState || daemonState.crewStatus)
           ? {
@@ -377,7 +377,7 @@ function gatherStatusItems(
   }
 
   if (!existsSync(worktreeDir)) {
-    return { items: [], sessionLimit: undefined };
+    return { items: [], maxInflight: undefined };
   }
 
   const workItemMeta = loadWorkItemMetadata(projectRoot);
@@ -412,7 +412,7 @@ function gatherStatusItems(
     // worktreeDir might not be readable
   }
 
-  return { items, sessionLimit: undefined };
+  return { items, maxInflight: undefined };
 }
 
 /**
@@ -449,7 +449,7 @@ export function renderStatus(
         ...(daemonState.emptyState ? { emptyState: daemonState.emptyState } : {}),
         ...(daemonState.crewStatus ? { crewStatus: daemonState.crewStatus } : {}),
       };
-      lines.push(formatStatusTable(items, termWidth, daemonState.sessionLimit, flat, mergedOpts));
+      lines.push(formatStatusTable(items, termWidth, daemonState.maxInflight, flat, mergedOpts));
 
       const agoStr = formatAge(stateAgeMs) + " ago";
       if (daemonPid !== null) {

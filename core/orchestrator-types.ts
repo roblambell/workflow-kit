@@ -248,7 +248,7 @@ export function getStateData<S extends keyof StateDataMap>(
 
 export interface OrchestratorConfig {
   /** Max concurrent items in all session states (launching/implementing/ci-pending/ci-passed/ci-failed/rebasing/reviewing/review-pending/merging). */
-  sessionLimit: number;
+  maxInflight: number;
   /** When to auto-merge: auto (CI pass, respects review gate + CHANGES_REQUESTED), manual (never auto-merge), bypass (admin override, skips branch protection human review). */
   mergeStrategy: MergeStrategy;
   /** Whether the bypass merge strategy is available. Must be enabled via --dangerously-bypass CLI flag. */
@@ -645,7 +645,7 @@ export interface ActionResult {
 // ── Default config ───────────────────────────────────────────────────
 
 export const DEFAULT_CONFIG: OrchestratorConfig = {
-  sessionLimit: 1,
+  maxInflight: 1,
   mergeStrategy: "auto",
   bypassEnabled: false,
   maxCiRetries: 5,

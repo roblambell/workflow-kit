@@ -6,7 +6,7 @@ import { parseWorkItems } from "../parser.ts";
 import { die, warn, info, GREEN, BOLD, DIM, RESET } from "../output.ts";
 import { splitIds } from "../work-item-files.ts";
 import { computeBatches, CircularDependencyError } from "./batch-order.ts";
-import { computeDefaultSessionLimit } from "./orchestrate.ts";
+import { computeDefaultMaxInflight } from "./orchestrate.ts";
 import { loadUserConfig } from "../config.ts";
 import { type Multiplexer, getMux } from "../mux.ts";
 import { cleanupStalePartitions } from "../partitions.ts";
@@ -36,7 +36,7 @@ export async function cmdRunItems(
   worktreeDir: string,
   projectRoot: string,
   muxOverride?: Multiplexer,
-  sessionLimitOverride?: number,
+  maxInflightOverride?: number,
   toolOverride?: string,
 ): Promise<void> {
   // Pre-flight: fail fast if the mux backend is not usable (binary missing
@@ -108,14 +108,14 @@ export async function cmdRunItems(
     console.log(`  Batch ${b}: ${labels.join(", ")}`);
   }
   // Compute session limit: explicit override honored directly, otherwise use config/default
-  // Precedence: CLI --session-limit > persisted user preference > computed default
-  let sessionLimit: number;
-  if (sessionLimitOverride !== undefined) {
-    sessionLimit = sessionLimitOverride;
-    info(`Session limit: ${sessionLimit} concurrent session(s) (explicit override)`);
+  // Precedence: CLI --max-inflight > persisted user preference > computed default
+  let maxInflight: number;
+  if (maxInflightOverride !== undefined) {
+    maxInflight = maxInflightOverride;
+    info(`Session limit: ${maxInflight} concurrent session(s) (explicit override)`);
   } else {
-    sessionLimit = loadUserConfig().session_limit ?? computeDefaultSessionLimit();
-    info(`Session limit: ${sessionLimit} concurrent session(s)`);
+    maxInflight = loadUserConfig().max_inflight ?? computeDefaultMaxInflight();
+    info(`Session limit: ${maxInflight} concurrent session(s)`);
   }
   console.log();
 
@@ -138,15 +138,15 @@ export async function cmdRunItems(
   const mux = muxEarly;
   const launched: string[] = [];
   const skipped: string[] = [];
-  let sessionLimitReached = false;
+  let maxInflightReached = false;
 
   // Launch batch by batch, respecting session limit
-  for (let b = 1; b <= batchCount && !sessionLimitReached; b++) {
+  for (let b = 1; b <= batchCount && !maxInflightReached; b++) {
     const batchItems = ids.filter((id) => batchAssignments.get(id) === b);
 
     for (const id of batchItems) {
-      if (launched.length >= sessionLimit) {
-        sessionLimitReached = true;
+      if (launched.length >= maxInflight) {
+        maxInflightReached = true;
         // Collect all remaining items as skipped
         const remainingInBatch = batchItems.slice(batchItems.indexOf(id));
         skipped.push(...remainingInBatch);
@@ -186,7 +186,7 @@ export async function cmdRunItems(
   if (skipped.length > 0) {
     console.log();
     warn(
-      `Session limit reached (${sessionLimit}). ${skipped.length} item(s) skipped:`,
+      `Session limit reached (${maxInflight}). ${skipped.length} item(s) skipped:`,
     );
     for (const id of skipped) {
       const item = itemMap.get(id)!;
@@ -284,15 +284,15 @@ export async function cmdStart(
   cleanupStalePartitions(partitionDir, worktreeDir);
 
   // Compute session limit: persisted user preference > computed default
-  const sessionLimit = loadUserConfig().session_limit ?? computeDefaultSessionLimit();
-  info(`Session limit: ${sessionLimit} concurrent session(s)`);
+  const maxInflight = loadUserConfig().max_inflight ?? computeDefaultMaxInflight();
+  info(`Session limit: ${maxInflight} concurrent session(s)`);
 
   const mux = muxEarly;
   const launched: string[] = [];
   const skipped: string[] = [];
 
   for (const id of ids) {
-    if (launched.length >= sessionLimit) {
+    if (launched.length >= maxInflight) {
       skipped.push(...ids.slice(ids.indexOf(id)));
       break;
     }
@@ -322,7 +322,7 @@ export async function cmdStart(
   if (skipped.length > 0) {
     console.log();
     warn(
-      `Session limit reached (${sessionLimit}). ${skipped.length} item(s) skipped:`,
+      `Session limit reached (${maxInflight}). ${skipped.length} item(s) skipped:`,
     );
     for (const id of skipped) {
       const item = itemMap.get(id)!;

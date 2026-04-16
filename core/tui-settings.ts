@@ -140,7 +140,7 @@ export const TUI_SETTINGS_ROWS = [
     options: MERGE_STRATEGY_OPTIONS,
   },
   {
-    id: "session_limit",
+    id: "max_inflight",
     title: "Session Limit",
     kind: "number",
     min: 1,

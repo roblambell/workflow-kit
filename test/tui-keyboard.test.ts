@@ -46,7 +46,7 @@ function makeTuiState(overrides: Partial<TuiState> = {}): TuiState {
     viewOptions: { showBlockerDetail: true },
     paused: false,
     pendingPaused: undefined,
-    sessionLimit: 3,
+    maxInflight: 3,
     mergeStrategy: "manual" as MergeStrategy,
     pendingStrategy: undefined,
     pendingStrategyDeadlineMs: undefined,
@@ -285,7 +285,7 @@ describe("setupKeyboardShortcuts", () => {
     applyRuntimeSnapshotToTuiState(state, {
       paused: true,
       mergeStrategy: state.mergeStrategy,
-      sessionLimit: state.sessionLimit ?? 3,
+      maxInflight: state.maxInflight ?? 3,
       reviewMode: state.reviewMode,
       collaborationMode: state.collaborationMode,
     });
@@ -448,7 +448,7 @@ describe("setupKeyboardShortcuts", () => {
   it("swallows non-dismiss help keys so background state does not change", () => {
     const ac = new AbortController();
     const stdin = makeFakeStdin();
-    const onSessionLimitChange = vi.fn();
+    const onMaxInflightChange = vi.fn();
     const onExtendTimeout = vi.fn(() => true);
     const state = makeStatusNavigationState([
       makeStatusItem({ id: "A-1", state: "implementing" }),
@@ -458,7 +458,7 @@ describe("setupKeyboardShortcuts", () => {
       panelMode: "status-only",
       detailItemId: null,
       controlsRowIndex: 0,
-      onSessionLimitChange,
+      onMaxInflightChange,
       onExtendTimeout,
     });
     state.viewOptions.showHelp = true;
@@ -482,7 +482,7 @@ describe("setupKeyboardShortcuts", () => {
     expect(state.panelMode).toBe("status-only");
     expect(state.showControls).toBe(false);
     expect(onExtendTimeout).not.toHaveBeenCalled();
-    expect(onSessionLimitChange).not.toHaveBeenCalled();
+    expect(onMaxInflightChange).not.toHaveBeenCalled();
     cleanup();
   });
 
@@ -646,50 +646,50 @@ describe("setupKeyboardShortcuts", () => {
     cleanup();
   });
 
-  it("+ and = increase session limit via onSessionLimitChange", () => {
+  it("+ and = increase session limit via onMaxInflightChange", () => {
     const ac = new AbortController();
     const stdin = makeFakeStdin();
-    const onSessionLimitChange = vi.fn();
-    const state = makeTuiState({ onSessionLimitChange });
+    const onMaxInflightChange = vi.fn();
+    const state = makeTuiState({ onMaxInflightChange });
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "+");
-    expect(onSessionLimitChange).toHaveBeenCalledWith(1);
+    expect(onMaxInflightChange).toHaveBeenCalledWith(1);
 
     stdin.emit("data", "=");
-    expect(onSessionLimitChange).toHaveBeenCalledTimes(2);
-    expect(onSessionLimitChange).toHaveBeenLastCalledWith(1);
+    expect(onMaxInflightChange).toHaveBeenCalledTimes(2);
+    expect(onMaxInflightChange).toHaveBeenLastCalledWith(1);
     cleanup();
   });
 
-  it("- and _ decrease session limit via onSessionLimitChange", () => {
+  it("- and _ decrease session limit via onMaxInflightChange", () => {
     const ac = new AbortController();
     const stdin = makeFakeStdin();
-    const onSessionLimitChange = vi.fn();
-    const state = makeTuiState({ onSessionLimitChange });
+    const onMaxInflightChange = vi.fn();
+    const state = makeTuiState({ onMaxInflightChange });
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "-");
-    expect(onSessionLimitChange).toHaveBeenCalledWith(-1);
+    expect(onMaxInflightChange).toHaveBeenCalledWith(-1);
 
     stdin.emit("data", "_");
-    expect(onSessionLimitChange).toHaveBeenCalledTimes(2);
-    expect(onSessionLimitChange).toHaveBeenLastCalledWith(-1);
+    expect(onMaxInflightChange).toHaveBeenCalledTimes(2);
+    expect(onMaxInflightChange).toHaveBeenLastCalledWith(-1);
     cleanup();
   });
 
   it("+/- work while controls overlay is open", () => {
     const ac = new AbortController();
     const stdin = makeFakeStdin();
-    const onSessionLimitChange = vi.fn();
-    const state = makeTuiState({ showControls: true, onSessionLimitChange });
+    const onMaxInflightChange = vi.fn();
+    const state = makeTuiState({ showControls: true, onMaxInflightChange });
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "+");
-    expect(onSessionLimitChange).toHaveBeenCalledWith(1);
+    expect(onMaxInflightChange).toHaveBeenCalledWith(1);
 
     stdin.emit("data", "-");
-    expect(onSessionLimitChange).toHaveBeenCalledWith(-1);
+    expect(onMaxInflightChange).toHaveBeenCalledWith(-1);
     cleanup();
   });
 
@@ -768,7 +768,7 @@ describe("setupKeyboardShortcuts", () => {
       makeStatusItem({ id: "A-1", state: "implementing" }),
       makeStatusItem({ id: "B-2", state: "review" }),
     ], {
-      pendingSessionLimit: 4,
+      pendingMaxInflight: 4,
       pendingStrategy: "auto",
       pendingReviewMode: "on",
       pendingCollaborationMode: "connected",
@@ -942,7 +942,7 @@ describe("controls overlay row navigation", () => {
     applyRuntimeSnapshotToTuiState(state, {
       paused: state.paused ?? false,
       mergeStrategy: state.mergeStrategy,
-      sessionLimit: state.sessionLimit ?? 3,
+      maxInflight: state.maxInflight ?? 3,
       reviewMode: state.reviewMode,
       collaborationMode: "connected",
     });
@@ -963,7 +963,7 @@ describe("controls overlay row navigation", () => {
     applyRuntimeSnapshotToTuiState(state, {
       paused: state.paused ?? false,
       mergeStrategy: state.mergeStrategy,
-      sessionLimit: state.sessionLimit ?? 3,
+      maxInflight: state.maxInflight ?? 3,
       reviewMode: state.reviewMode,
       collaborationMode: "local",
     });
@@ -994,7 +994,7 @@ describe("controls overlay row navigation", () => {
     applyRuntimeSnapshotToTuiState(state, {
       paused: state.paused ?? false,
       mergeStrategy: state.mergeStrategy,
-      sessionLimit: state.sessionLimit ?? 3,
+      maxInflight: state.maxInflight ?? 3,
       reviewMode: "on",
       collaborationMode: state.collaborationMode,
     });
@@ -1038,7 +1038,7 @@ describe("controls overlay row navigation", () => {
     applyRuntimeSnapshotToTuiState(state, {
       paused: state.paused ?? false,
       mergeStrategy: "auto",
-      sessionLimit: state.sessionLimit ?? 3,
+      maxInflight: state.maxInflight ?? 3,
       reviewMode: state.reviewMode,
       collaborationMode: state.collaborationMode,
     });
@@ -1052,21 +1052,21 @@ describe("controls overlay row navigation", () => {
   it("Left/Right adjust session limit on the active row", () => {
     const ac = new AbortController();
     const stdin = makeFakeStdin();
-    const onSessionLimitChange = vi.fn();
+    const onMaxInflightChange = vi.fn();
     const state = makeTuiState({
       showControls: true,
       controlsRowIndex: 3,
-      onSessionLimitChange,
+      onMaxInflightChange,
     });
     const cleanup = setupKeyboardShortcuts(ac, () => {}, stdin as any, state);
 
     stdin.emit("data", "\x1b[C");
-    expect(onSessionLimitChange).toHaveBeenCalledWith(1);
-    expect(state.pendingSessionLimit).toBe(4);
+    expect(onMaxInflightChange).toHaveBeenCalledWith(1);
+    expect(state.pendingMaxInflight).toBe(4);
 
     stdin.emit("data", "\x1b[D");
-    expect(onSessionLimitChange).toHaveBeenCalledWith(-1);
-    expect(state.pendingSessionLimit).toBeUndefined();
+    expect(onMaxInflightChange).toHaveBeenCalledWith(-1);
+    expect(state.pendingMaxInflight).toBeUndefined();
     cleanup();
   });
 
@@ -1222,7 +1222,7 @@ describe("Shift+Tab merge strategy cycle", () => {
     applyRuntimeSnapshotToTuiState(state, {
       paused: state.paused ?? false,
       mergeStrategy: "manual",
-      sessionLimit: state.sessionLimit ?? 3,
+      maxInflight: state.maxInflight ?? 3,
       reviewMode: state.reviewMode,
       collaborationMode: state.collaborationMode,
     });
@@ -1251,7 +1251,7 @@ describe("Shift+Tab merge strategy cycle", () => {
     applyRuntimeSnapshotToTuiState(state, {
       paused: state.paused ?? false,
       mergeStrategy: "bypass",
-      sessionLimit: state.sessionLimit ?? 3,
+      maxInflight: state.maxInflight ?? 3,
       reviewMode: state.reviewMode,
       collaborationMode: state.collaborationMode,
     });
@@ -1262,7 +1262,7 @@ describe("Shift+Tab merge strategy cycle", () => {
     applyRuntimeSnapshotToTuiState(state, {
       paused: state.paused ?? false,
       mergeStrategy: "auto",
-      sessionLimit: state.sessionLimit ?? 3,
+      maxInflight: state.maxInflight ?? 3,
       reviewMode: state.reviewMode,
       collaborationMode: state.collaborationMode,
     });

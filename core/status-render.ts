@@ -242,7 +242,7 @@ export type ItemState =
 
 /**
  * Display states that correspond to ACTIVE_SESSION_STATES in the orchestrator.
- * Used for the "X/Y active sessions" count in the queue header.
+ * Used for the "X/Y in flight" count in the queue header.
  */
 export const ACTIVE_DISPLAY_STATES: Set<ItemState> = new Set([
   "implementing",
@@ -1225,7 +1225,7 @@ export function formatConnectionPanel(status: CrewStatusInfo, termWidth: number 
 /**
  * Format the complete status table from a list of StatusItems.
  * Returns a multi-line string ready for console output.
- * When sessionLimit is provided, shows session slot usage in the queue header.
+ * When maxInflight is provided, shows session slot usage in the queue header.
  *
  * When items have dependencies, renders a flat list sorted by blocked-by count
  * (ascending) then ID alphanumeric, with inline blocker icons before titles
@@ -1238,7 +1238,7 @@ export function formatConnectionPanel(status: CrewStatusInfo, termWidth: number 
 export function formatStatusTable(
   items: StatusItem[],
   termWidth: number = 80,
-  sessionLimit?: number,
+  maxInflight?: number,
   flat: boolean = false,
   viewOptions?: ViewOptions,
 ): string {
@@ -1325,8 +1325,8 @@ export function formatStatusTable(
       const activeCount = items.filter((i) => ACTIVE_DISPLAY_STATES.has(i.state)).length;
       const fixForwardCount = items.filter((i) => i.state === "fixing-forward").length;
       let queueHeader = `Queue (${queuedItems.length} waiting`;
-      if (sessionLimit !== undefined) {
-        queueHeader += `, ${activeCount}/${sessionLimit} active sessions`;
+      if (maxInflight !== undefined) {
+        queueHeader += `, ${activeCount}/${maxInflight} in flight`;
       }
       if (fixForwardCount > 0) {
         queueHeader += `, ${fixForwardCount} fixing forward`;
@@ -1363,8 +1363,8 @@ export function formatStatusTable(
       const activeCount = items.filter((i) => ACTIVE_DISPLAY_STATES.has(i.state)).length;
       const fixForwardCount = items.filter((i) => i.state === "fixing-forward").length;
       let queueHeader = `Queue (${queuedItems.length} waiting`;
-      if (sessionLimit !== undefined) {
-        queueHeader += `, ${activeCount}/${sessionLimit} active sessions`;
+      if (maxInflight !== undefined) {
+        queueHeader += `, ${activeCount}/${maxInflight} in flight`;
       }
       if (fixForwardCount > 0) {
         queueHeader += `, ${fixForwardCount} fixing forward`;
@@ -1931,7 +1931,7 @@ export function formatTitleMetrics(
 export function buildStatusLayout(
   items: StatusItem[],
   termWidth: number = 80,
-  sessionLimit?: number,
+  maxInflight?: number,
   flat: boolean = false,
   viewOptions?: ViewOptions,
   selectedItemId?: string,
@@ -1998,7 +1998,7 @@ export function buildStatusLayout(
         break;
       case "queue-header": {
         let queueHeader = `Queue (${row.queuedCount} waiting`;
-        if (sessionLimit !== undefined) queueHeader += `, ${row.activeCount}/${sessionLimit} active sessions`;
+        if (maxInflight !== undefined) queueHeader += `, ${row.activeCount}/${maxInflight} in flight`;
         if (row.fixForwardCount && row.fixForwardCount > 0) queueHeader += `, ${row.fixForwardCount} fixing forward`;
         queueHeader += ")";
         itemLines.push(`  ${DIM}${queueHeader}${RESET}`);
@@ -2361,7 +2361,7 @@ export function buildPanelLayout(
   termWidth: number,
   termRows: number,
   opts?: {
-    sessionLimit?: number;
+    maxInflight?: number;
     flat?: boolean;
     viewOptions?: ViewOptions;
     logScrollOffset?: number;
@@ -2380,7 +2380,7 @@ export function buildPanelLayout(
     const statusLayout = buildStatusLayout(
       items,
       termWidth,
-      opts?.sessionLimit,
+      opts?.maxInflight,
       opts?.flat,
       opts?.viewOptions,
       selectedItemId,
@@ -2397,7 +2397,7 @@ export function buildPanelLayout(
     const statusLayout = buildStatusLayout(
       items,
       termWidth,
-      opts?.sessionLimit,
+      opts?.maxInflight,
       opts?.flat,
       opts?.viewOptions,
       selectedItemId,
@@ -3033,8 +3033,8 @@ export function renderControlsOverlay(
     mergeStrategy: MergeStrategy;
     pendingMergeStrategy?: MergeStrategy;
     bypassEnabled: boolean;
-    sessionLimit?: number;
-    pendingSessionLimit?: number;
+    maxInflight?: number;
+    pendingMaxInflight?: number;
     activeRowIndex?: number;
   },
 ): string[] {
@@ -3049,8 +3049,8 @@ export function renderControlsOverlay(
     mergeStrategy,
     pendingMergeStrategy,
     bypassEnabled,
-    sessionLimit,
-    pendingSessionLimit,
+    maxInflight,
+    pendingMaxInflight,
     activeRowIndex = 0,
   } = opts;
 
@@ -3136,9 +3136,9 @@ export function renderControlsOverlay(
       continue;
     }
 
-    const displayedSessionLimit = pendingSessionLimit ?? sessionLimit;
-    const sessionDisplay = displayedSessionLimit !== undefined ? `${displayedSessionLimit}` : "auto";
-    const pendingSuffix = pendingSessionLimit !== undefined && pendingSessionLimit !== sessionLimit ? " pending" : "";
+    const displayedMaxInflight = pendingMaxInflight ?? maxInflight;
+    const sessionDisplay = displayedMaxInflight !== undefined ? `${displayedMaxInflight}` : "auto";
+    const pendingSuffix = pendingMaxInflight !== undefined && pendingMaxInflight !== maxInflight ? " pending" : "";
     const value = `${BOLD}[${sessionDisplay}${pendingSuffix}]${RESET}`;
     settingsLines.push(`${rowPrefix} ${titleCell}  ${value}`);
   }

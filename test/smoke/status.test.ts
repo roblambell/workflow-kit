@@ -61,7 +61,7 @@ describe("smoke: nw status", () => {
       pid: 99999,
       startedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      sessionLimit: 3,
+      maxInflight: 3,
       items: [
         {
           id: "H-SMOKE-1",

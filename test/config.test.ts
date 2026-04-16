@@ -839,7 +839,103 @@ describe("loadUserConfig", () => {
     expect(config.tmux_layout).toBeUndefined();
   });
 
-  it("reads session_limit from valid JSON", () => {
+  it("reads max_inflight from valid JSON", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ max_inflight: 3 }),
+    );
+
+    const config = loadUserConfig(tmpHome);
+    expect(config.max_inflight).toBe(3);
+  });
+
+  it("ignores non-number max_inflight", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ max_inflight: "five" }),
+    );
+
+    const config = loadUserConfig(tmpHome);
+    expect(config.max_inflight).toBeUndefined();
+  });
+
+  it("ignores max_inflight less than 1", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ max_inflight: 0 }),
+    );
+
+    const config = loadUserConfig(tmpHome);
+    expect(config.max_inflight).toBeUndefined();
+  });
+
+  it("ignores negative max_inflight", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ max_inflight: -2 }),
+    );
+
+    const config = loadUserConfig(tmpHome);
+    expect(config.max_inflight).toBeUndefined();
+  });
+
+  it("floors fractional max_inflight", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ max_inflight: 3.7 }),
+    );
+
+    const config = loadUserConfig(tmpHome);
+    expect(config.max_inflight).toBe(3);
+  });
+
+  it("ignores NaN max_inflight", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ max_inflight: null }),
+    );
+
+    const config = loadUserConfig(tmpHome);
+    expect(config.max_inflight).toBeUndefined();
+  });
+
+  it("ignores Infinity max_inflight", () => {
+    const tmpHome = setupTempRepo();
+    const configDir = join(tmpHome, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    // JSON.stringify turns Infinity into null, so write raw
+    writeFileSync(
+      join(configDir, "config.json"),
+      '{"max_inflight": 1e999}',
+    );
+
+    // JSON.parse turns 1e999 into Infinity
+    const config = loadUserConfig(tmpHome);
+    expect(config.max_inflight).toBeUndefined();
+  });
+
+  it("reads legacy session_limit as max_inflight when new key is absent", () => {
+    // Config migration: configs written before the rename carry `session_limit`.
+    // loadUserConfig accepts it as a fallback alias so existing files keep
+    // working; saveUserConfig rewrites them as `max_inflight` on next persist.
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
@@ -849,87 +945,42 @@ describe("loadUserConfig", () => {
     );
 
     const config = loadUserConfig(tmpHome);
-    expect(config.session_limit).toBe(3);
+    expect(config.max_inflight).toBe(3);
   });
 
-  it("ignores non-number session_limit", () => {
+  it("prefers max_inflight over legacy session_limit when both are present", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ session_limit: "five" }),
+      JSON.stringify({ max_inflight: 5, session_limit: 3 }),
     );
 
     const config = loadUserConfig(tmpHome);
-    expect(config.session_limit).toBeUndefined();
+    expect(config.max_inflight).toBe(5);
   });
 
-  it("ignores session_limit less than 1", () => {
+  it("drops legacy session_limit key on next save", () => {
+    // Once we start writing `max_inflight`, the deprecated key should not
+    // linger in the persisted JSON. A subsequent save strips it.
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ session_limit: 0 }),
+      JSON.stringify({ session_limit: 3, ai_tools: ["claude"] }),
     );
 
-    const config = loadUserConfig(tmpHome);
-    expect(config.session_limit).toBeUndefined();
-  });
+    saveUserConfig({ max_inflight: 4 }, tmpHome);
 
-  it("ignores negative session_limit", () => {
-    const tmpHome = setupTempRepo();
-    const configDir = join(tmpHome, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config.json"),
-      JSON.stringify({ session_limit: -2 }),
+    const content = JSON.parse(
+      readFileSync(join(configDir, "config.json"), "utf-8"),
     );
-
-    const config = loadUserConfig(tmpHome);
-    expect(config.session_limit).toBeUndefined();
-  });
-
-  it("floors fractional session_limit", () => {
-    const tmpHome = setupTempRepo();
-    const configDir = join(tmpHome, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config.json"),
-      JSON.stringify({ session_limit: 3.7 }),
-    );
-
-    const config = loadUserConfig(tmpHome);
-    expect(config.session_limit).toBe(3);
-  });
-
-  it("ignores NaN session_limit", () => {
-    const tmpHome = setupTempRepo();
-    const configDir = join(tmpHome, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config.json"),
-      JSON.stringify({ session_limit: null }),
-    );
-
-    const config = loadUserConfig(tmpHome);
-    expect(config.session_limit).toBeUndefined();
-  });
-
-  it("ignores Infinity session_limit", () => {
-    const tmpHome = setupTempRepo();
-    const configDir = join(tmpHome, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    // JSON.stringify turns Infinity into null, so write raw
-    writeFileSync(
-      join(configDir, "config.json"),
-      '{"session_limit": 1e999}',
-    );
-
-    // JSON.parse turns 1e999 into Infinity
-    const config = loadUserConfig(tmpHome);
-    expect(config.session_limit).toBeUndefined();
+    expect(content.max_inflight).toBe(4);
+    expect(content.session_limit).toBeUndefined();
+    // Other unknown/known keys are preserved.
+    expect(content.ai_tools).toEqual(["claude"]);
   });
 
   it("normalizes legacy review_mode 'mine' to 'on'", () => {
@@ -956,15 +1007,15 @@ describe("loadUserConfig", () => {
 describe("saveUserConfig", () => {
   it("creates config file when missing", () => {
     const tmpHome = setupTempRepo();
-    saveUserConfig({ session_limit: 5 }, tmpHome);
+    saveUserConfig({ max_inflight: 5 }, tmpHome);
 
     const configPath = join(tmpHome, ".ninthwave", "config.json");
     expect(existsSync(configPath)).toBe(true);
     const content = JSON.parse(readFileSync(configPath, "utf-8"));
-    expect(content.session_limit).toBe(5);
+    expect(content.max_inflight).toBe(5);
   });
 
-  it("merges session_limit into existing config without clobbering", () => {
+  it("merges max_inflight into existing config without clobbering", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
@@ -973,11 +1024,11 @@ describe("saveUserConfig", () => {
       JSON.stringify({ ai_tools: ["claude"] }),
     );
 
-    saveUserConfig({ session_limit: 3 }, tmpHome);
+    saveUserConfig({ max_inflight: 3 }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
     expect(content.ai_tools).toEqual(["claude"]);
-    expect(content.session_limit).toBe(3);
+    expect(content.max_inflight).toBe(3);
   });
 
   it("saves ai_tool_overrides without clobbering unrelated keys", () => {
@@ -1077,7 +1128,7 @@ describe("saveUserConfig", () => {
       merge_strategy: "auto",
       review_mode: "on",
       collaboration_mode: "connect",
-      session_limit: 4,
+      max_inflight: 4,
     }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
@@ -1086,7 +1137,7 @@ describe("saveUserConfig", () => {
     expect(content.merge_strategy).toBe("auto");
     expect(content.review_mode).toBe("on");
     expect(content.collaboration_mode).toBe("connect");
-    expect(content.session_limit).toBe(4);
+    expect(content.max_inflight).toBe(4);
 
     const config = loadUserConfig(tmpHome);
     expect(config).toMatchObject({
@@ -1094,7 +1145,7 @@ describe("saveUserConfig", () => {
       merge_strategy: "auto",
       review_mode: "on",
       collaboration_mode: "connect",
-      session_limit: 4,
+      max_inflight: 4,
     });
   });
 
@@ -1107,11 +1158,11 @@ describe("saveUserConfig", () => {
       JSON.stringify({ custom_key: "hello" }),
     );
 
-    saveUserConfig({ session_limit: 4 }, tmpHome);
+    saveUserConfig({ max_inflight: 4 }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
     expect(content.custom_key).toBe("hello");
-    expect(content.session_limit).toBe(4);
+    expect(content.max_inflight).toBe(4);
   });
 
   it("saves update_checks_enabled without clobbering unrelated keys", () => {
@@ -1160,27 +1211,27 @@ describe("saveUserConfig", () => {
     });
   });
 
-  it("overwrites existing session_limit value", () => {
+  it("overwrites existing max_inflight value", () => {
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, "config.json"),
-      JSON.stringify({ session_limit: 2 }),
+      JSON.stringify({ max_inflight: 2 }),
     );
 
-    saveUserConfig({ session_limit: 6 }, tmpHome);
+    saveUserConfig({ max_inflight: 6 }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
-    expect(content.session_limit).toBe(6);
+    expect(content.max_inflight).toBe(6);
   });
 
   it("round-trips with loadUserConfig", () => {
     const tmpHome = setupTempRepo();
-    saveUserConfig({ session_limit: 7 }, tmpHome);
+    saveUserConfig({ max_inflight: 7 }, tmpHome);
 
     const config = loadUserConfig(tmpHome);
-    expect(config.session_limit).toBe(7);
+    expect(config.max_inflight).toBe(7);
   });
 
   it("round-trips ai_tool_overrides through saveUserConfig and loadUserConfig", () => {
@@ -1229,10 +1280,10 @@ describe("saveUserConfig", () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(join(configDir, "config.json"), "not valid json {{{");
 
-    saveUserConfig({ session_limit: 3 }, tmpHome);
+    saveUserConfig({ max_inflight: 3 }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
-    expect(content.session_limit).toBe(3);
+    expect(content.max_inflight).toBe(3);
   });
 });
 

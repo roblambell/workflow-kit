@@ -1213,13 +1213,13 @@ describe("formatStatusTable", () => {
     expect(table).toContain("C-1-2");
   });
 
-  it("includes active session count in queue header when sessionLimit provided", () => {
+  it("includes active session count in queue header when maxInflight provided", () => {
     const items = [
       makeStatusItem({ state: "implementing" }),
       makeStatusItem({ id: "C-1-2", state: "queued" }),
     ];
     const table = stripAnsi(formatStatusTable(items, 80, 4));
-    expect(table).toContain("1/4 active sessions");
+    expect(table).toContain("1/4 in flight");
   });
 
   it("renders unified footer progress line", () => {
@@ -1396,8 +1396,8 @@ describe("formatStatusTable", () => {
     const table = stripAnsi(formatStatusTable(items, 100, 4));
     const verifyingIndex = table.indexOf("A-1");
     const doneIndex = table.indexOf("A-3");
-    // Verifying doesn't count toward active sessions (post-merge, no session slot consumed)
-    const queueIndex = table.indexOf("Queue (1 waiting, 0/4 active sessions)");
+    // Verifying doesn't count toward in flight (post-merge, no session slot consumed)
+    const queueIndex = table.indexOf("Queue (1 waiting, 0/4 in flight)");
     expect(verifyingIndex).toBeGreaterThan(-1);
     expect(doneIndex).toBeGreaterThan(-1);
     expect(queueIndex).toBeGreaterThan(-1);
@@ -2408,7 +2408,7 @@ describe("renderTuiFrame", () => {
     expect(full).toContain("No active items");
   });
 
-  it("passes sessionLimit to the table formatter", () => {
+  it("passes maxInflight to the table formatter", () => {
     const written: string[] = [];
     const items = [
       makeOrchestratorItem("C-1-1", "implementing"),
@@ -2416,7 +2416,7 @@ describe("renderTuiFrame", () => {
     ];
     renderTuiFrame(items, 5, (s) => written.push(s));
     const full = stripAnsi(written.join(""));
-    expect(full).toContain("1/5 active sessions");
+    expect(full).toContain("1/5 in flight");
   });
 
   it("does not crash when a large number of items is rendered (terminal resize simulation)", () => {
@@ -5208,7 +5208,7 @@ describe("renderControlsOverlay", () => {
     reviewMode: "off" as ReviewMode,
     mergeStrategy: "manual" as const,
     bypassEnabled: false,
-    sessionLimit: 3,
+    maxInflight: 3,
   };
 
   it("returns expected number of lines matching termRows", () => {
@@ -5315,7 +5315,7 @@ describe("renderControlsOverlay", () => {
       pendingCollaborationMode: "connected",
       pendingReviewMode: "on",
       pendingMergeStrategy: "auto",
-      pendingSessionLimit: 4,
+      pendingMaxInflight: 4,
     });
     const text = stripAnsi(lines.join("\n"));
     expect(text).toContain("[Connected pending]");
@@ -5660,7 +5660,7 @@ describe("buildPanelLayout queueStartIndex passthrough", () => {
     ];
     const logs: LogEntry[] = [];
     const layout = buildPanelLayout("status-only", items, logs, 80, 50, {
-      sessionLimit: 3,
+      maxInflight: 3,
     });
     expect(layout.statusPanel).not.toBeNull();
     expect(layout.statusPanel!.queueStartIndex).toBeDefined();

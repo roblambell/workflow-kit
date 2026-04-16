@@ -701,7 +701,7 @@ describe("renderStatus", () => {
       pid: 123,
       startedAt: now,
       updatedAt: now,
-      sessionLimit: 4,
+      maxInflight: 4,
       emptyState: "watch-armed",
       items: [],
     } satisfies DaemonState));
@@ -1239,14 +1239,14 @@ describe("formatStatusTable with queued items", () => {
     expect(output).toContain("A-1");
   });
 
-  it("shows active session usage in queue header when sessionLimit provided", () => {
+  it("shows active session usage in queue header when maxInflight provided", () => {
     const items = [
       makeItem("A-1", "implementing", "Active 1"),
       makeItem("A-2", "ci-pending", "Active 2"),
       makeItem("Q-1", "queued", "Queued 1"),
     ];
     const output = stripAnsi(formatStatusTable(items, 80, 5));
-    expect(output).toContain("Queue (1 waiting, 2/5 active sessions)");
+    expect(output).toContain("Queue (1 waiting, 2/5 in flight)");
   });
 
   it("shows queue section with only queued items (no active section)", () => {
@@ -1290,7 +1290,7 @@ describe("formatStatusTable with queued items", () => {
     ];
     // Only A-1 counts as active; verifying is post-merge and doesn't consume a session slot.
     const output = stripAnsi(formatStatusTable(items, 80, 3));
-    expect(output).toContain("1/3 active sessions");
+    expect(output).toContain("1/3 in flight");
   });
 });
 
@@ -1910,7 +1910,7 @@ describe("renderStatus with ViewOptions", () => {
       pid: 123,
       startedAt: now,
       updatedAt: now,
-      sessionLimit: 4,
+      maxInflight: 4,
       crewStatus: {
         daemonCount: 2,
         availableCount: 5,

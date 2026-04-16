@@ -20,7 +20,7 @@ describe("createRuntimeControlHandlers dual-write", () => {
 
     const handlers = createRuntimeControlHandlers({
       sendControl: (cmd) => commands.push(cmd),
-      getSessionLimit: () => 3,
+      getMaxInflight: () => 3,
       projectRoot: repo,
       saveUserConfigFn: (updates) => { userWrites.push(updates); },
     });
@@ -78,7 +78,7 @@ describe("createRuntimeControlHandlers dual-write", () => {
 
     const handlers = createRuntimeControlHandlers({
       sendControl: (cmd) => commands.push(cmd),
-      getSessionLimit: () => 3,
+      getMaxInflight: () => 3,
       saveUserConfigFn: (updates) => { userWrites.push(updates); },
     });
 

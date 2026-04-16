@@ -99,7 +99,7 @@ export type ActiveTuiOverlay = "engine-recovery" | "help" | "controls" | "paused
 /** Options for runTUI -- the reusable TUI lifecycle runner. */
 export interface RunTUIOptions {
   /** Provide status items and optional session limit for each render cycle. */
-  getItems: () => { items: StatusItem[]; sessionLimit?: number; sessionStartedAt?: string; viewOptions?: ViewOptions };
+  getItems: () => { items: StatusItem[]; maxInflight?: number; sessionStartedAt?: string; viewOptions?: ViewOptions };
   /** Provide log entries for the log panel. If omitted, logBuffer is empty. */
   getLogEntries?: () => PanelLogEntry[];
   /** Poll interval in ms (default: 2000). */
@@ -343,7 +343,7 @@ export function resolveActiveTuiOverlay(tuiState: TuiState): ActiveTuiOverlay {
 
 export function renderTuiPanelFrameFromStatusItems(
   statusItems: StatusItem[],
-  sessionLimit: number | undefined,
+  maxInflight: number | undefined,
   tuiState: TuiState,
   write: (s: string) => void = (s) => process.stdout.write(s),
   detailSnapshots?: ReadonlyMap<string, TuiDetailSnapshot>,
@@ -365,7 +365,7 @@ export function renderTuiPanelFrameFromStatusItems(
       termWidth,
       termRows,
       {
-        sessionLimit,
+        maxInflight,
         viewOptions: fullScreenViewOptions,
         logScrollOffset: tuiState.logScrollOffset,
         statusScrollOffset: tuiState.scrollOffset,
@@ -406,8 +406,8 @@ export function renderTuiPanelFrameFromStatusItems(
         mergeStrategy: tuiState.mergeStrategy,
         pendingMergeStrategy: tuiState.pendingStrategy,
         bypassEnabled: tuiState.bypassEnabled,
-        sessionLimit,
-        pendingSessionLimit: tuiState.pendingSessionLimit,
+        maxInflight,
+        pendingMaxInflight: tuiState.pendingMaxInflight,
         activeRowIndex: tuiState.controlsRowIndex,
       });
       const content = controlsLines.join("\n");
@@ -476,7 +476,7 @@ export function renderTuiPanelFrameFromStatusItems(
  */
 export function renderTuiFrame(
   items: OrchestratorItem[],
-  sessionLimit: number | undefined,
+  maxInflight: number | undefined,
   write: (s: string) => void = (s) => process.stdout.write(s),
   viewOptions?: ViewOptions,
   scrollOffset: number = 0,
@@ -499,13 +499,13 @@ export function renderTuiFrame(
     const content = helpLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else if (termRows >= MIN_FULLSCREEN_ROWS) {
-    const layout = buildStatusLayout(statusItems, termWidth, sessionLimit, false, fullScreenViewOptions);
+    const layout = buildStatusLayout(statusItems, termWidth, maxInflight, false, fullScreenViewOptions);
     const clamped = clampScrollOffset(scrollOffset, layout.itemLines.length, Math.max(1, termRows - layout.headerLines.length - layout.footerLines.length));
     const frameLines = renderFullScreenFrame(layout, termRows, termWidth, clamped);
     const content = frameLines.join("\n");
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   } else {
-    const content = formatStatusTable(statusItems, termWidth, sessionLimit, false, viewOptions);
+    const content = formatStatusTable(statusItems, termWidth, maxInflight, false, viewOptions);
     write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");
   }
 
@@ -519,7 +519,7 @@ export function renderTuiFrame(
  */
 export function renderTuiPanelFrame(
   items: OrchestratorItem[],
-  sessionLimit: number | undefined,
+  maxInflight: number | undefined,
   tuiState: TuiState,
   write: (s: string) => void = (s) => process.stdout.write(s),
   remoteItems?: RemoteItemRenderState,
@@ -537,7 +537,7 @@ export function renderTuiPanelFrame(
       descriptionBody: item.workItem.rawText,
     }]),
   );
-  renderTuiPanelFrameFromStatusItems(statusItems, sessionLimit, tuiState, write, detailSnapshots);
+  renderTuiPanelFrameFromStatusItems(statusItems, maxInflight, tuiState, write, detailSnapshots);
 }
 
 export function daemonStateToDetailSnapshots(state: DaemonState): Map<string, TuiDetailSnapshot> {
@@ -578,8 +578,8 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
   const tuiState: TuiState = {
     scrollOffset: 0,
     viewOptions: { showBlockerDetail: true },
-    sessionLimit: 1,
-    pendingSessionLimit: undefined,
+    maxInflight: 1,
+    pendingMaxInflight: undefined,
     mergeStrategy: "auto",
     bypassEnabled: false,
     ctrlCPending: false,
@@ -619,7 +619,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
     if (data.sessionStartedAt) {
       tuiState.viewOptions.sessionStartedAt = data.sessionStartedAt;
     }
-    tuiState.sessionLimit = data.sessionLimit ?? tuiState.sessionLimit;
+    tuiState.maxInflight = data.maxInflight ?? tuiState.maxInflight;
     tuiState.viewOptions.emptyState = data.viewOptions?.emptyState;
     // Refresh log entries from provider
     if (getLogEntries) {
@@ -645,7 +645,7 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
         termWidth,
         termRows,
         {
-          sessionLimit: data.sessionLimit,
+          maxInflight: data.maxInflight,
           viewOptions: tuiState.viewOptions,
           logScrollOffset: tuiState.logScrollOffset,
           statusScrollOffset: tuiState.scrollOffset,
@@ -680,8 +680,8 @@ export async function runTUI(opts: RunTUIOptions): Promise<void> {
           mergeStrategy: tuiState.mergeStrategy,
           pendingMergeStrategy: tuiState.pendingStrategy,
           bypassEnabled: tuiState.bypassEnabled,
-          sessionLimit: data.sessionLimit,
-          pendingSessionLimit: tuiState.pendingSessionLimit,
+          maxInflight: data.maxInflight,
+          pendingMaxInflight: tuiState.pendingMaxInflight,
         });
         const content = controlsLines.join("\n");
         write(content.replace(/\n/g, "\x1B[K\n") + "\x1B[K");

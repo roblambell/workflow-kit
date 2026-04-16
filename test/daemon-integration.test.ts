@@ -154,7 +154,7 @@ describe("Daemon lifecycle: startup and shutdown", () => {
 
     // Simulate startup: load work items and create orchestrator
     const items = [makeWorkItem("A-1-1"), makeWorkItem("A-1-2"), makeWorkItem("A-1-3", ["A-1-1"])];
-    const orch = new Orchestrator({ sessionLimit: 4 });
+    const orch = new Orchestrator({ maxInflight: 4 });
 
     for (const wi of items) {
       orch.addItem(wi);
@@ -269,7 +269,7 @@ describe("Daemon lifecycle: single-item flow", () => {
   const NOW = new Date("2026-03-25T10:00:00.000Z");
 
   beforeEach(() => {
-    orch = new Orchestrator({ fixForward: false, sessionLimit: 4, mergeStrategy: "auto" });
+    orch = new Orchestrator({ fixForward: false, maxInflight: 4, mergeStrategy: "auto" });
     deps = mockDeps();
   });
 
@@ -379,7 +379,7 @@ describe("Daemon lifecycle: reconstructed worker inbox targeting", () => {
     mkdirSync(itemWorktree, { recursive: true });
 
     try {
-      const beforeRestart = new Orchestrator({ sessionLimit: 4 });
+      const beforeRestart = new Orchestrator({ maxInflight: 4 });
       beforeRestart.addItem(makeWorkItem("REC-LIVE-1"));
       beforeRestart.getItem("REC-LIVE-1")!.reviewCompleted = true;
       beforeRestart.hydrateState("REC-LIVE-1", "implementing");
@@ -392,7 +392,7 @@ describe("Daemon lifecycle: reconstructed worker inbox targeting", () => {
         "2026-04-02T10:00:00.000Z",
       );
 
-      const afterRestart = new Orchestrator({ sessionLimit: 4 });
+      const afterRestart = new Orchestrator({ maxInflight: 4 });
       afterRestart.addItem(makeWorkItem("REC-LIVE-1"));
       afterRestart.getItem("REC-LIVE-1")!.reviewCompleted = true;
 
@@ -453,7 +453,7 @@ describe("Daemon lifecycle: reconstructed worker inbox targeting", () => {
     mkdirSync(itemWorktree, { recursive: true });
 
     try {
-      const orch = new Orchestrator({ sessionLimit: 4 });
+      const orch = new Orchestrator({ maxInflight: 4 });
       orch.addItem(makeWorkItem("REC-1"));
       orch.getItem("REC-1")!.reviewCompleted = true;
 
@@ -508,7 +508,7 @@ describe("Daemon lifecycle: reconstructed worker inbox targeting", () => {
     mkdirSync(worktreeDir, { recursive: true });
 
     try {
-      const orch = new Orchestrator({ sessionLimit: 4 });
+      const orch = new Orchestrator({ maxInflight: 4 });
       orch.addItem(makeWorkItem("REC-2"));
       orch.getItem("REC-2")!.reviewCompleted = true;
 
@@ -578,7 +578,7 @@ function sendDeadPolls(orch: InstanceType<typeof Orchestrator>, id: string, coun
 
 describe("Daemon lifecycle: stuck item and retry logic", () => {
   it("worker crash triggers retry, second crash marks stuck", () => {
-    const orch = new Orchestrator({ sessionLimit: 4, maxRetries: 1 });
+    const orch = new Orchestrator({ maxInflight: 4, maxRetries: 1 });
     orch.addItem(makeWorkItem("STUCK-1"));
     orch.getItem("STUCK-1")!.reviewCompleted = true;
 
@@ -602,7 +602,7 @@ describe("Daemon lifecycle: stuck item and retry logic", () => {
   });
 
   it("worker crash during implementing without PR triggers retry", () => {
-    const orch = new Orchestrator({ sessionLimit: 4, maxRetries: 1 });
+    const orch = new Orchestrator({ maxInflight: 4, maxRetries: 1 });
     orch.addItem(makeWorkItem("STUCK-2"));
     orch.getItem("STUCK-2")!.reviewCompleted = true;
 
@@ -629,7 +629,7 @@ describe("Daemon lifecycle: stuck item and retry logic", () => {
 
   it("CI fail exceeding maxCiRetries marks stuck and closes the workspace for a dead worker", () => {
     // maxCiRetries: 1 means item can fail once and recover, but second failure → stuck
-    const orch = new Orchestrator({ sessionLimit: 4, maxCiRetries: 1 });
+    const orch = new Orchestrator({ maxInflight: 4, maxCiRetries: 1 });
     orch.addItem(makeWorkItem("STUCK-3"));
     orch.getItem("STUCK-3")!.reviewCompleted = true;
     orch.hydrateState("STUCK-3", "ci-pending");
@@ -672,7 +672,7 @@ describe("Daemon lifecycle: stuck item and retry logic", () => {
   });
 
   it("CI fail exceeding maxCiRetries marks stuck and parks the session for a live worker", () => {
-    const orch = new Orchestrator({ sessionLimit: 4, maxCiRetries: 1 });
+    const orch = new Orchestrator({ maxInflight: 4, maxCiRetries: 1 });
     orch.addItem(makeWorkItem("STUCK-3"));
     orch.getItem("STUCK-3")!.reviewCompleted = true;
     orch.hydrateState("STUCK-3", "ci-pending");
@@ -738,7 +738,7 @@ describe("Daemon lifecycle: stuck item and retry logic", () => {
 
 describe("Daemon lifecycle: stacking (dependent items)", () => {
   it("dependent item stays queued until dependency merges, then launches", () => {
-    const orch = new Orchestrator({ fixForward: false, sessionLimit: 4, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, maxInflight: 4, mergeStrategy: "auto" });
     const deps = mockDeps();
 
     orch.addItem(makeWorkItem("DEP-1"));
@@ -788,7 +788,7 @@ describe("Daemon lifecycle: stacking (dependent items)", () => {
   });
 
   it("dependent item stays queued when dep is in non-stackable state", () => {
-    const orch = new Orchestrator({ sessionLimit: 4, enableStacking: true });
+    const orch = new Orchestrator({ maxInflight: 4, enableStacking: true });
     orch.addItem(makeWorkItem("NS-1"));
     orch.getItem("NS-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("NS-2", ["NS-1"]));
@@ -807,7 +807,7 @@ describe("Daemon lifecycle: stacking (dependent items)", () => {
   });
 
   it("stacking disabled keeps dependent queued even when dep is in stackable state", () => {
-    const orch = new Orchestrator({ sessionLimit: 4, enableStacking: false });
+    const orch = new Orchestrator({ maxInflight: 4, enableStacking: false });
     orch.addItem(makeWorkItem("NOSTACK-1"));
     orch.getItem("NOSTACK-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("NOSTACK-2", ["NOSTACK-1"]));
@@ -832,7 +832,7 @@ describe("Daemon lifecycle: stacking (dependent items)", () => {
   });
 
   it("stuck dep pauses stacked dependent workers", () => {
-    const orch = new Orchestrator({ sessionLimit: 4, maxRetries: 0, enableStacking: true });
+    const orch = new Orchestrator({ maxInflight: 4, maxRetries: 0, enableStacking: true });
 
     orch.addItem(makeWorkItem("DEPSTK-1"));
     orch.getItem("DEPSTK-1")!.reviewCompleted = true;
@@ -898,7 +898,7 @@ describe("Daemon lifecycle: stacking (dependent items)", () => {
 describe("Daemon lifecycle: stacking with stuck dependency notification", () => {
   it("notifies stacked dependent when dependency transitions to stuck", () => {
     const orch = new Orchestrator({
-      sessionLimit: 4,
+      maxInflight: 4,
       maxRetries: 0,
       enableStacking: true,
       maxCiRetries: 0,
@@ -949,7 +949,7 @@ describe("Daemon lifecycle: stacking with stuck dependency notification", () => 
 
 describe("Daemon lifecycle: cleanup after merge", () => {
   it("merge triggers clean action, cleanup runs workspace and worktree", () => {
-    const orch = new Orchestrator({ fixForward: false, sessionLimit: 4, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, maxInflight: 4, mergeStrategy: "auto" });
     const deps = mockDeps();
 
     orch.addItem(makeWorkItem("CLN-1"));
@@ -1052,7 +1052,7 @@ describe("Daemon lifecycle: cleanup after merge", () => {
 
 describe("Daemon lifecycle: multi-item orchestration", () => {
   it("processes three independent items through full lifecycle concurrently", () => {
-    const orch = new Orchestrator({ fixForward: false, sessionLimit: 3, mergeStrategy: "auto" });
+    const orch = new Orchestrator({ fixForward: false, maxInflight: 3, mergeStrategy: "auto" });
     const deps = mockDeps();
 
     // Add 3 independent items
@@ -1133,7 +1133,7 @@ describe("Daemon lifecycle: multi-item orchestration", () => {
   });
 
   it("session limit prevents launching more items than allowed", () => {
-    const orch = new Orchestrator({ sessionLimit: 2 });
+    const orch = new Orchestrator({ maxInflight: 2 });
 
     orch.addItem(makeWorkItem("W-1"));
     orch.getItem("W-1")!.reviewCompleted = true;
@@ -1162,7 +1162,7 @@ describe("Daemon lifecycle: multi-item orchestration", () => {
 describe("Daemon lifecycle: state persistence", () => {
   it("serializes and restores orchestrator state across restart", () => {
     const io = createMockIO();
-    const orch = new Orchestrator({ sessionLimit: 4 });
+    const orch = new Orchestrator({ maxInflight: 4 });
 
     // Load and progress items
     orch.addItem(makeWorkItem("P-1"));
@@ -1190,7 +1190,7 @@ describe("Daemon lifecycle: state persistence", () => {
       orch.getAllItems(),
       9876,
       "2026-03-25T10:00:00.000Z",
-      { sessionLimit: 4 },
+      { maxInflight: 4 },
     );
     writeStateFile("/project", state, io);
 
@@ -1198,7 +1198,7 @@ describe("Daemon lifecycle: state persistence", () => {
     const restored = readStateFile("/project", io);
     expect(restored).not.toBeNull();
     expect(restored!.pid).toBe(9876);
-    expect(restored!.sessionLimit).toBe(4);
+    expect(restored!.maxInflight).toBe(4);
     expect(restored!.items).toHaveLength(2);
 
     // Verify item states were preserved
@@ -1244,7 +1244,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     const STARTED_AT = "2026-03-25T08:00:00.000Z";
 
     // ── Step 1: Build orchestrator with 5 items in different active states ──
-    const orch = new Orchestrator({ sessionLimit: 5 });
+    const orch = new Orchestrator({ maxInflight: 5 });
 
     // Item 1: launching state
     orch.addItem(makeWorkItem("CR-1"), 1);
@@ -1321,7 +1321,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
       orch.getAllItems(),
       PID,
       STARTED_AT,
-      { sessionLimit: 5 },
+      { maxInflight: 5 },
     );
     writeStateFile("/project", state, io);
 
@@ -1329,7 +1329,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     const restored = readStateFile("/project", io);
     expect(restored).not.toBeNull();
     expect(restored!.pid).toBe(PID);
-    expect(restored!.sessionLimit).toBe(5);
+    expect(restored!.maxInflight).toBe(5);
     expect(restored!.items).toHaveLength(5);
 
     // ── Step 4: Verify all non-transient fields survived the round-trip ──
@@ -1407,7 +1407,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
     expect(r5.startedAt).toBe("2026-03-25T06:00:00.000Z");
 
     // ── Step 5: Simulate daemon restart -- create fresh Orchestrator and hydrate ──
-    const orch2 = new Orchestrator({ sessionLimit: 5 });
+    const orch2 = new Orchestrator({ maxInflight: 5 });
     for (const wi of [
       makeWorkItem("CR-1"),
       makeWorkItem("CR-2"),
@@ -1494,7 +1494,7 @@ describe("Daemon lifecycle: crash recovery round-trip", () => {
 
 describe("Daemon lifecycle: launch failure handling", () => {
   it("launch returning null with retries schedules retry", () => {
-    const orch = new Orchestrator({ sessionLimit: 4, maxRetries: 2 });
+    const orch = new Orchestrator({ maxInflight: 4, maxRetries: 2 });
     const deps = mockDeps({ workers: { launchSingleItem: vi.fn(() => null) } });
 
     orch.addItem(makeWorkItem("LF-1"));
@@ -1514,7 +1514,7 @@ describe("Daemon lifecycle: launch failure handling", () => {
   });
 
   it("launch returning null with no retries marks stuck", () => {
-    const orch = new Orchestrator({ sessionLimit: 4, maxRetries: 0 });
+    const orch = new Orchestrator({ maxInflight: 4, maxRetries: 0 });
     const deps = mockDeps({ workers: { launchSingleItem: vi.fn(() => null) } });
 
     orch.addItem(makeWorkItem("LF-2"));
@@ -1533,7 +1533,7 @@ describe("Daemon lifecycle: launch failure handling", () => {
   });
 
   it("launch throwing exception handles gracefully", () => {
-    const orch = new Orchestrator({ sessionLimit: 4, maxRetries: 0 });
+    const orch = new Orchestrator({ maxInflight: 4, maxRetries: 0 });
     const deps = mockDeps({ workers: { launchSingleItem: vi.fn(() => { throw new Error("repo not found"); }) } });
 
     orch.addItem(makeWorkItem("LF-3"));

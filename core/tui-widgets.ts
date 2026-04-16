@@ -253,7 +253,7 @@ export interface SelectionScreenResult {
   /** True when starting with no current items and watching future work only. */
   futureOnly?: boolean;
   mergeStrategy: MergeStrategy;
-  sessionLimit: number;
+  maxInflight: number;
   reviewMode: "on" | "off";
   connectionAction: ConnectionAction | null;
   cancelled: boolean;
@@ -1010,7 +1010,7 @@ const FUTURE_TASKS_ID = "__FUTURE__";
 export async function runSelectionScreen(
   io: WidgetIO,
   items: WorkItem[],
-  defaultSessionLimit: number,
+  defaultMaxInflight: number,
   opts: {
     defaultReviewMode?: "on" | "off";
     defaultSettings?: TuiSettingsDefaults;
@@ -1083,7 +1083,7 @@ export async function runSelectionScreen(
   );
 
   const mergeStrategy: Extract<MergeStrategy, "auto" | "manual"> = resolvedDefaults.mergeStrategy;
-  const sessionLimit = Math.max(1, Math.min(10, defaultSessionLimit));
+  const maxInflight = Math.max(1, Math.min(10, defaultMaxInflight));
   const reviewMode: "on" | "off" = resolvedDefaults.reviewMode;
 
   // Step 2: AI coding tool (conditional -- only when 2+ tools detected)
@@ -1173,7 +1173,7 @@ export async function runSelectionScreen(
     allSelected: itemResult.allSelected,
     futureOnly,
     mergeStrategy,
-    sessionLimit,
+    maxInflight,
     reviewMode,
     connectionAction: null,
     cancelled: false,

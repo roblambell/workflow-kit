@@ -86,7 +86,7 @@ describe("buildSnapshot contract", () => {
 
   beforeEach(() => {
     orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,
@@ -977,7 +977,7 @@ describe("buildSnapshot contract", () => {
         writeHeartbeat(root, "HP-1", 1.0, "PR created", undefined, 42);
 
         const testOrch = new Orchestrator({
-          sessionLimit: 5, mergeStrategy: "auto", bypassEnabled: false,
+          maxInflight: 5, mergeStrategy: "auto", bypassEnabled: false,
           enableStacking: false, fixForward: false,
         });
         testOrch.addItem(makeWorkItem("HP-1"));
@@ -1007,7 +1007,7 @@ describe("buildSnapshot contract", () => {
         writeHeartbeat(root, "HP-2", 1.0, "PR created", undefined, 42);
 
         const testOrch = new Orchestrator({
-          sessionLimit: 5, mergeStrategy: "auto", bypassEnabled: false,
+          maxInflight: 5, mergeStrategy: "auto", bypassEnabled: false,
           enableStacking: false, fixForward: false,
         });
         testOrch.addItem(makeWorkItem("HP-2"));
@@ -1036,7 +1036,7 @@ describe("buildSnapshot contract", () => {
         writeHeartbeat(root, "HP-3", 0.5, "Writing code");
 
         const testOrch = new Orchestrator({
-          sessionLimit: 5, mergeStrategy: "auto", bypassEnabled: false,
+          maxInflight: 5, mergeStrategy: "auto", bypassEnabled: false,
           enableStacking: false, fixForward: false,
         });
         testOrch.addItem(makeWorkItem("HP-3"));

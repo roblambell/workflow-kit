@@ -3000,7 +3000,7 @@ describe("cmdRunItems", () => {
     const repo = setupTempRepo();
     const workDir = setupWorkItemsDir(repo);
     const worktreeDir = join(repo, ".ninthwave", ".worktrees");
-    const loadUserConfigSpy = vi.spyOn(configModule, "loadUserConfig").mockReturnValue({ session_limit: 1 });
+    const loadUserConfigSpy = vi.spyOn(configModule, "loadUserConfig").mockReturnValue({ max_inflight: 1 });
 
     try {
       const output = await captureOutput(() =>

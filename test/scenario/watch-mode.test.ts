@@ -16,7 +16,7 @@ import {
 
 function makeOrch(): Orchestrator {
   return new Orchestrator({
-    sessionLimit: 5,
+    maxInflight: 5,
     mergeStrategy: "auto",
     bypassEnabled: false,
     enableStacking: false,
@@ -29,7 +29,7 @@ describe("scenario: watch mode", () => {
     const fakeGh = new FakeGitHub();
     const fakeMux = new FakeMux();
     const orch = new Orchestrator({
-      sessionLimit: 1,
+      maxInflight: 1,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: false,

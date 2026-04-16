@@ -65,7 +65,7 @@ function startRecoveryChild(
     "--watch",
     "--tool", "codex",
     "--merge-strategy", "auto",
-    "--session-limit", "1",
+    "--max-inflight", "1",
     "--no-review",
     "--skip-preflight",
     "--poll-interval", "0",

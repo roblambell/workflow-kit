@@ -786,7 +786,7 @@ export async function orchestrateLoop(
     level: "info",
     event: "orchestrate_start",
     items: orch.getAllItems().map((i) => i.id),
-    sessionLimit: orch.config.sessionLimit,
+    maxInflight: orch.config.maxInflight,
     mergeStrategy: orch.config.mergeStrategy,
   });
 
@@ -1099,7 +1099,7 @@ export async function orchestrateLoop(
             readyIds: snapshot.readyIds,
             queuedCount,
             readyCount,
-            availableSessionSlots: orch.availableSessionSlots,
+            availableInflightSlots: orch.availableInflightSlots,
             connected: deps.crewBroker.isConnected(),
           });
         }
@@ -1299,7 +1299,7 @@ export async function orchestrateLoop(
  * Users' chosen value is persisted to ~/.ninthwave/config.json and takes
  * precedence on subsequent runs.
  */
-export function computeDefaultSessionLimit(): number {
+export function computeDefaultMaxInflight(): number {
   return 1;
 }
 

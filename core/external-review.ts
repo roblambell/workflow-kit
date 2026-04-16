@@ -39,7 +39,7 @@ export interface ExternalReviewDeps {
 export function processExternalReviews(
   repoRoot: string,
   externalReviews: ExternalReviewItem[],
-  availableSessionSlots: number,
+  availableInflightSlots: number,
   deps: ExternalReviewDeps,
 ): ExternalReviewItem[] {
   // 1. Scan for external PRs
@@ -106,10 +106,10 @@ export function processExternalReviews(
   }
 
   // 4. Launch review workers for detected PRs, respecting the unified session limit.
-  // availableSessionSlots already accounts for internal reviewing items. Subtract
+  // availableInflightSlots already accounts for internal reviewing items. Subtract
   // external reviews that are already running to get net available slots.
   const reviewingCount = updatedReviews.filter((r) => r.state === "reviewing").length;
-  let availableSlots = availableSessionSlots - reviewingCount;
+  let availableSlots = availableInflightSlots - reviewingCount;
 
   for (const review of updatedReviews) {
     if (review.state !== "detected") continue;

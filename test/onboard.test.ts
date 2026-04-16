@@ -594,7 +594,7 @@ describe("cmdNoArgs", () => {
     const interactiveResult: InteractiveResult = {
       itemIds: ["H-FOO-1", "H-FOO-2"],
       mergeStrategy: "auto" as MergeStrategy,
-      sessionLimit: 3,
+      maxInflight: 3,
       allSelected: false,
       reviewMode: "on",
       connectionAction: null,
@@ -625,7 +625,7 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).toContain("H-FOO-2");
     expect(watchArgs).toContain("--merge-strategy");
     expect(watchArgs).toContain("auto");
-    expect(watchArgs).toContain("--session-limit");
+    expect(watchArgs).toContain("--max-inflight");
     expect(watchArgs).toContain("3");
     // Should NOT have --watch when not all selected
     expect(watchArgs).not.toContain("--watch");
@@ -685,7 +685,7 @@ describe("cmdNoArgs", () => {
       isDaemonRunning: () => null,
       ensureMux: async () => {},
       loadConfig: () => ({ review_external: false } as any),
-      runInteractiveFlow: async (todos, _defaultSessionLimit, deps) => {
+      runInteractiveFlow: async (todos, _defaultMaxInflight, deps) => {
         expect(todos.map((item) => item.id)).toEqual(["H-LOCAL-1", "H-LOCAL-2"]);
         expect(refreshCalled).toBe(false);
 
@@ -739,7 +739,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        sessionLimit: 4,
+        maxInflight: 4,
         allSelected: true,
         reviewMode: "on",
         connectionAction: null,
@@ -767,7 +767,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: [],
         mergeStrategy: "auto" as MergeStrategy,
-        sessionLimit: 4,
+        maxInflight: 4,
         allSelected: false,
         futureOnly: true,
         reviewMode: "on",
@@ -781,7 +781,7 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).not.toContain("--items");
   });
 
-  it("passes --review-session-limit 0 when reviewMode is 'off'", async () => {
+  it("passes --review-max-inflight 0 when reviewMode is 'off'", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -798,7 +798,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        sessionLimit: 4,
+        maxInflight: 4,
         allSelected: false,
         reviewMode: "off" as const,
         connectionAction: null,
@@ -806,7 +806,7 @@ describe("cmdNoArgs", () => {
       runWatch: async (args) => { watchArgs = args; },
     });
 
-    expect(watchArgs).toContain("--review-session-limit");
+    expect(watchArgs).toContain("--review-max-inflight");
     expect(watchArgs).toContain("0");
   });
 
@@ -827,7 +827,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        sessionLimit: 4,
+        maxInflight: 4,
         allSelected: false,
         reviewMode: "on" as const,
         connectionAction: null,
@@ -836,7 +836,7 @@ describe("cmdNoArgs", () => {
     });
 
     expect(watchArgs).not.toContain("--review-external");
-    expect(watchArgs).not.toContain("--review-session-limit");
+    expect(watchArgs).not.toContain("--review-max-inflight");
   });
 
   it("passes --connect for crew join action (auto-join via project config)", async () => {
@@ -856,7 +856,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        sessionLimit: 4,
+        maxInflight: 4,
         allSelected: false,
         reviewMode: "on" as const,
         connectionAction: { type: "connect" as const },
@@ -885,7 +885,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        sessionLimit: 4,
+        maxInflight: 4,
         allSelected: false,
         reviewMode: "on" as const,
         connectionAction: { type: "connect" as const },
@@ -935,7 +935,7 @@ describe("cmdNoArgs", () => {
         return {
           itemIds: ["H-1"],
           mergeStrategy: "auto" as MergeStrategy,
-          sessionLimit: 4,
+          maxInflight: 4,
           allSelected: false,
           reviewMode: "on" as const,
           connectionAction: null,
@@ -969,7 +969,7 @@ describe("cmdNoArgs", () => {
         return {
           itemIds: ["H-1"],
           mergeStrategy: "auto" as MergeStrategy,
-          sessionLimit: 4,
+          maxInflight: 4,
           allSelected: false,
           reviewMode: "on" as const,
           connectionAction: null,
@@ -1026,7 +1026,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "auto" as MergeStrategy,
-        sessionLimit: 4,
+        maxInflight: 4,
         allSelected: false,
         reviewMode: "on" as const,
         connectionAction: { type: "connect" as const },
@@ -1039,7 +1039,7 @@ describe("cmdNoArgs", () => {
     expect(savedUpdates).toHaveLength(1);
     expect(savedUpdates[0]).toMatchObject({
       merge_strategy: "auto",
-      session_limit: 4,
+      max_inflight: 4,
       ai_tools: ["opencode", "copilot"],
     });
     // reviewMode "on" matches the new startup default, so it is not re-saved.
@@ -1068,7 +1068,7 @@ describe("cmdNoArgs", () => {
       runInteractiveFlow: async () => ({
         itemIds: ["H-1"],
         mergeStrategy: "manual" as MergeStrategy,
-        sessionLimit: 4,
+        maxInflight: 4,
         allSelected: false,
         reviewMode: "on" as const,
         connectionAction: { type: "connect" as const },
@@ -1080,10 +1080,10 @@ describe("cmdNoArgs", () => {
     expect(watchArgs).not.toContain("--crew");
     expect(savedUpdates).toHaveLength(1);
     // mergeStrategy "manual" and reviewMode "on" both match TUI defaults,
-    // so neither is re-saved. Session limit 4 differs from computeDefaultSessionLimit() (1),
+    // so neither is re-saved. Session limit 4 differs from computeDefaultMaxInflight() (1),
     // so it is persisted.
     expect(savedUpdates[0]).toMatchObject({
-      session_limit: 4,
+      max_inflight: 4,
     });
     expect(savedUpdates[0]).not.toHaveProperty("collaboration_mode");
     expect(savedUpdates[0]).not.toHaveProperty("backend_mode");

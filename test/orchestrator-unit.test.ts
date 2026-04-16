@@ -640,7 +640,7 @@ describe("evaluateMerge", () => {
 
   it("review gate: ci-passed always transitions to reviewing (no separate review session limit)", () => {
     // reviewing is in ACTIVE_SESSION_STATES; ci-passed→reviewing is an in-place transition
-    // (same session slot). No separate reviewSessionLimit blocks it.
+    // (same session slot). No separate reviewMaxInflight blocks it.
     const orch = new Orchestrator({ mergeStrategy: "auto" });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.addItem(makeWorkItem("H-1-2"));
@@ -799,42 +799,42 @@ describe("setMergeStrategy", () => {
   });
 });
 
-// ── setSessionLimit ─────────────────────────────────────────────────────
+// ── setMaxInflight ─────────────────────────────────────────────────────
 
-describe("setSessionLimit", () => {
-  it("changes config.sessionLimit immediately", () => {
-    const orch = new Orchestrator({ sessionLimit: 3 });
-    expect(orch.config.sessionLimit).toBe(3);
-    orch.setSessionLimit(5);
-    expect(orch.config.sessionLimit).toBe(5);
+describe("setMaxInflight", () => {
+  it("changes config.maxInflight immediately", () => {
+    const orch = new Orchestrator({ maxInflight: 3 });
+    expect(orch.config.maxInflight).toBe(3);
+    orch.setMaxInflight(5);
+    expect(orch.config.maxInflight).toBe(5);
   });
 
   it("clamps to minimum of 1", () => {
-    const orch = new Orchestrator({ sessionLimit: 3 });
-    orch.setSessionLimit(0);
-    expect(orch.config.sessionLimit).toBe(1);
-    orch.setSessionLimit(-5);
-    expect(orch.config.sessionLimit).toBe(1);
+    const orch = new Orchestrator({ maxInflight: 3 });
+    orch.setMaxInflight(0);
+    expect(orch.config.maxInflight).toBe(1);
+    orch.setMaxInflight(-5);
+    expect(orch.config.maxInflight).toBe(1);
   });
 
   it("floors fractional values", () => {
-    const orch = new Orchestrator({ sessionLimit: 3 });
-    orch.setSessionLimit(4.9);
-    expect(orch.config.sessionLimit).toBe(4);
+    const orch = new Orchestrator({ maxInflight: 3 });
+    orch.setMaxInflight(4.9);
+    expect(orch.config.maxInflight).toBe(4);
   });
 
-  it("updates availableSessionSlots calculation immediately", () => {
-    const orch = new Orchestrator({ sessionLimit: 2 });
+  it("updates availableInflightSlots calculation immediately", () => {
+    const orch = new Orchestrator({ maxInflight: 2 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.hydrateState("H-1-1", "implementing");
     orch.getItem("H-1-1")!.workspaceRef = "workspace:1"; // active worker uses 1 session slot
-    expect(orch.availableSessionSlots).toBe(1);
-    orch.setSessionLimit(4);
-    expect(orch.availableSessionSlots).toBe(3);
+    expect(orch.availableInflightSlots).toBe(1);
+    orch.setMaxInflight(4);
+    expect(orch.availableInflightSlots).toBe(3);
   });
 
   it("reducing session limit below current count does not eject items", () => {
-    const orch = new Orchestrator({ sessionLimit: 3 });
+    const orch = new Orchestrator({ maxInflight: 3 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.addItem(makeWorkItem("H-1-2"));
     orch.addItem(makeWorkItem("H-1-3"));
@@ -844,11 +844,11 @@ describe("setSessionLimit", () => {
     orch.getItem("H-1-2")!.workspaceRef = "workspace:2";
     orch.hydrateState("H-1-3", "implementing");
     orch.getItem("H-1-3")!.workspaceRef = "workspace:3";
-    expect(orch.activeSessionCount).toBe(3);
-    orch.setSessionLimit(1);
-    // All items stay in their current states -- availableSessionSlots just goes to 0
-    expect(orch.activeSessionCount).toBe(3);
-    expect(orch.availableSessionSlots).toBe(0);
+    expect(orch.activeItemCount).toBe(3);
+    orch.setMaxInflight(1);
+    // All items stay in their current states -- availableInflightSlots just goes to 0
+    expect(orch.activeItemCount).toBe(3);
+    expect(orch.availableInflightSlots).toBe(0);
   });
 });
 
@@ -1788,7 +1788,7 @@ describe("handleCiPassed", () => {
 
 describe("full lifecycle: queued → done", () => {
   it("drives an item through normal flow to merge", () => {
-    const orch = new Orchestrator({ fixForward: false, mergeStrategy: "auto", sessionLimit: 1 });
+    const orch = new Orchestrator({ fixForward: false, mergeStrategy: "auto", maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
 
@@ -1881,7 +1881,7 @@ describe("merge queue prioritization", () => {
 
 describe("stacked branch launches", () => {
   it("launches stacked item when dep is in ci-passed", () => {
-    const orch = new Orchestrator({ sessionLimit: 5, enableStacking: true });
+    const orch = new Orchestrator({ maxInflight: 5, enableStacking: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
@@ -1904,7 +1904,7 @@ describe("stacked branch launches", () => {
   });
 
   it("does not stack when dep is in implementing (non-stackable)", () => {
-    const orch = new Orchestrator({ sessionLimit: 5, enableStacking: true });
+    const orch = new Orchestrator({ maxInflight: 5, enableStacking: true });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
@@ -1919,7 +1919,7 @@ describe("stacked branch launches", () => {
   });
 
   it("does not stack when enableStacking is false", () => {
-    const orch = new Orchestrator({ sessionLimit: 5, enableStacking: false });
+    const orch = new Orchestrator({ maxInflight: 5, enableStacking: false });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
@@ -3070,7 +3070,7 @@ describe("executeLaunch stale branch cleanup", () => {
 
   it("calls cleanStaleBranch before launchSingleItem", () => {
     const callOrder: string[] = [];
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "launching");
@@ -3087,7 +3087,7 @@ describe("executeLaunch stale branch cleanup", () => {
   });
 
   it("proceeds with launch when cleanStaleBranch throws", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "launching");
@@ -3102,7 +3102,7 @@ describe("executeLaunch stale branch cleanup", () => {
   });
 
   it("launches normally when cleanStaleBranch is not provided", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "launching");
@@ -3118,7 +3118,7 @@ describe("executeLaunch stale branch cleanup", () => {
   });
 
   it("writes fresh heartbeat with progress 0.0 before launching", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "launching");
@@ -3143,7 +3143,7 @@ describe("executeLaunch stale branch cleanup", () => {
   });
 
   it("transitions invalid launch candidates to blocked without retries or launch side effects", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "launching");
@@ -3219,7 +3219,7 @@ describe("executeLaunch stacked dep race guard", () => {
   };
 
   it("clears baseBranch when dependency is in done state before launch", () => {
-    const orch = new Orchestrator({ sessionLimit: 5, enableStacking: true });
+    const orch = new Orchestrator({ maxInflight: 5, enableStacking: true });
     orch.addItem(makeWorkItem("A-1"));
     orch.addItem(makeWorkItem("B-1", ["A-1"]));
 
@@ -3251,7 +3251,7 @@ describe("executeLaunch stacked dep race guard", () => {
   });
 
   it("clears baseBranch when dependency is in merged state before launch", () => {
-    const orch = new Orchestrator({ sessionLimit: 5, enableStacking: true });
+    const orch = new Orchestrator({ maxInflight: 5, enableStacking: true });
     orch.addItem(makeWorkItem("A-1"));
     orch.addItem(makeWorkItem("B-1", ["A-1"]));
 
@@ -3278,7 +3278,7 @@ describe("executeLaunch stacked dep race guard", () => {
   });
 
   it("preserves baseBranch when dependency is still in ci-passed", () => {
-    const orch = new Orchestrator({ sessionLimit: 5, enableStacking: true });
+    const orch = new Orchestrator({ maxInflight: 5, enableStacking: true });
     orch.addItem(makeWorkItem("A-1"));
     orch.addItem(makeWorkItem("B-1", ["A-1"]));
 
@@ -3307,7 +3307,7 @@ describe("executeLaunch stacked dep race guard", () => {
   });
 
   it("clears baseBranch when dependency item is unknown", () => {
-    const orch = new Orchestrator({ sessionLimit: 5, enableStacking: true });
+    const orch = new Orchestrator({ maxInflight: 5, enableStacking: true });
     // Only add B -- A is unknown (maybe removed from work items)
     orch.addItem(makeWorkItem("B-1", ["A-1"]));
 
@@ -5311,7 +5311,7 @@ describe("rebaser worker state transitions", () => {
   };
 
   it("daemon-rebase failure launches rebaser worker and transitions to rebasing", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5328,7 +5328,7 @@ describe("rebaser worker state transitions", () => {
   });
 
   it("daemon-rebase success transitions to ci-pending without rebaser worker", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5346,7 +5346,7 @@ describe("rebaser worker state transitions", () => {
   });
 
   it("rebasing transitions to ci-pending when CI restarts after push", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "rebasing");
@@ -5367,7 +5367,7 @@ describe("rebaser worker state transitions", () => {
   });
 
   it("rebasing transitions to stuck when rebaser worker dies", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "rebasing");
@@ -5388,7 +5388,7 @@ describe("rebaser worker state transitions", () => {
   });
 
   it("executeCleanRebaser cleans up the rebaser workspace", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5405,7 +5405,7 @@ describe("rebaser worker state transitions", () => {
   });
 
   it("executeLaunch transitions to ci-pending when existingPrNumber is returned", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "launching");
@@ -5422,7 +5422,7 @@ describe("rebaser worker state transitions", () => {
   });
 
   it("falls back to worker message when rebaser worker not available", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5491,7 +5491,7 @@ describe("rebase circuit breaker and worker message priority", () => {
   };
 
   it("circuit breaker marks stuck after maxRebaseAttempts", () => {
-    const orch = new Orchestrator({ sessionLimit: 1, maxRebaseAttempts: 2 });
+    const orch = new Orchestrator({ maxInflight: 1, maxRebaseAttempts: 2 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5512,7 +5512,7 @@ describe("rebase circuit breaker and worker message priority", () => {
   });
 
   it("prefers inbox delivery over rebaser when worktree inbox target exists", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5534,7 +5534,7 @@ describe("rebase circuit breaker and worker message priority", () => {
   });
 
   it("does not launch rebaser when inbox delivery succeeds for a live worker", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5555,7 +5555,7 @@ describe("rebase circuit breaker and worker message priority", () => {
   });
 
   it("rebaseAttemptCount resets when conflicts resolve (isMergeable !== false)", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5575,7 +5575,7 @@ describe("rebase circuit breaker and worker message priority", () => {
   });
 
   it("rebaseAttemptCount preserves when conflicts persist (isMergeable === false)", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5595,7 +5595,7 @@ describe("rebase circuit breaker and worker message priority", () => {
   });
 
   it("rebaseAttemptCount increments on each rebaser launch", () => {
-    const orch = new Orchestrator({ sessionLimit: 1, maxRebaseAttempts: 5 });
+    const orch = new Orchestrator({ maxInflight: 1, maxRebaseAttempts: 5 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5615,7 +5615,7 @@ describe("rebase circuit breaker and worker message priority", () => {
     const maxAttempts = 3;
     const staleMs = 60_000;
     const orch = new Orchestrator({
-      sessionLimit: 1,
+      maxInflight: 1,
       maxRebaseAttempts: maxAttempts,
       rebaseRetryStaleMs: staleMs,
     });
@@ -5728,7 +5728,7 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
   };
 
   it("daemon-rebase is never emitted in the same cycle as a worker launch for the same item", () => {
-    const orch = new Orchestrator({ sessionLimit: 2 });
+    const orch = new Orchestrator({ maxInflight: 2 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
 
@@ -5745,7 +5745,7 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
   });
 
   it("ci-pending item with merge conflicts gets daemon-rebase but not launch", () => {
-    const orch = new Orchestrator({ sessionLimit: 2 });
+    const orch = new Orchestrator({ maxInflight: 2 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-pending");
@@ -5769,7 +5769,7 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
   });
 
   it("executeNotifyCiFailure transitions to ready with needsCiFix when no workspace", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-failed");
@@ -5793,7 +5793,7 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
   });
 
   it("executeLaunch with needsCiFix passes forceWorkerLaunch and launches worker", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "launching");
@@ -5818,7 +5818,7 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
   });
 
   it("executeLaunch without needsCiFix transitions to ci-pending on existingPrNumber", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "launching");
@@ -5835,7 +5835,7 @@ describe("daemon-worker worktree race prevention (H-WR-1)", () => {
   });
 
   it("full CI-failed restart cycle: ci-failed → notify fails → ready → launch with worker", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.getItem("H-1-1")!.reviewCompleted = true;
     orch.hydrateState("H-1-1", "ci-failed");
@@ -5929,7 +5929,7 @@ describe("implementer inbox delivery resolution", () => {
   } {
     const events: Array<{ itemId: string; event: string; data?: Record<string, unknown> }> = [];
     const orch = new Orchestrator({
-      sessionLimit: 1,
+      maxInflight: 1,
       onEvent: (itemId, event, data) => {
         events.push({ itemId, event, data });
       },
@@ -6465,7 +6465,7 @@ describe("onTransition callback", () => {
   it("fires for multiple items in the same poll cycle", () => {
     const calls: Array<{ itemId: string; from: string; to: string }> = [];
     const orch = new Orchestrator({
-      sessionLimit: 2,
+      maxInflight: 2,
       onTransition: (itemId, from, to) => {
         calls.push({ itemId, from, to });
       },
@@ -7105,8 +7105,8 @@ describe("session parking (H-SP-2)", () => {
     expect(actions.some((a) => a.type === "workspace-close")).toBe(true);
   });
 
-  it("activeSessionCount excludes parked items whose workspaces are being closed", () => {
-    const orch = new Orchestrator({ mergeStrategy: "manual", sessionLimit: 3 });
+  it("activeItemCount excludes parked items whose workspaces are being closed", () => {
+    const orch = new Orchestrator({ mergeStrategy: "manual", maxInflight: 3 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.addItem(makeWorkItem("H-1-2"));
     orch.hydrateState("H-1-1", "review-pending");
@@ -7116,12 +7116,12 @@ describe("session parking (H-SP-2)", () => {
     orch.getItem("H-1-2")!.workspaceRef = "workspace:2";
     // H-1-2: active workspace -> counts
 
-    expect(orch.activeSessionCount).toBe(1);
-    expect(orch.availableSessionSlots).toBe(2);
+    expect(orch.activeItemCount).toBe(1);
+    expect(orch.availableInflightSlots).toBe(2);
   });
 
-  it("activeSessionCount includes stuck parked items with a live workspace", () => {
-    const orch = new Orchestrator({ sessionLimit: 2 });
+  it("activeItemCount includes stuck parked items with a live workspace", () => {
+    const orch = new Orchestrator({ maxInflight: 2 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.addItem(makeWorkItem("H-1-2"));
     orch.hydrateState("H-1-1", "stuck");
@@ -7131,12 +7131,12 @@ describe("session parking (H-SP-2)", () => {
     orch.hydrateState("H-1-2", "implementing");
     orch.getItem("H-1-2")!.workspaceRef = "workspace:2";
 
-    expect(orch.activeSessionCount).toBe(2);
-    expect(orch.availableSessionSlots).toBe(0);
+    expect(orch.activeItemCount).toBe(2);
+    expect(orch.availableInflightSlots).toBe(0);
   });
 
   it("live parked stuck worker does not free a launch slot", () => {
-    const orch = new Orchestrator({ sessionLimit: 1 });
+    const orch = new Orchestrator({ maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.addItem(makeWorkItem("H-1-2"));
 
@@ -7153,7 +7153,7 @@ describe("session parking (H-SP-2)", () => {
   });
 
   it("queued item can launch after another item is parked (session slot freed)", () => {
-    const orch = new Orchestrator({ mergeStrategy: "manual", sessionLimit: 1 });
+    const orch = new Orchestrator({ mergeStrategy: "manual", maxInflight: 1 });
     orch.addItem(makeWorkItem("H-1-1"));
     orch.addItem(makeWorkItem("H-1-2"));
 

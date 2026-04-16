@@ -6,7 +6,7 @@ import {
   parseSelection,
   promptItems,
   promptMergeStrategy,
-  promptSessionLimit,
+  promptMaxInflight,
   promptReviewMode,
   confirmSummary,
   buildStartupPersistenceUpdates,
@@ -274,41 +274,41 @@ describe("promptMergeStrategy", () => {
   });
 });
 
-// ── promptSessionLimit ───────────────────────────────────────────────────
+// ── promptMaxInflight ───────────────────────────────────────────────────
 
-describe("promptSessionLimit", () => {
+describe("promptMaxInflight", () => {
   it("returns entered value within range", async () => {
-    const result = await promptSessionLimit(3, makePrompt(["5"]));
+    const result = await promptMaxInflight(3, makePrompt(["5"]));
     expect(result).toBe(5);
   });
 
   it("returns default on empty input", async () => {
-    const result = await promptSessionLimit(3, makePrompt([""]));
+    const result = await promptMaxInflight(3, makePrompt([""]));
     expect(result).toBe(3);
   });
 
   it("rejects 0 and re-prompts", async () => {
-    const result = await promptSessionLimit(3, makePrompt(["0", "2"]));
+    const result = await promptMaxInflight(3, makePrompt(["0", "2"]));
     expect(result).toBe(2);
   });
 
   it("rejects negative and re-prompts", async () => {
-    const result = await promptSessionLimit(3, makePrompt(["-1", "1"]));
+    const result = await promptMaxInflight(3, makePrompt(["-1", "1"]));
     expect(result).toBe(1);
   });
 
   it("rejects > 10 and re-prompts", async () => {
-    const result = await promptSessionLimit(3, makePrompt(["11", "10"]));
+    const result = await promptMaxInflight(3, makePrompt(["11", "10"]));
     expect(result).toBe(10);
   });
 
   it("accepts boundary value 1", async () => {
-    const result = await promptSessionLimit(3, makePrompt(["1"]));
+    const result = await promptMaxInflight(3, makePrompt(["1"]));
     expect(result).toBe(1);
   });
 
   it("accepts boundary value 10", async () => {
-    const result = await promptSessionLimit(3, makePrompt(["10"]));
+    const result = await promptMaxInflight(3, makePrompt(["10"]));
     expect(result).toBe(10);
   });
 });
@@ -320,7 +320,7 @@ describe("confirmSummary", () => {
   const result: InteractiveResult = {
     itemIds: ["A-1"],
     mergeStrategy: "auto",
-    sessionLimit: 3,
+    maxInflight: 3,
     allSelected: false,
     reviewMode: "on",
     connectionAction: null,
@@ -359,7 +359,7 @@ describe("buildStartupPersistenceUpdates", () => {
   const baseResult: InteractiveResult = {
     itemIds: ["A-1"],
     mergeStrategy: "manual",
-    sessionLimit: 3,
+    maxInflight: 3,
     allSelected: false,
     reviewMode: "on",
     connectionAction: null,
@@ -372,22 +372,22 @@ describe("buildStartupPersistenceUpdates", () => {
       review_mode: "on",
     });
     // Session limit is only persisted when it differs from the resolved default.
-    expect(updates).not.toHaveProperty("session_limit");
+    expect(updates).not.toHaveProperty("max_inflight");
     expect(updates).not.toHaveProperty("collaboration_mode");
   });
 
-  it("only persists session_limit when it differs from the resolved default", () => {
+  it("only persists max_inflight when it differs from the resolved default", () => {
     // Same session limit as default -> not persisted.
     const sameAsDefault = buildStartupPersistenceUpdates(baseResult, {
-      defaultSessionLimit: 3,
+      defaultMaxInflight: 3,
     });
-    expect(sameAsDefault).not.toHaveProperty("session_limit");
+    expect(sameAsDefault).not.toHaveProperty("max_inflight");
 
     // Different session limit -> persisted.
     const changed = buildStartupPersistenceUpdates(baseResult, {
-      defaultSessionLimit: 2,
+      defaultMaxInflight: 2,
     });
-    expect(changed).toMatchObject({ session_limit: 3 });
+    expect(changed).toMatchObject({ max_inflight: 3 });
   });
 
   it("skips persistence for settings that match the resolved defaults", () => {
@@ -397,12 +397,12 @@ describe("buildStartupPersistenceUpdates", () => {
         reviewMode: "on",
         collaborationMode: "local",
       },
-      defaultSessionLimit: 3,
+      defaultMaxInflight: 3,
     });
     expect(updates).not.toHaveProperty("merge_strategy");
     expect(updates).not.toHaveProperty("review_mode");
     expect(updates).not.toHaveProperty("collaboration_mode");
-    expect(updates).not.toHaveProperty("session_limit");
+    expect(updates).not.toHaveProperty("max_inflight");
   });
 
   it("persists multiple selected tools via ai_tools", () => {
@@ -448,7 +448,7 @@ describe("runInteractiveFlow", () => {
     expect(result).not.toBeNull();
     expect(result!.itemIds).toEqual(["A-1", "B-2"]);
     expect(result!.mergeStrategy).toBe("manual");
-    expect(result!.sessionLimit).toBe(3);
+    expect(result!.maxInflight).toBe(3);
     expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toBeNull();
     expect(result!.allSelected).toBe(true);
@@ -477,7 +477,7 @@ describe("runInteractiveFlow", () => {
     const result = await runInteractiveFlow(items, 7, { prompt, useLegacyPrompts: true });
 
     expect(result).not.toBeNull();
-    expect(result!.sessionLimit).toBe(7);
+    expect(result!.maxInflight).toBe(7);
   });
 
   it("always returns manual merge strategy", async () => {
@@ -520,7 +520,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.allSelected).toBe(false);
     expect(result!.futureOnly).toBe(true);
     expect(result!.mergeStrategy).toBe("manual");
-    expect(result!.sessionLimit).toBe(3);
+    expect(result!.maxInflight).toBe(3);
   });
 
   it("uses persisted startup defaults in the TUI path", async () => {
@@ -541,7 +541,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.mergeStrategy).toBe("auto");
     expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toBeNull();
-    expect(result!.sessionLimit).toBe(6);
+    expect(result!.maxInflight).toBe(6);
   });
 
   it("returns null when the empty-queue TUI path is cancelled", async () => {

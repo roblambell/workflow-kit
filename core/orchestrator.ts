@@ -136,12 +136,12 @@ export class Orchestrator {
 
   /**
    * Change the configured session limit at runtime.
-   * Updates config.sessionLimit so slot calculations use the new value immediately.
+   * Updates config.maxInflight so slot calculations use the new value immediately.
    * Minimum 1.
    */
-  setSessionLimit(limit: number): void {
+  setMaxInflight(limit: number): void {
     const clamped = Math.max(1, Math.floor(limit));
-    (this.config as { sessionLimit: number }).sessionLimit = clamped;
+    (this.config as { maxInflight: number }).maxInflight = clamped;
   }
 
   /**
@@ -233,15 +233,15 @@ export class Orchestrator {
   }
 
   /** Count of items with active worker sessions (counts toward limit). Items waiting for external CI with no local worker don't consume a session slot. When an item is parked, its workspace is closed (clearing workspaceRef), which naturally frees the slot. */
-  get activeSessionCount(): number {
+  get activeItemCount(): number {
     return this.getAllItems().filter((item) =>
       !!(item.workspaceRef || item.reviewWorkspaceRef || item.rebaserWorkspaceRef || item.fixForwardWorkspaceRef),
     ).length;
   }
 
-  /** How many more items can be launched without exceeding config.sessionLimit. */
-  get availableSessionSlots(): number {
-    return Math.max(0, this.config.sessionLimit - this.activeSessionCount);
+  /** How many more items can be launched without exceeding config.maxInflight. */
+  get availableInflightSlots(): number {
+    return Math.max(0, this.config.maxInflight - this.activeItemCount);
   }
 
   /**
@@ -522,7 +522,7 @@ export class Orchestrator {
     }
 
     this.transition(item, "merged", snap?.eventTime);
-    // Clear workspace ref so the session slot is freed immediately (activeSessionCount
+    // Clear workspace ref so the session slot is freed immediately (activeItemCount
     // is workspace-based). The clean action still runs to close the actual workspace.
     item.workspaceRef = undefined;
     const actions: Action[] = [{ type: "clean", itemId: item.id }];
@@ -921,7 +921,7 @@ export class Orchestrator {
       item.notAliveCount = 0;
       item.lastCommitTime = undefined;
       // Stash the workspace ref for executeRetry to close, then clear it so
-      // the session slot is freed immediately (activeSessionCount is workspace-based).
+      // the session slot is freed immediately (activeItemCount is workspace-based).
       item.pendingRetryWorkspaceRef = item.workspaceRef;
       item.workspaceRef = undefined;
       this.transition(item, "ready");
@@ -2242,7 +2242,7 @@ export class Orchestrator {
   private launchReadyItems(): Action[] {
     const actions: Action[] = [];
     const readyItems = this.getItemsByState("ready");
-    const slotsAvailable = this.availableSessionSlots;
+    const slotsAvailable = this.availableInflightSlots;
 
     for (let i = 0; i < Math.min(readyItems.length, slotsAvailable); i++) {
       const item = readyItems[i]!;

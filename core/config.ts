@@ -486,7 +486,7 @@ function parseBuiltInAiToolOverrides(value: unknown): BuiltInAiToolOverrides | u
 export interface UserConfig {
   ai_tools?: string[];
   ai_tool_overrides?: BuiltInAiToolOverrides;
-  session_limit?: number;
+  max_inflight?: number;
   tmux_layout?: TmuxLayoutMode;
   merge_strategy?: PersistedMergeStrategy;
   review_mode?: PersistedReviewMode;
@@ -522,8 +522,17 @@ export function loadUserConfig(homeOverride?: string): UserConfig {
     if (aiToolOverrides) {
       result.ai_tool_overrides = aiToolOverrides;
     }
-    if (typeof parsed.session_limit === "number" && Number.isFinite(parsed.session_limit) && parsed.session_limit >= 1) {
-      result.session_limit = Math.floor(parsed.session_limit);
+    if (typeof parsed.max_inflight === "number" && Number.isFinite(parsed.max_inflight) && parsed.max_inflight >= 1) {
+      result.max_inflight = Math.floor(parsed.max_inflight);
+    } else if (
+      // Deprecated alias: older configs used `session_limit`. Read it as
+      // `max_inflight` when the new key is absent so existing files keep working.
+      // The next saveUserConfig() will persist only `max_inflight`.
+      typeof parsed.session_limit === "number"
+      && Number.isFinite(parsed.session_limit)
+      && parsed.session_limit >= 1
+    ) {
+      result.max_inflight = Math.floor(parsed.session_limit);
     }
     if (isTmuxLayoutMode(parsed.tmux_layout)) {
       result.tmux_layout = parsed.tmux_layout;
@@ -582,6 +591,11 @@ export function saveUserConfig(
   }
 
   const merged = { ...existing };
+  // Drop the deprecated `session_limit` alias on any write so it doesn't linger
+  // in the persisted JSON once the new `max_inflight` key is in use.
+  if ("session_limit" in merged) {
+    delete merged.session_limit;
+  }
   for (const [key, value] of Object.entries(updates)) {
     if (value === undefined) {
       continue;
@@ -605,7 +619,7 @@ export function saveUserConfig(
       }
       continue;
     }
-    if (key === "session_limit") {
+    if (key === "max_inflight") {
       if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
         merged[key] = Math.floor(value);
       }

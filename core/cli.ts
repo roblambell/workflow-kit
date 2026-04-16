@@ -135,13 +135,13 @@ if (allAreIds) {
     die(`Work item queue not found at ${workDir}`);
   }
 
-  // Parse --session-limit flag from args
-  let sessionLimit: number | undefined;
-  const sessionIdx = args.indexOf("--session-limit");
+  // Parse --max-inflight flag from args
+  let maxInflight: number | undefined;
+  const sessionIdx = args.indexOf("--max-inflight");
   const sessionArg = sessionIdx !== -1 ? args[sessionIdx + 1] : undefined;
   if (sessionArg) {
-    sessionLimit = parseInt(sessionArg, 10);
-    if (isNaN(sessionLimit) || sessionLimit < 1) sessionLimit = undefined;
+    maxInflight = parseInt(sessionArg, 10);
+    if (isNaN(maxInflight) || maxInflight < 1) maxInflight = undefined;
   }
 
   // Parse --tool flag from args
@@ -151,7 +151,7 @@ if (allAreIds) {
     toolOverride = args[toolIdx + 1];
   }
 
-  await cmdRunItems(allPositional, workDir, worktreeDir, projectRoot, undefined, sessionLimit, toolOverride);
+  await cmdRunItems(allPositional, workDir, worktreeDir, projectRoot, undefined, maxInflight, toolOverride);
   process.exit(0);
 }
 

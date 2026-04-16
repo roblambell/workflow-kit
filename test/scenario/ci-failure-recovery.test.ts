@@ -24,7 +24,7 @@ describe("scenario: CI failure recovery", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 3,
@@ -101,7 +101,7 @@ describe("scenario: CI failure recovery", () => {
 
     const maxCiRetries = 2;
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries,
@@ -169,7 +169,7 @@ describe("scenario: CI failure recovery", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 3,
@@ -229,7 +229,7 @@ describe("scenario: CI failure recovery", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 10, // High limit so we don't hit stuck
@@ -293,7 +293,7 @@ describe("scenario: CI failure recovery", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 3,
@@ -345,7 +345,7 @@ describe("scenario: CI failure recovery", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 10,
@@ -424,7 +424,7 @@ describe("scenario: CI failure recovery", () => {
 
   it("unresponsive worker detected via ack timeout and respawned", () => {
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 10,
@@ -472,7 +472,7 @@ describe("scenario: CI failure recovery", () => {
 
   it("worker that heartbeats after notification is NOT respawned (Layer 2 negative)", () => {
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       maxCiRetries: 10,

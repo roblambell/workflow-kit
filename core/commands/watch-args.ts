@@ -8,7 +8,7 @@ import { warn } from "../output.ts";
 export interface ParsedWatchArgs {
   itemIds: string[];
   mergeStrategy: MergeStrategy;
-  sessionLimitOverride?: number;
+  maxInflightOverride?: number;
   pollIntervalOverride?: number;
   frictionDir?: string;
   daemonMode: boolean;
@@ -17,7 +17,7 @@ export interface ParsedWatchArgs {
   clickupListId?: string;
   remoteFlag: boolean;
   reviewAutoFix?: "off" | "direct" | "pr";
-  reviewSessionLimit?: number;
+  reviewMaxInflight?: number;
   fixForward: boolean;
   skipReview: boolean;
   watchMode: boolean;
@@ -34,7 +34,7 @@ export interface ParsedWatchArgs {
 export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   const itemIds: string[] = [];
   let mergeStrategy: MergeStrategy = "manual";
-  let sessionLimitOverride: number | undefined;
+  let maxInflightOverride: number | undefined;
   let pollIntervalOverride: number | undefined;
   let frictionDir: string | undefined;
   let daemonMode = false;
@@ -43,7 +43,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   let clickupListId: string | undefined;
   let remoteFlag = false;
   let reviewAutoFix: "off" | "direct" | "pr" | undefined;
-  let reviewSessionLimit: number | undefined;
+  let reviewMaxInflight: number | undefined;
   let fixForward = true;
   let skipReview = false;
   let watchMode = false;
@@ -81,8 +81,9 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         i += 2;
         break;
       }
-      case "--session-limit":
-        sessionLimitOverride = parseInt(args[i + 1] ?? "4", 10);
+      case "--max-inflight":
+      case "--session-limit": // deprecated alias -- accepted silently for backward compat
+        maxInflightOverride = parseInt(args[i + 1] ?? "4", 10);
         i += 2;
         break;
       case "--poll-interval":
@@ -127,8 +128,9 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         // for backward compatibility with forked daemon args and user scripts.
         i += 1;
         break;
-      case "--review-session-limit":
-        reviewSessionLimit = parseInt(args[i + 1] ?? "0", 10);
+      case "--review-max-inflight":
+      case "--review-session-limit": // deprecated alias -- accepted silently for backward compat
+        reviewMaxInflight = parseInt(args[i + 1] ?? "0", 10);
         i += 2;
         break;
       case "--no-fix-forward":
@@ -199,9 +201,9 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   }
 
   return {
-    itemIds, mergeStrategy, sessionLimitOverride, pollIntervalOverride, frictionDir,
+    itemIds, mergeStrategy, maxInflightOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, isInteractiveEngineChild, clickupListId, remoteFlag,
-    reviewAutoFix, reviewSessionLimit,
+    reviewAutoFix, reviewMaxInflight,
     fixForward, skipReview, watchMode, futureOnlyStartup, noWatch, watchIntervalSecs,
     jsonFlag, skipPreflight, connectMode,
     bypassEnabled, toolOverride,

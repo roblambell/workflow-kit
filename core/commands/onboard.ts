@@ -42,7 +42,7 @@ import type { AiToolProfile } from "../ai-tools.ts";
 import { detectInstalledAITools } from "../tool-select.ts";
 import { applyGithubToken } from "../gh.ts";
 import { ensureMuxInteractiveOrDie } from "../mux.ts";
-import { computeDefaultSessionLimit } from "./orchestrate.ts";
+import { computeDefaultMaxInflight } from "./orchestrate.ts";
 import { runUpdate, type UpdateRunResult } from "./update.ts";
 import {
   getPassiveUpdateStartupState,
@@ -117,7 +117,7 @@ export interface NoArgsDeps extends OnboardDeps {
   ) => Promise<StartupItemsRefreshResult>;
   isDaemonRunning?: (projectRoot: string) => number | null;
   ensureMux?: (args: string[]) => Promise<void>;
-  runInteractiveFlow?: (todos: WorkItem[], defaultSessionLimit: number, deps?: InteractiveDeps) => Promise<InteractiveResult | null>;
+  runInteractiveFlow?: (todos: WorkItem[], defaultMaxInflight: number, deps?: InteractiveDeps) => Promise<InteractiveResult | null>;
   runWatch?: (args: string[], workDir: string, worktreeDir: string, projectRoot: string) => Promise<void>;
   runStatusWatch?: (worktreeDir: string, projectRoot: string) => Promise<void>;
   printHelp?: () => void;
@@ -547,8 +547,8 @@ export async function cmdNoArgs(
   const defaultReviewMode = defaultSettings.reviewMode;
   const installedTools = detectInstalledAITools();
   const doInteractive = deps.runInteractiveFlow ?? runInteractiveFlow;
-  const defaultSessionLimit = userConfig.session_limit ?? computeDefaultSessionLimit();
-  const result = await doInteractive(todos, defaultSessionLimit, {
+  const defaultMaxInflight = userConfig.max_inflight ?? computeDefaultMaxInflight();
+  const result = await doInteractive(todos, defaultMaxInflight, {
     defaultReviewMode,
     defaultSettings,
     installedTools,
@@ -565,7 +565,7 @@ export async function cmdNoArgs(
       ...buildStartupPersistenceUpdates(result, {
         savedToolIds: userConfig.ai_tools,
         defaults: defaultSettings,
-        defaultSessionLimit,
+        defaultMaxInflight,
       }),
     });
   } catch {
@@ -575,7 +575,7 @@ export async function cmdNoArgs(
   // Build watch args from interactive result
   const watchArgs = [
     "--merge-strategy", result.mergeStrategy,
-    "--session-limit", String(result.sessionLimit),
+    "--max-inflight", String(result.maxInflight),
   ];
 
   if (result.itemIds.length > 0) {
@@ -594,7 +594,7 @@ export async function cmdNoArgs(
 
   // Review mode → CLI flags
   if (result.reviewMode === "off") {
-    watchArgs.push("--review-session-limit", "0");
+    watchArgs.push("--review-max-inflight", "0");
   }
   // "on" → default behavior, no extra flag
 

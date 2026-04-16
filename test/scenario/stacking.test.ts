@@ -23,7 +23,7 @@ describe("scenario: stacking", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: true,
@@ -81,10 +81,10 @@ describe("scenario: stacking", () => {
     const fakeGh = new FakeGitHub();
     const fakeMux = new FakeMux();
 
-    // sessionLimit = 1: B gets promoted to ready but can't launch (sessions full with A).
+    // maxInflight = 1: B gets promoted to ready but can't launch (sessions full with A).
     // maxCiRetries = 0: A goes stuck when CI failure is re-evaluated next cycle.
     const orch = new Orchestrator({
-      sessionLimit: 1,
+      maxInflight: 1,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: true,
@@ -143,7 +143,7 @@ describe("scenario: stacking", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: true,
@@ -208,7 +208,7 @@ describe("scenario: stacking", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "auto",
       bypassEnabled: false,
       enableStacking: true,
@@ -257,7 +257,7 @@ describe("scenario: stacking", () => {
     const fakeMux = new FakeMux();
 
     const orch = new Orchestrator({
-      sessionLimit: 5,
+      maxInflight: 5,
       mergeStrategy: "manual",
       bypassEnabled: false,
       enableStacking: true,

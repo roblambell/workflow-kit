@@ -595,7 +595,7 @@ export function executeMerge(
   // (getMergeCommitSha, audit trail) throw.
   orch.transition(item, "merged");
   // Close the workspace and free the session slot immediately after merge.
-  // activeSessionCount is workspace-based, so clearing workspaceRef is
+  // activeItemCount is workspace-based, so clearing workspaceRef is
   // required to let queued items launch in the same cycle.
   if (item.workspaceRef) {
     deps.mux.closeWorkspace(item.workspaceRef, item.id);
@@ -839,7 +839,7 @@ export function executeClean(
     ? deps.mux.closeWorkspace(item.workspaceRef, item.id)
     : null; // null = not attempted (no workspace to close)
   // Clear workspace ref after closing so the session slot is freed
-  // (activeSessionCount is workspace-based). Also clears the ref for
+  // (activeItemCount is workspace-based). Also clears the ref for
   // items that bypassed executeMerge (e.g., interceptExternalMerge path).
   if (item.workspaceRef) item.workspaceRef = undefined;
 

@@ -37,7 +37,7 @@ export type PromptFn = (question: string) => Promise<string>;
 export interface InteractiveResult {
   itemIds: string[];
   mergeStrategy: MergeStrategy;
-  sessionLimit: number;
+  maxInflight: number;
   allSelected: boolean;
   /** True when starting with no current items and watching future work only. */
   futureOnly?: boolean;
@@ -74,15 +74,15 @@ export interface StartupPersistenceOptions {
   savedToolIds?: string[];
   defaults?: TuiSettingsDefaults;
   /**
-   * Resolved default session limit (from user config or computeDefaultSessionLimit).
+   * Resolved default session limit (from user config or computeDefaultMaxInflight).
    *
-   * `session_limit` is persisted only when `result.sessionLimit` differs from this
-   * value. Callers MUST pass this option whenever they want session-limit edits
-   * to be saved -- omitting it causes `session_limit` to be silently skipped, even
+   * `max_inflight` is persisted only when `result.maxInflight` differs from this
+   * value. Callers MUST pass this option whenever they want max-inflight edits
+   * to be saved -- omitting it causes `max_inflight` to be silently skipped, even
    * if the user explicitly changed it. This keeps pressing Enter on startup from
    * cementing an untouched default.
    */
-  defaultSessionLimit?: number;
+  defaultMaxInflight?: number;
 }
 
 // ── Default prompt using readline ────────────────────────────────────
@@ -299,7 +299,7 @@ export async function promptMergeStrategy(
 
 // ── Session limit prompt ─────────────────────────────────────────────
 
-export async function promptSessionLimit(
+export async function promptMaxInflight(
   defaultLimit: number,
   prompt: PromptFn,
 ): Promise<number> {
@@ -385,7 +385,7 @@ export async function confirmSummary(
     }
   }
   console.log(`  ${BOLD}Merge strategy:${RESET}  ${result.mergeStrategy}`);
-  console.log(`  ${BOLD}Session limit:${RESET}   ${result.sessionLimit}`);
+  console.log(`  ${BOLD}Session limit:${RESET}   ${result.maxInflight}`);
   console.log(`  ${BOLD}AI reviews:${RESET}      ${result.reviewMode}`);
   if (result.aiTools && result.aiTools.length > 0) {
     const toolLabel = result.aiTools.join(", ") + (result.aiTools.length > 1 ? " (round-robin)" : "");
@@ -427,11 +427,11 @@ export function buildStartupPersistenceUpdates(
     updates.review_mode = result.reviewMode;
   }
   if (
-    result.sessionLimit !== undefined &&
-    options.defaultSessionLimit !== undefined &&
-    result.sessionLimit !== options.defaultSessionLimit
+    result.maxInflight !== undefined &&
+    options.defaultMaxInflight !== undefined &&
+    result.maxInflight !== options.defaultMaxInflight
   ) {
-    updates.session_limit = result.sessionLimit;
+    updates.max_inflight = result.maxInflight;
   }
   if (aiTools) {
     updates.ai_tools = aiTools;
@@ -448,7 +448,7 @@ export function buildStartupPersistenceUpdates(
  */
 export async function runTuiSelectionFlow(
   todos: WorkItem[],
-  defaultSessionLimit: number,
+  defaultMaxInflight: number,
   deps: InteractiveDeps = {},
 ): Promise<InteractiveResult | null> {
   const io = deps.widgetIO ?? createProcessIO();
@@ -463,7 +463,7 @@ export async function runTuiSelectionFlow(
   }
 
   try {
-    const result = await runSelectionScreen(io, todos, defaultSessionLimit, {
+    const result = await runSelectionScreen(io, todos, defaultMaxInflight, {
       defaultReviewMode: deps.defaultReviewMode,
       defaultSettings: deps.defaultSettings,
       installedTools: deps.installedTools,
@@ -476,7 +476,7 @@ export async function runTuiSelectionFlow(
       return {
         itemIds: result.itemIds,
         mergeStrategy: result.mergeStrategy,
-        sessionLimit: result.sessionLimit,
+        maxInflight: result.maxInflight,
       allSelected: result.allSelected,
       futureOnly: result.futureOnly,
       reviewMode: result.reviewMode,
@@ -503,18 +503,18 @@ export async function runTuiSelectionFlow(
  */
 export async function runInteractiveFlow(
   todos: WorkItem[],
-  defaultSessionLimit: number,
+  defaultMaxInflight: number,
   deps: InteractiveDeps = {},
 ): Promise<InteractiveResult | null> {
   const isTTY = deps.isTTY ?? (process.stdin.isTTY === true);
 
   // Use TUI widgets unless explicitly disabled or not a TTY
   if (!deps.useLegacyPrompts && (isTTY || deps.widgetIO)) {
-    return runTuiSelectionFlow(todos, defaultSessionLimit, deps);
+    return runTuiSelectionFlow(todos, defaultMaxInflight, deps);
   }
 
   // Legacy readline fallback
-  return runReadlineFlow(todos, defaultSessionLimit, deps);
+  return runReadlineFlow(todos, defaultMaxInflight, deps);
 }
 
 /**
@@ -523,7 +523,7 @@ export async function runInteractiveFlow(
  */
 async function runReadlineFlow(
   todos: WorkItem[],
-  defaultSessionLimit: number,
+  defaultMaxInflight: number,
   deps: InteractiveDeps = {},
 ): Promise<InteractiveResult | null> {
   const prompt = deps.prompt ?? defaultPrompt;
@@ -534,7 +534,7 @@ async function runReadlineFlow(
 
   // Startup defaults -- merge/session are not asked here, reviews default to on.
   const mergeStrategy: MergeStrategy = "manual";
-  const sessionLimit = defaultSessionLimit;
+  const maxInflight = defaultMaxInflight;
   const reviewMode: ReviewMode = "on";
 
   // Step 2: AI tool (conditional, multi-select)
@@ -603,7 +603,7 @@ async function runReadlineFlow(
   const result: InteractiveResult = {
     itemIds: itemResult.ids,
     mergeStrategy,
-    sessionLimit,
+    maxInflight,
     allSelected: itemResult.allSelected,
     futureOnly: false,
     reviewMode,

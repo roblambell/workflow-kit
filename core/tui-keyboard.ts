@@ -119,9 +119,9 @@ export interface TuiState {
   /** Pending paused state awaiting engine acknowledgement. */
   pendingPaused?: boolean;
   /** Engine-confirmed session limit from the latest snapshot. */
-  sessionLimit?: number;
+  maxInflight?: number;
   /** Pending session limit request awaiting engine acknowledgement. */
-  pendingSessionLimit?: number;
+  pendingMaxInflight?: number;
   /** Current merge strategy (per-daemon, cycled via Shift+Tab). */
   mergeStrategy: MergeStrategy;
   /** Pending merge strategy selection waiting for debounce to settle. */
@@ -193,7 +193,7 @@ export interface TuiState {
   /** Called when the user cycles panel mode via Tab (for preference persistence). */
   onPanelModeChange?: (mode: PanelMode) => void;
   /** Called when the user presses +/- to adjust session limit. Receives the delta (+1 or -1). */
-  onSessionLimitChange?: (delta: number) => void;
+  onMaxInflightChange?: (delta: number) => void;
   /** Called when the review mode changes from the controls overlay. */
   onReviewChange?: (mode: ReviewMode) => void;
   /** Called when the collaboration mode changes from the controls overlay. */
@@ -221,7 +221,7 @@ export interface TuiState {
 export interface TuiRuntimeSnapshot {
   paused: boolean;
   mergeStrategy: MergeStrategy;
-  sessionLimit: number;
+  maxInflight: number;
   reviewMode: ReviewMode;
   collaborationMode: CollaborationMode;
 }
@@ -237,7 +237,7 @@ export function applyRuntimeSnapshotToTuiState(
   runtime: TuiRuntimeSnapshot,
 ): void {
   tuiState.paused = runtime.paused;
-  tuiState.sessionLimit = runtime.sessionLimit;
+  tuiState.maxInflight = runtime.maxInflight;
   tuiState.mergeStrategy = runtime.mergeStrategy;
   tuiState.viewOptions.mergeStrategy = runtime.mergeStrategy;
   tuiState.reviewMode = runtime.reviewMode;
@@ -257,8 +257,8 @@ export function applyRuntimeSnapshotToTuiState(
   if (tuiState.pendingCollaborationMode === runtime.collaborationMode) {
     tuiState.pendingCollaborationMode = undefined;
   }
-  if (tuiState.pendingSessionLimit === runtime.sessionLimit) {
-    tuiState.pendingSessionLimit = undefined;
+  if (tuiState.pendingMaxInflight === runtime.maxInflight) {
+    tuiState.pendingMaxInflight = undefined;
   }
   if (tuiState.pendingPaused === runtime.paused) {
     tuiState.pendingPaused = undefined;
@@ -579,10 +579,10 @@ export function setupKeyboardShortcuts(
     clampControlsRowIndex();
     const row = TUI_SETTINGS_ROWS[tuiState.controlsRowIndex ?? 0] ?? TUI_SETTINGS_ROWS[0]!;
     if (row.kind === "number") {
-      const baseLimit = tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? 1;
+      const baseLimit = tuiState.pendingMaxInflight ?? tuiState.maxInflight ?? 1;
       const nextLimit = Math.max(1, baseLimit + delta);
-      tuiState.pendingSessionLimit = nextLimit === (tuiState.sessionLimit ?? 1) ? undefined : nextLimit;
-      tuiState.onSessionLimitChange?.(delta);
+      tuiState.pendingMaxInflight = nextLimit === (tuiState.maxInflight ?? 1) ? undefined : nextLimit;
+      tuiState.onMaxInflightChange?.(delta);
       return;
     }
 
@@ -936,18 +936,18 @@ export function setupKeyboardShortcuts(
       }
       case "+":
       case "=": { // + (or = without shift) -- increase session limit
-        const baseLimit = tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? 1;
+        const baseLimit = tuiState.pendingMaxInflight ?? tuiState.maxInflight ?? 1;
         const nextLimit = Math.max(1, baseLimit + 1);
-        tuiState.pendingSessionLimit = nextLimit === (tuiState.sessionLimit ?? 1) ? undefined : nextLimit;
-        tuiState.onSessionLimitChange?.(1);
+        tuiState.pendingMaxInflight = nextLimit === (tuiState.maxInflight ?? 1) ? undefined : nextLimit;
+        tuiState.onMaxInflightChange?.(1);
         break;
       }
       case "-":
       case "_": { // - (or _ with shift) -- decrease session limit
-        const baseLimit = tuiState.pendingSessionLimit ?? tuiState.sessionLimit ?? 1;
+        const baseLimit = tuiState.pendingMaxInflight ?? tuiState.maxInflight ?? 1;
         const nextLimit = Math.max(1, baseLimit - 1);
-        tuiState.pendingSessionLimit = nextLimit === (tuiState.sessionLimit ?? 1) ? undefined : nextLimit;
-        tuiState.onSessionLimitChange?.(-1);
+        tuiState.pendingMaxInflight = nextLimit === (tuiState.maxInflight ?? 1) ? undefined : nextLimit;
+        tuiState.onMaxInflightChange?.(-1);
         break;
       }
       default:
