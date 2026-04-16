@@ -500,12 +500,36 @@ describe("runInteractiveFlow", () => {
     expect(result!.reviewMode).toBe("on");
   });
 
-  it("readline fallback always returns local (null) connectionAction", async () => {
+  it("readline fallback returns local (null) connectionAction when hasBrokerSecret is undefined", async () => {
     const prompt = makePrompt(["1", ""]);
     const result = await runInteractiveFlow(items, 3, { prompt, useLegacyPrompts: true });
 
     expect(result).not.toBeNull();
     expect(result!.connectionAction).toBeNull();
+  });
+
+  it("readline fallback returns local (null) connectionAction when hasBrokerSecret is false", async () => {
+    const prompt = makePrompt(["1", ""]);
+    const result = await runInteractiveFlow(items, 3, {
+      prompt,
+      useLegacyPrompts: true,
+      hasBrokerSecret: false,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toBeNull();
+  });
+
+  it("readline fallback returns { type: 'connect' } connectionAction when hasBrokerSecret is true", async () => {
+    const prompt = makePrompt(["1", ""]);
+    const result = await runInteractiveFlow(items, 3, {
+      prompt,
+      useLegacyPrompts: true,
+      hasBrokerSecret: true,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toEqual({ type: "connect" });
   });
 
   it("returns an explicit future-only result in the empty-queue TUI path", async () => {
@@ -542,6 +566,34 @@ describe("runInteractiveFlow", () => {
     expect(result!.reviewMode).toBe("on");
     expect(result!.connectionAction).toBeNull();
     expect(result!.maxInflight).toBe(6);
+  });
+
+  it("TUI path returns { type: 'connect' } connectionAction when hasBrokerSecret is true", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+
+    const resultPromise = runInteractiveFlow(items, 3, {
+      widgetIO: io,
+      hasBrokerSecret: true,
+    });
+    sendKeyBatches(["\r"], ["\r"]);
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toEqual({ type: "connect" });
+  });
+
+  it("TUI path returns null connectionAction when hasBrokerSecret is false", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+
+    const resultPromise = runInteractiveFlow(items, 3, {
+      widgetIO: io,
+      hasBrokerSecret: false,
+    });
+    sendKeyBatches(["\r"], ["\r"]);
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toBeNull();
   });
 
   it("returns null when the empty-queue TUI path is cancelled", async () => {

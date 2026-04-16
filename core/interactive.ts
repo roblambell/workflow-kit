@@ -68,6 +68,12 @@ export interface InteractiveDeps {
   savedToolIds?: string[];
   /** Project root for agent file validation on the tool selection screen. */
   projectRoot?: string;
+  /**
+   * True when the merged project config has a `broker_secret`. Drives the
+   * default `connectionAction` -- when set, the startup flow returns
+   * `{ type: "connect" }`; when unset, it returns `null` (local-only).
+   */
+  hasBrokerSecret?: boolean;
 }
 
 export interface StartupPersistenceOptions {
@@ -470,6 +476,7 @@ export async function runTuiSelectionFlow(
       refreshItems: deps.refreshStartupItems,
       savedToolIds: deps.savedToolIds,
       projectRoot: deps.projectRoot,
+      hasBrokerSecret: deps.hasBrokerSecret,
     });
     if (!result || result.cancelled) return null;
 
@@ -600,6 +607,12 @@ async function runReadlineFlow(
   }
 
   // Step 3: Summary + confirmation
+  // Default the connection action from the project config: when a broker
+  // secret is present, opt into auto-connect; otherwise stay local.
+  const connectionAction: ConnectionAction | null = deps.hasBrokerSecret
+    ? { type: "connect" }
+    : null;
+
   const result: InteractiveResult = {
     itemIds: itemResult.ids,
     mergeStrategy,
@@ -607,7 +620,7 @@ async function runReadlineFlow(
     allSelected: itemResult.allSelected,
     futureOnly: false,
     reviewMode,
-    connectionAction: null,
+    connectionAction,
     aiTool,
     aiTools,
   };

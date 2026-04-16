@@ -1528,6 +1528,7 @@ export async function cmdOrchestrate(
       installedTools,
       savedToolIds: interactiveStartupConfig.savedToolIds,
       projectRoot,
+      hasBrokerSecret: Boolean(mergedConfig.broker_secret),
     });
     if (!result) {
       process.exit(0);

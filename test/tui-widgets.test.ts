@@ -1083,6 +1083,42 @@ describe("runSelectionScreen", () => {
     expect(result!.cancelled).toBe(false);
   });
 
+  it("returns { type: 'connect' } connectionAction when hasBrokerSecret is true", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+    const items = [makeWorkItem("A-1", "First task", "high")];
+
+    const resultPromise = runSelectionScreen(io, items, 4, {
+      hasBrokerSecret: true,
+    });
+
+    sendKeyBatches(
+      ["\r"], // Confirm item selection
+      ["\r"], // Confirm summary
+    );
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toEqual({ type: "connect" });
+  });
+
+  it("returns null connectionAction when hasBrokerSecret is false", async () => {
+    const { io, sendKeyBatches } = createMockIO();
+    const items = [makeWorkItem("A-1", "First task", "high")];
+
+    const resultPromise = runSelectionScreen(io, items, 4, {
+      hasBrokerSecret: false,
+    });
+
+    sendKeyBatches(
+      ["\r"], // Confirm item selection
+      ["\r"], // Confirm summary
+    );
+
+    const result = await resultPromise;
+    expect(result).not.toBeNull();
+    expect(result!.connectionAction).toBeNull();
+  });
+
   it("swaps to refreshed items in place after the first paint", async () => {
     const { io, sendKeyBatches, getOutput } = createMockIO();
     const refresh = createDeferred<StartupItemsRefreshResult>();

@@ -1022,6 +1022,12 @@ export async function runSelectionScreen(
     savedToolIds?: string[];
     /** Project root for agent file validation. */
     projectRoot?: string;
+    /**
+     * True when the merged project config has a `broker_secret`. Drives the
+     * default `connectionAction` -- when set, the screen returns
+     * `{ type: "connect" }`; when unset, it returns `null` (local-only).
+     */
+    hasBrokerSecret?: boolean;
   } = {},
 ): Promise<SelectionScreenResult | null> {
   const resolvedDefaults: TuiSettingsDefaults = {
@@ -1168,6 +1174,12 @@ export async function runSelectionScreen(
     return null;
   }
 
+  // Default the connection action from the project config: when a broker
+  // secret is present, opt into auto-connect; otherwise stay local.
+  const connectionAction: ConnectionAction | null = opts.hasBrokerSecret
+    ? { type: "connect" }
+    : null;
+
   return {
     itemIds: selectedItemIds,
     allSelected: itemResult.allSelected,
@@ -1175,7 +1187,7 @@ export async function runSelectionScreen(
     mergeStrategy,
     maxInflight,
     reviewMode,
-    connectionAction: null,
+    connectionAction,
     cancelled: false,
     aiTool,
     aiTools,
