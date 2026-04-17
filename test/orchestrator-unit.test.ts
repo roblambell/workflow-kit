@@ -3710,6 +3710,150 @@ describe("executeMerge getPrBaseAndState behavior", () => {
   });
 });
 
+describe("executeMerge stacked-PR auto-merge gate (H-ORCH-11)", () => {
+  function makeMinimalDeps(overrides: DeepPartial<OrchestratorDeps> = {}): OrchestratorDeps {
+    return {
+      git: {
+        fetchOrigin: () => {},
+        ffMerge: () => {},
+        ...overrides?.git,
+      },
+      gh: {
+        prMerge: () => true,
+        prComment: () => true,
+        ...overrides?.gh,
+      },
+      mux: {
+        sendMessage: () => true,
+        closeWorkspace: () => true,
+        ...overrides?.mux,
+      },
+      workers: {
+        launchSingleItem: () => ({ worktreePath: "/tmp/wt", workspaceRef: "workspace:1" }),
+        validatePickupCandidate: (item) => ({
+          status: "launch",
+          targetRepo: "/tmp/proj",
+          branchName: `ninthwave/${item.id}`,
+        }),
+        ...overrides?.workers,
+      },
+      cleanup: {
+        cleanSingleWorktree: () => true,
+        ...overrides?.cleanup,
+      },
+      io: {
+        writeInbox: () => {},
+        ...overrides?.io,
+      },
+    };
+  }
+
+  const ctx: ExecutionContext = {
+    projectRoot: "/tmp/proj",
+    worktreeDir: "/tmp/proj/.ninthwave/.worktrees",
+    workDir: "/tmp/proj/.ninthwave/work",
+    aiTool: "claude",
+  };
+
+  it("skips prMerge when expectedBase is a ninthwave/* dependency branch", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
+    // Dep H-1-1 is still in flight -- not in a done/merged state.
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "ci-passed");
+    // Stacked child H-1-2 is in merging with baseBranch pointing at the dep.
+    orch.getItem("H-1-2")!.reviewCompleted = true;
+    orch.hydrateState("H-1-2", "merging");
+    const child = orch.getItem("H-1-2")!;
+    child.prNumber = 99;
+    child.baseBranch = "ninthwave/H-1-1";
+
+    const prMerge = vi.fn(() => true);
+    const warnings: string[] = [];
+    const deps = makeMinimalDeps({
+      gh: {
+        getPrBaseAndState: () => ({ baseBranch: "ninthwave/H-1-1", prState: "OPEN" }),
+        prMerge,
+      },
+      io: {
+        writeInbox: () => {},
+        warn: (msg) => { warnings.push(msg); },
+      },
+    });
+
+    const result = orch.executeAction({ type: "merge", itemId: "H-1-2", prNumber: 99 }, ctx, deps);
+
+    expect(prMerge).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("ninthwave/H-1-1");
+    expect(result.error).toContain("main");
+    expect(result.error).toMatch(/skipping merge while stacked|is not main/);
+    // Item should be held in a pre-merge state (ci-passed) -- not advanced to merged.
+    expect(child.state).toBe("ci-passed");
+    // Skip log should name the current and expected base.
+    expect(warnings.some((w) => w.includes("ninthwave/H-1-1") && w.includes("main"))).toBe(true);
+  });
+
+  it("merges normally once the dependency completes and GitHub retargets the PR to main", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.addItem(makeWorkItem("H-1-2", ["H-1-1"]));
+    // Dep H-1-1 has completed (merged → done is in DEP_DONE_STATES).
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "merged");
+    // Child H-1-2 is in merging. It still carries baseBranch from when it
+    // launched stacked, but resolveExpectedPrBase will return the default
+    // branch because the dep is done.
+    orch.getItem("H-1-2")!.reviewCompleted = true;
+    orch.hydrateState("H-1-2", "merging");
+    const child = orch.getItem("H-1-2")!;
+    child.prNumber = 99;
+    child.baseBranch = "ninthwave/H-1-1";
+
+    const prMerge = vi.fn(() => true);
+    // GitHub has retargeted the PR to main now that the dep merged.
+    const deps = makeMinimalDeps({
+      gh: {
+        getPrBaseAndState: () => ({ baseBranch: "main", prState: "OPEN" }),
+        prMerge,
+      },
+    });
+
+    const result = orch.executeAction({ type: "merge", itemId: "H-1-2", prNumber: 99 }, ctx, deps);
+
+    expect(prMerge).toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(child.state).toBe("merged");
+    // baseBranch should be cleared once expectedBase resolves to default.
+    expect(child.baseBranch).toBeUndefined();
+  });
+
+  it("merges normally for non-stacked PRs (no baseBranch set)", () => {
+    const orch = new Orchestrator({ mergeStrategy: "auto" });
+    orch.addItem(makeWorkItem("H-1-1"));
+    orch.getItem("H-1-1")!.reviewCompleted = true;
+    orch.hydrateState("H-1-1", "merging");
+    const item = orch.getItem("H-1-1")!;
+    item.prNumber = 42;
+    // No baseBranch -- expectedBase resolves to defaultBranch ("main").
+
+    const prMerge = vi.fn(() => true);
+    const deps = makeMinimalDeps({
+      gh: {
+        getPrBaseAndState: () => ({ baseBranch: "main", prState: "OPEN" }),
+        prMerge,
+      },
+    });
+
+    const result = orch.executeAction({ type: "merge", itemId: "H-1-1", prNumber: 42 }, ctx, deps);
+
+    expect(prMerge).toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(item.state).toBe("merged");
+  });
+});
+
 describe("executeMerge admin override", () => {
   function makeMinimalDeps(overrides: DeepPartial<OrchestratorDeps> = {}): OrchestratorDeps {
   return {

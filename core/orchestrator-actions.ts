@@ -473,6 +473,26 @@ export function executeMerge(
     item.baseBranch = expectedBase === defaultBranch ? undefined : expectedBase;
   }
 
+  // Stacked-PR auto-merge gate (H-ORCH-11):
+  // Only auto-merge when the PR targets the repository's default branch.
+  // When `expectedBase` is a `ninthwave/*` dependency branch, calling prMerge
+  // would collapse the stack into the dep branch instead of waiting for the
+  // dep to merge to main and GitHub to retarget the child PR. Hold the item
+  // in a pre-merge state so review/CI polling continues; once the dep merges
+  // and `resolveExpectedPrBase` returns `defaultBranch`, the merge will fire.
+  if (expectedBase !== defaultBranch) {
+    deps.io.warn?.(
+      `PR #${prNum} for ${item.id}: base ${expectedBase} is not the default branch (${defaultBranch}); skipping auto-merge until dependency merges`,
+    );
+    if (item.state === "merging") {
+      orch.transition(item, "ci-passed");
+    }
+    return {
+      success: false,
+      error: `PR #${prNum} base ${expectedBase} is not ${defaultBranch}; skipping merge while stacked`,
+    };
+  }
+
   // Resolve the dependency branch SHA before merge. After merge, GitHub may
   // auto-delete the branch, making the ref unresolvable. The SHA is used as
   // oldBase in rebaseOnto for stacked dependents.

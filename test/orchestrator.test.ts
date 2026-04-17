@@ -1571,6 +1571,9 @@ describe("Orchestrator", () => {
     });
 
     it("merge: preserves legitimate stacked PR bases while parent is still in flight", () => {
+      // H-ORCH-11: stacked PRs whose base is a ninthwave/* dep branch must NOT
+      // auto-merge into the dep branch. The gate skips prMerge until the dep
+      // merges and GitHub retargets the child PR to the default branch.
       const getPrBaseBranch = vi.fn(() => "ninthwave/H-1-1");
       const retargetPrBase = vi.fn(() => true);
       const prMerge = vi.fn(() => true);
@@ -1590,10 +1593,15 @@ describe("Orchestrator", () => {
         deps,
       );
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("ninthwave/H-1-1");
       expect(retargetPrBase).not.toHaveBeenCalled();
-      expect(prMerge).toHaveBeenCalledWith(defaultCtx.projectRoot, 42, { admin: undefined });
+      expect(prMerge).not.toHaveBeenCalled();
+      // baseBranch is preserved -- we still expect to merge into the dep branch
+      // once the dep completes (at which point GitHub will retarget us to main).
       expect(orch.getItem("H-1-2")!.baseBranch).toBe("ninthwave/H-1-1");
+      // Item is held in a pre-merge state so review/CI polling continues.
+      expect(orch.getItem("H-1-2")!.state).toBe("ci-passed");
     });
 
     it("merge: fails gracefully when no PR number", () => {
