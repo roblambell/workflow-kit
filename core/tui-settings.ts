@@ -34,7 +34,7 @@ export type TuiSettingsChoiceRow = Extract<TuiSettingsRow, { kind: "choice" }>;
 
 export const TUI_SETTINGS_DEFAULTS: TuiSettingsDefaults = {
   mergeStrategy: "manual",
-  reviewMode: "on",
+  reviewMode: "off",
   collaborationMode: "local",
 };
 
@@ -147,13 +147,6 @@ export const TUI_SETTINGS_ROWS = [
   },
 ] as const;
 
-function hasPersistedValue<PersistedValue extends string, RuntimeValue extends string>(
-  options: readonly ChoiceSettingOption<PersistedValue, RuntimeValue>[],
-  value: unknown,
-): value is PersistedValue {
-  return options.some((option) => option.persistable && option.persistedValue === value);
-}
-
 function getByRuntimeValue<PersistedValue extends string, RuntimeValue extends string>(
   options: readonly ChoiceSettingOption<PersistedValue, RuntimeValue>[],
   value: RuntimeValue,
@@ -163,72 +156,6 @@ function getByRuntimeValue<PersistedValue extends string, RuntimeValue extends s
     throw new Error(`Unknown TUI settings runtime value: ${String(value)}`);
   }
   return option;
-}
-
-function getByPersistedValue<PersistedValue extends string, RuntimeValue extends string>(
-  options: readonly ChoiceSettingOption<PersistedValue, RuntimeValue>[],
-  value: PersistedValue,
-): ChoiceSettingOption<PersistedValue, RuntimeValue> {
-  const option = options.find((candidate) => candidate.persistable && candidate.persistedValue === value);
-  if (!option) {
-    throw new Error(`Unknown TUI settings persisted value: ${String(value)}`);
-  }
-  return option;
-}
-
-export function isPersistedMergeStrategy(value: unknown): value is PersistedMergeStrategy {
-  return hasPersistedValue(MERGE_STRATEGY_OPTIONS, value);
-}
-
-export function isPersistedReviewMode(value: unknown): value is PersistedReviewMode {
-  return hasPersistedValue(REVIEW_MODE_OPTIONS, value);
-}
-
-/**
- * Normalize a persisted review mode value, accepting legacy values ("mine", "all")
- * and mapping them to "on". Returns undefined for unrecognized values.
- */
-export function normalizePersistedReviewMode(value: unknown): PersistedReviewMode | undefined {
-  if (value === "on" || value === "off") return value;
-  if (value === "mine" || value === "all") return "on";
-  return undefined;
-}
-
-export function isPersistedCollaborationMode(value: unknown): value is PersistedCollaborationMode {
-  return hasPersistedValue(COLLABORATION_MODE_OPTIONS, value);
-}
-
-/**
- * Normalize a persisted collaboration mode value, accepting legacy "share"/"join"
- * (which were distinct UI options before H-BAJ-3 collapsed them into a single
- * auto-connect flow) and mapping them to "connect". Returns undefined for
- * unrecognized values.
- */
-export function normalizePersistedCollaborationMode(value: unknown): PersistedCollaborationMode | undefined {
-  if (value === "local" || value === "connect") return value;
-  if (value === "share" || value === "join") return "connect";
-  return undefined;
-}
-
-export function persistedReviewModeToRuntime(mode: PersistedReviewMode): ReviewMode {
-  return getByPersistedValue(REVIEW_MODE_OPTIONS, mode).runtimeValue;
-}
-
-export function persistedCollaborationModeToRuntime(mode: PersistedCollaborationMode): CollaborationMode {
-  return getByPersistedValue(COLLABORATION_MODE_OPTIONS, mode).runtimeValue;
-}
-
-export function mergeStrategyToPersisted(mode: MergeStrategy): PersistedMergeStrategy | undefined {
-  const option = getByRuntimeValue(MERGE_STRATEGY_OPTIONS, mode);
-  return option.persistable ? option.persistedValue : undefined;
-}
-
-export function reviewModeToPersisted(mode: ReviewMode): PersistedReviewMode {
-  return getByRuntimeValue(REVIEW_MODE_OPTIONS, mode).persistedValue;
-}
-
-export function collaborationModeToPersisted(mode: CollaborationMode): PersistedCollaborationMode {
-  return getByRuntimeValue(COLLABORATION_MODE_OPTIONS, mode).persistedValue;
 }
 
 export function collaborationIntentToMode(intent: CollaborationIntent): CollaborationMode {
@@ -267,36 +194,15 @@ export function collaborationLabel(mode: CollaborationMode): string {
   return getByRuntimeValue(COLLABORATION_MODE_OPTIONS, mode).runtimeLabel;
 }
 
-export function resolveTuiSettingsDefaults(
-  userConfig: {
-    merge_strategy?: unknown;
-    review_mode?: unknown;
-    collaboration_mode?: unknown;
-  },
-  localProjectConfig?: {
-    merge_strategy?: unknown;
-    review_mode?: unknown;
-    collaboration_mode?: unknown;
-  },
-): TuiSettingsDefaults {
-  const localMerge = localProjectConfig && isPersistedMergeStrategy(localProjectConfig.merge_strategy)
-    ? localProjectConfig.merge_strategy : undefined;
-  const localReview = localProjectConfig
-    ? normalizePersistedReviewMode(localProjectConfig.review_mode) : undefined;
-  const localCollab = localProjectConfig
-    ? normalizePersistedCollaborationMode(localProjectConfig.collaboration_mode) : undefined;
-
-  return {
-    mergeStrategy: localMerge
-      ?? (isPersistedMergeStrategy(userConfig.merge_strategy) ? userConfig.merge_strategy : undefined)
-      ?? TUI_SETTINGS_DEFAULTS.mergeStrategy,
-    reviewMode: localReview
-      ?? normalizePersistedReviewMode(userConfig.review_mode)
-      ?? TUI_SETTINGS_DEFAULTS.reviewMode,
-    collaborationMode: localCollab
-      ?? normalizePersistedCollaborationMode(userConfig.collaboration_mode)
-      ?? TUI_SETTINGS_DEFAULTS.collaborationMode,
-  };
+/**
+ * Startup defaults are hardcoded to the safest values so sessions always begin
+ * in a predictable, lossless state: manual merges, no AI reviews, local-only
+ * collaboration. Any mid-session runtime toggles and CLI overrides remain the
+ * way to opt into richer behavior; nothing about these defaults is persisted
+ * across sessions.
+ */
+export function resolveTuiSettingsDefaults(): TuiSettingsDefaults {
+  return { ...TUI_SETTINGS_DEFAULTS };
 }
 
 export const REVIEW_MODE_CYCLE: ReviewMode[] = REVIEW_MODE_OPTIONS.map((option) => option.runtimeValue);

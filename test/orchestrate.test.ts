@@ -6083,7 +6083,10 @@ describe("crew remote state: last broker update replaces stale snapshots", () =>
 describe("resolveInteractiveStartupConfig", () => {
   const projectRoot = "/tmp/interactive-startup";
 
-  it("keeps persisted merge, review, and collaboration defaults", () => {
+  it("ignores any legacy merge/review/collaboration fields in user config", () => {
+    // Mode, review, and collaboration defaults are hardcoded so every
+    // session starts from the safest, lossless state. Legacy user-config
+    // values that may still linger on disk must not influence defaults.
     const result = resolveInteractiveStartupConfig(
       { ai_tools: ["claude"] } as any,
       {
@@ -6091,19 +6094,19 @@ describe("resolveInteractiveStartupConfig", () => {
         merge_strategy: "auto",
         review_mode: "on",
         collaboration_mode: "connect",
-      },
+      } as any,
       projectRoot,
     );
 
     expect(result.defaults).toEqual({
-      mergeStrategy: "auto",
-      reviewMode: "on",
-      collaborationMode: "connect",
+      mergeStrategy: "manual",
+      reviewMode: "off",
+      collaborationMode: "local",
     });
     expect(result.savedToolIds).toEqual(["opencode", "copilot"]);
   });
 
-  it("falls back to manual/on/local when persisted defaults are absent", () => {
+  it("returns the hardcoded manual/off/local defaults when user config is empty", () => {
     const result = resolveInteractiveStartupConfig(
       {} as any,
       {},
@@ -6112,32 +6115,33 @@ describe("resolveInteractiveStartupConfig", () => {
 
     expect(result.defaults).toEqual({
       mergeStrategy: "manual",
-      reviewMode: "on",
+      reviewMode: "off",
       collaborationMode: "local",
     });
     expect(result.savedToolIds).toBeUndefined();
   });
 
-  it("honors explicit tool override while keeping resolved startup defaults", () => {
+  it("honors explicit tool override while still hardcoding startup defaults", () => {
     const result = resolveInteractiveStartupConfig(
       {} as any,
-      { review_mode: "on" },
+      { ai_tools: ["opencode"] } as any,
       projectRoot,
       "claude",
     );
 
-    expect(result.defaults.reviewMode).toBe("on");
+    expect(result.defaults.reviewMode).toBe("off");
+    expect(result.defaults.mergeStrategy).toBe("manual");
+    expect(result.defaults.collaborationMode).toBe("local");
+    expect(result.savedToolIds).toEqual(["opencode"]);
   });
 
-  it("builds full durable startup updates", () => {
+  it("persists only max_inflight and ai_tools -- never merge/review/collaboration", () => {
+    // Every session boots from the safe defaults, so picker choices for
+    // merge / review / collaboration are intentionally ephemeral. Only
+    // `max_inflight` and `ai_tools` (durable user preferences) are saved.
     const startupConfig = resolveInteractiveStartupConfig(
       {} as any,
-      {
-        ai_tools: ["opencode", "copilot"],
-        merge_strategy: "auto",
-        review_mode: "on",
-        collaboration_mode: "connect",
-      },
+      { ai_tools: ["opencode", "copilot"] } as any,
       projectRoot,
     );
     const result: InteractiveResult = {
@@ -6151,7 +6155,6 @@ describe("resolveInteractiveStartupConfig", () => {
 
     const persisted = buildStartupPersistenceUpdates(result, {
       savedToolIds: startupConfig.savedToolIds,
-      defaults: startupConfig.defaults,
       defaultMaxInflight: 1,
     });
     const runtime = resolveStartupCollaborationAction(
@@ -6159,13 +6162,13 @@ describe("resolveInteractiveStartupConfig", () => {
       result.connectionAction,
     );
 
-    // mergeStrategy "auto" and reviewMode "on" both match the persisted defaults,
-    // so neither is re-saved. collaboration_mode stays "connect".
-    // maxInflight 6 differs from defaultMaxInflight 1, so it is persisted.
     expect(persisted).toEqual({
       max_inflight: 6,
       ai_tools: ["opencode", "copilot"],
     });
+    expect(persisted).not.toHaveProperty("merge_strategy");
+    expect(persisted).not.toHaveProperty("review_mode");
+    expect(persisted).not.toHaveProperty("collaboration_mode");
     expect(runtime).toEqual({
       connectMode: true,
       crewUrl: "wss://config.example",
@@ -6174,7 +6177,10 @@ describe("resolveInteractiveStartupConfig", () => {
 });
 
 describe("createRuntimeControlHandlers", () => {
-  it("persists merge, review, and session limit changes while keeping pause and collaboration runtime-only", () => {
+  it("dispatches runtime toggles without persisting merge/review/collab -- only max_inflight survives sessions", () => {
+    // Mode / reviews / collaboration are deliberately ephemeral now, so
+    // keyboard toggles only emit control commands and never touch disk.
+    // Session limit is still a durable user preference and must be saved.
     const savedUpdates: Array<Record<string, unknown>> = [];
     const sentControls: Array<Record<string, unknown>> = [];
     let currentMaxInflight = 3;
@@ -6198,6 +6204,7 @@ describe("createRuntimeControlHandlers", () => {
     handlers.onPauseChange?.(true);
     handlers.onStrategyChange?.("auto");
     handlers.onReviewChange?.("on");
+    handlers.onCollaborationChange?.("connected");
     handlers.onMaxInflightChange?.(1);
     handlers.onShutdown?.();
 
@@ -6209,29 +6216,14 @@ describe("createRuntimeControlHandlers", () => {
       { type: "set-paused", paused: true, source: "keyboard" },
       { type: "set-merge-strategy", strategy: "auto", source: "keyboard" },
       { type: "set-review-mode", mode: "on", source: "keyboard" },
+      { type: "set-collaboration-mode", mode: "connected", source: "keyboard" },
       { type: "set-max-inflight", limit: 4, source: "keyboard" },
       { type: "shutdown", source: "keyboard" },
     ]);
-    expect(savedUpdates).toEqual([
-      { merge_strategy: "auto" },
-      { review_mode: "on" },
-      { max_inflight: 4 },
-    ]);
+    expect(savedUpdates).toEqual([{ max_inflight: 4 }]);
     expect(connectResult).toEqual({ mode: "connected" });
     expect(localResult).toEqual({ mode: "local" });
     expect(extendResult).toBe(true);
-  });
-
-  it("does not persist bypass as a default merge strategy", () => {
-    const saveUserConfigFn = vi.fn();
-    const handlers = createRuntimeControlHandlers({
-      sendControl: () => {},
-      getMaxInflight: () => 3,
-      saveUserConfigFn,
-    });
-
-    handlers.onStrategyChange?.("bypass");
-    expect(saveUserConfigFn).not.toHaveBeenCalled();
   });
 });
 
@@ -8431,24 +8423,31 @@ describe("parseWatchArgs", () => {
     expect(result.watchMode).toBe(true);
   });
 
-  it("--no-review sets skipReview=true", () => {
+  it("--no-review sets skipReview=true and cliReviewFlag=\"no-review\"", () => {
     const result = parseWatchArgs(["--items", "A-1", "--no-review"]);
     expect(result.skipReview).toBe(true);
+    expect(result.cliReviewFlag).toBe("no-review");
   });
 
-  it("--review sets skipReview=false", () => {
+  it("--review sets skipReview=false and cliReviewFlag=\"review\"", () => {
     const result = parseWatchArgs(["--items", "A-1", "--review"]);
     expect(result.skipReview).toBe(false);
+    expect(result.cliReviewFlag).toBe("review");
   });
 
-  it("defaults skipReview to false when neither --no-review nor --review passed", () => {
+  it("defaults skipReview to true when neither --review nor --no-review passed", () => {
+    // Sessions start in the safest, lossless state. Enabling reviews
+    // mid-session picks up anything already at `ready for human review`,
+    // so deferring the decision costs nothing.
     const result = parseWatchArgs(["--items", "A-1"]);
-    expect(result.skipReview).toBe(false);
+    expect(result.skipReview).toBe(true);
+    expect(result.cliReviewFlag).toBeUndefined();
   });
 
-  it("--review overrides earlier --no-review", () => {
+  it("--review overrides earlier --no-review (last flag wins)", () => {
     const result = parseWatchArgs(["--items", "A-1", "--no-review", "--review"]);
     expect(result.skipReview).toBe(false);
+    expect(result.cliReviewFlag).toBe("review");
   });
 
   it("accepts --review-external as a deprecated no-op", () => {

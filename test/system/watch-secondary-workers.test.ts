@@ -134,8 +134,8 @@ function watchArgs(
     "--skip-preflight",
     "--poll-interval", "0",
     "--watch-interval", "0",
+    options.noReview ? "--no-review" : "--review",
   ];
-  if (options.noReview) args.push("--no-review");
   return args;
 }
 

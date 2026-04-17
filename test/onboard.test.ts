@@ -979,7 +979,9 @@ describe("cmdNoArgs", () => {
     expect(interactiveCalled).toBe(true);
   });
 
-  it("defaults review mode to on when user config is empty", async () => {
+  it("defaults review mode to off at startup", async () => {
+    // Sessions always boot from the hardcoded safe defaults (manual /
+    // reviews off / local), independent of whatever is on disk.
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -995,9 +997,8 @@ describe("cmdNoArgs", () => {
       saveUserConfig: () => {},
       runInteractiveFlow: async (_todos, _wip, deps) => {
         interactiveCalled = true;
-        // Default review mode comes from TUI_SETTINGS_DEFAULTS, which is now "on".
-        expect(deps?.defaultReviewMode).toBe("on");
-        expect(deps?.defaultSettings?.reviewMode).toBe("on");
+        expect(deps?.defaultReviewMode).toBe("off");
+        expect(deps?.defaultSettings?.reviewMode).toBe("off");
         return {
           itemIds: ["H-1"],
           mergeStrategy: "auto" as MergeStrategy,
@@ -1013,7 +1014,7 @@ describe("cmdNoArgs", () => {
     expect(interactiveCalled).toBe(true);
   });
 
-  it("reads saved tool IDs and startup collaboration defaults from user config", async () => {
+  it("reads saved tool IDs from user config but ignores legacy mode/review/collab fields", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -1023,13 +1024,14 @@ describe("cmdNoArgs", () => {
       parseWorkItems: () => [fakeWorkItem("H-1", "Task")],
       isDaemonRunning: () => null,
       loadConfig: () => ({ review_external: true, ai_tools: ["claude"] } as any),
-      loadUserConfig: () => ({ ai_tools: ["opencode", "copilot"], merge_strategy: "auto", collaboration_mode: "connect" }),
+      // Legacy fields in the user config must not leak into startup defaults.
+      loadUserConfig: () => ({ ai_tools: ["opencode", "copilot"] } as any),
       runInteractiveFlow: async (_todos, _wip, deps) => {
-        expect(deps?.defaultReviewMode).toBe("on");
+        expect(deps?.defaultReviewMode).toBe("off");
         expect(deps?.defaultSettings).toEqual({
-          mergeStrategy: "auto",
-          reviewMode: "on",
-          collaborationMode: "connect",
+          mergeStrategy: "manual",
+          reviewMode: "off",
+          collaborationMode: "local",
         });
         expect(deps?.savedToolIds).toEqual(["opencode", "copilot"]);
         return null;
@@ -1040,7 +1042,7 @@ describe("cmdNoArgs", () => {
     });
   });
 
-  it("persists the full durable startup payload before launching watch", async () => {
+  it("persists only durable startup prefs (max_inflight, ai_tools) -- never merge/review/collab", async () => {
     const projectDir = setupTempRepo();
     mkdirSync(join(projectDir, ".ninthwave", "work"), { recursive: true });
 
@@ -1070,11 +1072,11 @@ describe("cmdNoArgs", () => {
 
     expect(savedUpdates).toHaveLength(1);
     expect(savedUpdates[0]).toMatchObject({
-      merge_strategy: "auto",
       max_inflight: 4,
       ai_tools: ["opencode", "copilot"],
     });
-    // reviewMode "on" matches the new startup default, so it is not re-saved.
+    // Mode / review / collaboration are ephemeral and never persisted.
+    expect(savedUpdates[0]).not.toHaveProperty("merge_strategy");
     expect(savedUpdates[0]).not.toHaveProperty("review_mode");
     expect(savedUpdates[0]).not.toHaveProperty("collaboration_mode");
     expect(watchArgs).toContain("--connect");

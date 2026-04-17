@@ -365,14 +365,17 @@ describe("buildStartupPersistenceUpdates", () => {
     connectionAction: null,
   };
 
-  it("persists merge_strategy and review_mode when defaults are not supplied", () => {
-    const updates = buildStartupPersistenceUpdates(baseResult);
-    expect(updates).toMatchObject({
-      merge_strategy: "manual",
-      review_mode: "on",
+  it("never persists merge_strategy, review_mode, or collaboration_mode regardless of the picker choice", () => {
+    // These three fields are intentionally ephemeral so every session boots
+    // from the hardcoded safe defaults. The picker's choices are honored for
+    // the current session only -- nothing gets cemented on disk.
+    const updates = buildStartupPersistenceUpdates({
+      ...baseResult,
+      mergeStrategy: "auto",
+      reviewMode: "on",
     });
-    // Session limit is only persisted when it differs from the resolved default.
-    expect(updates).not.toHaveProperty("max_inflight");
+    expect(updates).not.toHaveProperty("merge_strategy");
+    expect(updates).not.toHaveProperty("review_mode");
     expect(updates).not.toHaveProperty("collaboration_mode");
   });
 
@@ -388,21 +391,6 @@ describe("buildStartupPersistenceUpdates", () => {
       defaultMaxInflight: 2,
     });
     expect(changed).toMatchObject({ max_inflight: 3 });
-  });
-
-  it("skips persistence for settings that match the resolved defaults", () => {
-    const updates = buildStartupPersistenceUpdates(baseResult, {
-      defaults: {
-        mergeStrategy: "manual",
-        reviewMode: "on",
-        collaborationMode: "local",
-      },
-      defaultMaxInflight: 3,
-    });
-    expect(updates).not.toHaveProperty("merge_strategy");
-    expect(updates).not.toHaveProperty("review_mode");
-    expect(updates).not.toHaveProperty("collaboration_mode");
-    expect(updates).not.toHaveProperty("max_inflight");
   });
 
   it("persists multiple selected tools via ai_tools", () => {
@@ -449,7 +437,7 @@ describe("runInteractiveFlow", () => {
     expect(result!.itemIds).toEqual(["A-1", "B-2"]);
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.maxInflight).toBe(3);
-    expect(result!.reviewMode).toBe("on");
+    expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
     expect(result!.allSelected).toBe(true);
   });
@@ -488,16 +476,19 @@ describe("runInteractiveFlow", () => {
     expect(result!.mergeStrategy).toBe("manual");
   });
 
-  it("readline fallback always returns reviews on regardless of defaultReviewMode", async () => {
+  it("readline fallback always returns reviews off regardless of defaultReviewMode", async () => {
+    // The readline fallback skips the review-mode prompt and always starts
+    // in the safe "off" state. Operators who want reviews turn them on at
+    // runtime via the TUI hotkey, or pass `--review` on the CLI.
     const prompt = makePrompt(["1", ""]);
     const result = await runInteractiveFlow(items, 3, {
       prompt,
       useLegacyPrompts: true,
-      defaultReviewMode: "off",
+      defaultReviewMode: "on",
     });
 
     expect(result).not.toBeNull();
-    expect(result!.reviewMode).toBe("on");
+    expect(result!.reviewMode).toBe("off");
   });
 
   it("readline fallback returns local (null) connectionAction when defaultConnect is undefined", async () => {

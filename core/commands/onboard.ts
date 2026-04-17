@@ -543,7 +543,7 @@ export async function cmdNoArgs(
   const doLoadUserConfig = deps.loadUserConfig ?? loadUserConfig;
   const projectConfig = doLoadConfig(projectRoot);
   const userConfig = doLoadUserConfig();
-  const defaultSettings = resolveTuiSettingsDefaults(userConfig);
+  const defaultSettings = resolveTuiSettingsDefaults();
   const defaultReviewMode = defaultSettings.reviewMode;
   const installedTools = detectInstalledAITools();
   const doInteractive = deps.runInteractiveFlow ?? runInteractiveFlow;
@@ -564,7 +564,6 @@ export async function cmdNoArgs(
     doSaveUserConfig({
       ...buildStartupPersistenceUpdates(result, {
         savedToolIds: userConfig.ai_tools,
-        defaults: defaultSettings,
         defaultMaxInflight,
       }),
     });

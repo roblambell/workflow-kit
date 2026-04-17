@@ -476,9 +476,15 @@ nw --local
 
 # Explicit opt-in (useful for CI scripts or when a secret is not configured)
 nw --connect
+
+# Supply the broker secret for one session without writing it to disk
+NINTHWAVE_BROKER_SECRET="$TEAM_SECRET" nw
+printf '%s\n' "$TEAM_SECRET" | nw --broker-secret-stdin
 ```
 
 Membership is derived from the project config: `project_id` lives in committed `.ninthwave/config.json`, and `broker_secret` lives in gitignored `.ninthwave/config.local.json`. When `broker_secret` is present, `nw` auto-connects so every daemon with the same pair of values lands in the same crew -- no codes to share. Teammates who want a shared namespace pass the `broker_secret` out of band and paste it into their own `config.local.json`. Operators without a secret stay local by default.
+
+For ephemeral environments (CI runners, shared containers) where the secret should not land on disk, `NINTHWAVE_BROKER_SECRET` or `--broker-secret-stdin` supply the secret for a single process. Precedence, highest to lowest: `--broker-secret-stdin` > `NINTHWAVE_BROKER_SECRET` > `.ninthwave/config.local.json` > `.ninthwave/config.json`. There is deliberately no `--broker-secret <value>` flag -- argv would leak the secret into the process listing and shell history.
 
 The broker handles session-bounded scheduling with author-affinity (tasks route to the operator who created them when possible).
 

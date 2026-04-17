@@ -1054,7 +1054,7 @@ describe("runSelectionScreen", () => {
     expect(getOutput()).toContain("No work items queued");
   });
 
-  it("completes full flow: select items → confirm with local-first defaults", async () => {
+  it("completes full flow: select items → confirm with safe-start defaults", async () => {
     const { io, sendKeyBatches } = createMockIO();
     const items = [
       makeWorkItem("A-1", "First task", "high"),
@@ -1078,7 +1078,7 @@ describe("runSelectionScreen", () => {
     expect(result!.futureOnly).toBe(false);
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.maxInflight).toBe(4);
-    expect(result!.reviewMode).toBe("on");
+    expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
     expect(result!.cancelled).toBe(false);
   });
@@ -1258,7 +1258,9 @@ describe("runSelectionScreen", () => {
     expect(result!.allSelected).toBe(true);
   });
 
-  it("returns local-first defaults for merge, review, connection, and session limit", async () => {
+  it("returns safe-start defaults for merge, review, connection, and session limit", async () => {
+    // Startup defaults are hardcoded to the safest, lossless combination so
+    // every session begins from the same predictable state.
     const { io, sendKeyBatches } = createMockIO();
     const items = [makeWorkItem("A-1", "First")];
 
@@ -1272,7 +1274,7 @@ describe("runSelectionScreen", () => {
     expect(result).not.toBeNull();
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.maxInflight).toBe(5);
-    expect(result!.reviewMode).toBe("on");
+    expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
   });
 
@@ -1760,7 +1762,7 @@ describe("runTuiSelectionFlow (via interactive.ts)", () => {
     expect(result!.allSelected).toBe(true);
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.maxInflight).toBe(4);
-    expect(result!.reviewMode).toBe("on");
+    expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
   });
 
@@ -1786,7 +1788,7 @@ describe("runTuiSelectionFlow (via interactive.ts)", () => {
     expect(result!.itemIds).toEqual(["A-1", "B-2"]);
     expect(result!.mergeStrategy).toBe("manual");
     expect(result!.maxInflight).toBe(3);
-    expect(result!.reviewMode).toBe("on");
+    expect(result!.reviewMode).toBe("off");
     expect(result!.connectionAction).toBeNull();
   });
 });

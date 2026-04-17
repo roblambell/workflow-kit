@@ -51,16 +51,15 @@ import type { WorkItem, LogEntry } from "../types.ts";
 import {
   loadConfig,
   loadMergedProjectConfig,
-  loadLocalConfig,
   loadUserConfig,
+  parseBrokerSecret,
+  resolveEffectiveBrokerSecret,
   saveConfig,
-  saveLocalConfig,
   saveUserConfig,
 } from "../config.ts";
 import type { ProjectConfig, UserConfig } from "../config.ts";
 import {
   collaborationIntentFromMode,
-  persistedCollaborationModeToRuntime,
   resolveTuiSettingsDefaults,
   type TuiSettingsDefaults,
 } from "../tui-settings.ts";
@@ -449,12 +448,11 @@ export interface InteractiveStartupConfig {
 export function resolveInteractiveStartupConfig(
   _projectConfig: ProjectConfig,
   userConfig: UserConfig,
-  projectRoot: string,
-  toolOverride?: string,
+  _projectRoot: string,
+  _toolOverride?: string,
 ): InteractiveStartupConfig {
-  const localConfig = loadLocalConfig(projectRoot);
   return {
-    defaults: resolveTuiSettingsDefaults(userConfig, localConfig),
+    defaults: resolveTuiSettingsDefaults(),
     savedToolIds: userConfig.ai_tools,
   };
 }
@@ -604,6 +602,45 @@ function maybeTriggerInteractiveEngineStartupFailureForTest(isInteractiveEngineC
   if (!isInteractiveEngineChild) return;
   if (process.env[TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_ENV] !== "1") return;
   throw new Error(TEST_INTERACTIVE_ENGINE_STARTUP_FAIL_MESSAGE);
+}
+
+/**
+ * Read stdin through the first newline (or end-of-stream) and return the
+ * trimmed contents. Used exclusively by `--broker-secret-stdin` to pull a
+ * secret from a piped invocation without it appearing in argv / the process
+ * listing. The flag is meaningful only when stdin is piped; on a TTY the read
+ * would block forever, which is correct behavior (a TTY caller should not be
+ * using the flag).
+ */
+async function readStdinOnce(): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    let buffer = "";
+    const stdin = process.stdin;
+    const done = (value: string) => {
+      stdin.removeListener("data", onData);
+      stdin.removeListener("end", onEnd);
+      stdin.removeListener("error", onError);
+      stdin.pause();
+      resolve(value.trim());
+    };
+    const onData = (chunk: Buffer | string) => {
+      buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      const nl = buffer.indexOf("\n");
+      if (nl >= 0) done(buffer.slice(0, nl));
+    };
+    const onEnd = () => done(buffer);
+    const onError = (err: Error) => {
+      stdin.removeListener("data", onData);
+      stdin.removeListener("end", onEnd);
+      stdin.pause();
+      reject(err);
+    };
+    stdin.setEncoding("utf8");
+    stdin.resume();
+    stdin.on("data", onData);
+    stdin.on("end", onEnd);
+    stdin.on("error", onError);
+  });
 }
 
 function emitInteractiveEngineStartupOverlay(
@@ -1362,8 +1399,8 @@ export async function cmdOrchestrate(
     maxInflightOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, isInteractiveEngineChild, clickupListId, remoteFlag,
     reviewAutoFix, reviewMaxInflight,
-    fixForward, skipReview: cliSkipReview, noWatch, watchIntervalSecs,
-    jsonFlag, skipPreflight,
+    fixForward, cliReviewFlag, noWatch, watchIntervalSecs,
+    jsonFlag, skipPreflight, brokerSecretStdin,
     bypassEnabled, toolOverride: parsedToolOverride,
   } = parsed;
   let toolOverride = parsedToolOverride;
@@ -1513,15 +1550,34 @@ export async function cmdOrchestrate(
   crewUrl = resolveConfiguredCrewUrl(crewUrl, preConfig.crew_url);
   const interactiveStartupConfig = resolveInteractiveStartupConfig(preConfig, persistedUserCfg, projectRoot, toolOverride);
 
+  // ── Broker secret resolution ───────────────────────────────────────
+  // When `--broker-secret-stdin` is set, read a single line from stdin so
+  // ephemeral environments can join a crew without leaving the secret on
+  // disk. Otherwise the effective secret falls through to the
+  // `NINTHWAVE_BROKER_SECRET` env var, then `.ninthwave/config.local.json`,
+  // then `.ninthwave/config.json`.
+  let stdinBrokerSecret: string | undefined;
+  if (brokerSecretStdin) {
+    const raw = await readStdinOnce();
+    const parsedSecret = parseBrokerSecret(raw);
+    if (!parsedSecret) {
+      die("--broker-secret-stdin: expected a base64-encoded 32-byte secret on stdin");
+    }
+    stdinBrokerSecret = parsedSecret;
+  }
+  const effectiveBrokerSecret = resolveEffectiveBrokerSecret(projectRoot, stdinBrokerSecret);
+  const effectiveProjectConfig: ProjectConfig = {
+    ...mergedConfig,
+    ...(effectiveBrokerSecret !== undefined ? { broker_secret: effectiveBrokerSecret } : {}),
+  };
+
   // ── Broker auto-connect default ────────────────────────────────────
-  // When `broker_secret` is present in the merged project config (shared +
-  // local), auto-connect by default. When no secret is configured, stay
-  // local. Explicit flags override: `--connect` forces connect, `--local`
-  // forces local; last flag wins (same convention as --review / --no-review).
-  connectMode = resolveConnectMode(parsed.connectFlag, mergedConfig.broker_secret);
+  // Auto-connect when a broker secret is configured (via any layer). Explicit
+  // flags override: `--connect` forces connect, `--local` forces local; last
+  // flag wins (same convention as --review / --no-review).
+  connectMode = resolveConnectMode(parsed.connectFlag, effectiveBrokerSecret);
 
   // Interactive mode: no --items and stdin is a TTY
-  let interactiveSkipReview = false;
   let interactiveReviewMode: "on" | "off" | null = null;
   if (shouldEnterInteractive(itemIds.length > 0)) {
     // Pre-detect tools and config for TUI flow
@@ -1548,23 +1604,12 @@ export async function cmdOrchestrate(
     mergeStrategy = result.mergeStrategy;
     maxInflight = result.maxInflight;
     interactiveReviewMode = result.reviewMode;
-    interactiveSkipReview = result.reviewMode === "off";
     try {
       const persistenceUpdates = buildStartupPersistenceUpdates(result, {
         savedToolIds: interactiveStartupConfig.savedToolIds,
-        defaults: interactiveStartupConfig.defaults,
         defaultMaxInflight: startupDefaultMaxInflight,
       });
       saveUserConfig({ ...persistenceUpdates });
-      // Dual-write mode settings to per-repo local config
-      const { merge_strategy, review_mode, collaboration_mode } = persistenceUpdates;
-      if (merge_strategy || review_mode || collaboration_mode) {
-        saveLocalConfig(projectRoot, {
-          ...(merge_strategy ? { merge_strategy } : {}),
-          ...(review_mode ? { review_mode } : {}),
-          ...(collaboration_mode ? { collaboration_mode } : {}),
-        });
-      }
       persistedUserCfg = loadUserConfig();
     } catch {
       // best-effort persistence only
@@ -1609,12 +1654,13 @@ export async function cmdOrchestrate(
     die(`Item ${unknownIds[0]} not found in work item files`);
   }
 
-  const startupReviewMode = interactiveReviewMode === "off"
-    ? "off" as const
-    : "on" as const;
-  const startupCollaborationMode = connectMode
-    ? "connected" as const
-    : persistedCollaborationModeToRuntime(interactiveStartupConfig.defaults.collaborationMode);
+  // Reviews default to off so every session starts in the safest, lossless
+  // state. Only when the interactive picker (or a future override) explicitly
+  // chose "on" do we enter watch with reviews enabled.
+  const startupReviewMode = interactiveReviewMode === "on"
+    ? "on" as const
+    : "off" as const;
+  const startupCollaborationMode: CollaborationMode = connectMode ? "connected" : "local";
 
   if (tuiMode && !isInteractiveEngineChild) {
     usedInteractiveOperatorParentSession = true;
@@ -1642,9 +1688,23 @@ export async function cmdOrchestrate(
     return;
   }
 
-  // Create orchestrator
-  // skipReview: CLI --no-review, interactive "off" mode, or --review-max-inflight 0 disables AI review gate
-  const skipReview = cliSkipReview || interactiveSkipReview || reviewMaxInflight === 0;
+  // Resolve final review mode. Explicit CLI flags beat the interactive
+  // picker; the interactive picker beats the "reviews off" startup default.
+  // `--review-max-inflight 0` always disables the review gate because
+  // there is no budget to run reviews even if they were requested.
+  let skipReview: boolean;
+  if (cliReviewFlag === "review") {
+    skipReview = false;
+  } else if (cliReviewFlag === "no-review") {
+    skipReview = true;
+  } else if (interactiveReviewMode === "on") {
+    skipReview = false;
+  } else if (interactiveReviewMode === "off") {
+    skipReview = true;
+  } else {
+    skipReview = true;
+  }
+  if (reviewMaxInflight === 0) skipReview = true;
   const testOrchestratorConfigOverrides = loadTestOrchestratorConfigOverrides();
   let orch = new Orchestrator({
     maxInflight,
@@ -1918,6 +1978,7 @@ export async function cmdOrchestrate(
     const result = await applyRuntimeCollaborationAction(collaborationState, { action: "connect", source: "startup" }, {
       projectRoot,
       log,
+      config: effectiveProjectConfig,
     });
     if (result.error) {
       die(result.error ?? "Failed to connect to session");
@@ -1976,9 +2037,7 @@ export async function cmdOrchestrate(
   // TUI state: scroll offset and view option toggles (shared with keyboard handler)
   // Read persisted layout preference (defaults to "status-only" if missing/corrupt)
   const savedPanelMode = tuiMode ? readLayoutPreference(projectRoot) : "status-only";
-  const initialCollaborationMode = collaborationState.mode === "local"
-    ? persistedCollaborationModeToRuntime(interactiveStartupConfig.defaults.collaborationMode)
-    : collaborationState.mode;
+  const initialCollaborationMode: CollaborationMode = collaborationState.mode;
   const initialReviewMode = orch.config.skipReview
     ? "off" as const
     : "on" as const;
@@ -2006,6 +2065,7 @@ export async function cmdOrchestrate(
     const result = await applyRuntimeCollaborationAction(collaborationState, request, {
       projectRoot,
       log,
+      config: effectiveProjectConfig,
     });
     syncCollaborationLocals();
     return result;

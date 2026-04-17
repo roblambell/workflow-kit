@@ -4,14 +4,15 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { join } from "path";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import {
+  BROKER_SECRET_ENV_VAR,
   ensureProjectId,
   generateProjectIdentity,
   loadConfig,
   loadLocalConfig,
   loadMergedProjectConfig,
   loadOrGenerateProjectIdentity,
+  resolveEffectiveBrokerSecret,
   saveConfig,
-  saveLocalConfig,
   loadUserConfig,
   saveUserConfig,
 } from "../core/config.ts";
@@ -732,7 +733,10 @@ describe("loadUserConfig", () => {
     });
   });
 
-  it("reads persisted TUI defaults from valid JSON", () => {
+  it("ignores legacy merge_strategy / review_mode / collaboration_mode fields at load time", () => {
+    // These three fields are no longer read from user config so every session
+    // starts from the safe hardcoded defaults (manual / reviews off / local).
+    // Older configs still on disk are silently tolerated.
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
@@ -745,27 +749,10 @@ describe("loadUserConfig", () => {
       }),
     );
 
-    const config = loadUserConfig(tmpHome);
-    expect(config.merge_strategy).toBe("auto");
-    expect(config.review_mode).toBe("on");
-    expect(config.collaboration_mode).toBe("connect");
-  });
-
-  it("normalizes legacy share/join collaboration_mode values to connect", () => {
-    const tmpHome = setupTempRepo();
-    const configDir = join(tmpHome, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config.json"),
-      JSON.stringify({ collaboration_mode: "share" }),
-    );
-    expect(loadUserConfig(tmpHome).collaboration_mode).toBe("connect");
-
-    writeFileSync(
-      join(configDir, "config.json"),
-      JSON.stringify({ collaboration_mode: "join" }),
-    );
-    expect(loadUserConfig(tmpHome).collaboration_mode).toBe("connect");
+    const config = loadUserConfig(tmpHome) as Record<string, unknown>;
+    expect(config.merge_strategy).toBeUndefined();
+    expect(config.review_mode).toBeUndefined();
+    expect(config.collaboration_mode).toBeUndefined();
   });
 
   it("reads tmux_layout from valid JSON", () => {
@@ -807,24 +794,6 @@ describe("loadUserConfig", () => {
     expect(config.skipped_update_version).toBe("0.5.0");
   });
 
-  it("ignores invalid persisted TUI enum values safely", () => {
-    const tmpHome = setupTempRepo();
-    const configDir = join(tmpHome, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config.json"),
-      JSON.stringify({
-        merge_strategy: "bypass",
-        review_mode: "sometimes",
-        collaboration_mode: "remote",
-      }),
-    );
-
-    const config = loadUserConfig(tmpHome);
-    expect(config.merge_strategy).toBeUndefined();
-    expect(config.review_mode).toBeUndefined();
-    expect(config.collaboration_mode).toBeUndefined();
-  });
 
   it("ignores invalid tmux_layout safely", () => {
     const tmpHome = setupTempRepo();
@@ -983,25 +952,6 @@ describe("loadUserConfig", () => {
     expect(content.ai_tools).toEqual(["claude"]);
   });
 
-  it("normalizes legacy review_mode 'mine' to 'on'", () => {
-    const tmpHome = setupTempRepo();
-    const configDir = join(tmpHome, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(join(configDir, "config.json"), JSON.stringify({ review_mode: "mine" }));
-
-    const config = loadUserConfig(tmpHome);
-    expect(config.review_mode).toBe("on");
-  });
-
-  it("normalizes legacy review_mode 'all' to 'on'", () => {
-    const tmpHome = setupTempRepo();
-    const configDir = join(tmpHome, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(join(configDir, "config.json"), JSON.stringify({ review_mode: "all" }));
-
-    const config = loadUserConfig(tmpHome);
-    expect(config.review_mode).toBe("on");
-  });
 });
 
 describe("saveUserConfig", () => {
@@ -1114,7 +1064,11 @@ describe("saveUserConfig", () => {
     });
   });
 
-  it("round-trips persisted TUI defaults without dropping unknown keys", () => {
+  it("round-trips user-config fields without dropping unknown keys", () => {
+    // `merge_strategy`, `review_mode`, and `collaboration_mode` are
+    // deliberately absent here: they are no longer persisted. Legacy values
+    // already on disk are preserved as "unknown keys" (see the companion
+    // test that keeps `custom_key` through a write).
     const tmpHome = setupTempRepo();
     const configDir = join(tmpHome, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
@@ -1125,26 +1079,17 @@ describe("saveUserConfig", () => {
 
     saveUserConfig({
       tmux_layout: "windows",
-      merge_strategy: "auto",
-      review_mode: "on",
-      collaboration_mode: "connect",
       max_inflight: 4,
     }, tmpHome);
 
     const content = JSON.parse(readFileSync(join(configDir, "config.json"), "utf-8"));
     expect(content.custom_key).toBe("hello");
     expect(content.tmux_layout).toBe("windows");
-    expect(content.merge_strategy).toBe("auto");
-    expect(content.review_mode).toBe("on");
-    expect(content.collaboration_mode).toBe("connect");
     expect(content.max_inflight).toBe(4);
 
     const config = loadUserConfig(tmpHome);
     expect(config).toMatchObject({
       tmux_layout: "windows",
-      merge_strategy: "auto",
-      review_mode: "on",
-      collaboration_mode: "connect",
       max_inflight: 4,
     });
   });
@@ -1287,8 +1232,11 @@ describe("saveUserConfig", () => {
   });
 });
 
-describe("loadLocalConfig with mode settings", () => {
-  it("parses mode settings from config.local.json", () => {
+describe("loadLocalConfig legacy tolerance", () => {
+  it("ignores legacy merge_strategy / review_mode / collaboration_mode keys", () => {
+    // These three fields are no longer part of the project config shape.
+    // Older files that still contain them must load without error and expose
+    // the values as undefined so no stale preference can influence startup.
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
@@ -1298,74 +1246,83 @@ describe("loadLocalConfig with mode settings", () => {
         merge_strategy: "auto",
         review_mode: "off",
         collaboration_mode: "connect",
+        broker_secret: Buffer.alloc(32, 7).toString("base64"),
       }),
     );
 
-    const config = loadLocalConfig(repo);
-    expect(config.merge_strategy).toBe("auto");
-    expect(config.review_mode).toBe("off");
-    expect(config.collaboration_mode).toBe("connect");
-  });
-
-  it("ignores invalid mode settings values", () => {
-    const repo = setupTempRepo();
-    const configDir = join(repo, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config.local.json"),
-      JSON.stringify({
-        merge_strategy: "bogus",
-        review_mode: 42,
-        collaboration_mode: null,
-      }),
-    );
-
-    const config = loadLocalConfig(repo);
+    const config = loadLocalConfig(repo) as Record<string, unknown>;
     expect(config.merge_strategy).toBeUndefined();
     expect(config.review_mode).toBeUndefined();
     expect(config.collaboration_mode).toBeUndefined();
-  });
-
-  it("returns empty config when file is missing", () => {
-    const repo = setupTempRepo();
-    const config = loadLocalConfig(repo);
-    expect(config.merge_strategy).toBeUndefined();
-    expect(config.review_mode).toBeUndefined();
-    expect(config.collaboration_mode).toBeUndefined();
+    // Sibling fields keep working.
+    expect(config.broker_secret).toBe(Buffer.alloc(32, 7).toString("base64"));
   });
 });
 
-describe("saveLocalConfig with mode settings", () => {
-  it("persists mode settings to config.local.json", () => {
+describe("resolveEffectiveBrokerSecret", () => {
+  const ENV_SECRET = Buffer.alloc(32, 0xab).toString("base64");
+  const LOCAL_SECRET = Buffer.alloc(32, 0x55).toString("base64");
+  const SHARED_SECRET = Buffer.alloc(32, 0x33).toString("base64");
+  const EXPLICIT_SECRET = Buffer.alloc(32, 0x77).toString("base64");
+
+  it("returns undefined when no layer provides a secret", () => {
     const repo = setupTempRepo();
-    const configDir = join(repo, ".ninthwave");
-    mkdirSync(configDir, { recursive: true });
-
-    saveLocalConfig(repo, {
-      merge_strategy: "auto",
-      review_mode: "on",
-      collaboration_mode: "local",
-    });
-
-    const raw = JSON.parse(readFileSync(join(configDir, "config.local.json"), "utf-8"));
-    expect(raw.merge_strategy).toBe("auto");
-    expect(raw.review_mode).toBe("on");
-    expect(raw.collaboration_mode).toBe("local");
+    expect(resolveEffectiveBrokerSecret(repo, undefined, {})).toBeUndefined();
   });
 
-  it("preserves existing fields on partial update", () => {
+  it("prefers the explicit (stdin) secret over every other layer", () => {
     const repo = setupTempRepo();
     const configDir = join(repo, ".ninthwave");
     mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, "config.local.json"),
-      JSON.stringify({ merge_strategy: "manual", review_mode: "on" }),
-    );
+    writeFileSync(join(configDir, "config.json"), JSON.stringify({ broker_secret: SHARED_SECRET }));
+    writeFileSync(join(configDir, "config.local.json"), JSON.stringify({ broker_secret: LOCAL_SECRET }));
+    expect(
+      resolveEffectiveBrokerSecret(repo, EXPLICIT_SECRET, { [BROKER_SECRET_ENV_VAR]: ENV_SECRET }),
+    ).toBe(EXPLICIT_SECRET);
+  });
 
-    saveLocalConfig(repo, { merge_strategy: "auto" });
+  it("prefers the env var over file-based secrets", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config.json"), JSON.stringify({ broker_secret: SHARED_SECRET }));
+    writeFileSync(join(configDir, "config.local.json"), JSON.stringify({ broker_secret: LOCAL_SECRET }));
+    expect(
+      resolveEffectiveBrokerSecret(repo, undefined, { [BROKER_SECRET_ENV_VAR]: ENV_SECRET }),
+    ).toBe(ENV_SECRET);
+  });
 
-    const raw = JSON.parse(readFileSync(join(configDir, "config.local.json"), "utf-8"));
-    expect(raw.merge_strategy).toBe("auto");
-    expect(raw.review_mode).toBe("on");
+  it("falls back to config.local.json when env var is unset", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config.json"), JSON.stringify({ broker_secret: SHARED_SECRET }));
+    writeFileSync(join(configDir, "config.local.json"), JSON.stringify({ broker_secret: LOCAL_SECRET }));
+    expect(resolveEffectiveBrokerSecret(repo, undefined, {})).toBe(LOCAL_SECRET);
+  });
+
+  it("falls back to config.json when neither env var nor local overlay provides a secret", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config.json"), JSON.stringify({ broker_secret: SHARED_SECRET }));
+    expect(resolveEffectiveBrokerSecret(repo, undefined, {})).toBe(SHARED_SECRET);
+  });
+
+  it("rejects an invalid env var value and falls through", () => {
+    const repo = setupTempRepo();
+    const configDir = join(repo, ".ninthwave");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "config.local.json"), JSON.stringify({ broker_secret: LOCAL_SECRET }));
+    expect(
+      resolveEffectiveBrokerSecret(repo, undefined, { [BROKER_SECRET_ENV_VAR]: "not-a-valid-secret" }),
+    ).toBe(LOCAL_SECRET);
+  });
+
+  it("rejects an invalid explicit secret and returns undefined", () => {
+    // Parser-level validation happens at the call site, but the helper must
+    // also reject malformed values defensively in case a caller forgets.
+    const repo = setupTempRepo();
+    expect(resolveEffectiveBrokerSecret(repo, "short", {})).toBeUndefined();
   });
 });

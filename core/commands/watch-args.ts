@@ -19,7 +19,23 @@ export interface ParsedWatchArgs {
   reviewAutoFix?: "off" | "direct" | "pr";
   reviewMaxInflight?: number;
   fixForward: boolean;
+  /**
+   * Derived convenience: `true` when reviews should be skipped based on CLI
+   * flags alone (defaulting to `true` when neither `--review` nor
+   * `--no-review` was passed). Downstream flows still consult
+   * `cliReviewFlag` to distinguish "user didn't say" from "user asked for
+   * reviews off" so an interactive picker choice of `on` can light them up.
+   */
   skipReview: boolean;
+  /**
+   * Explicit review-mode intent from CLI flags:
+   * - `"review"`    -- `--review` was the last flag, force reviews on.
+   * - `"no-review"` -- `--no-review` was the last flag, force reviews off.
+   * - `undefined`   -- neither flag was passed; startup defaults apply.
+   *
+   * Last flag wins when both are passed.
+   */
+  cliReviewFlag: "review" | "no-review" | undefined;
   watchMode: boolean;
   futureOnlyStartup: boolean;
   noWatch: boolean;
@@ -36,6 +52,14 @@ export interface ParsedWatchArgs {
    * Last flag wins when both are passed, matching the `--review` / `--no-review` convention.
    */
   connectFlag: "connect" | "local" | undefined;
+  /**
+   * When true, read a single line from stdin at startup and use it as this
+   * session's broker secret. The value is held in memory only and never
+   * written back to disk so ephemeral environments (CI runners, containers)
+   * can join a crew without leaving the secret on the filesystem. Overrides
+   * any file-based or env-var secret.
+   */
+  brokerSecretStdin: boolean;
   bypassEnabled: boolean;
   toolOverride?: string;
 }
@@ -54,7 +78,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   let reviewAutoFix: "off" | "direct" | "pr" | undefined;
   let reviewMaxInflight: number | undefined;
   let fixForward = true;
-  let skipReview = false;
+  let cliReviewFlag: "review" | "no-review" | undefined;
   let watchMode = false;
   let futureOnlyStartup = false;
   let noWatch = false;
@@ -62,6 +86,7 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
   let jsonFlag = false;
   let skipPreflight = false;
   let connectFlag: "connect" | "local" | undefined;
+  let brokerSecretStdin = false;
   let bypassEnabled = false;
   let toolOverride: string | undefined;
 
@@ -153,11 +178,11 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         i += 1;
         break;
       case "--no-review":
-        skipReview = true;
+        cliReviewFlag = "no-review";
         i += 1;
         break;
       case "--review":
-        skipReview = false;
+        cliReviewFlag = "review";
         i += 1;
         break;
       case "--watch":
@@ -194,6 +219,10 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
         connectFlag = "local";
         i += 1;
         break;
+      case "--broker-secret-stdin":
+        brokerSecretStdin = true;
+        i += 1;
+        break;
       case "--dangerously-bypass":
         bypassEnabled = true;
         mergeStrategy = "bypass";
@@ -213,12 +242,17 @@ export function parseWatchArgs(args: string[]): ParsedWatchArgs {
     watchMode = true;
   }
 
+  // Default is to skip reviews unless the user said `--review`. This matches
+  // the startup picker's default of reviews-off -- flipping reviews on
+  // mid-session safely picks up anything already at `ready for human review`.
+  const skipReview = cliReviewFlag === "review" ? false : true;
+
   return {
     itemIds, mergeStrategy, maxInflightOverride, pollIntervalOverride, frictionDir,
     daemonMode, isDaemonChild, isInteractiveEngineChild, clickupListId, remoteFlag,
     reviewAutoFix, reviewMaxInflight,
-    fixForward, skipReview, watchMode, futureOnlyStartup, noWatch, watchIntervalSecs,
-    jsonFlag, skipPreflight, connectFlag,
+    fixForward, skipReview, cliReviewFlag, watchMode, futureOnlyStartup, noWatch, watchIntervalSecs,
+    jsonFlag, skipPreflight, connectFlag, brokerSecretStdin,
     bypassEnabled, toolOverride,
   };
 }

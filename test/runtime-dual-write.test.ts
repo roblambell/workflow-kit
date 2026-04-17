@@ -1,8 +1,15 @@
-// Tests for runtime control handler dual-write behavior.
+// Tests that runtime control toggles for mode / review / collaboration are
+// strictly ephemeral and never reach the filesystem.
+//
+// Historically these handlers dual-wrote merge_strategy / review_mode /
+// collaboration_mode to both `~/.ninthwave/config.json` and
+// `.ninthwave/config.local.json`. That persistence was removed so every
+// session boots from the same safe defaults; runtime toggles affect only
+// the current session.
 
 import { describe, it, expect, afterEach } from "vitest";
 import { join } from "path";
-import { mkdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { createRuntimeControlHandlers } from "../core/watch-engine-runner.ts";
 import type { WatchEngineControlCommand } from "../core/watch-engine-runner.ts";
 import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
@@ -11,7 +18,7 @@ afterEach(() => {
   cleanupTempRepos();
 });
 
-describe("createRuntimeControlHandlers dual-write", () => {
+describe("createRuntimeControlHandlers mode/review/collab are ephemeral", () => {
   function setup() {
     const repo = setupTempRepo();
     mkdirSync(join(repo, ".ninthwave"), { recursive: true });
@@ -28,63 +35,47 @@ describe("createRuntimeControlHandlers dual-write", () => {
     return { repo, commands, userWrites, handlers };
   }
 
-  it("onStrategyChange writes to both global and local config", () => {
-    const { repo, handlers, userWrites } = setup();
+  it("onStrategyChange dispatches a control command and writes nothing", () => {
+    const { repo, commands, handlers, userWrites } = setup();
 
     handlers.onStrategyChange!("auto");
 
-    expect(userWrites).toHaveLength(1);
-    expect(userWrites[0]).toEqual({ merge_strategy: "auto" });
-
-    const local = JSON.parse(readFileSync(join(repo, ".ninthwave", "config.local.json"), "utf-8"));
-    expect(local.merge_strategy).toBe("auto");
-  });
-
-  it("onReviewChange writes to both global and local config", () => {
-    const { repo, handlers, userWrites } = setup();
-
-    handlers.onReviewChange!("off");
-
-    expect(userWrites).toHaveLength(1);
-    expect(userWrites[0]).toEqual({ review_mode: "off" });
-
-    const local = JSON.parse(readFileSync(join(repo, ".ninthwave", "config.local.json"), "utf-8"));
-    expect(local.review_mode).toBe("off");
-  });
-
-  it("onCollaborationChange writes to both global and local config", () => {
-    const { repo, handlers, userWrites } = setup();
-
-    handlers.onCollaborationChange!("connected");
-
-    expect(userWrites).toHaveLength(1);
-    expect(userWrites[0]).toEqual({ collaboration_mode: "connect" });
-
-    const local = JSON.parse(readFileSync(join(repo, ".ninthwave", "config.local.json"), "utf-8"));
-    expect(local.collaboration_mode).toBe("connect");
-  });
-
-  it("bypass merge strategy does not persist to either config", () => {
-    const { repo, handlers, userWrites } = setup();
-
-    handlers.onStrategyChange!("bypass");
-
+    expect(commands).toEqual([
+      { type: "set-merge-strategy", strategy: "auto", source: "keyboard" },
+    ]);
     expect(userWrites).toHaveLength(0);
+    expect(existsSync(join(repo, ".ninthwave", "config.local.json"))).toBe(false);
   });
 
-  it("skips local write when projectRoot is not provided", () => {
-    const commands: WatchEngineControlCommand[] = [];
-    const userWrites: Record<string, unknown>[] = [];
-
-    const handlers = createRuntimeControlHandlers({
-      sendControl: (cmd) => commands.push(cmd),
-      getMaxInflight: () => 3,
-      saveUserConfigFn: (updates) => { userWrites.push(updates); },
-    });
+  it("onReviewChange dispatches a control command and writes nothing", () => {
+    const { repo, commands, handlers, userWrites } = setup();
 
     handlers.onReviewChange!("on");
 
-    expect(userWrites).toHaveLength(1);
-    // No local config write attempted (no projectRoot), no error thrown
+    expect(commands).toEqual([
+      { type: "set-review-mode", mode: "on", source: "keyboard" },
+    ]);
+    expect(userWrites).toHaveLength(0);
+    expect(existsSync(join(repo, ".ninthwave", "config.local.json"))).toBe(false);
+  });
+
+  it("onCollaborationChange dispatches a control command and writes nothing", () => {
+    const { repo, commands, handlers, userWrites } = setup();
+
+    handlers.onCollaborationChange!("connected");
+
+    expect(commands).toEqual([
+      { type: "set-collaboration-mode", mode: "connected", source: "keyboard" },
+    ]);
+    expect(userWrites).toHaveLength(0);
+    expect(existsSync(join(repo, ".ninthwave", "config.local.json"))).toBe(false);
+  });
+
+  it("onMaxInflightChange still persists the new session limit (durable preference)", () => {
+    const { handlers, userWrites } = setup();
+
+    handlers.onMaxInflightChange!(2);
+
+    expect(userWrites).toEqual([{ max_inflight: 5 }]);
   });
 });

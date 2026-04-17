@@ -85,7 +85,6 @@ export interface InteractiveDeps {
 
 export interface StartupPersistenceOptions {
   savedToolIds?: string[];
-  defaults?: TuiSettingsDefaults;
   /**
    * Resolved default session limit (from user config or computeDefaultMaxInflight).
    *
@@ -426,19 +425,11 @@ export function buildStartupPersistenceUpdates(
     ? [...options.savedToolIds]
     : undefined;
 
-  const defaults = options.defaults;
-
-  const mergeStrategy = result.mergeStrategy === "auto" ? "auto" as const : "manual" as const;
-
-  // Only persist settings the user actively changed from their startup defaults.
-  // This prevents a wrong default from being cemented by pressing Enter.
+  // Merge strategy, review mode, and collaboration mode are deliberately not
+  // persisted. Every session starts from the same safe defaults (see
+  // TUI_SETTINGS_DEFAULTS); runtime toggles and CLI flags are the override
+  // surface.
   const updates: Partial<UserConfig> = {};
-  if (mergeStrategy !== defaults?.mergeStrategy) {
-    updates.merge_strategy = mergeStrategy;
-  }
-  if (result.reviewMode !== defaults?.reviewMode) {
-    updates.review_mode = result.reviewMode;
-  }
   if (
     result.maxInflight !== undefined &&
     options.defaultMaxInflight !== undefined &&
@@ -546,10 +537,10 @@ async function runReadlineFlow(
   const itemResult = await promptItems(todos, prompt);
   if (itemResult.ids.length === 0) return null;
 
-  // Startup defaults -- merge/session are not asked here, reviews default to on.
+  // Startup defaults -- merge/session are not asked here, reviews default to off.
   const mergeStrategy: MergeStrategy = "manual";
   const maxInflight = defaultMaxInflight;
-  const reviewMode: ReviewMode = "on";
+  const reviewMode: ReviewMode = "off";
 
   // Step 2: AI tool (conditional, multi-select)
   let aiTool: string | undefined;

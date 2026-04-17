@@ -4,16 +4,6 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { homedir } from "os";
 import {
-  isPersistedCollaborationMode,
-  isPersistedMergeStrategy,
-  isPersistedReviewMode,
-  normalizePersistedCollaborationMode,
-  normalizePersistedReviewMode,
-  type PersistedCollaborationMode,
-  type PersistedMergeStrategy,
-  type PersistedReviewMode,
-} from "./tui-settings.ts";
-import {
   isAiToolId,
   mergeToolOverrides,
   type BuiltInAiToolOverrides,
@@ -49,13 +39,6 @@ export interface ProjectConfig {
    * one so consumers don't need to know which file holds which field.
    */
   ai_tool_overrides?: BuiltInAiToolOverrides;
-  /**
-   * Per-repo mode settings. These live only in the gitignored
-   * `.ninthwave/config.local.json` and override the global user defaults.
-   */
-  merge_strategy?: PersistedMergeStrategy;
-  review_mode?: PersistedReviewMode;
-  collaboration_mode?: PersistedCollaborationMode;
 }
 
 function parseProjectCrewUrl(value: unknown): string | undefined {
@@ -243,6 +226,47 @@ export function loadMergedProjectConfig(projectRoot: string): ProjectConfig {
 }
 
 /**
+ * Environment variable that lets operators override the file-based
+ * `broker_secret` for a single process without touching
+ * `.ninthwave/config.local.json`. Useful for ephemeral environments
+ * (CI runners, shared dev containers) where the secret should not live
+ * on disk.
+ */
+export const BROKER_SECRET_ENV_VAR = "NINTHWAVE_BROKER_SECRET";
+
+/**
+ * Resolve the effective broker secret for this session. Precedence, highest
+ * to lowest:
+ *
+ * 1. `explicitSecret` -- typically a value piped in via `--broker-secret-stdin`.
+ *    Already validated by the caller.
+ * 2. `NINTHWAVE_BROKER_SECRET` environment variable. Validated here.
+ * 3. Value from `.ninthwave/config.local.json` (local overlay).
+ * 4. Value from `.ninthwave/config.json` (shared).
+ *
+ * Returns `undefined` when no layer provides a usable secret. Connect-mode
+ * resolution in the orchestrator treats a missing return as "stay local".
+ *
+ * Does not touch the filesystem and never writes the env-var / stdin values
+ * back to disk so the secret stays off disk by default.
+ */
+export function resolveEffectiveBrokerSecret(
+  projectRoot: string,
+  explicitSecret?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (explicitSecret !== undefined) {
+    return parseBrokerSecret(explicitSecret);
+  }
+  const envSecret = parseBrokerSecret(env[BROKER_SECRET_ENV_VAR]);
+  if (envSecret !== undefined) return envSecret;
+  const local = loadLocalConfig(projectRoot);
+  if (local.broker_secret !== undefined) return local.broker_secret;
+  const shared = loadConfig(projectRoot);
+  return shared.broker_secret;
+}
+
+/**
  * Strip `//` line comments and `/* ... *\/` block comments from JSONC
  * content, respecting string literals (including escaped quotes) so that a
  * `//` inside `"…"` is preserved. We accept JSONC in `.ninthwave/config.json`
@@ -317,9 +341,6 @@ function loadProjectConfigFile<T extends boolean>(
     if (brokerSecret !== undefined) result.broker_secret = brokerSecret;
     const overrides = parseBuiltInAiToolOverrides(parsed.ai_tool_overrides);
     if (overrides) result.ai_tool_overrides = overrides;
-    if (isPersistedMergeStrategy(parsed.merge_strategy)) result.merge_strategy = parsed.merge_strategy;
-    if (isPersistedReviewMode(parsed.review_mode)) result.review_mode = parsed.review_mode;
-    if (isPersistedCollaborationMode(parsed.collaboration_mode)) result.collaboration_mode = parsed.collaboration_mode;
     return result as T extends true ? ProjectConfig : Partial<ProjectConfig>;
   } catch {
     return fallback;
@@ -492,9 +513,6 @@ export interface UserConfig {
   ai_tool_overrides?: BuiltInAiToolOverrides;
   max_inflight?: number;
   tmux_layout?: TmuxLayoutMode;
-  merge_strategy?: PersistedMergeStrategy;
-  review_mode?: PersistedReviewMode;
-  collaboration_mode?: PersistedCollaborationMode;
   update_checks_enabled?: boolean;
   skipped_update_version?: string;
 }
@@ -540,17 +558,6 @@ export function loadUserConfig(homeOverride?: string): UserConfig {
     }
     if (isTmuxLayoutMode(parsed.tmux_layout)) {
       result.tmux_layout = parsed.tmux_layout;
-    }
-    if (isPersistedMergeStrategy(parsed.merge_strategy)) {
-      result.merge_strategy = parsed.merge_strategy;
-    }
-    const normalizedReviewMode = normalizePersistedReviewMode(parsed.review_mode);
-    if (normalizedReviewMode) {
-      result.review_mode = normalizedReviewMode;
-    }
-    const normalizedCollaborationMode = normalizePersistedCollaborationMode(parsed.collaboration_mode);
-    if (normalizedCollaborationMode) {
-      result.collaboration_mode = normalizedCollaborationMode;
     }
     if (typeof parsed.update_checks_enabled === "boolean") {
       result.update_checks_enabled = parsed.update_checks_enabled;
@@ -602,25 +609,6 @@ export function saveUserConfig(
   }
   for (const [key, value] of Object.entries(updates)) {
     if (value === undefined) {
-      continue;
-    }
-    if (key === "merge_strategy") {
-      if (isPersistedMergeStrategy(value)) {
-        merged[key] = value;
-      }
-      continue;
-    }
-    if (key === "review_mode") {
-      if (isPersistedReviewMode(value)) {
-        merged[key] = value;
-      }
-      continue;
-    }
-    if (key === "collaboration_mode") {
-      const normalized = normalizePersistedCollaborationMode(value);
-      if (normalized) {
-        merged[key] = normalized;
-      }
       continue;
     }
     if (key === "max_inflight") {

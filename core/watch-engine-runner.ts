@@ -9,13 +9,10 @@ import type { DaemonState, WorkerProgress } from "./daemon.ts";
 import type { InboxSnapshot } from "./commands/inbox.ts";
 import type { LogEntry } from "./types.ts";
 import {
-  mergeStrategyToPersisted,
-  reviewModeToPersisted,
-  collaborationModeToPersisted,
   type CollaborationMode,
   type ReviewMode,
 } from "./tui-settings.ts";
-import { saveUserConfig, saveLocalConfig } from "./config.ts";
+import { saveUserConfig } from "./config.ts";
 import type { InteractiveWatchTiming } from "./orchestrate-timing.ts";
 import type {
   OrchestrateLoopConfig,
@@ -80,7 +77,6 @@ export interface RuntimeControlHandlerDeps {
   sendControl: (command: WatchEngineControlCommand) => void;
   getMaxInflight: () => number;
   saveUserConfigFn?: typeof saveUserConfig;
-  saveLocalConfigFn?: typeof saveLocalConfig;
   projectRoot?: string;
   requestCollaborationAction?: (request: RuntimeCollaborationActionRequest) => void | RuntimeCollaborationActionResult | Promise<void | RuntimeCollaborationActionResult>;
 }
@@ -89,17 +85,6 @@ export function createRuntimeControlHandlers(
   deps: RuntimeControlHandlerDeps,
 ): RuntimeControlHandlers {
   const saveUserConfigFn = deps.saveUserConfigFn ?? saveUserConfig;
-  const saveLocalConfigFn = deps.saveLocalConfigFn ?? saveLocalConfig;
-
-  const dualWriteLocal = (updates: Record<string, unknown>) => {
-    if (deps.projectRoot) {
-      try {
-        saveLocalConfigFn(deps.projectRoot, updates);
-      } catch {
-        // Best-effort persistence only.
-      }
-    }
-  };
 
   return {
     onPauseChange: (paused) => {
@@ -109,16 +94,8 @@ export function createRuntimeControlHandlers(
       deps.sendControl({ type: "set-accepting-work", accepting, source: "keyboard" });
     },
     onStrategyChange: (strategy) => {
+      // Runtime toggle only -- merge strategy is never persisted across sessions.
       deps.sendControl({ type: "set-merge-strategy", strategy, source: "keyboard" });
-      const persisted = mergeStrategyToPersisted(strategy);
-      if (persisted) {
-        try {
-          saveUserConfigFn({ merge_strategy: persisted });
-        } catch {
-          // Best-effort persistence only.
-        }
-        dualWriteLocal({ merge_strategy: persisted });
-      }
     },
     onMaxInflightChange: (delta) => {
       const currentLimit = deps.getMaxInflight();
@@ -132,24 +109,13 @@ export function createRuntimeControlHandlers(
       }
     },
     onReviewChange: (mode) => {
+      // Runtime toggle only -- review mode is never persisted across sessions.
       deps.sendControl({ type: "set-review-mode", mode, source: "keyboard" });
-      const persisted = reviewModeToPersisted(mode);
-      try {
-        saveUserConfigFn({ review_mode: persisted });
-      } catch {
-        // Best-effort persistence only.
-      }
-      dualWriteLocal({ review_mode: persisted });
     },
     onCollaborationChange: (mode) => {
+      // Runtime toggle only -- collaboration mode is never persisted across
+      // sessions; the startup default is derived from broker_secret presence.
       deps.sendControl({ type: "set-collaboration-mode", mode, source: "keyboard" });
-      const persisted = collaborationModeToPersisted(mode);
-      try {
-        saveUserConfigFn({ collaboration_mode: persisted });
-      } catch {
-        // Best-effort persistence only.
-      }
-      dualWriteLocal({ collaboration_mode: persisted });
     },
     onCollaborationLocal: () => {
       if (deps.requestCollaborationAction) {
