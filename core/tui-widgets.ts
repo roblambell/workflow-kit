@@ -422,20 +422,29 @@ export function runCheckboxList(
               const newState = !item.checked;
               for (const i of currentItems) i.checked = newState;
             } else {
-              // Toggling a regular item (sentinel stays independent)
+              // Toggling a regular item: unchecking any item clears __ALL__
               item.checked = !item.checked;
+              if (!item.checked) {
+                const sentinel = currentItems.find((i) => i.id === linkId);
+                if (sentinel) sentinel.checked = false;
+              }
             }
           } else {
             currentItems[cursor]!.checked = !currentItems[cursor]!.checked;
           }
           break;
         }
-        case "a": { // Toggle all regular items (sentinel stays independent)
+        case "a": { // Toggle all regular items; unchecking them also clears __ALL__
           const regularItems = linkAllId
             ? currentItems.filter((i) => i.id !== linkAllId)
             : currentItems;
           const allChecked = regularItems.every((i) => i.checked);
-          for (const item of regularItems) item.checked = !allChecked;
+          const newState = !allChecked;
+          for (const item of regularItems) item.checked = newState;
+          if (!newState && linkAllId) {
+            const sentinel = currentItems.find((i) => i.id === linkAllId);
+            if (sentinel) sentinel.checked = false;
+          }
           break;
         }
         case "\r": { // Enter -- confirm

@@ -377,7 +377,7 @@ describe("runCheckboxList", () => {
     const items: CheckboxItem[] = [
       { id: "__ALL__", label: "All", checked: true },
       { id: "A-1", label: "A-1  First", checked: true },
-      { id: "B-2", label: "B-2  Second", checked: true },
+      { id: "B-2", label: "B-2  Second", checked: false },
     ];
 
     const resultPromise = runCheckboxList(io, items, {
@@ -387,7 +387,6 @@ describe("runCheckboxList", () => {
       },
     });
 
-    sendKeys(["\x1B[B", "\x1B[B", " "]); // Keep __ALL__ checked but uncheck B-2.
     controller!.replaceState({
       title: "Refreshed",
       linkAllId: "__ALL__",
@@ -489,19 +488,34 @@ describe("runCheckboxList with linkAllId", () => {
     expect(result.allSelected).toBe(true);
   });
 
-  it("unchecking a regular item does not affect __ALL__", async () => {
+  it("unchecking a regular item clears __ALL__", async () => {
     const { io, sendKeys } = createMockIO();
     const items = makeLinkedItems(2); // __ALL__, T-1, T-2 -- all checked
 
     const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
-    // Down to T-2 (index 2), space to uncheck. __ALL__ stays checked (independent).
+    // Down to T-2 (index 2), space to uncheck. __ALL__ auto-unchecks.
     sendKeys(["\x1B[B", "\x1B[B", " ", "\r"]);
 
     const result = await resultPromise;
     expect(result.selectedIds).toContain("T-1");
     expect(result.selectedIds).not.toContain("T-2");
-    expect(result.selectedIds).toContain("__ALL__");
-    expect(result.allSelected).toBe(true);
+    expect(result.selectedIds).not.toContain("__ALL__");
+    expect(result.allSelected).toBe(false);
+  });
+
+  it("re-checking a regular item does not auto-check __ALL__", async () => {
+    const { io, sendKeys } = createMockIO();
+    const items = makeLinkedItems(2); // __ALL__, T-1, T-2 -- all checked
+
+    const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
+    // Down to T-2, uncheck (clears __ALL__), space again to re-check -- __ALL__ stays off.
+    sendKeys(["\x1B[B", "\x1B[B", " ", " ", "\r"]);
+
+    const result = await resultPromise;
+    expect(result.selectedIds).toContain("T-1");
+    expect(result.selectedIds).toContain("T-2");
+    expect(result.selectedIds).not.toContain("__ALL__");
+    expect(result.allSelected).toBe(false);
   });
 
   it("all regular items checked does not auto-check __ALL__", async () => {
@@ -524,33 +538,33 @@ describe("runCheckboxList with linkAllId", () => {
     expect(result.allSelected).toBe(false);
   });
 
-  it("'a' key toggles only regular items, not __ALL__", async () => {
+  it("'a' key re-check does not auto-check __ALL__", async () => {
     const { io, sendKeys } = createMockIO();
     const items = makeLinkedItems(2); // all checked including __ALL__
 
     const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
-    // "a" unchecks regular items (sentinel stays checked), "a" re-checks regular items, confirm
+    // "a" unchecks regular items (and sentinel), "a" re-checks regular items only, confirm
     sendKeys(["a", "a", "\r"]);
 
     const result = await resultPromise;
-    expect(result.selectedIds).toContain("__ALL__");
+    expect(result.selectedIds).not.toContain("__ALL__");
     expect(result.selectedIds).toContain("T-1");
     expect(result.selectedIds).toContain("T-2");
-    expect(result.allSelected).toBe(true);
+    expect(result.allSelected).toBe(false);
   });
 
-  it("'a' key uncheck leaves __ALL__ unchanged", async () => {
+  it("'a' key uncheck also clears __ALL__", async () => {
     const { io, sendKeys } = createMockIO();
     const items = makeLinkedItems(2); // all checked including __ALL__
 
     const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
-    // "a" unchecks regular items only, sentinel stays checked. Select T-1 to confirm.
+    // "a" unchecks regular items and sentinel. Select T-1 to confirm.
     sendKeys(["a", "\x1B[B", " ", "\r"]);
 
     const result = await resultPromise;
     expect(result.selectedIds).toContain("T-1");
-    expect(result.selectedIds).toContain("__ALL__");
-    expect(result.allSelected).toBe(true);
+    expect(result.selectedIds).not.toContain("__ALL__");
+    expect(result.allSelected).toBe(false);
   });
 
   it("edge case: single work item + __ALL__ (2 items total)", async () => {
@@ -567,18 +581,18 @@ describe("runCheckboxList with linkAllId", () => {
     expect(result.allSelected).toBe(true);
   });
 
-  it("toggling regular item does not affect __ALL__ (single item edge case)", async () => {
+  it("toggling regular item off clears __ALL__ (single item edge case)", async () => {
     const { io, sendKeys } = createMockIO();
     const items = makeLinkedItems(1); // __ALL__ + T-1, both checked
 
     const resultPromise = runCheckboxList(io, items, { linkAllId: "__ALL__" });
-    // Down to T-1, uncheck, re-check -- __ALL__ stays checked throughout (independent)
+    // Down to T-1, uncheck (clears __ALL__), re-check -- __ALL__ stays off.
     sendKeys(["\x1B[B", " ", " ", "\r"]);
 
     const result = await resultPromise;
     expect(result.selectedIds).toContain("T-1");
-    expect(result.selectedIds).toContain("__ALL__");
-    expect(result.allSelected).toBe(true);
+    expect(result.selectedIds).not.toContain("__ALL__");
+    expect(result.allSelected).toBe(false);
   });
 });
 
