@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.4.6] - 2026-04-18
+
+### Added
+- nw crew subcommand (H-BS-6) (#677)
+- dynamic connectionAction in startup flows (H-BS-5) (#675)
+- add acceptingWork toggle for drain mode (H-IS-4) (#674)
+- auto-connect when broker secret present (H-BS-4) (#673)
+- init --broker-secret and --skip-broker flags (H-BS-3) (#671)
+- broker secret prompt in nw init (H-BS-2) (#670)
+- support null in env_rotation to leave the key unset
+- reactive review toggle -- drain review-pending and backfill on re-enable
+- per-repo mode settings persistence with hybrid resolution
+- add broker-hash HMAC helper (H-BAJ-2) (#664)
+- add project_id and broker_secret to project config (H-BAJ-1) (#663)
+- per-repo and round-robin AI tool env overrides
+- add explicit no-code feedback completion signal (H-RFC-3) (#656)
+- flush aggregated feedback batches (H-RFC-2) (#654)
+- batch human PR feedback before merge (H-RFC-1) (#652)
+- apply worker launch overrides (H-WRK-2) (#653)
+- add AI tool override resolver (H-WRK-1) (#651)
+
+### Changed
+- hardcode startup defaults; drop mode/review/collab persistence (#679)
+- state-based activeItemCount counting (H-IS-3) (#672)
+- rename sessionLimit to maxInflight (H-IS-2) (#669)
+- drop model frontmatter from agent files
+- remove memory auto-adjustment (H-IS-1) (#668)
+- remove startup settings screen and collapse collaboration modes
+- keep broker_secret out of committed config by default
+- delete dead crew-code code and docs (M-BAJ-4) (#666)
+- auto-join broker via hashed project identity (H-BAJ-3) (#665)
+- remove external PR review activation (H-SUX-3) (#661)
+- simplify startup settings and persistence (H-SUX-2) (#660)
+- collapse review modes to on/off (H-SUX-1) (#659)
+
+### Fixed
+- auto-uncheck "All" sentinel when a regular checkbox item is unchecked
+- sync reused worktree to origin HEAD before worker launch (H-ORCH-13) (#683)
+- parked PR must still receive rebase nudges on base advance (H-ORCH-12) (#682)
+- gate auto-merge to default branch only (H-ORCH-11) (#684)
+- null env_rotation pick must use default launch command
+- stop CLI from generating broker secrets (H-BS-1) (#667)
+- add early BASE_BRANCH stale check and fix CWD drift in implementer template
+- prevent feedback batch from killing reviewer during review
+- normalize statusCheckRollup fields in bulk PR cache
+- count items instead of lines in scroll indicators
+- emit early snapshot before action execution to unblock loading screen
+- support bulk PR list queries in fake gh test stub
+- bypass rate-limit queue when bulk PR cache resolves items locally
+- batch GitHub API calls to eliminate linear scaling with work item count
+- update session limit display immediately in interactive engine mode
+- recover stopped headless workers via persisted phase signal (#657)
+- SIGKILL stranded nw inbox --wait processes on workspace close
+- defer eyes reaction to successful feedback delivery or relaunch (#658)
+- keep exhausted request budgets at zero
+- strengthen non-Claude worker wait contract (H-WRK-3) (#655)
+
 ## [0.4.5] - 2026-04-13
 
 Supersedes a dead v0.4.4 tag whose release workflow failed before shipping. All intended 0.4.4 changes are included here.
