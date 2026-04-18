@@ -101,10 +101,11 @@ function setupWorkItemsDir(repo: string): string {
     ].join("\n"),
   );
 
-  // Commit work items so pre-flight checks pass
+  // Commit and push so origin/main-sourced readers can see the files.
   const { spawnSync } = require("child_process");
   spawnSync("git", ["-C", repo, "add", ".ninthwave/work/"], { stdio: "pipe" });
   spawnSync("git", ["-C", repo, "commit", "-m", "add work items", "--allow-empty"], { stdio: "pipe" });
+  spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
   return workDir;
 }

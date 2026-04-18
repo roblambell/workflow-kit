@@ -21,6 +21,7 @@ import { userStateDir, migrateRuntimeState } from "../daemon.ts";
 import { info, GREEN, BOLD, DIM, RESET, YELLOW, RED } from "../output.ts";
 import { run } from "../shell.ts";
 import type { WorkspaceConfig, WorkspacePackage } from "../types.ts";
+import { assertOriginMain } from "../git.ts";
 import {
   copySkillFiles,
   type CommandChecker,
@@ -43,7 +44,7 @@ import {
 import { AI_TOOL_PROFILES } from "../ai-tools.ts";
 import {
   generateProjectIdentity,
-  loadConfig,
+  loadWorkingTreeConfig,
   loadLocalConfig,
   parseBrokerSecret,
   saveLocalConfig,
@@ -809,6 +810,14 @@ export function initProject(
   deps?: InitDeps,
   opts?: InitProjectOpts,
 ): DetectionResult {
+  // Precondition: `origin/main` must resolve. Ninthwave reads work items
+  // and shared config from origin/main so the daemon can ignore the user's
+  // working tree; without an origin/main ref there is nothing to read and
+  // no scaffolding to anchor the project identity against. Fail loudly
+  // with an actionable message instead of writing config that would
+  // immediately be orphaned.
+  assertOriginMain(projectDir, "nw init");
+
   console.log(`Initializing ninthwave in: ${projectDir}`);
   console.log();
 
@@ -830,7 +839,7 @@ export function initProject(
 
   // 4. Write config with detected values (always overwrite -- init is authoritative)
   const configPath = join(projectDir, ".ninthwave/config.json");
-  const existingConfig = loadConfig(projectDir);
+  const existingConfig = loadWorkingTreeConfig(projectDir);
   mkdirSync(join(projectDir, ".ninthwave"), { recursive: true });
   writeFileSync(configPath, generateConfig(detection, existingConfig));
   // Apply the caller's broker secret decision. An existing secret in either
@@ -1057,7 +1066,7 @@ export async function cmdInit(
   //   4. Interactive prompt.
   const existingSecret =
     loadLocalConfig(projectDir).broker_secret ??
-    loadConfig(projectDir).broker_secret;
+    loadWorkingTreeConfig(projectDir).broker_secret;
   let brokerSecretAction: BrokerSecretAction | undefined;
   if (existingSecret === undefined) {
     if (flagAction !== undefined) {

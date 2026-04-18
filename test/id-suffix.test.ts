@@ -14,6 +14,7 @@ import {
 } from "../core/types.ts";
 import { parseWorkItemFile, listWorkItems, readWorkItem } from "../core/work-item-files.ts";
 import { normalizeTitleForComparison } from "../core/work-item-files.ts";
+import { setupTempRepoWithRemote, commitAndPushWorkItem, cleanupTempRepos } from "./helpers.ts";
 
 // Track temp dirs for cleanup
 const tempDirs: string[] = [];
@@ -31,6 +32,7 @@ afterEach(() => {
     }
   }
   tempDirs.length = 0;
+  cleanupTempRepos();
 });
 
 // --- ID_PATTERN ---
@@ -204,14 +206,14 @@ Follow-up after the suffixed items.
 
 describe("listWorkItems with suffixed IDs", () => {
   it("lists both suffixed and plain IDs correctly", () => {
-    const dir = makeTempDir();
-    const workDir = join(dir, "work");
-    const worktreeDir = join(dir, "worktrees");
-    mkdirSync(workDir);
-    mkdirSync(worktreeDir);
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
+    const worktreeDir = join(repo, ".ninthwave", "worktrees");
+    mkdirSync(worktreeDir, { recursive: true });
 
-    writeFileSync(
-      join(workDir, "1-parsing--H-CP-7a.md"),
+    commitAndPushWorkItem(
+      repo,
+      "1-parsing--H-CP-7a.md",
       `# Fix A (H-CP-7a)
 
 **Priority:** High
@@ -221,8 +223,9 @@ describe("listWorkItems with suffixed IDs", () => {
 `,
     );
 
-    writeFileSync(
-      join(workDir, "1-parsing--H-CP-7b.md"),
+    commitAndPushWorkItem(
+      repo,
+      "1-parsing--H-CP-7b.md",
       `# Fix B (H-CP-7b)
 
 **Priority:** High
@@ -232,8 +235,9 @@ describe("listWorkItems with suffixed IDs", () => {
 `,
     );
 
-    writeFileSync(
-      join(workDir, "2-features--M-FT-1.md"),
+    commitAndPushWorkItem(
+      repo,
+      "2-features--M-FT-1.md",
       `# Feature (M-FT-1)
 
 **Priority:** Medium
@@ -258,12 +262,12 @@ describe("listWorkItems with suffixed IDs", () => {
 
 describe("readWorkItem with suffixed IDs", () => {
   it("finds item by suffixed ID", () => {
-    const dir = makeTempDir();
-    const workDir = join(dir, "work");
-    mkdirSync(workDir);
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
 
-    writeFileSync(
-      join(workDir, "1-parsing--H-CP-7a.md"),
+    commitAndPushWorkItem(
+      repo,
+      "1-parsing--H-CP-7a.md",
       `# Fix A (H-CP-7a)
 
 **Priority:** High

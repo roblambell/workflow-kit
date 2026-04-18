@@ -1,13 +1,14 @@
 // Tests for the directory-based work item parser.
 
 import { describe, it, expect, afterEach } from "vitest";
-import { join } from "path";
+import { join, dirname } from "path";
 import { mkdirSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
 import { parseWorkItems, extractFilePaths, extractTestPlan, normalizeDomain, truncateSlug, expandWildcardDeps } from "../core/parser.ts";
 import { writeWorkItemFile, workItemFilename } from "../core/work-item-files.ts";
 import type { WorkItem, Priority } from "../core/types.ts";
 import {
-  setupTempRepo,
+  setupTempRepoWithRemote,
   cleanupTempRepos,
 } from "./helpers.ts";
 
@@ -15,16 +16,39 @@ afterEach(() => {
   cleanupTempRepos();
 });
 
-/** Helper: create a work items directory inside a temp repo and return its path. */
+/**
+ * Helper: set up a repo whose `origin/main` already exists (via a bare
+ * remote seeded by {@link setupTempRepoWithRemote}) and return its
+ * `.ninthwave/work/` path. All parseWorkItems tests now source items from
+ * origin/main via `git ls-tree` / `git show`, so tests stage files with
+ * {@link writeRawWorkItemFile}, which commits and pushes.
+ */
+function setupTempRepo(): string {
+  return setupTempRepoWithRemote();
+}
+
 function setupWorkItemsDir(repo: string): string {
   const workDir = join(repo, ".ninthwave", "work");
   mkdirSync(workDir, { recursive: true });
   return workDir;
 }
 
-/** Helper: write a raw markdown work item file directly (for fine-grained control). */
+/**
+ * Write a work item file and commit+push it to origin/main so the
+ * origin-main-only readers can see it. Kept under the old name so the
+ * test bodies below remain near-identical to their pre-refactor shape.
+ */
 function writeRawWorkItemFile(workDir: string, filename: string, content: string): void {
+  const repo = dirname(dirname(workDir));
+  mkdirSync(workDir, { recursive: true });
   writeFileSync(join(workDir, filename), content);
+  spawnSync("git", ["-C", repo, "add", join(".ninthwave", "work", filename)], { stdio: "pipe" });
+  spawnSync(
+    "git",
+    ["-C", repo, "commit", "-m", `test: add ${filename}`, "--quiet"],
+    { stdio: "pipe" },
+  );
+  spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 }
 
 /** Helper: create a WorkItem for writeWorkItemFile. */
@@ -1088,6 +1112,11 @@ Acceptance: Item round-trips correctly.
     });
 
     writeWorkItemFile(workDir, item);
+    // Land the file on origin/main so parseWorkItems (which sources from
+    // origin-main via git plumbing) can see it.
+    spawnSync("git", ["-C", repo, "add", "-A"], { stdio: "pipe" });
+    spawnSync("git", ["-C", repo, "commit", "-m", "round-trip", "--quiet"], { stdio: "pipe" });
+    spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
     const items = parseWorkItems(workDir, join(repo, ".ninthwave", ".worktrees"));
     expect(items).toHaveLength(1);

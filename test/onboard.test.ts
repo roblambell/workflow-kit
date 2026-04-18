@@ -8,7 +8,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "fs";
-import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
+import { setupTempRepo, cleanupTempRepos, commitAndPushWorkItem } from "./helpers.ts";
 import { stripJsonComments } from "../core/config.ts";
 import {
   detectInstalledMuxes,
@@ -235,8 +235,9 @@ describe("loadLocalStartupItems", () => {
 
     mkdirSync(workDir, { recursive: true });
     mkdirSync(worktreeDir, { recursive: true });
-    writeFileSync(
-      join(workDir, "2-startup-items--H-LOCAL-1.md"),
+    commitAndPushWorkItem(
+      projectDir,
+      "2-startup-items--H-LOCAL-1.md",
       [
         "# Refactor: Local startup item (H-LOCAL-1)",
         "",

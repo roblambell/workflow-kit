@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "child_process";
 import { writeFileSync, realpathSync } from "fs";
-import { setupTempRepo, registerCleanup } from "./helpers.ts";
+import { setupTempRepo, setupTempRepoWithoutRemote, registerCleanup } from "./helpers.ts";
 import { run } from "../core/shell.ts";
 import {
   commitCount,
@@ -223,7 +223,7 @@ describe("git.ts error handling", () => {
 
   describe("fetchOrigin() error handling (via run)", () => {
     it("returns non-zero exit when no remote configured", () => {
-      const repo = setupTempRepo();
+      const repo = setupTempRepoWithoutRemote();
       const result = run("git", ["-C", repo, "fetch", "origin", "main", "--quiet"]);
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr).not.toBe("");
@@ -237,7 +237,7 @@ describe("git.ts error handling", () => {
 
   describe("ffMerge() error handling (via run)", () => {
     it("returns non-zero exit when remote ref does not exist", () => {
-      const repo = setupTempRepo();
+      const repo = setupTempRepoWithoutRemote();
       const result = run("git", ["-C", repo, "merge", "--ff-only", "origin/main", "--quiet"]);
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr).not.toBe("");
@@ -419,7 +419,7 @@ describe("git.ts error handling", () => {
     });
 
     it("other errors (no remote) do NOT contain 'remote ref does not exist'", () => {
-      const repo = setupTempRepo();
+      const repo = setupTempRepoWithoutRemote();
       initWithCommit(repo);
       // No remote configured → different error
       const result = run("git", ["-C", repo, "push", "origin", "--delete", "some-branch"]);

@@ -2,7 +2,7 @@
 // Provides temp git repo setup/teardown and fixture utilities.
 
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "fs";
-import { isAbsolute, join } from "path";
+import { dirname, isAbsolute, join } from "path";
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { tmpdir } from "os";
 import { afterEach } from "vitest";
@@ -30,9 +30,29 @@ export interface CompiledCliHandle extends ProcessHandle {
 }
 
 /**
- * Create a minimal temp git repo. Returns its path.
+ * Create a temp git repo wired up to a bare remote (`origin`) with
+ * `origin/main` already established from an initial empty commit. Returns
+ * the local working repo path.
+ *
+ * Ninthwave's daemon-side readers (work items, config) source content from
+ * `origin/main`, so tests that exercise those readers need a repo whose
+ * main branch has been pushed. We make this the default so existing tests
+ * -- which call `setupTempRepo()` and then write work items into
+ * `.ninthwave/work/` via helpers -- keep working after the refactor, as
+ * long as those helpers commit and push.
+ *
+ * Tests that specifically need "no origin/main" (e.g. negative cases for
+ * the precondition error) should use {@link setupTempRepoWithoutRemote}.
  */
 export function setupTempRepo(): string {
+  return setupTempRepoWithRemote();
+}
+
+/**
+ * Create a bare temp git repo with no remote configured. Used by tests
+ * that exercise the "origin/main does not resolve" precondition failures.
+ */
+export function setupTempRepoWithoutRemote(): string {
   const tmp = mkdtempSync(join(tmpdir(), "nw-test-"));
   tempDirs.push(tmp);
 
@@ -177,18 +197,20 @@ export function useFixtureDir(repo: string, fixtureName: string): string {
 
   flush();
 
-  // Stage and commit
+  // Stage, commit, and push so origin/main-sourced readers can see them.
   git(repo, "add", ".ninthwave");
   spawnSync("git", ["-C", repo, "commit", "-m", "Add work item files", "--quiet"], {
     stdio: "pipe",
   });
+  spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
   return workDir;
 }
 
 /**
  * Write inline work item content as individual directory-based work item files.
- * Parses content and writes to repo/.ninthwave/work/.
+ * Parses content and writes to repo/.ninthwave/work/. Commits and pushes the
+ * files so origin/main-sourced readers can see them.
  * Returns the path to the work items directory.
  *
  * Usage:
@@ -262,6 +284,15 @@ export function writeWorkItemFiles(repo: string, itemsContent: string): string {
 
   flush();
 
+  // Commit and push so origin/main-sourced readers can see the files.
+  spawnSync("git", ["-C", repo, "add", ".ninthwave"], { stdio: "pipe" });
+  spawnSync(
+    "git",
+    ["-C", repo, "commit", "-m", "Add inline work items", "--quiet"],
+    { stdio: "pipe" },
+  );
+  spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
+
   return workDir;
 }
 
@@ -298,6 +329,54 @@ export function setupTempRepoWithRemote(): string {
   git(local, "push", "-u", "origin", "main", "--quiet");
 
   return local;
+}
+
+/**
+ * Write a work item file, commit it, and push to origin/main. Used by
+ * tests that exercise the origin-main-only readers in work-item-files.ts
+ * and parser.ts -- those readers ignore the user's working tree and
+ * source items via `git show origin/main`, so tests must land the file on
+ * the remote before calling them.
+ *
+ * `repo` must have been created via {@link setupTempRepoWithRemote}.
+ */
+export function commitAndPushWorkItem(
+  repo: string,
+  filename: string,
+  content: string,
+): void {
+  const workDir = join(repo, ".ninthwave", "work");
+  mkdirSync(workDir, { recursive: true });
+  writeFileSync(join(workDir, filename), content);
+  spawnSync("git", ["-C", repo, "add", join(".ninthwave", "work", filename)], { stdio: "pipe" });
+  spawnSync(
+    "git",
+    ["-C", repo, "commit", "-m", `test: add ${filename}`, "--quiet"],
+    { stdio: "pipe" },
+  );
+  spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
+}
+
+/**
+ * Commit and push arbitrary content to an arbitrary path on origin/main.
+ * Used by tests that need to stage files other than work items (e.g.
+ * `.ninthwave/config.json`) on the remote.
+ */
+export function commitAndPushPath(
+  repo: string,
+  relPath: string,
+  content: string,
+): void {
+  const absPath = join(repo, relPath);
+  mkdirSync(dirname(absPath), { recursive: true });
+  writeFileSync(absPath, content);
+  spawnSync("git", ["-C", repo, "add", relPath], { stdio: "pipe" });
+  spawnSync(
+    "git",
+    ["-C", repo, "commit", "-m", `test: add ${relPath}`, "--quiet"],
+    { stdio: "pipe" },
+  );
+  spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 }
 
 export function ensureCompiledCli(): string {

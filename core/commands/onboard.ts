@@ -107,7 +107,7 @@ export interface OnboardDeps {
 export interface NoArgsDeps extends OnboardDeps {
   isTTY?: boolean;
   existsSync?: typeof existsSync;
-  parseWorkItems?: (workDir: string, worktreeDir: string, projectRoot?: string) => WorkItem[];
+  parseWorkItems?: (workDir: string, worktreeDir: string) => WorkItem[];
   loadStartupItems?: (workDir: string, worktreeDir: string, projectRoot: string) => WorkItem[];
   refreshStartupItems?: (
     workDir: string,
@@ -460,7 +460,7 @@ export async function cmdNoArgs(
   const doLoadStartupItems = deps.loadStartupItems
     ?? ((workDir: string, worktreeDir: string, projectRoot: string) =>
       deps.parseWorkItems
-        ? deps.parseWorkItems(workDir, worktreeDir, projectRoot)
+        ? deps.parseWorkItems(workDir, worktreeDir)
         : loadLocalStartupItems(workDir, worktreeDir, projectRoot));
   const doRefreshStartupItems = deps.refreshStartupItems ?? refreshRunnableStartupItems;
   const checkDaemon = deps.isDaemonRunning ?? isDaemonRunning;

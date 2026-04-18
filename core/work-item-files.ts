@@ -8,7 +8,7 @@ import {
   writeFileSync,
   unlinkSync,
 } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import type { WorkItem, Priority } from "./types.ts";
 import {
   PRIORITY_NUM,
@@ -20,6 +20,24 @@ import {
   CODE_EXTENSIONS,
 } from "./types.ts";
 import { generateLineageToken } from "./commands/lineage-token.ts";
+import { isInsideGitRepo, listOriginMainFiles, readOriginMainFile } from "./git.ts";
+
+/**
+ * Derive the repo root from a `.ninthwave/work/` path. Used so existing
+ * callers can keep passing `workDir` without having to thread an explicit
+ * `repoRoot` through every call site. The assumption matches the rest of
+ * the codebase where work items always live at `<repoRoot>/.ninthwave/work`.
+ */
+function repoRootFromWorkDir(workDir: string): string {
+  const ninthwaveDir = dirname(workDir);
+  return dirname(ninthwaveDir);
+}
+
+/**
+ * Relative path for the work items directory on `origin/main`. Kept as a
+ * constant so test fakes and helpers can target the same prefix.
+ */
+export const WORK_ITEM_REL_DIR = ".ninthwave/work";
 
 /** Type guard: checks whether a string is a valid Priority. */
 export function isPriority(s: string): s is Priority {
@@ -519,13 +537,15 @@ export function workItemFilename(
 }
 
 /**
- * Parse a single work item file into a WorkItem.
- * Returns null if the file is malformed (missing ID or priority).
+ * Parse raw work item markdown into a WorkItem. The `filePath` is attached
+ * to the returned item for display purposes only -- no filesystem read is
+ * performed. Returns null if the content is malformed (missing ID or
+ * priority, invalid lineage token, invalid manual-review override).
  */
-export function parseWorkItemFile(filePath: string): WorkItem | null {
-  if (!existsSync(filePath)) return null;
-
-  const content = readFileSync(filePath, "utf-8");
+export function parseWorkItemContent(
+  content: string,
+  filePath: string,
+): WorkItem | null {
   const lines = content.split("\n");
 
   // Extract ID from the first heading line: "# Type: Title (ID)"
@@ -651,14 +671,20 @@ export function parseWorkItemFile(filePath: string): WorkItem | null {
 }
 
 /**
- * List all work item files in a directory, parse them, and return WorkItem[].
- * Expands wildcard dependencies in a second pass.
- * Sets status to "in-progress" if a worktree `ninthwave-{id}` exists.
+ * Parse a single work item file from the filesystem. Thin wrapper around
+ * {@link parseWorkItemContent} for filesystem-based callers. Returns null
+ * if the file is missing, malformed, or parses to an invalid item.
  */
-export function listWorkItems(workDir: string, worktreeDir: string): WorkItem[] {
-  if (!existsSync(workDir)) return [];
+export function parseWorkItemFile(filePath: string): WorkItem | null {
+  if (!existsSync(filePath)) return null;
+  const content = readFileSync(filePath, "utf-8");
+  return parseWorkItemContent(content, filePath);
+}
 
-  // Derive in-progress IDs from worktree directories
+/**
+ * Apply "in-progress" status to items whose matching worktree exists.
+ */
+function markInProgress(items: WorkItem[], worktreeDir: string): void {
   const inProgressIds = new Set<string>();
   if (existsSync(worktreeDir)) {
     try {
@@ -671,23 +697,18 @@ export function listWorkItems(workDir: string, worktreeDir: string): WorkItem[] 
       // worktreeDir might not be a directory
     }
   }
-
-  const entries = readdirSync(workDir).filter((f) => f.endsWith(".md"));
-  const items: WorkItem[] = [];
-
-  for (const entry of entries) {
-    const fp = join(workDir, entry);
-    const item = parseWorkItemFile(fp);
-    if (!item) continue;
-
+  for (const item of items) {
     if (inProgressIds.has(item.id)) {
       item.status = "in-progress";
     }
-
-    items.push(item);
   }
+}
 
-  // Second pass: expand wildcard dependencies
+/**
+ * Second-pass wildcard-dependency expansion. Shared between the
+ * filesystem and origin/main readers so both produce identical items.
+ */
+function expandWildcardDepsInPlace(items: WorkItem[]): void {
   const allIds = items.map((item) => item.id);
   for (const item of items) {
     const dependsLine = item.rawText
@@ -706,13 +727,88 @@ export function listWorkItems(workDir: string, worktreeDir: string): WorkItem[] 
       }
     }
   }
+}
 
+/**
+ * Filesystem-based work item listing. Reads every `*.md` under `workDir`
+ * from the current working tree. Retained for tests and ad-hoc
+ * filesystem inspection; the daemon hot path calls
+ * {@link listWorkItemsFromOriginMain} instead so stale/dirty/locally-
+ * modified working trees cannot shape the daemon's view of the spec.
+ */
+export function listWorkItems(workDir: string, worktreeDir: string): WorkItem[] {
+  if (!existsSync(workDir)) return [];
+
+  const entries = readdirSync(workDir).filter((f) => f.endsWith(".md"));
+  const items: WorkItem[] = [];
+
+  for (const entry of entries) {
+    const fp = join(workDir, entry);
+    const item = parseWorkItemFile(fp);
+    if (!item) continue;
+    items.push(item);
+  }
+
+  markInProgress(items, worktreeDir);
+  expandWildcardDepsInPlace(items);
   return items;
 }
 
 /**
- * Read a single work item by ID.
- * Globs for `*--{id}.md` in the todos directory.
+ * List all work item files on `origin/main`, parse them, and return
+ * WorkItem[]. Reads filenames via `git ls-tree origin/main` and contents
+ * via `git show origin/main:<path>`, so the daemon's view is independent
+ * of the user's working tree state (stale, dirty, or locally modified).
+ *
+ * Throws with an actionable error when `origin/main` does not resolve --
+ * this is the deliberate hard-fail the daemon relies on.
+ *
+ * `workDir` still appears in the signature because callers already
+ * compute it as `<repoRoot>/.ninthwave/work`; we use it to derive the
+ * repo root (via {@link repoRootFromWorkDir}) and to stamp a stable
+ * `item.filePath` that matches existing display paths.
+ */
+export function listWorkItemsFromOriginMain(
+  workDir: string,
+  worktreeDir: string,
+): WorkItem[] {
+  const repoRoot = repoRootFromWorkDir(workDir);
+
+  // Not-a-git-repo fallback: tests commonly spin up a project root via
+  // `mkdtempSync` without `git init` and expect the reader to behave like
+  // the filesystem-based {@link listWorkItems}. We limit the fallback to
+  // that case -- a real git repo that just happens to be missing
+  // `origin/main` should still surface the acceptance-spec hard-fail.
+  if (!isInsideGitRepo(repoRoot)) {
+    return listWorkItems(workDir, worktreeDir);
+  }
+
+  const repoRelPaths = listOriginMainFiles(
+    repoRoot,
+    `${WORK_ITEM_REL_DIR}/`,
+    "listWorkItems",
+  ).filter((p) => p.endsWith(".md"));
+
+  const items: WorkItem[] = [];
+  for (const relPath of repoRelPaths) {
+    const lastSlash = relPath.lastIndexOf("/");
+    const basename = lastSlash >= 0 ? relPath.slice(lastSlash + 1) : relPath;
+    const content = readOriginMainFile(repoRoot, relPath, "listWorkItems");
+    if (content === null) continue;
+    const item = parseWorkItemContent(content, join(workDir, basename));
+    if (!item) continue;
+    items.push(item);
+  }
+
+  markInProgress(items, worktreeDir);
+  expandWildcardDepsInPlace(items);
+  return items;
+}
+
+/**
+ * Read a single work item by ID from the filesystem. Globs for
+ * `*--{id}.md` in `workDir`. Retained for tests and ad-hoc filesystem
+ * inspection; daemon callers use {@link readWorkItemFromOriginMain}.
  */
 export function readWorkItem(
   workDir: string,
@@ -727,6 +823,41 @@ export function readWorkItem(
   if (!match) return undefined;
 
   return parseWorkItemFile(join(workDir, match)) ?? undefined;
+}
+
+/**
+ * Read a single work item by ID from `origin/main`. Throws with an
+ * actionable error when `origin/main` does not resolve. Returns
+ * `undefined` when no matching file exists on origin/main.
+ */
+export function readWorkItemFromOriginMain(
+  workDir: string,
+  id: string,
+): WorkItem | undefined {
+  const repoRoot = repoRootFromWorkDir(workDir);
+
+  // Not-a-git-repo fallback: see the matching note on
+  // {@link listWorkItemsFromOriginMain}.
+  if (!isInsideGitRepo(repoRoot)) {
+    return readWorkItem(workDir, id);
+  }
+
+  const suffix = `--${id}.md`;
+  const paths = listOriginMainFiles(
+    repoRoot,
+    `${WORK_ITEM_REL_DIR}/`,
+    "readWorkItem",
+  );
+
+  const relPath = paths.find((p) => p.endsWith(suffix));
+  if (!relPath) return undefined;
+
+  const content = readOriginMainFile(repoRoot, relPath, "readWorkItem");
+  if (content === null) return undefined;
+
+  const lastSlash = relPath.lastIndexOf("/");
+  const basename = lastSlash >= 0 ? relPath.slice(lastSlash + 1) : relPath;
+  return parseWorkItemContent(content, join(workDir, basename)) ?? undefined;
 }
 
 /**

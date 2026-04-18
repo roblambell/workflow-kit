@@ -368,63 +368,124 @@ export function resolveRef(repoRoot: string, ref: string): string | null {
 }
 
 /**
- * Get the set of work item file basenames that exist on origin/main
- * and have no local modifications (uncommitted, committed-but-not-pushed,
- * or locally modified).
- *
- * Returns null when origin/main doesn't exist (graceful degradation for
- * repos without a remote or on initial setup).
- *
- * Uses `git ls-tree` for the inclusion set and `git diff origin/main`
- * for the exclusion set. If the diff command fails, returns the full
- * remote set without exclusions (safe fallback).
+ * Check whether `repoRoot` is inside a git repository. Returns `false`
+ * when the path is outside any git working tree or git-dir, which is the
+ * predicate the origin-main-only readers use to decide whether to
+ * fail-loud (inside a git repo but origin/main is missing -- a real
+ * configuration error worth surfacing) or to fall back to the filesystem
+ * (not a git repo at all -- almost always a unit test set up via
+ * `mkdtempSync`, where enforcing git plumbing adds friction without
+ * value).
  */
-export function getCleanRemoteWorkItemFiles(
+export function isInsideGitRepo(
   repoRoot: string,
   shellRun: ShellRunner = (cmd, args) => run(cmd, args),
-): Set<string> | null {
-  // Inclusion set: files that exist on origin/main
-  const lsTree = shellRun("git", [
+): boolean {
+  const result = shellRun("git", [
     "-C", repoRoot,
-    "ls-tree", "--name-only", "origin/main", ".ninthwave/work/",
+    "rev-parse", "--is-inside-work-tree",
   ]);
+  return result.exitCode === 0 && result.stdout.trim() === "true";
+}
 
-  if (lsTree.exitCode !== 0) {
-    // origin/main doesn't exist -- graceful degradation
-    return null;
+/**
+ * Check whether `origin/main` resolves to a SHA. Used as the precondition
+ * probe for the origin-main-only readers below.
+ */
+export function originMainResolves(
+  repoRoot: string,
+  shellRun: ShellRunner = (cmd, args) => run(cmd, args),
+): boolean {
+  const result = shellRun("git", [
+    "-C", repoRoot,
+    "rev-parse", "--verify", "--quiet", "origin/main^{commit}",
+  ]);
+  return result.exitCode === 0;
+}
+
+/**
+ * Build the actionable error message shown when `origin/main` does not
+ * resolve. The message names the missing ref and spells out remediation so
+ * the user can fix the precondition without digging into the code.
+ */
+export function originMainMissingMessage(context: string): string {
+  return (
+    `${context} requires origin/main to resolve, but it does not. ` +
+    `Configure a remote named \`origin\` (e.g. \`git remote add origin <url>\`) ` +
+    `and push your main branch at least once (\`git push -u origin main\`) so ` +
+    `ninthwave can read work items and config from origin/main.`
+  );
+}
+
+/**
+ * Assert that `origin/main` resolves. Throws with an actionable error that
+ * names the missing ref and the remediation when it does not. Callers pass
+ * a short `context` label (e.g. "listWorkItems", "loadConfig", "nw init")
+ * which is prepended to the message for debuggability.
+ */
+export function assertOriginMain(
+  repoRoot: string,
+  context: string,
+  shellRun: ShellRunner = (cmd, args) => run(cmd, args),
+): void {
+  if (!originMainResolves(repoRoot, shellRun)) {
+    throw new Error(originMainMissingMessage(context));
   }
+}
 
-  const remoteFiles = new Set<string>();
-  for (const line of lsTree.stdout.split("\n")) {
+/**
+ * List files under a repo-relative prefix on `origin/main` via
+ * `git ls-tree`. Returns the repo-relative paths (e.g.
+ * `.ninthwave/work/1-foo--H-1-1.md`). Throws when `origin/main` does not
+ * resolve. Returns an empty array when the prefix has no files on
+ * origin/main.
+ */
+export function listOriginMainFiles(
+  repoRoot: string,
+  prefix: string,
+  context: string = "listOriginMainFiles",
+  shellRun: ShellRunner = (cmd, args) => run(cmd, args),
+): string[] {
+  assertOriginMain(repoRoot, context, shellRun);
+
+  const result = shellRun("git", [
+    "-C", repoRoot,
+    "ls-tree", "-r", "--name-only", "origin/main", "--", prefix,
+  ]);
+  if (result.exitCode !== 0) {
+    // origin/main resolves but ls-tree failed for some other reason (e.g.
+    // bogus prefix). Treat as "no files" rather than throwing; empty set
+    // is the natural reading of "no files match this path on origin/main".
+    return [];
+  }
+  const paths: string[] = [];
+  for (const line of result.stdout.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    // Extract basename from path like ".ninthwave/work/filename.md"
-    const lastSlash = trimmed.lastIndexOf("/");
-    remoteFiles.add(lastSlash >= 0 ? trimmed.slice(lastSlash + 1) : trimmed);
+    paths.push(trimmed);
   }
+  return paths;
+}
 
-  if (remoteFiles.size === 0) return new Set();
+/**
+ * Read a single file's contents from `origin/main` via `git show`. Returns
+ * the file's content as a string, or `null` if the file does not exist on
+ * origin/main. Throws when `origin/main` itself does not resolve.
+ */
+export function readOriginMainFile(
+  repoRoot: string,
+  relPath: string,
+  context: string = "readOriginMainFile",
+  shellRun: ShellRunner = (cmd, args) => run(cmd, args),
+): string | null {
+  assertOriginMain(repoRoot, context, shellRun);
 
-  // Exclusion set: files that differ between origin/main and working tree
-  const diff = shellRun("git", [
+  const result = shellRun("git", [
     "-C", repoRoot,
-    "diff", "origin/main", "--name-only", "--", ".ninthwave/work/",
+    "show", `origin/main:${relPath}`,
   ]);
-
-  if (diff.exitCode !== 0) {
-    // Diff failed -- return remote set without exclusions (safe fallback)
-    return remoteFiles;
-  }
-
-  for (const line of diff.stdout.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const lastSlash = trimmed.lastIndexOf("/");
-    const basename = lastSlash >= 0 ? trimmed.slice(lastSlash + 1) : trimmed;
-    remoteFiles.delete(basename);
-  }
-
-  return remoteFiles;
+  if (result.exitCode !== 0) return null;
+  return result.stdout;
 }
 
 /**

@@ -10,7 +10,7 @@ import {
   lstatSync,
   readlinkSync,
 } from "fs";
-import { setupTempRepo, cleanupTempRepos } from "./helpers.ts";
+import { setupTempRepo, setupTempRepoWithoutRemote, cleanupTempRepos } from "./helpers.ts";
 import { userStateDir } from "../core/daemon.ts";
 import { agentTargetFilename } from "../core/ai-tools.ts";
 import {
@@ -722,6 +722,34 @@ describe("detectAll", () => {
 // --- initProject (integration) ---
 
 describe("initProject", () => {
+  it("fails loudly when origin/main does not resolve", () => {
+    // `nw init` refuses to run until the user has pushed at least once,
+    // because ninthwave reads work items and shared config from
+    // origin/main. Without origin/main there is nothing for the daemon
+    // to anchor against.
+    const projectDir = setupTempRepoWithoutRemote();
+    const bundleDir = createFakeBundle(projectDir + "-bundle-parent");
+    const deps: InitDeps = {
+      commandExists: (() => false) as CommandChecker,
+      getEnv: () => undefined,
+    };
+
+    let caught: Error | undefined;
+    try {
+      initProject(projectDir, bundleDir, deps);
+    } catch (e) {
+      caught = e as Error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught!.message).toContain("origin/main");
+    expect(caught!.message).toContain("nw init");
+    // Actionable remediation: user should know to push.
+    expect(caught!.message).toContain("git push");
+    // Should fail before any scaffolding happens.
+    expect(existsSync(join(projectDir, ".ninthwave", "config.json"))).toBe(false);
+  });
+
   it("writes .ninthwave/config.json with JSON content", () => {
     const projectDir = setupTempRepo();
     const bundleDir = createFakeBundle(projectDir + "-bundle-parent");

@@ -155,104 +155,18 @@ describe("list", () => {
     expect(output).toContain("--depth requires a positive integer");
   });
 
-  it("--remote flag is parsed without error", () => {
+  // --remote was removed in H-WTI-1: the diff-based "remote vs local"
+  // filter is gone now that the daemon sources every work item from
+  // origin/main via git plumbing. The flag no longer has a meaning --
+  // every listed item is by definition what origin/main sees.
+  it("rejects the removed --remote flag", () => {
     const repo = setupTempRepo();
     const workDir = useFixtureDir(repo, "valid.md");
     const worktreeDir = join(repo, ".ninthwave", ".worktrees");
 
-    // Should not throw -- no remote configured, so all items show as "local"
-    const output = captureOutput(() => cmdList(["--remote"], workDir, worktreeDir, repo));
+    const output = captureOutput(() => cmdList(["--remote"], workDir, worktreeDir));
 
-    expect(output).toContain("REMOTE");
-    expect(output).toContain("4 items");
-  });
-
-  it("--remote shows remote/local indicator per item", () => {
-    const repo = setupTempRepoWithRemote();
-    const workDir = join(repo, ".ninthwave", "work");
-    mkdirSync(workDir, { recursive: true });
-    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
-    mkdirSync(worktreeDir, { recursive: true });
-
-    // Create two items and push both
-    writeFileSync(
-      join(workDir, "1-core--H-1-1.md"),
-      "# Feat: Pushed item (H-1-1)\n\n**Priority:** High\n**Depends on:** None\n**Domain:** core\n",
-    );
-    writeFileSync(
-      join(workDir, "2-tui--M-2-1.md"),
-      "# Feat: Another item (M-2-1)\n\n**Priority:** Medium\n**Depends on:** None\n**Domain:** tui\n",
-    );
-    gitCmd(repo, "add", ".ninthwave/work/");
-    gitCmd(repo, "commit", "-m", "Add work items", "--quiet");
-    gitCmd(repo, "push", "--quiet");
-
-    // Add a local-only item (committed but not pushed)
-    writeFileSync(
-      join(workDir, "3-local--L-9-1.md"),
-      "# Feat: Local only (L-9-1)\n\n**Priority:** Low\n**Depends on:** None\n**Domain:** local\n",
-    );
-    gitCmd(repo, "add", ".ninthwave/work/3-local--L-9-1.md");
-    gitCmd(repo, "commit", "-m", "Add local item", "--quiet");
-
-    const output = captureOutput(() => cmdList(["--remote"], workDir, worktreeDir, repo));
-
-    // Header should include REMOTE column
-    expect(output).toContain("REMOTE");
-
-    // Parse per-item rows
-    const lines = output.split("\n");
-    const h11Line = lines.find((l) => l.startsWith("H-1-1"));
-    const m21Line = lines.find((l) => l.startsWith("M-2-1"));
-    const l91Line = lines.find((l) => l.startsWith("L-9-1"));
-
-    expect(h11Line).toContain("remote");
-    expect(m21Line).toContain("remote");
-    expect(l91Line).toContain("local");
-  });
-
-  it("output unchanged when --remote flag is omitted", () => {
-    const repo = setupTempRepoWithRemote();
-    const workDir = join(repo, ".ninthwave", "work");
-    mkdirSync(workDir, { recursive: true });
-    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
-    mkdirSync(worktreeDir, { recursive: true });
-
-    writeFileSync(
-      join(workDir, "1-core--H-1-1.md"),
-      "# Feat: Item one (H-1-1)\n\n**Priority:** High\n**Depends on:** None\n**Domain:** core\n",
-    );
-    gitCmd(repo, "add", ".ninthwave/work/");
-    gitCmd(repo, "commit", "-m", "Add items", "--quiet");
-    gitCmd(repo, "push", "--quiet");
-
-    const output = captureOutput(() => cmdList([], workDir, worktreeDir, repo));
-
-    // No REMOTE column header
-    expect(output).not.toContain("REMOTE");
-    // No remote/local indicators in data rows
-    const dataLines = output.split("\n").filter((l) => l.startsWith("H-1-1"));
-    for (const line of dataLines) {
-      expect(line).not.toContain("remote");
-      expect(line).not.toContain("local");
-    }
-  });
-
-  it("--remote graceful fallback when no remote configured", () => {
-    const repo = setupTempRepo();
-    const workDir = useFixtureDir(repo, "valid.md");
-    const worktreeDir = join(repo, ".ninthwave", ".worktrees");
-
-    // No remote configured -- should show all items as "local"
-    const output = captureOutput(() => cmdList(["--remote"], workDir, worktreeDir, repo));
-
-    expect(output).toContain("REMOTE");
-    // All items should show as "local"
-    const dataLines = output.split("\n").filter((l) => /^[A-Z]-/.test(l));
-    for (const line of dataLines) {
-      expect(line).toContain("local");
-    }
-    expect(output).toContain("4 items");
+    expect(output).toContain("Unknown option: --remote");
   });
 });
 

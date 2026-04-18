@@ -1,10 +1,10 @@
 // Directory-based work item parser for the ninthwave CLI.
-// Delegates to listWorkItems() from work-item-files.ts for actual file reading.
-// Re-exports utility functions from work-item-files.ts for backward compatibility.
+// Delegates to listWorkItemsFromOriginMain() from work-item-files.ts so the
+// daemon hot path sees the spec exactly as it lives on origin/main, regardless
+// of the user's branch, dirty index, or locally modified work item files.
 
 import type { WorkItem } from "./types.ts";
-import { listWorkItems } from "./work-item-files.ts";
-import { getCleanRemoteWorkItemFiles } from "./git.ts";
+import { listWorkItemsFromOriginMain } from "./work-item-files.ts";
 
 // Re-export shared utilities so existing imports from parser.ts continue to work.
 export {
@@ -18,33 +18,23 @@ export {
 } from "./work-item-files.ts";
 
 /**
- * Parse work items from a directory of work item files (.ninthwave/work/).
+ * Parse work items from `origin/main`.
  *
- * Delegates to listWorkItems() from work-item-files.ts which reads each .md file,
- * parses metadata, expands wildcard dependencies, and detects in-progress status.
+ * Delegates to {@link listWorkItemsFromOriginMain}, which reads filenames
+ * via `git ls-tree origin/main` and contents via
+ * `git show origin/main:<path>`. The daemon's view of work items is
+ * therefore identical regardless of the user's current branch, dirty
+ * index, or locally modified `.ninthwave/work/*.md` files.
  *
- * When `projectRoot` is provided, only items whose files exist on origin/main
- * and match the remote content are returned. Items with local-only state
- * (uncommitted, committed but not pushed, or locally modified) are silently
- * ignored. This ensures execution commands only process pushed items.
+ * Throws with an actionable error when `origin/main` does not resolve.
  *
- * Informational commands (list, deps, etc.) omit projectRoot to show all items.
+ * `workDir` stays in the signature because callers already compute it as
+ * `<repoRoot>/.ninthwave/work`; we use it to derive the repo root (for git
+ * plumbing) and to stamp a stable `item.filePath` for display.
  */
 export function parseWorkItems(
   workDir: string,
   worktreeDir: string,
-  projectRoot?: string,
 ): WorkItem[] {
-  const items = listWorkItems(workDir, worktreeDir);
-
-  if (!projectRoot) return items;
-
-  const cleanFiles = getCleanRemoteWorkItemFiles(projectRoot);
-  if (!cleanFiles) return items; // fallback when origin/main doesn't exist
-
-  return items.filter((item) => {
-    const lastSlash = item.filePath.lastIndexOf("/");
-    const basename = lastSlash >= 0 ? item.filePath.slice(lastSlash + 1) : item.filePath;
-    return cleanFiles.has(basename);
-  });
+  return listWorkItemsFromOriginMain(workDir, worktreeDir);
 }

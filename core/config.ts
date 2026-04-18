@@ -10,6 +10,7 @@ import {
   type BuiltInToolOverrideConfig,
   type BuiltInToolOverrideModeConfig,
 } from "./ai-tools.ts";
+import { readOriginMainFile } from "./git.ts";
 
 /** Project config shape. */
 export interface ProjectConfig {
@@ -117,7 +118,10 @@ export function generateProjectIdentity(): { project_id: string; broker_secret: 
  * config file.
  */
 export function ensureProjectId(projectRoot: string): string {
-  const shared = loadConfig(projectRoot);
+  // Bootstrap reads consult the working tree as well as origin/main so a
+  // committed-but-not-yet-pushed `project_id` (written by `nw init` before
+  // the user's first push) is never silently rotated.
+  const shared = loadWorkingTreeConfig(projectRoot);
   const local = loadLocalConfig(projectRoot);
   const effectiveProjectId = local.project_id ?? shared.project_id;
 
@@ -143,7 +147,9 @@ export function ensureProjectId(projectRoot: string): string {
 export function loadOrGenerateProjectIdentity(
   projectRoot: string,
 ): { project_id: string; broker_secret: string } {
-  const shared = loadConfig(projectRoot);
+  // Bootstrap-era reads: consult the working tree so a committed-but-not-
+  // yet-pushed identity is never silently rotated on the next CLI run.
+  const shared = loadWorkingTreeConfig(projectRoot);
   const local = loadLocalConfig(projectRoot);
 
   // Either file satisfying a field counts as "already present"; local wins
@@ -177,16 +183,83 @@ export function loadOrGenerateProjectIdentity(
 }
 
 /**
- * Load project config from .ninthwave/config.json (JSON format).
- * Returns defaults when the file is missing or malformed.
- * Unknown keys are silently ignored.
+ * Load project config from `.ninthwave/config.json` on `origin/main` (via
+ * `git show origin/main:.ninthwave/config.json`).
  *
- * This reads only the *shared* (committable) config file. Fields that are
+ * Sourcing `config.json` from origin/main (not the working tree) is what
+ * lets the daemon see the same config regardless of the user's branch,
+ * dirty index, or locally edited `config.json`.
+ *
+ * Falls back to the working tree `.ninthwave/config.json` when
+ * `origin/main` does not resolve. This fallback is deliberate: loadConfig
+ * is called by many non-daemon paths (init-era bootstrap, ad-hoc
+ * commands outside a pushed repo) where a hard-fail would be more
+ * disruptive than helpful. The daemon's deliberate hard-fail on a
+ * missing `origin/main` lives in {@link loadConfigFromOriginMain} and in
+ * the work-item readers, and `nw init` explicitly asserts origin/main
+ * resolvability up front via {@link import("./git.ts").assertOriginMain}.
+ *
+ * Returns empty defaults when neither source yields a usable file.
+ *
+ * This reads only the *shared* (committable) config. Fields that are
  * user-specific (e.g. `ai_tool_overrides` with absolute local paths) live
- * in `.ninthwave/config.local.json` -- use `loadMergedProjectConfig` when
- * consumers need both.
+ * in `.ninthwave/config.local.json` -- use {@link loadMergedProjectConfig}
+ * when consumers need both.
  */
 export function loadConfig(projectRoot: string): ProjectConfig {
+  try {
+    const raw = readOriginMainFile(
+      projectRoot,
+      ".ninthwave/config.json",
+      "loadConfig",
+    );
+    if (raw !== null) {
+      // origin/main resolves and has the file -- authoritative. Daemon's
+      // view is the committed-and-pushed config, regardless of the
+      // user's working tree.
+      return parseProjectConfigContent(raw, true);
+    }
+    // origin/main resolves but the file does not exist there yet (e.g.
+    // fresh repo immediately after `nw init` but before the first push,
+    // or a pushed repo that predates ninthwave). Fall back to the
+    // working-tree copy so bootstrap-era commands can still read the
+    // config they just wrote. The daemon's authoritative origin/main
+    // view is already the primary source above.
+    return loadWorkingTreeConfig(projectRoot);
+  } catch {
+    // origin/main does not resolve -- fall back to the working-tree copy
+    // so non-daemon callers (init-era, fresh repos, unit tests without
+    // a remote) keep working. The daemon hot path uses
+    // {@link loadConfigFromOriginMain} when it needs the strict
+    // hard-fail behavior.
+    return loadWorkingTreeConfig(projectRoot);
+  }
+}
+
+/**
+ * Strict variant of {@link loadConfig} that never falls back to the
+ * working tree. Throws with an actionable error when `origin/main` does
+ * not resolve -- intended for the daemon hot path where we want the
+ * deliberate hard-fail from the acceptance spec.
+ */
+export function loadConfigFromOriginMain(projectRoot: string): ProjectConfig {
+  const raw = readOriginMainFile(
+    projectRoot,
+    ".ninthwave/config.json",
+    "loadConfig",
+  );
+  if (raw === null) return {};
+  return parseProjectConfigContent(raw, true);
+}
+
+/**
+ * Read `.ninthwave/config.json` directly from the user's working tree,
+ * without consulting origin/main. Used only by the init-era bootstrap
+ * helpers (`ensureProjectId`, `loadOrGenerateProjectIdentity`, `saveConfig`
+ * merge) so they can see a committed-but-not-yet-pushed `project_id`
+ * without rotating it. Not for daemon hot path use.
+ */
+export function loadWorkingTreeConfig(projectRoot: string): ProjectConfig {
   return loadProjectConfigFile(
     join(projectRoot, ".ninthwave", "config.json"),
     true,
@@ -262,7 +335,11 @@ export function resolveEffectiveBrokerSecret(
   if (envSecret !== undefined) return envSecret;
   const local = loadLocalConfig(projectRoot);
   if (local.broker_secret !== undefined) return local.broker_secret;
-  const shared = loadConfig(projectRoot);
+  // Secret-resolving consults the working tree (not origin/main) so that
+  // secrets never have to be pushed to be effective. The daemon is already
+  // reading the sharable config fields from origin/main via `loadConfig`;
+  // the secret stays a working-tree concept.
+  const shared = loadWorkingTreeConfig(projectRoot);
   return shared.broker_secret;
 }
 
@@ -319,32 +396,54 @@ function loadProjectConfigFile<T extends boolean>(
   configPath: string,
   withDefaults: T,
 ): T extends true ? ProjectConfig : Partial<ProjectConfig> {
+  if (!existsSync(configPath)) {
+    return (withDefaults ? {} : {}) as T extends true ? ProjectConfig : Partial<ProjectConfig>;
+  }
+
+  try {
+    const raw = readFileSync(configPath, "utf-8");
+    return parseProjectConfigContent(raw, withDefaults);
+  } catch {
+    return (withDefaults ? {} : {}) as T extends true ? ProjectConfig : Partial<ProjectConfig>;
+  }
+}
+
+/**
+ * Parse raw JSONC config content into a ProjectConfig. Shared between the
+ * filesystem loader ({@link loadProjectConfigFile}) and the origin/main
+ * loader ({@link loadConfig}) so the validation/parsing logic has a
+ * single home. Returns an empty/defaults object when the content is not a
+ * JSON object or cannot be parsed.
+ */
+function parseProjectConfigContent<T extends boolean>(
+  raw: string,
+  withDefaults: T,
+): T extends true ? ProjectConfig : Partial<ProjectConfig> {
   const defaults: ProjectConfig = {};
   const empty: Partial<ProjectConfig> = {};
   const fallback = (withDefaults ? defaults : empty) as T extends true ? ProjectConfig : Partial<ProjectConfig>;
 
-  if (!existsSync(configPath)) return fallback;
-
+  let parsed: unknown;
   try {
-    const raw = readFileSync(configPath, "utf-8");
-    const parsed = JSON.parse(stripJsonComments(raw));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return fallback;
-    }
-
-    const result: Partial<ProjectConfig> = withDefaults ? { ...defaults } : {};
-    const crewUrl = parseProjectCrewUrl(parsed.crew_url);
-    if (crewUrl !== undefined) result.crew_url = crewUrl;
-    const projectId = parseProjectId(parsed.project_id);
-    if (projectId !== undefined) result.project_id = projectId;
-    const brokerSecret = parseBrokerSecret(parsed.broker_secret);
-    if (brokerSecret !== undefined) result.broker_secret = brokerSecret;
-    const overrides = parseBuiltInAiToolOverrides(parsed.ai_tool_overrides);
-    if (overrides) result.ai_tool_overrides = overrides;
-    return result as T extends true ? ProjectConfig : Partial<ProjectConfig>;
+    parsed = JSON.parse(stripJsonComments(raw));
   } catch {
     return fallback;
   }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return fallback;
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  const result: Partial<ProjectConfig> = withDefaults ? { ...defaults } : {};
+  const crewUrl = parseProjectCrewUrl(obj.crew_url);
+  if (crewUrl !== undefined) result.crew_url = crewUrl;
+  const projectId = parseProjectId(obj.project_id);
+  if (projectId !== undefined) result.project_id = projectId;
+  const brokerSecret = parseBrokerSecret(obj.broker_secret);
+  if (brokerSecret !== undefined) result.broker_secret = brokerSecret;
+  const overrides = parseBuiltInAiToolOverrides(obj.ai_tool_overrides);
+  if (overrides) result.ai_tool_overrides = overrides;
+  return result as T extends true ? ProjectConfig : Partial<ProjectConfig>;
 }
 
 /**

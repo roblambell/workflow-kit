@@ -216,9 +216,10 @@ function setupWorkItemsDir(repo: string): string {
     ].join("\n"),
   );
 
-  // Commit work item files so pre-flight checks pass
+  // Commit and push so origin/main-sourced readers can see the files.
   spawnSync("git", ["-C", repo, "add", ".ninthwave/work/"], { stdio: "pipe" });
   spawnSync("git", ["-C", repo, "commit", "-m", "Add work item files", "--quiet"], { stdio: "pipe" });
+  spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
   return workDir;
 }
@@ -2891,6 +2892,7 @@ describe("cmdRunItems", () => {
 
     spawnSync("git", ["-C", repo, "add", ".ninthwave/work/"], { stdio: "pipe" });
     spawnSync("git", ["-C", repo, "commit", "-m", "Add diamond items", "--quiet"], { stdio: "pipe" });
+    spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
     return workDir;
   }
@@ -2930,6 +2932,7 @@ describe("cmdRunItems", () => {
 
     spawnSync("git", ["-C", repo, "add", ".ninthwave/work/"], { stdio: "pipe" });
     spawnSync("git", ["-C", repo, "commit", "-m", "Add circular items", "--quiet"], { stdio: "pipe" });
+    spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
     return workDir;
   }
@@ -3069,6 +3072,7 @@ describe("cmdRunItems", () => {
 
     spawnSync("git", ["-C", repo, "add", ".ninthwave/work/"], { stdio: "pipe" });
     spawnSync("git", ["-C", repo, "commit", "-m", "Add work item", "--quiet"], { stdio: "pipe" });
+    spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
     const worktreeDir = join(repo, ".ninthwave", ".worktrees");
 

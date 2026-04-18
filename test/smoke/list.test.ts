@@ -63,6 +63,7 @@ describe("smoke: nw list", () => {
     // Commit so git is clean
     spawnSync("git", ["-C", repo, "add", ".ninthwave"], { stdio: "pipe" });
     spawnSync("git", ["-C", repo, "commit", "-m", "Add work items", "--quiet"], { stdio: "pipe" });
+    spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
     const result = runCli(repo, "list");
 
@@ -84,6 +85,7 @@ describe("smoke: nw list", () => {
 
     spawnSync("git", ["-C", repo, "add", ".ninthwave"], { stdio: "pipe" });
     spawnSync("git", ["-C", repo, "commit", "-m", "Add work items", "--quiet"], { stdio: "pipe" });
+    spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
     const result = runCli(repo, "list");
 
@@ -112,6 +114,7 @@ describe("smoke: nw list", () => {
 
     spawnSync("git", ["-C", repo, "add", ".ninthwave"], { stdio: "pipe" });
     spawnSync("git", ["-C", repo, "commit", "-m", "Init ninthwave", "--quiet"], { stdio: "pipe" });
+    spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
     const result = runCli(repo, "list");
 
@@ -128,6 +131,7 @@ describe("smoke: nw list", () => {
 
     spawnSync("git", ["-C", repo, "add", ".ninthwave"], { stdio: "pipe" });
     spawnSync("git", ["-C", repo, "commit", "-m", "Add work items", "--quiet"], { stdio: "pipe" });
+    spawnSync("git", ["-C", repo, "push", "--quiet"], { stdio: "pipe" });
 
     const result = runCli(repo, "list");
 

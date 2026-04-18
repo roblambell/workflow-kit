@@ -19,6 +19,11 @@ import {
   extractDescriptionSnippet,
 } from "../core/work-item-files.ts";
 import type { WorkItem, Priority } from "../core/types.ts";
+import {
+  setupTempRepoWithRemote,
+  cleanupTempRepos,
+  commitAndPushWorkItem,
+} from "./helpers.ts";
 
 // Track temp dirs for cleanup
 const tempDirs: string[] = [];
@@ -37,6 +42,7 @@ afterEach(() => {
     }
   }
   tempDirs.length = 0;
+  cleanupTempRepos();
 });
 
 function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
@@ -518,16 +524,15 @@ Just do the thing.
 // --- listWorkItems ---
 
 describe("listWorkItems", () => {
-  it("reads a directory of multiple work item files", () => {
-    const dir = makeTempDir();
-    const workDir = join(dir, "work");
-    const worktreeDir = join(dir, "worktrees");
-    mkdirSync(workDir);
-    mkdirSync(worktreeDir);
+  it("reads work item files from origin/main", () => {
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
+    const worktreeDir = join(repo, ".ninthwave", "worktrees");
+    mkdirSync(worktreeDir, { recursive: true });
 
-    // Write two work item files
-    writeFileSync(
-      join(workDir, "1-bugs--H-BUG-1.md"),
+    commitAndPushWorkItem(
+      repo,
+      "1-bugs--H-BUG-1.md",
       `# Fix crash (H-BUG-1)
 
 **Priority:** High
@@ -539,8 +544,9 @@ Fix the crash.
 `,
     );
 
-    writeFileSync(
-      join(workDir, "2-features--M-FT-1.md"),
+    commitAndPushWorkItem(
+      repo,
+      "2-features--M-FT-1.md",
       `# Add feature (M-FT-1)
 
 **Priority:** Medium
@@ -563,14 +569,14 @@ Add the feature.
   });
 
   it("expands wildcard dependencies", () => {
-    const dir = makeTempDir();
-    const workDir = join(dir, "work");
-    const worktreeDir = join(dir, "worktrees");
-    mkdirSync(workDir);
-    mkdirSync(worktreeDir);
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
+    const worktreeDir = join(repo, ".ninthwave", "worktrees");
+    mkdirSync(worktreeDir, { recursive: true });
 
-    writeFileSync(
-      join(workDir, "1-bugs--H-BUG-1.md"),
+    commitAndPushWorkItem(
+      repo,
+      "1-bugs--H-BUG-1.md",
       `# Fix A (H-BUG-1)
 
 **Priority:** High
@@ -580,8 +586,9 @@ Add the feature.
 `,
     );
 
-    writeFileSync(
-      join(workDir, "1-bugs--H-BUG-2.md"),
+    commitAndPushWorkItem(
+      repo,
+      "1-bugs--H-BUG-2.md",
       `# Fix B (H-BUG-2)
 
 **Priority:** High
@@ -591,8 +598,9 @@ Add the feature.
 `,
     );
 
-    writeFileSync(
-      join(workDir, "2-features--M-FT-1.md"),
+    commitAndPushWorkItem(
+      repo,
+      "2-features--M-FT-1.md",
       `# Feature (M-FT-1)
 
 **Priority:** Medium
@@ -609,15 +617,15 @@ Add the feature.
   });
 
   it("detects in-progress status from worktree dirs", () => {
-    const dir = makeTempDir();
-    const workDir = join(dir, "work");
-    const worktreeDir = join(dir, "worktrees");
-    mkdirSync(workDir);
-    mkdirSync(worktreeDir);
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
+    const worktreeDir = join(repo, ".ninthwave", "worktrees");
+    mkdirSync(worktreeDir, { recursive: true });
     mkdirSync(join(worktreeDir, "ninthwave-H-BUG-1"));
 
-    writeFileSync(
-      join(workDir, "1-bugs--H-BUG-1.md"),
+    commitAndPushWorkItem(
+      repo,
+      "1-bugs--H-BUG-1.md",
       `# Fix crash (H-BUG-1)
 
 **Priority:** High
@@ -627,8 +635,9 @@ Add the feature.
 `,
     );
 
-    writeFileSync(
-      join(workDir, "2-features--M-FT-1.md"),
+    commitAndPushWorkItem(
+      repo,
+      "2-features--M-FT-1.md",
       `# Feature (M-FT-1)
 
 **Priority:** Medium
@@ -645,20 +654,24 @@ Add the feature.
     expect(ft.status).toBe("open");
   });
 
-  it("returns empty array for nonexistent directory", () => {
-    expect(listWorkItems("/tmp/nw-does-not-exist", "/tmp/nw-wt")).toEqual([]);
+  it("returns empty array when no work items are on origin/main", () => {
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
+    const worktreeDir = join(repo, ".ninthwave", "worktrees");
+    mkdirSync(worktreeDir, { recursive: true });
+    expect(listWorkItems(workDir, worktreeDir)).toEqual([]);
   });
 
-  it("skips malformed files", () => {
-    const dir = makeTempDir();
-    const workDir = join(dir, "work");
-    const worktreeDir = join(dir, "worktrees");
-    mkdirSync(workDir);
-    mkdirSync(worktreeDir);
+  it("skips malformed files on origin/main", () => {
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
+    const worktreeDir = join(repo, ".ninthwave", "worktrees");
+    mkdirSync(worktreeDir, { recursive: true });
 
-    writeFileSync(join(workDir, "bad.md"), "Not a valid work item file.");
-    writeFileSync(
-      join(workDir, "1-good--H-OK-1.md"),
+    commitAndPushWorkItem(repo, "bad.md", "Not a valid work item file.");
+    commitAndPushWorkItem(
+      repo,
+      "1-good--H-OK-1.md",
       `# Good item (H-OK-1)
 
 **Priority:** High
@@ -677,13 +690,13 @@ Add the feature.
 // --- readWorkItem ---
 
 describe("readWorkItem", () => {
-  it("finds item by ID", () => {
-    const dir = makeTempDir();
-    const workDir = join(dir, "work");
-    mkdirSync(workDir);
+  it("finds item by ID on origin/main", () => {
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
 
-    writeFileSync(
-      join(workDir, "2-test--M-TST-1.md"),
+    commitAndPushWorkItem(
+      repo,
+      "2-test--M-TST-1.md",
       `# Test item (M-TST-1)
 
 **Priority:** Medium
@@ -700,15 +713,15 @@ describe("readWorkItem", () => {
   });
 
   it("returns undefined for missing ID", () => {
-    const dir = makeTempDir();
-    const workDir = join(dir, "work");
-    mkdirSync(workDir);
-
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
     expect(readWorkItem(workDir, "X-MISS-99")).toBeUndefined();
   });
 
-  it("returns undefined for nonexistent directory", () => {
-    expect(readWorkItem("/tmp/nw-does-not-exist", "X-X-1")).toBeUndefined();
+  it("returns undefined when there are no work items on origin/main", () => {
+    const repo = setupTempRepoWithRemote();
+    const workDir = join(repo, ".ninthwave", "work");
+    expect(readWorkItem(workDir, "X-X-1")).toBeUndefined();
   });
 });
 

@@ -47,7 +47,7 @@ export async function cmdRunItems(
     die(muxEarly.diagnoseUnavailable());
   }
 
-  const items = parseWorkItems(workDir, worktreeDir, projectRoot);
+  const items = parseWorkItems(workDir, worktreeDir);
   const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
@@ -223,7 +223,7 @@ export async function cmdStart(
   const ids = splitIds(args);
 
   if (ids.length < 1) die("Usage: ninthwave start <ID1> [ID2...]");
-  const items = parseWorkItems(workDir, worktreeDir, projectRoot);
+  const items = parseWorkItems(workDir, worktreeDir);
   const itemMap = new Map<string, WorkItem>();
   for (const item of items) {
     itemMap.set(item.id, item);

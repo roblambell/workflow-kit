@@ -331,13 +331,27 @@ export class CliHarness {
       throw new Error(addResult.stderr || "git add failed");
     }
 
-    const commitResult = spawnSync("git", ["commit", "-m", message, "--quiet"], {
+    // `writeWorkItems` now auto-commits and auto-pushes (so parseWorkItems
+    // can see items via origin/main without each caller having to remember
+    // to commit). That means the work-item files may already be committed
+    // by the time we get here; skip the commit when there is nothing
+    // staged rather than failing.
+    const statusResult = spawnSync("git", ["status", "--porcelain", ".ninthwave/work"], {
       cwd: this.projectRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     });
-    if (commitResult.status !== 0) {
-      throw new Error(commitResult.stderr || "git commit failed");
+    const hasStagedChanges = (statusResult.stdout ?? "").trim().length > 0;
+
+    if (hasStagedChanges) {
+      const commitResult = spawnSync("git", ["commit", "-m", message, "--quiet"], {
+        cwd: this.projectRoot,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      if (commitResult.status !== 0) {
+        throw new Error(commitResult.stderr || "git commit failed");
+      }
     }
 
     const pushResult = spawnSync("git", ["push", "origin", "main", "--quiet"], {

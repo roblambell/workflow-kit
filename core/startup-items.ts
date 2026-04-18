@@ -133,9 +133,13 @@ export async function pruneMergedStartupReplayItemsAsync(
 export function loadLocalStartupItems(
   workDir: string,
   worktreeDir: string,
-  projectRoot: string,
+  // `projectRoot` was the old gating parameter for the diff-based filter;
+  // it is retained in the signature so existing callers keep compiling but
+  // is intentionally unused -- `parseWorkItems` now always sources items
+  // from origin/main.
+  _projectRoot: string,
 ): WorkItem[] {
-  return parseWorkItems(workDir, worktreeDir, projectRoot);
+  return parseWorkItems(workDir, worktreeDir);
 }
 
 export function loadDiscoveryStartupItems(
